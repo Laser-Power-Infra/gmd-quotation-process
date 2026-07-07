@@ -1,0 +1,42 @@
+import React from "react";
+import Navbar from "@/components/layout/Navbar";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export default function Loading() {
+  return (
+    <div className="flex min-h-screen flex-col bg-slate-50/30">
+      <Navbar />
+      <main className="flex-1 flex flex-col p-6 w-full gap-4 max-w-[1600px] mx-auto">
+        {/* Header Toolbar Skeleton */}
+        <div className="flex flex-col gap-4 py-5 px-6 bg-white sm:flex-row sm:items-center sm:justify-between border border-slate-100 rounded-lg shadow-sm">
+          <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-center">
+            <Skeleton className="h-7 w-48 bg-slate-100" />
+            <Skeleton className="h-9 w-64 bg-slate-100 rounded-md" />
+          </div>
+          <div className="flex gap-3">
+            <Skeleton className="h-9 w-28 bg-slate-100 rounded-md" />
+            <Skeleton className="h-9 w-28 bg-slate-100 rounded-md" />
+            <Skeleton className="h-9 w-32 bg-slate-100 rounded-md" />
+          </div>
+        </div>
+
+        {/* Table Body Skeleton */}
+        <div className="bg-white rounded-lg border border-slate-100 overflow-hidden shadow-sm flex flex-col">
+          <div className="p-4 border-b border-slate-100 bg-[#f8fafc]">
+            <Skeleton className="h-5 w-full bg-slate-100" />
+          </div>
+          <div className="p-6 space-y-4">
+            {Array.from({ length: 10 }).map((_, idx) => (
+              <Skeleton key={idx} className="h-12 w-full bg-slate-50" />
+            ))}
+          </div>
+          {/* Footer Pagination Skeleton */}
+          <div className="p-4 border-t border-slate-100 bg-[#f8fafc] flex justify-between items-center">
+            <Skeleton className="h-4 w-48 bg-slate-100" />
+            <Skeleton className="h-8 w-64 bg-slate-100 rounded-md" />
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
