@@ -7,16 +7,12 @@ export default function Navbar() {
     <header className="sticky top-0 z-40 w-full border-b border-border bg-background px-6 py-3">
       <div className="flex h-10 items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded bg-[#0f62fe] text-white">
-              <svg
-                className="h-5 w-5"
-                fill="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path d="M4 19h4c.55 0 1-.45 1-1v-5c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v5c0 .55.45 1 1 1zm6-6h4c.55 0 1-.45 1-1V7c0-.55-.45-1-1-1h-4c-.55 0-1 .45-1 1v5c0 .55.45 1 1 1zm6-10h4c.55 0 1-.45 1-1v-5c0-.55-.45-1-1-1h-4c-.55 0-1 .45-1 1v5c0 .55.45 1 1 1z" />
-              </svg>
-            </div>
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/logo.jpg"
+              alt="Dalui Logo"
+              className="h-8 w-auto rounded object-contain bg-white p-0.5"
+            />
             <span className="text-base font-bold tracking-tight text-foreground">
               GMD Quotation Process
             </span>

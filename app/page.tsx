@@ -50,7 +50,7 @@ export default async function Page({ searchParams }: PageProps) {
     where: whereClause,
   });
 
-  // Fetch paginated enquiries
+  // Fetch all matching enquiries (pagination is handled client-side inside the table for smooth filtering)
   const enquiriesList = (
     await prisma.enquiry.findMany({
       where: whereClause,
@@ -61,8 +61,6 @@ export default async function Page({ searchParams }: PageProps) {
       orderBy: {
         enquiryDate: "desc",
       },
-      take: limit,
-      skip: skip,
     })
   ).map((enquiry) => ({
     ...enquiry,
@@ -72,6 +70,7 @@ export default async function Page({ searchParams }: PageProps) {
       productCost: item.productCost ? Number(item.productCost) : null,
       cost: item.cost ? Number(item.cost) : null,
       discount: item.discount ? Number(item.discount) : null,
+      quotedRate: item.quotedRate || null,
     })),
   }));
 
@@ -492,13 +491,6 @@ export default async function Page({ searchParams }: PageProps) {
 
         <div className="bg-white rounded-lg border border-slate-100 overflow-hidden shadow-sm flex flex-col flex-1">
           <EnquiryTable enquiries={enquiriesList} dropdownOptions={dropdownOptions} />
-          {totalCount > 0 && (
-            <Pagination
-              currentPage={currentPage}
-              totalCount={totalCount}
-              pageSize={limit}
-            />
-          )}
         </div>
       </main>
     </div>

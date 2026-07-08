@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, Trash } from "lucide-react";
+import { Plus, Trash, Search, Check, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -39,6 +39,8 @@ export default function AddItemsDialog({
     { itemName: "", quantity: "" },
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
 
   const handleAddItemRow = () => {
     setItems([...items, { itemName: "", quantity: "" }]);
@@ -91,6 +93,8 @@ export default function AddItemsDialog({
       if (res.success) {
         toast.success("Items added successfully!");
         setEnquiryId("");
+        setSearchQuery("");
+        setIsOpen(false);
         setItems([{ itemName: "", quantity: "" }]);
         onOpenChange(false);
       } else {
@@ -105,7 +109,7 @@ export default function AddItemsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg bg-popover p-6 rounded-lg">
+      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold text-foreground">
             Add Items to Docket
@@ -113,22 +117,92 @@ export default function AddItemsDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="enquirySelect" className="text-sm font-semibold text-foreground">
+          <div className="space-y-1.5 relative">
+            <Label className="text-sm font-semibold text-foreground">
               Select Docket Number
             </Label>
-            <Select value={enquiryId} onValueChange={(val) => setEnquiryId(val || "")}>
-              <SelectTrigger id="enquirySelect" className="w-full">
-                <SelectValue placeholder="Choose a docket..." />
-              </SelectTrigger>
-              <SelectContent>
-                {enquiries.map((enq) => (
-                  <SelectItem key={enq.id} value={enq.id} className="text-sm">
-                    {enq.docketNumber} - {enq.partyName.split(",")[0]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 text-left text-slate-700 bg-white"
+              >
+                <span className="truncate">
+                  {enquiryId
+                    ? (() => {
+                        const matched = enquiries.find((e) => e.id === enquiryId);
+                        return matched
+                          ? `${matched.docketNumber} - ${matched.partyName.split(",")[0]}`
+                          : "Choose a docket...";
+                      })()
+                    : "Choose a docket..."}
+                </span>
+                <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+              </button>
+
+              {isOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setIsOpen(false)}
+                  />
+                  <div className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-md border border-slate-200 bg-white text-slate-900 shadow-lg p-2 space-y-2 max-h-[300px] flex flex-col animate-in fade-in-80 duration-100">
+                    <div className="relative flex items-center border border-slate-200 rounded-md px-2.5 bg-slate-50">
+                      <Search className="h-4 w-4 text-slate-400 mr-2 shrink-0" />
+                      <input
+                        type="text"
+                        placeholder="Search docket number..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-transparent py-1.5 text-xs outline-none placeholder:text-slate-400 text-slate-700"
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="overflow-y-auto flex-1 max-h-[200px] divide-y divide-slate-100">
+                      {(() => {
+                        const filtered = enquiries.filter(
+                          (enq) =>
+                            enq.docketNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            enq.partyName.toLowerCase().includes(searchQuery.toLowerCase())
+                        );
+                        if (filtered.length > 0) {
+                          return filtered.map((enq) => {
+                            const isSelected = enq.id === enquiryId;
+                            return (
+                              <button
+                                key={enq.id}
+                                type="button"
+                                onClick={() => {
+                                  setEnquiryId(enq.id);
+                                  setIsOpen(false);
+                                  setSearchQuery("");
+                                }}
+                                className={`w-full text-left px-2.5 py-2 text-xs transition-colors rounded hover:bg-slate-100 flex items-center justify-between ${
+                                  isSelected ? "bg-blue-50 font-semibold text-[#0f62fe]" : "text-slate-700"
+                                }`}
+                              >
+                                <span className="truncate">
+                                  {enq.docketNumber} - {enq.partyName}
+                                </span>
+                                {isSelected && <Check className="h-3.5 w-3.5 text-[#0f62fe] shrink-0" />}
+                              </button>
+                            );
+                          });
+                        } else {
+                          return (
+                            <div className="py-4 text-center text-xs text-slate-400">
+                              No docket numbers found.
+                            </div>
+                          );
+                        }
+                      })()}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           <div className="space-y-3">

@@ -277,3 +277,18 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* Thin vertical scrollbar for table cells */
+.cell-scrollable::-webkit-scrollbar {
+  width: 4px;
+}
+.cell-scrollable::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cell-scrollable::-webkit-scrollbar-thumb {
+  background: #cbd5e1; /* slate-300 */
+  border-radius: 2px;
+}
+.cell-scrollable::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8; /* slate-400 */
+}

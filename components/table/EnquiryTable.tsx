@@ -1,11 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
-import { FileText, ChevronDown, ChevronRight, Search } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { FileText, ChevronDown, ChevronRight, Search, Download } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import ActionsDropdown from "./ActionsDropdown";
+import Pagination from "./Pagination";
 import { updateEnquiryFieldAction, updateItemFieldAction } from "@/app/actions";
+// import { detectItemType } from "@/lib/itemTypeKeywords";
 import { PARTY_NAMES } from "@/lib/partyNames";
+import * as XLSX from "xlsx";
 
 interface EnquiryItem {
   id: string;
@@ -23,6 +27,7 @@ interface EnquiryItem {
   cost: any | null;
   stockStatus: string | null;
   discount: any | null;
+  quotedRate: string | null;
 }
 
 interface Attachment {
@@ -136,10 +141,19 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     cost: "",
     stockStatus: "",
     discount: "",
+    quotedRate: "",
     attachment: "",
   });
 
-  // Custom column widths state (expanded for 27 columns)
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  // Reset pagination to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters]);
+
+  // Custom column widths state (expanded for 28 columns)
   const [columnWidths, setColumnWidths] = useState<Record<number, number>>({
     0: 260, // Enquiry Date
     1: 120, // Docket No
@@ -166,17 +180,26 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     22: 100,// Cost
     23: 110,// Stock Status
     24: 95, // Discount
-    25: 140,// Attachment
-    26: 80, // Actions
+    25: 120,// Quoted Rate
+    26: 140,// Attachment
+    27: 80, // Actions
   });
 
   const [isPartyFilterOpen, setIsPartyFilterOpen] = useState(false);
   const [partySearch, setPartySearch] = useState("");
 
+  const hasActiveFilters = Object.values(filters).some((val) => {
+    if (Array.isArray(val)) return val.length > 0;
+    return val !== "" && val !== "All";
+  });
+
   const toggleExpand = (id: string) => {
+    const isCurrentlyExpanded = expanded[id] !== undefined 
+      ? expanded[id] 
+      : hasActiveFilters;
     setExpanded((prev) => ({
       ...prev,
-      [id]: !prev[id],
+      [id]: !isCurrentlyExpanded,
     }));
   };
 
@@ -407,6 +430,12 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
       ) {
         return false;
       }
+      if (
+        filters.quotedRate &&
+        !(item.quotedRate || "").toLowerCase().includes(filters.quotedRate.toLowerCase())
+      ) {
+        return false;
+      }
       return true;
     });
 
@@ -424,6 +453,97 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     return true;
   });
 
+  const paginatedEnquiries = filteredEnquiries.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+
+  const handleExportToExcel = () => {
+    const toastId = toast.loading("Preparing Excel file...");
+    try {
+      const rows: any[] = [];
+
+      filteredEnquiries.forEach((enquiry) => {
+        if (!enquiry.items || enquiry.items.length === 0) {
+          rows.push({
+            "Enquiry Date": new Date(enquiry.enquiryDate).toLocaleDateString("en-GB"),
+            "Docket No": enquiry.docketNumber,
+            "Party Name": enquiry.partyName,
+            "Enquiry Type": enquiry.enquiryType || "",
+            "State": enquiry.state || "",
+            "Payment Terms": enquiry.paymentTerms || "",
+            "Inspection": enquiry.inspection || "",
+            "PBG": enquiry.pbg || "",
+            "Utility": enquiry.utility || "",
+            "VA%": enquiry.vaPercent ? `${enquiry.vaPercent}%` : "",
+            "Order Status": enquiry.orderStatus || "",
+            "Item Name": "",
+            "Quantity": "",
+            "Item Type": "",
+            "MOC": "",
+            "Size": "",
+            "PN Rating": "",
+            "Operation Type": "",
+            "Extension": "",
+            "Bypass": "",
+            "Product Cost": "",
+            "Cost Ref Code": "",
+            "Cost": "",
+            "Stock Status": "",
+            "Discount": "",
+            "Quotation Rate": "",
+            "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
+            "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
+          });
+        } else {
+          enquiry.items.forEach((item) => {
+            rows.push({
+              "Enquiry Date": new Date(enquiry.enquiryDate).toLocaleDateString("en-GB"),
+              "Docket No": enquiry.docketNumber,
+              "Party Name": enquiry.partyName,
+              "Enquiry Type": enquiry.enquiryType || "",
+              "State": enquiry.state || "",
+              "Payment Terms": enquiry.paymentTerms || "",
+              "Inspection": enquiry.inspection || "",
+              "PBG": enquiry.pbg || "",
+              "Utility": enquiry.utility || "",
+              "VA%": enquiry.vaPercent ? `${enquiry.vaPercent}%` : "",
+              "Order Status": enquiry.orderStatus || "",
+              "Item Name": item.itemName,
+              "Quantity": item.quantity ? Number(item.quantity) : "",
+              "Item Type": item.itemType || "",
+              "MOC": item.moc || "",
+              "Size": item.size || "",
+              "PN Rating": item.pnRating || "",
+              "Operation Type": item.operationType || "",
+              "Extension": item.extension || "",
+              "Bypass": item.bypass || "",
+              "Product Cost": item.productCost ? Number(item.productCost) : "",
+              "Cost Ref Code": item.costRefCode || "",
+              "Cost": item.cost ? Number(item.cost) : "",
+              "Stock Status": item.stockStatus || "",
+              "Discount": item.discount ? `${Number(item.discount)}%` : "",
+              "Quotation Rate": item.quotedRate || "",
+              "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
+              "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
+            });
+          });
+        }
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Enquiries");
+      
+      const dateStr = new Date().toISOString().split("T")[0];
+      XLSX.writeFile(workbook, `GMD_Quotation_Export_${dateStr}.xlsx`);
+      toast.success("Excel file downloaded successfully!", { id: toastId });
+    } catch (err: any) {
+      console.error("Export to Excel failed:", err);
+      toast.error("Failed to export Excel file.", { id: toastId });
+    }
+  };
+
   const totalTableWidth = Object.values(columnWidths).reduce((a, b) => a + b, 0);
 
   const inputClass =
@@ -438,8 +558,25 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     "w-full bg-transparent border-none text-xs text-slate-600 outline-none cursor-pointer focus:bg-white focus:ring-1 focus:ring-blue-500 rounded p-1 hover:bg-slate-100/80 transition-colors normal-case font-medium";
 
   return (
-    <div className="flex-1 overflow-x-auto">
-      <table
+    <div className="flex flex-col flex-1 w-full max-w-full min-w-0">
+      {/* Table Toolbar */}
+      <div className="flex justify-between items-center px-4 py-2.5 bg-slate-50/75 border-b border-slate-200">
+        <span className="text-[11px] font-semibold text-slate-500">
+          Showing {filteredEnquiries.length} of {enquiries.length} enquiries
+        </span>
+        
+        <Button
+          type="button"
+          onClick={handleExportToExcel}
+          className="flex h-8 items-center gap-1.5 px-3 text-xs font-semibold text-[#0f62fe] border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-md cursor-pointer transition-all shadow-xs shrink-0"
+        >
+          <Download className="h-3.5 w-3.5 text-[#0f62fe] stroke-[2]" />
+          Export Excel
+        </Button>
+      </div>
+
+      <div className="flex-1 overflow-x-auto overflow-y-auto max-h-[70vh] w-full min-w-0 border-b border-slate-200">
+        <table
         className="border-collapse text-left border border-slate-200"
         style={{ tableLayout: "fixed", width: totalTableWidth }}
       >
@@ -451,7 +588,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
         <thead>
           <tr className="bg-slate-50/75 select-none">
             {/* 0. Enquiry Date */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Enquiry Date</div>
               <div className="flex gap-1 items-center mt-1.5">
                 <input
@@ -483,7 +620,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 1. Docket No */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Docket No</div>
               <input
                 type="text"
@@ -505,7 +642,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 2. Party Name */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Party Name</div>
               <div className="relative mt-1.5 normal-case font-normal text-left text-slate-700">
                 <button
@@ -613,7 +750,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 3. Enquiry Type Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Enquiry Type</div>
               <select
                 value={filters.enquiryType}
@@ -638,7 +775,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 4. State Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>State</div>
               <select
                 value={filters.state}
@@ -663,7 +800,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 5. Payment Terms Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Payment Terms</div>
               <select
                 value={filters.paymentTerms}
@@ -688,7 +825,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 6. Inspection Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Inspection</div>
               <select
                 value={filters.inspection}
@@ -713,7 +850,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 7. PBG Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>PBG</div>
               <select
                 value={filters.pbg}
@@ -738,7 +875,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 8. Utility Search */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Utility</div>
               <input
                 type="text"
@@ -760,7 +897,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 9. VA% Search */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>VA%</div>
               <input
                 type="text"
@@ -782,7 +919,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 10. Order Status Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Order Status</div>
               <select
                 value={filters.orderStatus}
@@ -807,7 +944,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 11. Item Name As Per Party */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Item Name</div>
               <input
                 type="text"
@@ -829,7 +966,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 12. Quantity */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Quantity</div>
               <input
                 type="text"
@@ -851,7 +988,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 13. Item Type Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Item Type</div>
               <select
                 value={filters.itemType}
@@ -876,7 +1013,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 14. MOC Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>MOC</div>
               <select
                 value={filters.moc}
@@ -901,7 +1038,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 15. Size Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Size</div>
               <select
                 value={filters.size}
@@ -926,7 +1063,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 16. PN Rating Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>PN Rating</div>
               <select
                 value={filters.pnRating}
@@ -951,7 +1088,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 17. Operation Type Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Operation Type</div>
               <select
                 value={filters.operationType}
@@ -976,7 +1113,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 18. Extension Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Extension</div>
               <select
                 value={filters.extension}
@@ -1001,7 +1138,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 19. Bypass Dropdown */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Bypass</div>
               <select
                 value={filters.bypass}
@@ -1026,7 +1163,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 20. Product Cost */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Product Cost</div>
               <input
                 type="text"
@@ -1048,7 +1185,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 21. Cost Ref Code */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Cost Ref Code</div>
               <input
                 type="text"
@@ -1070,7 +1207,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 22. Cost */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Cost</div>
               <input
                 type="text"
@@ -1092,7 +1229,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 23. Stock Status */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Stock Status</div>
               <input
                 type="text"
@@ -1114,7 +1251,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             </th>
 
             {/* 24. Discount */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div>Discount</div>
               <input
                 type="text"
@@ -1135,15 +1272,15 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
               </div>
             </th>
 
-            {/* 25. Attachment */}
-            <th className="relative py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Attachment</div>
+            {/* 25. Quoted Rate */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+              <div>Quotation Rate</div>
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.attachment}
+                value={filters.quotedRate}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, attachment: e.target.value }))
+                  setFilters((prev) => ({ ...prev, quotedRate: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1157,8 +1294,30 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
               </div>
             </th>
 
-            {/* 26. Actions */}
-            <th className="py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-b border-slate-200 text-right">
+            {/* 26. Attachment */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+              <div>Attachment</div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filters.attachment}
+                onChange={(e) =>
+                  setFilters((prev) => ({ ...prev, attachment: e.target.value }))
+                }
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(26, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] transition-colors" />
+              </div>
+            </th>
+
+            {/* 27. Actions */}
+            <th className="sticky top-0 z-30 bg-slate-50 py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-b border-slate-200 text-right">
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
             </th>
@@ -1167,7 +1326,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
         <tbody className="bg-white">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={27} className="py-20 px-4 text-center border-b border-slate-200">
+              <td colSpan={28} className="py-20 px-4 text-center border-b border-slate-200">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 text-slate-400 mb-4 border border-slate-100">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -1182,11 +1341,13 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
               </td>
             </tr>
           ) : (
-            filteredEnquiries.map((enquiry) => {
+            paginatedEnquiries.map((enquiry) => {
               const { company, branch } = parseParty(enquiry.partyName);
               const initials = getInitials(enquiry.partyName);
               const hasMultiple = enquiry.items.length > 1;
-              const isExpanded = !!expanded[enquiry.id];
+              const isExpanded = expanded[enquiry.id] !== undefined
+                ? expanded[enquiry.id]
+                : hasActiveFilters;
               const firstItem = enquiry.items[0];
 
               // Setup custom brand avatar styles
@@ -1233,6 +1394,11 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                         <span className="hover:underline cursor-pointer truncate">
                           {enquiry.docketNumber}
                         </span>
+                        {hasMultiple && !isExpanded && (
+                          <span className="ml-1.5 px-1.5 py-0.5 text-[9px] font-medium bg-blue-50 text-blue-600 rounded-full border border-blue-100 shrink-0">
+                            +{enquiry.items.length - 1} more items
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -1286,17 +1452,39 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                     </td>
 
                     {/* 5. Payment Terms Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-slate-200 last:border-r-0">
-                      <select
-                        value={enquiry.paymentTerms || ""}
-                        onChange={(e) => handleEnquiryFieldChange(enquiry.id, "paymentTerms", e.target.value)}
-                        className={cellSelectClass}
-                      >
-                        <option value="">-</option>
-                        {dropdownOptions.paymentTerms.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
+                    <td className="py-1 px-1 border-r border-b border-slate-200 last:border-r-0 align-top group">
+                      <div className="flex gap-0.5 items-start w-full">
+                        <textarea
+                          key={enquiry.paymentTerms || ""}
+                          defaultValue={enquiry.paymentTerms || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (enquiry.paymentTerms || "")) {
+                              handleEnquiryFieldChange(enquiry.id, "paymentTerms", e.target.value);
+                            }
+                          }}
+                          placeholder="-"
+                          rows={2}
+                          className="w-full resize-none bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium cell-scrollable leading-normal max-h-12 overflow-y-auto"
+                        />
+                        <div className="relative shrink-0 w-4 h-7 flex items-center justify-center cursor-pointer">
+                          <select
+                            value={enquiry.paymentTerms || ""}
+                            onChange={(e) => {
+                              handleEnquiryFieldChange(enquiry.id, "paymentTerms", e.target.value);
+                              const flexContainer = e.target.closest('.flex');
+                              const textarea = flexContainer ? flexContainer.querySelector('textarea') : null;
+                              if (textarea) textarea.value = e.target.value;
+                            }}
+                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                          >
+                            <option value="">-</option>
+                            {dropdownOptions.paymentTerms.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                          <ChevronDown className="h-3 w-3 text-slate-400 pointer-events-none group-hover:text-slate-600 z-0" />
+                        </div>
+                      </div>
                     </td>
 
                     {/* 6. Inspection Inline Select */}
@@ -1373,8 +1561,10 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                     </td>
 
                     {/* First Item Name */}
-                    <td className="py-3.5 px-4 text-xs text-slate-600 font-medium border-r border-b border-slate-200 last:border-r-0 truncate">
-                      {firstItem ? firstItem.itemName : "No items"}
+                    <td className="py-2 px-2 text-xs text-slate-600 font-medium border-r border-b border-slate-200 last:border-r-0 align-top">
+                      <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable break-words whitespace-normal leading-normal">
+                        {firstItem ? firstItem.itemName : "No items"}
+                      </div>
                     </td>
 
                     {/* First Item Quantity */}
@@ -1579,6 +1769,23 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                       ) : "-"}
                     </td>
 
+                    {/* First Item Quoted Rate */}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          type="text"
+                          defaultValue={firstItem.quotedRate || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.quotedRate || "")) {
+                              handleItemFieldChange(firstItem.id, "quotedRate", e.target.value);
+                            }
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                        />
+                      ) : "-"}
+                    </td>
+
                     {/* Attachment */}
                     <td className="py-3.5 px-4 text-xs border-r border-b border-slate-200 last:border-r-0 truncate">
                       {enquiry.attachments && enquiry.attachments.length > 0 ? (
@@ -1651,8 +1858,10 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                         <td className="py-3 px-4 border-r border-b border-slate-200 last:border-r-0"></td>
 
                         {/* Additional Item Name */}
-                        <td className="py-3.5 px-4 text-xs text-slate-600 font-medium border-r border-b border-slate-200 last:border-r-0 truncate">
-                          {item.itemName}
+                        <td className="py-2 px-2 text-xs text-slate-600 font-medium border-r border-b border-slate-200 last:border-r-0 align-top">
+                          <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable break-words whitespace-normal leading-normal">
+                            {item.itemName}
+                          </div>
                         </td>
                         
                         {/* Additional Item Quantity */}
@@ -1833,6 +2042,21 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                           />
                         </td>
 
+                        {/* Quoted Rate */}
+                        <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                          <input
+                            type="text"
+                            defaultValue={item.quotedRate || ""}
+                            onBlur={(e) => {
+                              if (e.target.value !== (item.quotedRate || "")) {
+                                handleItemFieldChange(item.id, "quotedRate", e.target.value);
+                              }
+                            }}
+                            placeholder="-"
+                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                          />
+                        </td>
+
                         {/* Empty attachment column */}
                         <td className="py-3 px-4 border-r border-b border-slate-200 last:border-r-0"></td>
 
@@ -1869,5 +2093,19 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
         </tbody>
       </table>
     </div>
+
+    {filteredEnquiries.length > 0 && (
+      <Pagination
+        currentPage={currentPage}
+        totalCount={filteredEnquiries.length}
+        pageSize={pageSize}
+        onPageChange={(page) => setCurrentPage(page)}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setCurrentPage(1);
+        }}
+      />
+    )}
+  </div>
   );
 }

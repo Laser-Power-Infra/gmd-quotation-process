@@ -9,12 +9,16 @@ interface PaginationProps {
   currentPage: number;
   totalCount: number;
   pageSize: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
 }
 
 export default function Pagination({
   currentPage,
   totalCount,
   pageSize,
+  onPageChange,
+  onPageSizeChange,
 }: PaginationProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -26,9 +30,13 @@ export default function Pagination({
 
   const handlePageChange = (page: number) => {
     if (page < 1 || page > totalPages) return;
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("page", page.toString());
-    router.push(`?${params.toString()}`);
+    if (onPageChange) {
+      onPageChange(page);
+    } else {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("page", page.toString());
+      router.push(`?${params.toString()}`);
+    }
   };
 
   // Generate page numbers array (e.g. 1, 2, 3, ..., totalPages)
@@ -63,10 +71,28 @@ export default function Pagination({
 
   return (
     <div className="flex h-14 items-center justify-between border-t border-border bg-muted/30 px-6 py-4">
-      <span className="text-xs text-muted-foreground font-medium">
-        Showing <span className="text-foreground">{startItem}-{endItem}</span> of{" "}
-        <span className="text-foreground">{totalCount.toLocaleString()}</span> results
-      </span>
+      <div className="flex items-center gap-4">
+        <span className="text-xs text-muted-foreground font-medium">
+          Showing <span className="text-foreground">{startItem}-{endItem}</span> of{" "}
+          <span className="text-foreground">{totalCount.toLocaleString()}</span> results
+        </span>
+        {onPageSizeChange && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span>Show:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+              className="h-7 rounded border border-border bg-white px-2 text-xs text-foreground outline-none cursor-pointer focus:border-slate-300"
+            >
+              <option value={10}>10 rows</option>
+              <option value={20}>20 rows</option>
+              <option value={50}>50 rows</option>
+              <option value={100}>100 rows</option>
+              <option value={500}>500 rows</option>
+            </select>
+          </div>
+        )}
+      </div>
 
       <div className="flex items-center gap-1">
         <Button
