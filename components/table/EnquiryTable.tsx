@@ -28,6 +28,9 @@ interface EnquiryItem {
   stockStatus: string | null;
   discount: any | null;
   quotedRate: string | null;
+  itemNameMerge: string | null;
+  totalValue: string | null;
+  itemWiseTotalValue: string | null;
 }
 
 interface Attachment {
@@ -142,6 +145,9 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     stockStatus: "",
     discount: "",
     quotedRate: "",
+    itemNameMerge: "",
+    totalValue: "",
+    itemWiseTotalValue: "",
     attachment: "",
   });
 
@@ -181,8 +187,11 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     23: 110,// Stock Status
     24: 95, // Discount
     25: 120,// Quoted Rate
-    26: 140,// Attachment
-    27: 80, // Actions
+    26: 150,// Item Name Merge
+    27: 120,// Total Value
+    28: 140,// Itemwise Total Value
+    29: 140,// Attachment
+    30: 80, // Actions
   });
 
   const [isPartyFilterOpen, setIsPartyFilterOpen] = useState(false);
@@ -234,6 +243,25 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
       const dbVal = val === "" ? null : val;
       const res = await updateEnquiryFieldAction(enquiryId, field, dbVal);
       if (res.success) {
+        // Handle VA% change -> recalculate Quotation Rate for all items in this enquiry
+        if (field === "vaPercent") {
+          const numericVa = val === "" ? null : parseFloat(val.replace(/%/g, ""));
+          const targetEnquiry = enquiries.find((enq) => enq.id === enquiryId);
+          if (targetEnquiry && targetEnquiry.items) {
+            for (const item of targetEnquiry.items) {
+              const costVal = item.cost ? parseFloat(item.cost.toString()) : null;
+              if (costVal !== null && costVal > 0) {
+                let newQuotedRate = "";
+                if (numericVa !== null) {
+                  const calculated = costVal * (1 + (numericVa / 100));
+                  newQuotedRate = calculated.toFixed(2);
+                }
+                await updateItemFieldAction(item.id, "quotedRate", newQuotedRate === "" ? null : newQuotedRate);
+              }
+            }
+          }
+        }
+
         toast.success("Saved successfully.", { id: toastId });
       } else {
         toast.error(res.error || "Failed to save.", { id: toastId });
@@ -243,12 +271,111 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     }
   };
 
+  const getItemNameMerge = (item: EnquiryItem) => {
+    const orderedFields = [
+      item.itemType,
+      item.moc,
+      item.size,
+      item.pnRating,
+      item.operationType,
+      item.extension,
+      item.bypass
+    ];
+    return orderedFields
+      .map(val => (val || "").trim())
+      .filter(Boolean)
+      .join("-");
+  };
+
   const handleItemFieldChange = async (itemId: string, field: string, val: string) => {
     const toastId = toast.loading(`Saving ${field}...`);
     try {
       const dbVal = val === "" ? null : val;
       const res = await updateItemFieldAction(itemId, field, dbVal);
       if (res.success) {
+        // Automatically check if the updated field is one of the source fields for Item Name Merge
+        const sourceFields = [
+          "itemType",
+          "moc",
+          "size",
+          "pnRating",
+          "operationType",
+          "extension",
+          "bypass"
+        ];
+        
+        if (sourceFields.includes(field)) {
+          // Find the current item in the enquiries state
+          let targetItem: any = null;
+          for (const enquiry of enquiries) {
+            const found = enquiry.items.find((it) => it.id === itemId);
+            if (found) {
+              targetItem = found;
+              break;
+            }
+          }
+          
+          if (targetItem) {
+            // Build the updated object with the new value we just saved
+            const updatedItem = {
+              ...targetItem,
+              [field]: dbVal
+            };
+            const mergedVal = getItemNameMerge(updatedItem);
+            // Save the merged value to the database!
+            await updateItemFieldAction(itemId, "itemNameMerge", mergedVal === "" ? null : mergedVal);
+          }
+        }
+
+        // Handle Cost change -> recalculate Quotation Rate
+        if (field === "cost") {
+          const numericCost = val === "" ? null : parseFloat(val);
+          const parentEnquiry = enquiries.find((enq) => enq.items.some((it) => it.id === itemId));
+          if (parentEnquiry && parentEnquiry.vaPercent !== null && numericCost !== null && numericCost > 0) {
+            const calculated = numericCost * (1 + (parentEnquiry.vaPercent / 100));
+            const newQuotedRate = calculated.toFixed(2);
+            await updateItemFieldAction(itemId, "quotedRate", newQuotedRate);
+          }
+        }
+
+        // Handle Quotation Rate change -> recalculate VA% and update other items
+        if (field === "quotedRate") {
+          const numericQuotedRate = val === "" ? null : parseFloat(val);
+          let targetItem: any = null;
+          let parentEnquiry: any = null;
+          for (const enq of enquiries) {
+            const found = enq.items.find((it) => it.id === itemId);
+            if (found) {
+              targetItem = found;
+              parentEnquiry = enq;
+              break;
+            }
+          }
+          
+          if (targetItem && parentEnquiry) {
+            const costVal = targetItem.cost ? parseFloat(targetItem.cost.toString()) : null;
+            if (costVal !== null && costVal > 0 && numericQuotedRate !== null) {
+              const calculatedVa = ((numericQuotedRate / costVal) - 1) * 100;
+              const formattedVa = calculatedVa.toFixed(2);
+              
+              // 1. Update the parent enquiry's vaPercent
+              await updateEnquiryFieldAction(parentEnquiry.id, "vaPercent", formattedVa);
+              
+              // 2. Update other items in the same enquiry
+              if (parentEnquiry.items) {
+                for (const item of parentEnquiry.items) {
+                  if (item.id === itemId) continue;
+                  const otherCost = item.cost ? parseFloat(item.cost.toString()) : null;
+                  if (otherCost !== null && otherCost > 0) {
+                    const otherQuotedRate = otherCost * (1 + (calculatedVa / 100));
+                    await updateItemFieldAction(item.id, "quotedRate", otherQuotedRate.toFixed(2));
+                  }
+                }
+              }
+            }
+          }
+        }
+        
         toast.success("Saved successfully.", { id: toastId });
       } else {
         toast.error(res.error || "Failed to save.", { id: toastId });
@@ -436,6 +563,24 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
       ) {
         return false;
       }
+      if (
+        filters.itemNameMerge &&
+        !(item.itemNameMerge || "").toLowerCase().includes(filters.itemNameMerge.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.totalValue &&
+        !(item.totalValue || "").toLowerCase().includes(filters.totalValue.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.itemWiseTotalValue &&
+        !(item.itemWiseTotalValue || "").toLowerCase().includes(filters.itemWiseTotalValue.toLowerCase())
+      ) {
+        return false;
+      }
       return true;
     });
 
@@ -492,6 +637,9 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
             "Stock Status": "",
             "Discount": "",
             "Quotation Rate": "",
+            "Item Name Merge": "",
+            "Total Value": "",
+            "Itemwise Total Value": "",
             "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
             "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
           });
@@ -524,6 +672,9 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
               "Stock Status": item.stockStatus || "",
               "Discount": item.discount ? `${Number(item.discount)}%` : "",
               "Quotation Rate": item.quotedRate || "",
+              "Item Name Merge": item.itemNameMerge || "",
+              "Total Value": item.totalValue || "",
+              "Itemwise Total Value": item.itemWiseTotalValue || "",
               "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
               "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
             });
@@ -1294,15 +1445,15 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
               </div>
             </th>
 
-            {/* 26. Attachment */}
+            {/* 26. Item Name Merge */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Attachment</div>
+              <div>Item Name (Merge)</div>
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.attachment}
+                value={filters.itemNameMerge}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, attachment: e.target.value }))
+                  setFilters((prev) => ({ ...prev, itemNameMerge: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1316,7 +1467,73 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
               </div>
             </th>
 
-            {/* 27. Actions */}
+            {/* 27. Total Value */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+              <div>Total Value</div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filters.totalValue}
+                onChange={(e) =>
+                  setFilters((prev) => ({ ...prev, totalValue: e.target.value }))
+                }
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(27, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] transition-colors" />
+              </div>
+            </th>
+
+            {/* 28. Itemwise Total Value */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+              <div>Itemwise Total Value</div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filters.itemWiseTotalValue}
+                onChange={(e) =>
+                  setFilters((prev) => ({ ...prev, itemWiseTotalValue: e.target.value }))
+                }
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(28, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] transition-colors" />
+              </div>
+            </th>
+
+            {/* 29. Attachment */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+              <div>Attachment</div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filters.attachment}
+                onChange={(e) =>
+                  setFilters((prev) => ({ ...prev, attachment: e.target.value }))
+                }
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(29, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] transition-colors" />
+              </div>
+            </th>
+
+            {/* 30. Actions */}
             <th className="sticky top-0 z-30 bg-slate-50 py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-b border-slate-200 text-right">
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
@@ -1326,7 +1543,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
         <tbody className="bg-white">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={28} className="py-20 px-4 text-center border-b border-slate-200">
+              <td colSpan={31} className="py-20 px-4 text-center border-b border-slate-200">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 text-slate-400 mb-4 border border-slate-100">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -1786,6 +2003,45 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                       ) : "-"}
                     </td>
 
+                    {/* First Item Item Name Merge */}
+                    <td className="py-3 px-3 border-r border-b border-slate-200 last:border-r-0 text-xs text-slate-500 font-medium truncate">
+                      {firstItem ? getItemNameMerge(firstItem) || "-" : "-"}
+                    </td>
+
+                    {/* First Item Total Value */}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          type="text"
+                          defaultValue={firstItem.totalValue || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.totalValue || "")) {
+                              handleItemFieldChange(firstItem.id, "totalValue", e.target.value);
+                            }
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                        />
+                      ) : "-"}
+                    </td>
+
+                    {/* First Item Itemwise Total Value */}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          type="text"
+                          defaultValue={firstItem.itemWiseTotalValue || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.itemWiseTotalValue || "")) {
+                              handleItemFieldChange(firstItem.id, "itemWiseTotalValue", e.target.value);
+                            }
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                        />
+                      ) : "-"}
+                    </td>
+
                     {/* Attachment */}
                     <td className="py-3.5 px-4 text-xs border-r border-b border-slate-200 last:border-r-0 truncate">
                       {enquiry.attachments && enquiry.attachments.length > 0 ? (
@@ -2050,6 +2306,41 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                             onBlur={(e) => {
                               if (e.target.value !== (item.quotedRate || "")) {
                                 handleItemFieldChange(item.id, "quotedRate", e.target.value);
+                              }
+                            }}
+                            placeholder="-"
+                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                          />
+                        </td>
+
+                        {/* Item Name Merge */}
+                        <td className="py-3 px-3 border-r border-b border-slate-200 last:border-r-0 text-xs text-slate-500 font-medium truncate">
+                          {getItemNameMerge(item) || "-"}
+                        </td>
+
+                        {/* Total Value */}
+                        <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                          <input
+                            type="text"
+                            defaultValue={item.totalValue || ""}
+                            onBlur={(e) => {
+                              if (e.target.value !== (item.totalValue || "")) {
+                                handleItemFieldChange(item.id, "totalValue", e.target.value);
+                              }
+                            }}
+                            placeholder="-"
+                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                          />
+                        </td>
+
+                        {/* Itemwise Total Value */}
+                        <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                          <input
+                            type="text"
+                            defaultValue={item.itemWiseTotalValue || ""}
+                            onBlur={(e) => {
+                              if (e.target.value !== (item.itemWiseTotalValue || "")) {
+                                handleItemFieldChange(item.id, "itemWiseTotalValue", e.target.value);
                               }
                             }}
                             placeholder="-"

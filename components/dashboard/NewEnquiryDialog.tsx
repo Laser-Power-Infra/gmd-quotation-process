@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createNewEnquiryAction } from "@/app/actions";
 import { PARTY_NAMES } from "@/lib/partyNames";
+import { parseClipboardText } from "@/lib/pasteParser";
 
 interface NewEnquiryDialogProps {
   open: boolean;
@@ -159,6 +160,52 @@ export default function NewEnquiryDialog({
     const newItems = [...items];
     newItems[index][field] = value;
     setItems(newItems);
+  };
+
+  const handleItemNamePaste = (index: number, e: React.ClipboardEvent<HTMLInputElement>) => {
+    const clipboardData = e.clipboardData.getData("text");
+    if (!clipboardData) return;
+
+    const parsed = parseClipboardText(clipboardData);
+    if (parsed.length <= 1) {
+      return; // Fall back to standard single-value paste
+    }
+
+    e.preventDefault();
+
+    const newItems = [...items];
+    let currentIdx = index;
+
+    parsed.forEach((parsedItem) => {
+      if (currentIdx < newItems.length) {
+        newItems[currentIdx] = {
+          ...newItems[currentIdx],
+          itemName: parsedItem.itemName,
+          quantity: parsedItem.quantity.toString(),
+        };
+      } else {
+        newItems.push({
+          itemName: parsedItem.itemName,
+          quantity: parsedItem.quantity.toString(),
+          itemType: "",
+          moc: "",
+          size: "",
+          pnRating: "",
+          operationType: "",
+          extension: "",
+          bypass: "",
+          productCost: "",
+          costRefCode: "",
+          cost: "",
+          stockStatus: "",
+          discount: "",
+        });
+      }
+      currentIdx++;
+    });
+
+    setItems(newItems);
+    toast.success(`Successfully pasted ${parsed.length} items!`);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -619,6 +666,7 @@ export default function NewEnquiryDialog({
                         placeholder="e.g. DALUI-MAKE BUTTERFLY VALVE"
                         value={item.itemName}
                         onChange={(e) => handleItemChange(index, "itemName", e.target.value)}
+                        onPaste={(e) => handleItemNamePaste(index, e)}
                         className="h-8 text-xs"
                       />
                     </div>

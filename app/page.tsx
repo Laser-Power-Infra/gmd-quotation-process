@@ -55,12 +55,16 @@ export default async function Page({ searchParams }: PageProps) {
     await prisma.enquiry.findMany({
       where: whereClause,
       include: {
-        items: true,
+        items: {
+          orderBy: {
+            createdAt: "asc"
+          }
+        },
         attachments: true,
       },
-      orderBy: {
-        enquiryDate: "desc",
-      },
+      // orderBy: {
+      //   enquiryDate: "desc",
+      // },
     })
   ).map((enquiry) => ({
     ...enquiry,
@@ -469,7 +473,8 @@ export default async function Page({ searchParams }: PageProps) {
     orderStatuses,
     itemTypes,
     mocs,
-    sizes: getUniqueOptions(dbSizes, "size") as string[],
+    sizes: Array.from(new Set(["15", "25", "40", "65", ...getUniqueOptions(dbSizes, "size")]))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) as string[],
     pnRatings,
     operationTypes,
     extensions,

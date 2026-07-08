@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { addItemsAction } from "@/app/actions";
+import { parseClipboardText } from "@/lib/pasteParser";
 
 interface AddItemsDialogProps {
   open: boolean;
@@ -60,6 +61,39 @@ export default function AddItemsDialog({
     const newItems = [...items];
     newItems[index][field] = value;
     setItems(newItems);
+  };
+
+  const handleItemNamePaste = (index: number, e: React.ClipboardEvent<HTMLInputElement>) => {
+    const clipboardData = e.clipboardData.getData("text");
+    if (!clipboardData) return;
+
+    const parsed = parseClipboardText(clipboardData);
+    if (parsed.length <= 1) {
+      return; // Fall back to standard single-value paste
+    }
+
+    e.preventDefault();
+
+    const newItems = [...items];
+    let currentIdx = index;
+
+    parsed.forEach((parsedItem) => {
+      if (currentIdx < newItems.length) {
+        newItems[currentIdx] = {
+          itemName: parsedItem.itemName,
+          quantity: parsedItem.quantity.toString(),
+        };
+      } else {
+        newItems.push({
+          itemName: parsedItem.itemName,
+          quantity: parsedItem.quantity.toString(),
+        });
+      }
+      currentIdx++;
+    });
+
+    setItems(newItems);
+    toast.success(`Successfully pasted ${parsed.length} items!`);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -232,6 +266,7 @@ export default function AddItemsDialog({
                       onChange={(e) =>
                         handleItemChange(index, "itemName", e.target.value)
                       }
+                      onPaste={(e) => handleItemNamePaste(index, e)}
                     />
                   </div>
 
