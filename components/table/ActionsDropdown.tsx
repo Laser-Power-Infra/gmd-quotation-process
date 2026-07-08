@@ -49,6 +49,18 @@ interface DropdownOptions {
   bypasses: string[];
 }
 
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64String = (reader.result as string).split(",")[1];
+      resolve(base64String);
+    };
+    reader.onerror = (error) => reject(error);
+  });
+};
+
 interface ActionsDropdownProps {
   item: {
     id: string;
@@ -131,17 +143,19 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
       type: att.type || "",
     }))
   );
+  const [selectedEditFiles, setSelectedEditFiles] = useState<File[]>([]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const fileList = Array.from(e.target.files).map((file) => ({
+      const fileList = Array.from(e.target.files);
+      setSelectedEditFiles(fileList);
+      setEditFiles(fileList.map((file) => ({
         name: file.name,
         size: file.size,
         type: file.name.split(".").pop() || "",
-      }));
-      setEditFiles(fileList);
+      })));
     }
   };
 
@@ -251,7 +265,22 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
     }
 
     setIsSubmitting(true);
+    const toastId = toast.loading("Uploading new attachments to Google Drive and updating enquiry...");
     try {
+      const attachmentsPayload = selectedEditFiles.length > 0
+        ? await Promise.all(
+            selectedEditFiles.map(async (file) => {
+              const content = await fileToBase64(file);
+              return {
+                name: file.name,
+                size: file.size,
+                type: file.type || file.name.split(".").pop() || "",
+                content,
+              };
+            })
+          )
+        : undefined;
+
       const res = await updateEnquiryItemAction({
         itemId: item.id,
         itemName: itemName.trim(),
@@ -279,17 +308,17 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
         cost: parseFloat(cost),
         stockStatus: stockStatus.trim(),
         discount: parseFloat(discount),
-        attachments: editFiles,
+        attachments: attachmentsPayload,
       });
 
       if (res.success) {
-        toast.success("Enquiry updated successfully.");
+        toast.success("Enquiry updated successfully.", { id: toastId });
         setIsEditOpen(false);
       } else {
-        toast.error(res.error || "Failed to update enquiry.");
+        toast.error(res.error || "Failed to update enquiry.", { id: toastId });
       }
     } catch (err) {
-      toast.error("An unexpected error occurred.");
+      toast.error("An unexpected error occurred.", { id: toastId });
     } finally {
       setIsSubmitting(false);
     }

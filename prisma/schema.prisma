@@ -63,6 +63,7 @@ model EnquiryItem {
   cost          Decimal?
   stockStatus   String?
   discount      Decimal?
+  quotedRate    String?
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

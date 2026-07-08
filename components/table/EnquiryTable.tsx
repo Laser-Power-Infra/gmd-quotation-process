@@ -100,29 +100,9 @@ function getInitials(name: string) {
   return "EQ";
 }
 
-// Helper to format quantity with appropriate unit
 function formatQuantity(itemName: string, quantity: any) {
   const qty = Number(quantity);
-  const name = itemName.toLowerCase();
-  let unit = "Units";
-
-  if (
-    name.includes("steel") ||
-    name.includes("plates") ||
-    name.includes("beam")
-  ) {
-    unit = "MT";
-  } else if (
-    name.includes("paint") ||
-    name.includes("lubricant") ||
-    name.includes("coating")
-  ) {
-    unit = "Ltr";
-  } else if (name.includes("pipes")) {
-    unit = "Meters";
-  }
-
-  return `${qty.toLocaleString()} ${unit}`;
+  return qty.toLocaleString();
 }
 
 export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTableProps) {
@@ -1515,28 +1495,88 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                     </td>
 
                     {/* First Item Product Cost */}
-                    <td className="py-3.5 px-4 text-xs text-slate-600 border-r border-b border-slate-200 last:border-r-0 truncate">
-                      {firstItem?.productCost ? Number(firstItem.productCost).toLocaleString() : "-"}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          type="text"
+                          defaultValue={firstItem.productCost ? Number(firstItem.productCost).toString() : ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.productCost ? Number(firstItem.productCost).toString() : "")) {
+                              handleItemFieldChange(firstItem.id, "productCost", e.target.value);
+                            }
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                        />
+                      ) : "-"}
                     </td>
 
                     {/* First Item Cost Ref Code */}
-                    <td className="py-3.5 px-4 text-xs text-slate-600 border-r border-b border-slate-200 last:border-r-0 truncate">
-                      {firstItem?.costRefCode || "-"}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          type="text"
+                          defaultValue={firstItem.costRefCode || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.costRefCode || "")) {
+                              handleItemFieldChange(firstItem.id, "costRefCode", e.target.value);
+                            }
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                        />
+                      ) : "-"}
                     </td>
 
                     {/* First Item Cost */}
-                    <td className="py-3.5 px-4 text-xs text-slate-600 border-r border-b border-slate-200 last:border-r-0 truncate">
-                      {firstItem?.cost ? Number(firstItem.cost).toLocaleString() : "-"}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          type="text"
+                          defaultValue={firstItem.cost ? Number(firstItem.cost).toString() : ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.cost ? Number(firstItem.cost).toString() : "")) {
+                              handleItemFieldChange(firstItem.id, "cost", e.target.value);
+                            }
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                        />
+                      ) : "-"}
                     </td>
 
                     {/* First Item Stock Status */}
-                    <td className="py-3.5 px-4 text-xs text-slate-600 border-r border-b border-slate-200 last:border-r-0 truncate">
-                      {firstItem?.stockStatus || "-"}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          type="text"
+                          defaultValue={firstItem.stockStatus || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.stockStatus || "")) {
+                              handleItemFieldChange(firstItem.id, "stockStatus", e.target.value);
+                            }
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                        />
+                      ) : "-"}
                     </td>
 
                     {/* First Item Discount */}
-                    <td className="py-3.5 px-4 text-xs text-slate-600 border-r border-b border-slate-200 last:border-r-0 truncate">
-                      {firstItem?.discount ? `${Number(firstItem.discount).toLocaleString()}%` : "-"}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          type="text"
+                          defaultValue={firstItem.discount ? Number(firstItem.discount).toString() : ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.discount ? Number(firstItem.discount).toString() : "")) {
+                              handleItemFieldChange(firstItem.id, "discount", e.target.value);
+                            }
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                        />
+                      ) : "-"}
                     </td>
 
                     {/* Attachment */}
@@ -1719,28 +1759,78 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                         </td>
 
                         {/* Product Cost */}
-                        <td className="py-3.5 px-4 text-xs text-slate-600 border-r border-b border-slate-200 last:border-r-0 truncate">
-                          {item.productCost ? Number(item.productCost).toLocaleString() : "-"}
+                        <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                          <input
+                            type="text"
+                            defaultValue={item.productCost ? Number(item.productCost).toString() : ""}
+                            onBlur={(e) => {
+                              if (e.target.value !== (item.productCost ? Number(item.productCost).toString() : "")) {
+                                handleItemFieldChange(item.id, "productCost", e.target.value);
+                              }
+                            }}
+                            placeholder="-"
+                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                          />
                         </td>
 
                         {/* Cost Ref Code */}
-                        <td className="py-3.5 px-4 text-xs text-slate-600 border-r border-b border-slate-200 last:border-r-0 truncate">
-                          {item.costRefCode || "-"}
+                        <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                          <input
+                            type="text"
+                            defaultValue={item.costRefCode || ""}
+                            onBlur={(e) => {
+                              if (e.target.value !== (item.costRefCode || "")) {
+                                handleItemFieldChange(item.id, "costRefCode", e.target.value);
+                              }
+                            }}
+                            placeholder="-"
+                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                          />
                         </td>
 
                         {/* Cost */}
-                        <td className="py-3.5 px-4 text-xs text-slate-600 border-r border-b border-slate-200 last:border-r-0 truncate">
-                          {item.cost ? Number(item.cost).toLocaleString() : "-"}
+                        <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                          <input
+                            type="text"
+                            defaultValue={item.cost ? Number(item.cost).toString() : ""}
+                            onBlur={(e) => {
+                              if (e.target.value !== (item.cost ? Number(item.cost).toString() : "")) {
+                                handleItemFieldChange(item.id, "cost", e.target.value);
+                              }
+                            }}
+                            placeholder="-"
+                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                          />
                         </td>
 
                         {/* Stock Status */}
-                        <td className="py-3.5 px-4 text-xs text-slate-600 border-r border-b border-slate-200 last:border-r-0 truncate">
-                          {item.stockStatus || "-"}
+                        <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                          <input
+                            type="text"
+                            defaultValue={item.stockStatus || ""}
+                            onBlur={(e) => {
+                              if (e.target.value !== (item.stockStatus || "")) {
+                                handleItemFieldChange(item.id, "stockStatus", e.target.value);
+                              }
+                            }}
+                            placeholder="-"
+                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                          />
                         </td>
 
                         {/* Discount */}
-                        <td className="py-3.5 px-4 text-xs text-slate-600 border-r border-b border-slate-200 last:border-r-0 truncate">
-                          {item.discount ? `${Number(item.discount).toLocaleString()}%` : "-"}
+                        <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                          <input
+                            type="text"
+                            defaultValue={item.discount ? Number(item.discount).toString() : ""}
+                            onBlur={(e) => {
+                              if (e.target.value !== (item.discount ? Number(item.discount).toString() : "")) {
+                                handleItemFieldChange(item.id, "discount", e.target.value);
+                              }
+                            }}
+                            placeholder="-"
+                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                          />
                         </td>
 
                         {/* Empty attachment column */}

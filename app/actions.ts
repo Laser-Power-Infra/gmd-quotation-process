@@ -2,36 +2,37 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { uploadFileToDrive } from "@/lib/gdrive";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
   docketNumber: string;
   partyName: string;
   enquiryDate: string;
-  enquiryType?: string;
-  state?: string;
-  paymentTerms?: string;
-  inspection?: string;
-  pbg?: string;
-  utility?: string;
-  vaPercent?: number;
-  orderStatus?: string;
-  attachments: { name: string; size: number; type: string }[];
+  enquiryType?: string | null;
+  state?: string | null;
+  paymentTerms?: string | null;
+  inspection?: string | null;
+  pbg?: string | null;
+  utility?: string | null;
+  vaPercent?: number | null;
+  orderStatus?: string | null;
+  attachments: { name: string; size: number; type: string; content?: string }[];
   items: {
     itemName: string;
     quantity: number;
-    itemType?: string;
-    moc?: string;
-    size?: string;
-    pnRating?: string;
-    operationType?: string;
-    extension?: string;
-    bypass?: string;
-    productCost?: number;
-    costRefCode?: string;
-    cost?: number;
-    stockStatus?: string;
-    discount?: number;
+    itemType?: string | null;
+    moc?: string | null;
+    size?: string | null;
+    pnRating?: string | null;
+    operationType?: string | null;
+    extension?: string | null;
+    bypass?: string | null;
+    productCost?: number | null;
+    costRefCode?: string | null;
+    cost?: number | null;
+    stockStatus?: string | null;
+    discount?: number | null;
   }[];
 }) {
   try {
@@ -44,6 +45,28 @@ export async function createNewEnquiryAction(formData: {
     if (existing) {
       return { success: false, error: "Docket Number already exists." };
     }
+
+    // Upload files to Google Drive if content is present
+    const attachmentCreates = await Promise.all(
+      formData.attachments.map(async (att) => {
+        if (att.content) {
+          const res = await uploadFileToDrive(att.name, att.type, att.content);
+          return {
+            name: att.name,
+            url: res.url,
+            type: att.type,
+            size: att.size,
+          };
+        } else {
+          return {
+            name: att.name,
+            url: `/files/${att.name}`,
+            type: att.type,
+            size: att.size,
+          };
+        }
+      })
+    );
 
     await prisma.enquiry.create({
       data: {
@@ -59,12 +82,7 @@ export async function createNewEnquiryAction(formData: {
         vaPercent: formData.vaPercent || null,
         orderStatus: formData.orderStatus || null,
         attachments: {
-          create: formData.attachments.map((att) => ({
-            name: att.name,
-            url: `/files/${att.name}`,
-            type: att.type,
-            size: att.size,
-          })),
+          create: attachmentCreates,
         },
         items: {
           create: formData.items.map((item) => ({
@@ -152,7 +170,7 @@ export async function updateEnquiryItemAction(formData: {
   docketNumber: string;
   partyName: string;
   enquiryDate: string;
-  attachments?: { name: string; size: number; type: string }[];
+  attachments?: { name: string; size: number; type: string; content?: string }[];
   itemType?: string;
   moc?: string;
   size?: string;
@@ -217,19 +235,37 @@ export async function updateEnquiryItemAction(formData: {
       },
     });
 
-    // Update attachments if provided
+    // Update attachments if provided and upload to Google Drive
     if (formData.attachments) {
       await prisma.attachment.deleteMany({
         where: { enquiryId: item.enquiryId },
       });
+
+      const attachmentCreates = await Promise.all(
+        formData.attachments.map(async (att) => {
+          if (att.content) {
+            const res = await uploadFileToDrive(att.name, att.type, att.content);
+            return {
+              enquiryId: item.enquiryId,
+              name: att.name,
+              url: res.url,
+              type: att.type,
+              size: att.size,
+            };
+          } else {
+            return {
+              enquiryId: item.enquiryId,
+              name: att.name,
+              url: `/files/${att.name}`,
+              type: att.type,
+              size: att.size,
+            };
+          }
+        })
+      );
+
       await prisma.attachment.createMany({
-        data: formData.attachments.map((att) => ({
-          enquiryId: item.enquiryId,
-          name: att.name,
-          url: `/files/${att.name}`,
-          type: att.type,
-          size: att.size,
-        })),
+        data: attachmentCreates,
       });
     }
 

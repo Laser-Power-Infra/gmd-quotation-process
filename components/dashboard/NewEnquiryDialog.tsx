@@ -40,6 +40,18 @@ interface NewEnquiryDialogProps {
   };
 }
 
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64String = (reader.result as string).split(",")[1];
+      resolve(base64String);
+    };
+    reader.onerror = (error) => reject(error);
+  });
+};
+
 export default function NewEnquiryDialog({
   open,
   onOpenChange,
@@ -73,6 +85,7 @@ export default function NewEnquiryDialog({
 
   // File uploader state
   const [files, setFiles] = useState<{ name: string; size: number; type: string }[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   // Expanded items state containing all fields
   const [items, setItems] = useState<{
@@ -150,12 +163,13 @@ export default function NewEnquiryDialog({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
-      const fileList = Array.from(e.target.files).map((file) => ({
+      const fileList = Array.from(e.target.files);
+      setSelectedFiles(fileList);
+      setFiles(fileList.map((file) => ({
         name: file.name,
         size: file.size,
         type: file.name.split(".").pop() || "",
-      }));
-      setFiles(fileList);
+      })));
     }
   };
 
@@ -175,38 +189,7 @@ export default function NewEnquiryDialog({
       toast.error("Party Name is required.");
       return;
     }
-    if (!enquiryType) {
-      toast.error("Enquiry Type is required.");
-      return;
-    }
-    if (!state) {
-      toast.error("State is required.");
-      return;
-    }
-    if (!paymentTerms) {
-      toast.error("Payment Terms is required.");
-      return;
-    }
-    if (!inspection) {
-      toast.error("Inspection is required.");
-      return;
-    }
-    if (!pbg) {
-      toast.error("PBG is required.");
-      return;
-    }
-    if (!utility) {
-      toast.error("Utility is required.");
-      return;
-    }
-    if (!vaPercent) {
-      toast.error("VA% is required.");
-      return;
-    }
-    if (!orderStatus) {
-      toast.error("Order Status is required.");
-      return;
-    }
+    // Metadata fields are optional now
     if (files.length === 0) {
       toast.error("At least one uploaded file attachment is required.");
       return;
@@ -223,58 +206,24 @@ export default function NewEnquiryDialog({
         toast.error(`A valid Quantity greater than 0 is required for Row #${i + 1}.`);
         return;
       }
-      if (!item.itemType.trim()) {
-        toast.error(`Item Type is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.moc.trim()) {
-        toast.error(`MOC is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.size.trim()) {
-        toast.error(`Size is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.pnRating.trim()) {
-        toast.error(`PN Rating is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.operationType.trim()) {
-        toast.error(`Operation Type is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.extension.trim()) {
-        toast.error(`Extension is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.bypass.trim()) {
-        toast.error(`Bypass is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.productCost.trim() || isNaN(Number(item.productCost)) || Number(item.productCost) < 0) {
-        toast.error(`A valid Product Cost is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.costRefCode.trim()) {
-        toast.error(`Cost Ref Code is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.cost.trim() || isNaN(Number(item.cost)) || Number(item.cost) < 0) {
-        toast.error(`A valid Cost is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.stockStatus.trim()) {
-        toast.error(`Stock Status is required for Row #${i + 1}.`);
-        return;
-      }
-      if (!item.discount.trim() || isNaN(Number(item.discount)) || Number(item.discount) < 0) {
-        toast.error(`A valid Discount is required for Row #${i + 1}.`);
-        return;
-      }
+      // Only Item Name and Quantity are required
     }
 
     setIsSubmitting(true);
+    const toastId = toast.loading("Uploading attachments to Google Drive & saving enquiry...");
     try {
+      const attachmentsPayload = await Promise.all(
+        selectedFiles.map(async (file) => {
+          const content = await fileToBase64(file);
+          return {
+            name: file.name,
+            size: file.size,
+            type: file.type || file.name.split(".").pop() || "",
+            content,
+          };
+        })
+      );
+
       const res = await createNewEnquiryAction({
         docketNumber: docketNumber.trim(),
         partyName,
@@ -285,29 +234,29 @@ export default function NewEnquiryDialog({
         inspection,
         pbg,
         utility,
-        vaPercent: parseFloat(vaPercent.replace(/%/g, "")),
-        orderStatus,
-        attachments: files,
+        vaPercent: vaPercent ? parseFloat(vaPercent.replace(/%/g, "")) : null,
+        orderStatus: orderStatus || null,
+        attachments: attachmentsPayload,
         items: items.map((item) => ({
           itemName: item.itemName.trim(),
           quantity: parseFloat(item.quantity),
-          itemType: item.itemType.trim(),
-          moc: item.moc.trim(),
-          size: item.size.trim(),
-          pnRating: item.pnRating.trim(),
-          operationType: item.operationType.trim(),
-          extension: item.extension.trim(),
-          bypass: item.bypass.trim(),
-          productCost: parseFloat(item.productCost),
-          costRefCode: item.costRefCode.trim(),
-          cost: parseFloat(item.cost),
-          stockStatus: item.stockStatus.trim(),
-          discount: parseFloat(item.discount),
+          itemType: item.itemType ? item.itemType.trim() : null,
+          moc: item.moc ? item.moc.trim() : null,
+          size: item.size ? item.size.trim() : null,
+          pnRating: item.pnRating ? item.pnRating.trim() : null,
+          operationType: item.operationType ? item.operationType.trim() : null,
+          extension: item.extension ? item.extension.trim() : null,
+          bypass: item.bypass ? item.bypass.trim() : null,
+          productCost: item.productCost ? parseFloat(item.productCost) : null,
+          costRefCode: item.costRefCode ? item.costRefCode.trim() : null,
+          cost: item.cost ? parseFloat(item.cost) : null,
+          stockStatus: item.stockStatus ? item.stockStatus.trim() : null,
+          discount: item.discount ? parseFloat(item.discount) : null,
         })),
       });
 
       if (res.success) {
-        toast.success("Enquiry created successfully.");
+        toast.success("Enquiry created successfully.", { id: toastId });
         // Reset state
         setPartyName("");
         setEnquiryType("");
@@ -319,6 +268,7 @@ export default function NewEnquiryDialog({
         setVaPercent("");
         setOrderStatus("");
         setFiles([]);
+        setSelectedFiles([]);
         setItems([
           {
             itemName: "",
@@ -339,7 +289,7 @@ export default function NewEnquiryDialog({
         ]);
         onOpenChange(false);
       } else {
-        toast.error(res.error || "Failed to create enquiry.");
+        toast.error(res.error || "Failed to create enquiry.", { id: toastId });
       }
     } catch (err) {
       toast.error("An unexpected error occurred.");
@@ -477,7 +427,7 @@ export default function NewEnquiryDialog({
               {/* Enquiry Type */}
               <div className="space-y-1">
                 <Label className="text-[10px] font-semibold text-slate-600">
-                  Enquiry Type <span className="text-red-500">*</span>
+                  Enquiry Type
                 </Label>
                 <select
                   value={enquiryType}
@@ -494,7 +444,7 @@ export default function NewEnquiryDialog({
               {/* State */}
               <div className="space-y-1">
                 <Label className="text-[10px] font-semibold text-slate-600">
-                  State <span className="text-red-500">*</span>
+                  State
                 </Label>
                 <select
                   value={state}
@@ -511,7 +461,7 @@ export default function NewEnquiryDialog({
               {/* Payment Terms */}
               <div className="space-y-1">
                 <Label className="text-[10px] font-semibold text-slate-600">
-                  Payment Terms <span className="text-red-500">*</span>
+                  Payment Terms
                 </Label>
                 <select
                   value={paymentTerms}
@@ -528,7 +478,7 @@ export default function NewEnquiryDialog({
               {/* Inspection */}
               <div className="space-y-1">
                 <Label className="text-[10px] font-semibold text-slate-600">
-                  Inspection <span className="text-red-500">*</span>
+                  Inspection
                 </Label>
                 <select
                   value={inspection}
@@ -545,7 +495,7 @@ export default function NewEnquiryDialog({
               {/* PBG */}
               <div className="space-y-1">
                 <Label className="text-[10px] font-semibold text-slate-600">
-                  PBG <span className="text-red-500">*</span>
+                  PBG
                 </Label>
                 <select
                   value={pbg}
@@ -562,7 +512,7 @@ export default function NewEnquiryDialog({
               {/* Utility */}
               <div className="space-y-1">
                 <Label className="text-[10px] font-semibold text-slate-600">
-                  Utility <span className="text-red-500">*</span>
+                  Utility
                 </Label>
                 <Input
                   placeholder="e.g. Utility name..."
@@ -575,7 +525,7 @@ export default function NewEnquiryDialog({
               {/* VA% */}
               <div className="space-y-1">
                 <Label className="text-[10px] font-semibold text-slate-600">
-                  VA% <span className="text-red-500">*</span>
+                  VA%
                 </Label>
                 <Input
                   placeholder="e.g. 10%"
@@ -588,7 +538,7 @@ export default function NewEnquiryDialog({
               {/* Order Status */}
               <div className="space-y-1">
                 <Label className="text-[10px] font-semibold text-slate-600">
-                  Order Status <span className="text-red-500">*</span>
+                  Order Status
                 </Label>
                 <select
                   value={orderStatus}
@@ -659,7 +609,7 @@ export default function NewEnquiryDialog({
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     <div className="col-span-2 space-y-1">
                       <Label className="text-[10px] font-semibold text-slate-600">
                         Item Name as per Party <span className="text-red-500">*</span>
@@ -673,7 +623,7 @@ export default function NewEnquiryDialog({
                       />
                     </div>
                     
-                    <div className="space-y-1">
+                    <div className="col-span-1 space-y-1">
                       <Label className="text-[10px] font-semibold text-slate-600">
                         Quantity <span className="text-red-500">*</span>
                       </Label>
@@ -683,183 +633,6 @@ export default function NewEnquiryDialog({
                         placeholder="e.g. 2"
                         value={item.quantity}
                         onChange={(e) => handleItemChange(index, "quantity", e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        Item Type <span className="text-red-500">*</span>
-                      </Label>
-                      <select
-                        value={item.itemType}
-                        onChange={(e) => handleItemChange(index, "itemType", e.target.value)}
-                        className={itemSelectClass}
-                      >
-                        <option value="">Select type...</option>
-                        {dropdownOptions.itemTypes.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        MOC <span className="text-red-500">*</span>
-                      </Label>
-                      <select
-                        value={item.moc}
-                        onChange={(e) => handleItemChange(index, "moc", e.target.value)}
-                        className={itemSelectClass}
-                      >
-                        <option value="">Select MOC...</option>
-                        {dropdownOptions.mocs.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        Size <span className="text-red-500">*</span>
-                      </Label>
-                      <select
-                        value={item.size}
-                        onChange={(e) => handleItemChange(index, "size", e.target.value)}
-                        className={itemSelectClass}
-                      >
-                        <option value="">Select size...</option>
-                        {dropdownOptions.sizes.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        PN Rating <span className="text-red-500">*</span>
-                      </Label>
-                      <select
-                        value={item.pnRating}
-                        onChange={(e) => handleItemChange(index, "pnRating", e.target.value)}
-                        className={itemSelectClass}
-                      >
-                        <option value="">Select rating...</option>
-                        {dropdownOptions.pnRatings.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        Operation Type <span className="text-red-500">*</span>
-                      </Label>
-                      <select
-                        value={item.operationType}
-                        onChange={(e) => handleItemChange(index, "operationType", e.target.value)}
-                        className={itemSelectClass}
-                      >
-                        <option value="">Select operation...</option>
-                        {dropdownOptions.operationTypes.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        Extension <span className="text-red-500">*</span>
-                      </Label>
-                      <select
-                        value={item.extension}
-                        onChange={(e) => handleItemChange(index, "extension", e.target.value)}
-                        className={itemSelectClass}
-                      >
-                        <option value="">Select extension...</option>
-                        {dropdownOptions.extensions.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        Bypass <span className="text-red-500">*</span>
-                      </Label>
-                      <select
-                        value={item.bypass}
-                        onChange={(e) => handleItemChange(index, "bypass", e.target.value)}
-                        className={itemSelectClass}
-                      >
-                        <option value="">Select bypass...</option>
-                        {dropdownOptions.bypasses.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        Product Cost <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="number"
-                        placeholder="e.g. 3200"
-                        value={item.productCost}
-                        onChange={(e) => handleItemChange(index, "productCost", e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        Cost Ref Code <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="text"
-                        placeholder="e.g. REF-01"
-                        value={item.costRefCode}
-                        onChange={(e) => handleItemChange(index, "costRefCode", e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        Cost <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="number"
-                        placeholder="e.g. 2800"
-                        value={item.cost}
-                        onChange={(e) => handleItemChange(index, "cost", e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        Stock Status <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="text"
-                        placeholder="e.g. In Stock"
-                        value={item.stockStatus}
-                        onChange={(e) => handleItemChange(index, "stockStatus", e.target.value)}
-                        className="h-8 text-xs"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
-                        Discount (%) <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="number"
-                        placeholder="e.g. 10"
-                        value={item.discount}
-                        onChange={(e) => handleItemChange(index, "discount", e.target.value)}
                         className="h-8 text-xs"
                       />
                     </div>
