@@ -23,26 +23,47 @@ model Enquiry {
   vaPercent        Float?
   orderStatus      String?
 
-  attachmentName   String?
-  attachmentUrl    String?
-  attachmentType   String?
-  attachmentSize   Int?
-
+  attachments      Attachment[]
   items            EnquiryItem[]
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
 
-model EnquiryItem {
+model Attachment {
   id          String   @id @default(cuid())
-
   enquiryId   String
   enquiry     Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
-
-  itemName    String
-  quantity    Decimal
-
+  name        String
+  url         String
+  type        String?
+  size        Int?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model EnquiryItem {
+  id            String   @id @default(cuid())
+
+  enquiryId     String
+  enquiry       Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+
+  itemName      String
+  quantity      Decimal
+
+  itemType      String?
+  moc           String?
+  size          String?
+  pnRating      String?
+  operationType String?
+  extension     String?
+  bypass        String?
+  productCost   Decimal?
+  costRefCode   String?
+  cost          Decimal?
+  stockStatus   String?
+  discount      Decimal?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

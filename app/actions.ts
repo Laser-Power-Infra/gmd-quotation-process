@@ -3,18 +3,42 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 
-// Create a new enquiry with initial items
+// Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
   docketNumber: string;
   partyName: string;
   enquiryDate: string;
-  attachmentName?: string;
-  items: { itemName: string; quantity: number }[];
+  enquiryType?: string;
+  state?: string;
+  paymentTerms?: string;
+  inspection?: string;
+  pbg?: string;
+  utility?: string;
+  vaPercent?: number;
+  orderStatus?: string;
+  attachments: { name: string; size: number; type: string }[];
+  items: {
+    itemName: string;
+    quantity: number;
+    itemType?: string;
+    moc?: string;
+    size?: string;
+    pnRating?: string;
+    operationType?: string;
+    extension?: string;
+    bypass?: string;
+    productCost?: number;
+    costRefCode?: string;
+    cost?: number;
+    stockStatus?: string;
+    discount?: number;
+  }[];
 }) {
   try {
+    const cleanDocket = formData.docketNumber.replace(/#/g, "").trim();
     // Check if docketNumber already exists
     const existing = await prisma.enquiry.findUnique({
-      where: { docketNumber: formData.docketNumber },
+      where: { docketNumber: cleanDocket },
     });
 
     if (existing) {
@@ -23,17 +47,41 @@ export async function createNewEnquiryAction(formData: {
 
     await prisma.enquiry.create({
       data: {
-        docketNumber: formData.docketNumber,
+        docketNumber: cleanDocket,
         partyName: formData.partyName,
         enquiryDate: new Date(formData.enquiryDate),
-        attachmentName: formData.attachmentName || null,
-        attachmentUrl: formData.attachmentName ? `/files/${formData.attachmentName}` : null,
-        attachmentType: formData.attachmentName ? formData.attachmentName.split(".").pop() : null,
-        attachmentSize: formData.attachmentName ? Math.floor(Math.random() * 50000) + 1000 : null,
+        enquiryType: formData.enquiryType || null,
+        state: formData.state || null,
+        paymentTerms: formData.paymentTerms || null,
+        inspection: formData.inspection || null,
+        pbg: formData.pbg || null,
+        utility: formData.utility || null,
+        vaPercent: formData.vaPercent || null,
+        orderStatus: formData.orderStatus || null,
+        attachments: {
+          create: formData.attachments.map((att) => ({
+            name: att.name,
+            url: `/files/${att.name}`,
+            type: att.type,
+            size: att.size,
+          })),
+        },
         items: {
           create: formData.items.map((item) => ({
             itemName: item.itemName,
             quantity: item.quantity,
+            itemType: item.itemType || null,
+            moc: item.moc || null,
+            size: item.size || null,
+            pnRating: item.pnRating || null,
+            operationType: item.operationType || null,
+            extension: item.extension || null,
+            bypass: item.bypass || null,
+            productCost: item.productCost || null,
+            costRefCode: item.costRefCode || null,
+            cost: item.cost || null,
+            stockStatus: item.stockStatus || null,
+            discount: item.discount || null,
           })),
         },
       },
@@ -50,7 +98,22 @@ export async function createNewEnquiryAction(formData: {
 // Add items to an existing enquiry/docket
 export async function addItemsAction(formData: {
   enquiryId: string;
-  items: { itemName: string; quantity: number }[];
+  items: {
+    itemName: string;
+    quantity: number;
+    itemType?: string;
+    moc?: string;
+    size?: string;
+    pnRating?: string;
+    operationType?: string;
+    extension?: string;
+    bypass?: string;
+    productCost?: number;
+    costRefCode?: string;
+    cost?: number;
+    stockStatus?: string;
+    discount?: number;
+  }[];
 }) {
   try {
     await prisma.enquiryItem.createMany({
@@ -58,6 +121,18 @@ export async function addItemsAction(formData: {
         enquiryId: formData.enquiryId,
         itemName: item.itemName,
         quantity: item.quantity,
+        itemType: item.itemType || null,
+        moc: item.moc || null,
+        size: item.size || null,
+        pnRating: item.pnRating || null,
+        operationType: item.operationType || null,
+        extension: item.extension || null,
+        bypass: item.bypass || null,
+        productCost: item.productCost || null,
+        costRefCode: item.costRefCode || null,
+        cost: item.cost || null,
+        stockStatus: item.stockStatus || null,
+        discount: item.discount || null,
       })),
     });
 
@@ -69,7 +144,7 @@ export async function addItemsAction(formData: {
   }
 }
 
-// Update a specific item and/or its parent enquiry fields
+// Update a specific item and/or its parent enquiry fields and attachments
 export async function updateEnquiryItemAction(formData: {
   itemId: string;
   itemName: string;
@@ -77,7 +152,27 @@ export async function updateEnquiryItemAction(formData: {
   docketNumber: string;
   partyName: string;
   enquiryDate: string;
-  attachmentName?: string;
+  attachments?: { name: string; size: number; type: string }[];
+  itemType?: string;
+  moc?: string;
+  size?: string;
+  pnRating?: string;
+  operationType?: string;
+  extension?: string;
+  bypass?: string;
+  productCost?: number;
+  costRefCode?: string;
+  cost?: number;
+  stockStatus?: string;
+  discount?: number;
+  enquiryType?: string;
+  state?: string;
+  paymentTerms?: string;
+  inspection?: string;
+  pbg?: string;
+  utility?: string;
+  vaPercent?: number;
+  orderStatus?: string;
 }) {
   try {
     const item = await prisma.enquiryItem.findUnique({
@@ -88,10 +183,11 @@ export async function updateEnquiryItemAction(formData: {
       return { success: false, error: "Item not found." };
     }
 
+    const cleanDocket = formData.docketNumber.replace(/#/g, "").trim();
     // Check if new docket number conflicts with another enquiry
     const conflictingEnquiry = await prisma.enquiry.findFirst({
       where: {
-        docketNumber: formData.docketNumber,
+        docketNumber: cleanDocket,
         NOT: { id: item.enquiryId },
       },
     });
@@ -106,24 +202,52 @@ export async function updateEnquiryItemAction(formData: {
       data: {
         itemName: formData.itemName,
         quantity: formData.quantity,
+        itemType: formData.itemType || null,
+        moc: formData.moc || null,
+        size: formData.size || null,
+        pnRating: formData.pnRating || null,
+        operationType: formData.operationType || null,
+        extension: formData.extension || null,
+        bypass: formData.bypass || null,
+        productCost: formData.productCost || null,
+        costRefCode: formData.costRefCode || null,
+        cost: formData.cost || null,
+        stockStatus: formData.stockStatus || null,
+        discount: formData.discount || null,
       },
     });
+
+    // Update attachments if provided
+    if (formData.attachments) {
+      await prisma.attachment.deleteMany({
+        where: { enquiryId: item.enquiryId },
+      });
+      await prisma.attachment.createMany({
+        data: formData.attachments.map((att) => ({
+          enquiryId: item.enquiryId,
+          name: att.name,
+          url: `/files/${att.name}`,
+          type: att.type,
+          size: att.size,
+        })),
+      });
+    }
 
     // Update parent enquiry
     await prisma.enquiry.update({
       where: { id: item.enquiryId },
       data: {
-        docketNumber: formData.docketNumber,
+        docketNumber: cleanDocket,
         partyName: formData.partyName,
         enquiryDate: new Date(formData.enquiryDate),
-        ...(formData.attachmentName !== undefined
-          ? {
-              attachmentName: formData.attachmentName || null,
-              attachmentUrl: formData.attachmentName ? `/files/${formData.attachmentName}` : null,
-              attachmentType: formData.attachmentName ? formData.attachmentName.split(".").pop() : null,
-              attachmentSize: formData.attachmentName ? Math.floor(Math.random() * 50000) + 1000 : null,
-            }
-          : {}),
+        enquiryType: formData.enquiryType || null,
+        state: formData.state || null,
+        paymentTerms: formData.paymentTerms || null,
+        inspection: formData.inspection || null,
+        pbg: formData.pbg || null,
+        utility: formData.utility || null,
+        vaPercent: formData.vaPercent || null,
+        orderStatus: formData.orderStatus || null,
       },
     });
 
@@ -132,6 +256,22 @@ export async function updateEnquiryItemAction(formData: {
   } catch (error: any) {
     console.error("Error updating enquiry item:", error);
     return { success: false, error: error.message || "Failed to update item." };
+  }
+}
+
+// Update the orderStatus of an enquiry directly
+export async function updateEnquiryOrderStatusAction(enquiryId: string, orderStatus: string) {
+  try {
+    await prisma.enquiry.update({
+      where: { id: enquiryId },
+      data: { orderStatus },
+    });
+
+    revalidatePath("/");
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error updating order status:", error);
+    return { success: false, error: error.message || "Failed to update order status." };
   }
 }
 
@@ -168,5 +308,51 @@ export async function deleteEnquiryItemAction(itemId: string) {
   } catch (error: any) {
     console.error("Error deleting item:", error);
     return { success: false, error: error.message || "Failed to delete item." };
+  }
+}
+
+// Update a specific field of an enquiry directly (for inline cell editing)
+export async function updateEnquiryFieldAction(
+  enquiryId: string,
+  field: string,
+  value: any
+) {
+  try {
+    let parsedVal = value;
+    if (field === "vaPercent" && value !== null) {
+      parsedVal = parseFloat(String(value).replace(/%/g, "")) || null;
+    }
+    await prisma.enquiry.update({
+      where: { id: enquiryId },
+      data: { [field]: parsedVal },
+    });
+    revalidatePath("/");
+    return { success: true };
+  } catch (error: any) {
+    console.error(`Error updating enquiry ${field}:`, error);
+    return { success: false, error: error.message || `Failed to update ${field}.` };
+  }
+}
+
+// Update a specific field of an enquiry item directly (for inline cell editing)
+export async function updateItemFieldAction(
+  itemId: string,
+  field: string,
+  value: any
+) {
+  try {
+    let parsedVal = value;
+    if (["quantity", "productCost", "cost", "discount"].includes(field) && value !== null) {
+      parsedVal = parseFloat(String(value)) || 0;
+    }
+    await prisma.enquiryItem.update({
+      where: { id: itemId },
+      data: { [field]: parsedVal },
+    });
+    revalidatePath("/");
+    return { success: true };
+  } catch (error: any) {
+    console.error(`Error updating item ${field}:`, error);
+    return { success: false, error: error.message || `Failed to update ${field}.` };
   }
 }

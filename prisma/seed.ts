@@ -9,6 +9,7 @@ const prisma = new PrismaClient({ adapter, log: ["query"] });
 
 async function main() {
   // Clear database
+  await prisma.attachment.deleteMany({});
   await prisma.enquiryItem.deleteMany({});
   await prisma.enquiry.deleteMany({});
 
@@ -20,10 +21,9 @@ async function main() {
       docketNumber: "ORD-9902",
       partyName: "Tata Industrial Ltd., Jamshedpur Unit",
       enquiryDate: new Date("2023-10-12T10:00:00.000Z"),
-      attachmentName: "Specs.pdf",
-      attachmentUrl: "/files/Specs.pdf",
-      attachmentType: "pdf",
-      attachmentSize: 124500,
+      attachments: [
+        { name: "Specs.pdf", url: "/files/Specs.pdf", type: "pdf", size: 124500 }
+      ],
       items: [
         { itemName: "Structural Steel Beam I-Type", quantity: 1200 }
       ]
@@ -32,10 +32,9 @@ async function main() {
       docketNumber: "ORD-9884",
       partyName: "Reliance Energy, Mumbai HQ",
       enquiryDate: new Date("2023-10-11T10:00:00.000Z"),
-      attachmentName: "Quote_Final.xlsx",
-      attachmentUrl: "/files/Quote_Final.xlsx",
-      attachmentType: "xlsx",
-      attachmentSize: 45200,
+      attachments: [
+        { name: "Quote_Final.xlsx", url: "/files/Quote_Final.xlsx", type: "xlsx", size: 45200 }
+      ],
       items: [
         { itemName: "High-Pressure Valve Assembly", quantity: 450 }
       ]
@@ -44,10 +43,9 @@ async function main() {
       docketNumber: "ORD-9872",
       partyName: "Adani Ports, Mundra Facility",
       enquiryDate: new Date("2023-10-10T10:00:00.000Z"),
-      attachmentName: "Mundra_PR.pdf",
-      attachmentUrl: "/files/Mundra_PR.pdf",
-      attachmentType: "pdf",
-      attachmentSize: 312000,
+      attachments: [
+        { name: "Mundra_PR.pdf", url: "/files/Mundra_PR.pdf", type: "pdf", size: 312000 }
+      ],
       items: [
         { itemName: "Marine Grade Paint Coating", quantity: 5000 }
       ]
@@ -55,12 +53,20 @@ async function main() {
   ];
 
   for (const eq of initialEnquiries) {
-    const { items, ...enquiryData } = eq;
+    const { items, attachments, ...enquiryData } = eq;
     await prisma.enquiry.create({
       data: {
         ...enquiryData,
+        attachments: {
+          create: attachments.map((att) => ({
+            name: att.name,
+            url: att.url,
+            type: att.type,
+            size: att.size
+          }))
+        },
         items: {
-          create: items.map(item => ({
+          create: items.map((item) => ({
             itemName: item.itemName,
             quantity: item.quantity
           }))
@@ -96,13 +102,13 @@ async function main() {
     { name: "Industrial Synthetic Lubricant", minQty: 200, maxQty: 2000 }
   ];
 
-  const attachments = [
-    "Datasheet_V1.pdf",
-    "Technical_Specs.zip",
-    "Drawings_Final.dwg",
-    "PO_Draft.pdf",
-    "BOQ_Quotation.xlsx",
-    null
+  const attachmentOptions = [
+    ["Datasheet_V1.pdf", "Technical_Specs.zip"],
+    ["Drawings_Final.dwg"],
+    ["PO_Draft.pdf", "BOQ_Quotation.xlsx"],
+    ["Technical_Specs.zip"],
+    ["BOQ_Quotation.xlsx"],
+    ["Datasheet_V1.pdf"]
   ];
 
   let docketSeq = 9800;
@@ -112,7 +118,8 @@ async function main() {
     const docketNumber = `ORD-${docketSeq--}`;
     const partyName = `${company.name}, ${company.branch}`;
     const enquiryDate = new Date(Date.now() - (i + 4) * 24 * 60 * 60 * 1000); // 4+ days ago
-    const attachFile = attachments[i % attachments.length];
+    
+    const attachFiles = attachmentOptions[i % attachmentOptions.length];
 
     // Some enquiries will have multiple items
     const numItems = (i % 7 === 0) ? 2 : (i % 13 === 0) ? 3 : 1;
@@ -131,10 +138,14 @@ async function main() {
         docketNumber,
         partyName,
         enquiryDate,
-        attachmentName: attachFile,
-        attachmentUrl: attachFile ? `/files/${attachFile}` : null,
-        attachmentType: attachFile ? attachFile.split('.').pop() : null,
-        attachmentSize: attachFile ? Math.floor(Math.random() * 50000) + 1000 : null,
+        attachments: {
+          create: attachFiles.map(file => ({
+            name: file,
+            url: `/files/${file}`,
+            type: file.split('.').pop(),
+            size: Math.floor(Math.random() * 50000) + 1000
+          }))
+        },
         items: {
           create: itemsData
         }

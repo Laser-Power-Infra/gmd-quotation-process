@@ -9,9 +9,15 @@ import NewEnquiryDialog from "./NewEnquiryDialog";
 
 interface DashboardHeaderProps {
   enquiries: { id: string; docketNumber: string; partyName: string }[];
+  nextDocketNumber: string;
+  dropdownOptions: any;
 }
 
-export default function DashboardHeader({ enquiries }: DashboardHeaderProps) {
+export default function DashboardHeader({
+  enquiries,
+  nextDocketNumber,
+  dropdownOptions,
+}: DashboardHeaderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [searchVal, setSearchVal] = useState(searchParams.get("search") || "");
@@ -63,14 +69,14 @@ export default function DashboardHeader({ enquiries }: DashboardHeaderProps) {
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
-        <Button
+        {/* <Button
           variant="outline"
           className="flex h-9 items-center gap-2 px-3 text-sm font-medium"
         >
           <Filter className="h-4 w-4" />
           More Filters
           <ChevronDown className="h-3.5 w-3.5 ml-1" />
-        </Button>
+        </Button> */}
 
         {/* Add Items Button */}
         <Button
@@ -100,6 +106,8 @@ export default function DashboardHeader({ enquiries }: DashboardHeaderProps) {
       <NewEnquiryDialog
         open={isNewEnquiryOpen}
         onOpenChange={setIsNewEnquiryOpen}
+        nextDocketNumber={nextDocketNumber}
+        dropdownOptions={dropdownOptions}
       />
     </div>
   );
