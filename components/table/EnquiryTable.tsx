@@ -1,83 +1,21 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { FileText, ChevronDown, ChevronRight, Search, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import ActionsDropdown from "./ActionsDropdown";
 import Pagination from "./Pagination";
-import { updateEnquiryFieldAction, updateItemFieldAction } from "@/app/actions";
-// import { detectItemType } from "@/lib/itemTypeKeywords";
 import { PARTY_NAMES } from "@/lib/partyNames";
 import * as XLSX from "xlsx";
-
-interface EnquiryItem {
-  id: string;
-  itemName: string;
-  quantity: any;
-  itemType: string | null;
-  moc: string | null;
-  size: string | null;
-  pnRating: string | null;
-  operationType: string | null;
-  extension: string | null;
-  bypass: string | null;
-  productCost: any | null;
-  costRefCode: string | null;
-  cost: any | null;
-  stockStatus: string | null;
-  discount: any | null;
-  quotedRate: string | null;
-  itemNameMerge: string | null;
-  totalValue: string | null;
-  itemWiseTotalValue: string | null;
-}
-
-interface Attachment {
-  id: string;
-  name: string;
-  url: string;
-  type: string | null;
-  size: number | null;
-}
-
-interface Enquiry {
-  id: string;
-  docketNumber: string;
-  partyName: string;
-  enquiryDate: Date;
-  enquiryType: string | null;
-  state: string | null;
-  paymentTerms: string | null;
-  inspection: string | null;
-  pbg: string | null;
-  utility: string | null;
-  vaPercent: number | null;
-  orderStatus: string | null;
-  attachments: Attachment[];
-  items: EnquiryItem[];
-}
-
-interface DropdownOptions {
-  enquiryTypes: string[];
-  states: string[];
-  paymentTerms: string[];
-  inspections: string[];
-  pbgs: string[];
-  utilities: string[];
-  vaPercents: string[];
-  orderStatuses: string[];
-  itemTypes: string[];
-  mocs: string[];
-  sizes: string[];
-  pnRatings: string[];
-  operationTypes: string[];
-  extensions: string[];
-  bypasses: string[];
-}
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField } from "@/lib/enquiriesSlice";
+import { setFilter, setPartyNamesFilter } from "@/lib/filtersSlice";
+import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
+import { toggleRow, setColumnWidth, setPartyFilterOpen, setPartySearch } from "@/lib/uiSlice";
+import type { DropdownOptions } from "@/lib/types";
 
 interface EnquiryTableProps {
-  enquiries: Enquiry[];
   dropdownOptions: DropdownOptions;
 }
 
@@ -113,89 +51,21 @@ function formatQuantity(itemName: string, quantity: any) {
   return qty.toLocaleString();
 }
 
-export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTableProps) {
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
+  const dispatch = useAppDispatch();
+  const enquiries = useAppSelector(selectAllEnquiries);
+  const allItems = useAppSelector(selectAllItems);
+  const filters = useAppSelector((s) => s.filters);
+  const { currentPage, pageSize } = useAppSelector((s) => s.pagination);
+  const { expandedRows, columnWidths, isPartyFilterOpen, partySearch: partySearchVal } = useAppSelector((s) => s.ui);
 
-  // Column filter states initialized with "All" for dropdown select menus
-  const [filters, setFilters] = useState({
-    enquiryDateFrom: "",
-    enquiryDateTo: "",
-    docketNumber: "",
-    partyNames: [] as string[],
-    enquiryType: "All",
-    state: "All",
-    paymentTerms: "All",
-    inspection: "All",
-    pbg: "All",
-    utility: "",
-    vaPercent: "",
-    orderStatus: "All",
-    itemName: "",
-    quantity: "",
-    itemType: "All",
-    moc: "All",
-    size: "All",
-    pnRating: "All",
-    operationType: "All",
-    extension: "All",
-    bypass: "All",
-    productCost: "",
-    costRefCode: "",
-    cost: "",
-    stockStatus: "",
-    discount: "",
-    quotedRate: "",
-    itemNameMerge: "",
-    totalValue: "",
-    itemWiseTotalValue: "",
-    attachment: "",
-  });
-
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   // Reset pagination to first page when filters change
   useEffect(() => {
-    setCurrentPage(1);
-  }, [filters]);
-
-  // Custom column widths state (expanded for 28 columns)
-  const [columnWidths, setColumnWidths] = useState<Record<number, number>>({
-    0: 260, // Enquiry Date
-    1: 120, // Docket No
-    2: 240, // Party Name
-    3: 130, // Enquiry Type
-    4: 100, // State
-    5: 120, // Payment Terms
-    6: 110, // Inspection
-    7: 90,  // PBG
-    8: 110, // Utility
-    9: 90,  // VA%
-    10: 130,// Order Status
-    11: 220,// Item Name
-    12: 110,// Quantity
-    13: 130,// Item Type
-    14: 100,// MOC
-    15: 90, // Size
-    16: 110,// PN Rating
-    17: 130,// Operation Type
-    18: 100,// Extension
-    19: 95, // Bypass
-    20: 110,// Product Cost
-    21: 125,// Cost Ref Code
-    22: 100,// Cost
-    23: 110,// Stock Status
-    24: 95, // Discount
-    25: 120,// Quoted Rate
-    26: 150,// Item Name Merge
-    27: 120,// Total Value
-    28: 140,// Itemwise Total Value
-    29: 140,// Attachment
-    30: 80, // Actions
-  });
-
-  const [isPartyFilterOpen, setIsPartyFilterOpen] = useState(false);
-  const [partySearch, setPartySearch] = useState("");
+    dispatch(resetPage());
+  }, [filters, dispatch]);
 
   const hasActiveFilters = Object.values(filters).some((val) => {
     if (Array.isArray(val)) return val.length > 0;
@@ -203,13 +73,39 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
   });
 
   const toggleExpand = (id: string) => {
-    const isCurrentlyExpanded = expanded[id] !== undefined 
-      ? expanded[id] 
-      : hasActiveFilters;
-    setExpanded((prev) => ({
-      ...prev,
-      [id]: !isCurrentlyExpanded,
-    }));
+    dispatch(toggleRow(id));
+  };
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortField(field);
+      setSortDirection("desc");
+    }
+    dispatch(setPage(1));
+  };
+
+  const renderSortArrow = (field: string) => {
+    const isSorted = sortField === field;
+    return (
+      <button
+        type="button"
+        onClick={() => handleSort(field)}
+        className="ml-1 inline-flex items-center justify-center hover:bg-slate-200/50 rounded cursor-pointer focus:outline-none shrink-0 transition-colors p-0.5"
+        title={`Sort by ${field}`}
+      >
+        {isSorted ? (
+          sortDirection === "asc" ? (
+            <span className="text-[8px] text-[#0f62fe] font-bold leading-none">▲</span>
+          ) : (
+            <span className="text-[8px] text-[#0f62fe] font-bold leading-none">▼</span>
+          )
+        ) : (
+          <span className="text-[8px] text-slate-300 leading-none">▼</span>
+        )}
+      </button>
+    );
   };
 
   // Mouse drag handler for column resizing
@@ -221,10 +117,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     const handleMouseMove = (moveEvent: MouseEvent) => {
       const deltaX = moveEvent.clientX - startX;
       const newWidth = Math.max(60, startWidth + deltaX);
-      setColumnWidths((prev) => ({
-        ...prev,
-        [columnIndex]: newWidth,
-      }));
+      dispatch(setColumnWidth({ index: columnIndex, width: newWidth }));
     };
 
     const handleMouseUp = () => {
@@ -241,9 +134,8 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     const toastId = toast.loading(`Saving ${field}...`);
     try {
       const dbVal = val === "" ? null : val;
-      const res = await updateEnquiryFieldAction(enquiryId, field, dbVal);
-      if (res.success) {
-        // Handle VA% change -> recalculate Quotation Rate for all items in this enquiry
+      const resultAction = await dispatch(updateEnquiryField({ enquiryId, field, value: dbVal }));
+      if (updateEnquiryField.fulfilled.match(resultAction)) {
         if (field === "vaPercent") {
           const numericVa = val === "" ? null : parseFloat(val.replace(/%/g, ""));
           const targetEnquiry = enquiries.find((enq) => enq.id === enquiryId);
@@ -256,22 +148,21 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                   const calculated = costVal * (1 + (numericVa / 100));
                   newQuotedRate = calculated.toFixed(2);
                 }
-                await updateItemFieldAction(item.id, "quotedRate", newQuotedRate === "" ? null : newQuotedRate);
+                await dispatch(updateItemField({ itemId: item.id, field: "quotedRate", value: newQuotedRate === "" ? null : newQuotedRate }));
               }
             }
           }
         }
-
         toast.success("Saved successfully.", { id: toastId });
       } else {
-        toast.error(res.error || "Failed to save.", { id: toastId });
+        toast.error((resultAction.payload as string) || "Failed to save.", { id: toastId });
       }
     } catch {
       toast.error("An error occurred while saving.", { id: toastId });
     }
   };
 
-  const getItemNameMerge = (item: EnquiryItem) => {
+  const getItemNameMerge = (item: any) => {
     const orderedFields = [
       item.itemType,
       item.moc,
@@ -289,96 +180,54 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
   const handleItemFieldChange = async (itemId: string, field: string, val: string) => {
     const toastId = toast.loading(`Saving ${field}...`);
+    const item = allItems.find((it) => it.id === itemId);
     try {
       const dbVal = val === "" ? null : val;
-      const res = await updateItemFieldAction(itemId, field, dbVal);
-      if (res.success) {
-        // Automatically check if the updated field is one of the source fields for Item Name Merge
-        const sourceFields = [
-          "itemType",
-          "moc",
-          "size",
-          "pnRating",
-          "operationType",
-          "extension",
-          "bypass"
-        ];
-        
+      const resultAction = await dispatch(updateItemField({ itemId, field, value: dbVal }));
+      if (updateItemField.fulfilled.match(resultAction)) {
+        const sourceFields = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass"];
         if (sourceFields.includes(field)) {
-          // Find the current item in the enquiries state
-          let targetItem: any = null;
-          for (const enquiry of enquiries) {
-            const found = enquiry.items.find((it) => it.id === itemId);
-            if (found) {
-              targetItem = found;
-              break;
-            }
-          }
-          
-          if (targetItem) {
-            // Build the updated object with the new value we just saved
-            const updatedItem = {
-              ...targetItem,
-              [field]: dbVal
-            };
-            const mergedVal = getItemNameMerge(updatedItem);
-            // Save the merged value to the database!
-            await updateItemFieldAction(itemId, "itemNameMerge", mergedVal === "" ? null : mergedVal);
-          }
+          const updatedItem = { ...item, [field]: dbVal };
+          const mergedVal = getItemNameMerge(updatedItem);
+          await dispatch(updateItemField({ itemId, field: "itemNameMerge", value: mergedVal === "" ? null : mergedVal }));
         }
 
-        // Handle Cost change -> recalculate Quotation Rate
         if (field === "cost") {
           const numericCost = val === "" ? null : parseFloat(val);
           const parentEnquiry = enquiries.find((enq) => enq.items.some((it) => it.id === itemId));
           if (parentEnquiry && parentEnquiry.vaPercent !== null && numericCost !== null && numericCost > 0) {
             const calculated = numericCost * (1 + (parentEnquiry.vaPercent / 100));
             const newQuotedRate = calculated.toFixed(2);
-            await updateItemFieldAction(itemId, "quotedRate", newQuotedRate);
+            await dispatch(updateItemField({ itemId, field: "quotedRate", value: newQuotedRate }));
           }
         }
 
-        // Handle Quotation Rate change -> recalculate VA% and update other items
         if (field === "quotedRate") {
           const numericQuotedRate = val === "" ? null : parseFloat(val);
-          let targetItem: any = null;
-          let parentEnquiry: any = null;
-          for (const enq of enquiries) {
-            const found = enq.items.find((it) => it.id === itemId);
-            if (found) {
-              targetItem = found;
-              parentEnquiry = enq;
-              break;
-            }
-          }
-          
-          if (targetItem && parentEnquiry) {
-            const costVal = targetItem.cost ? parseFloat(targetItem.cost.toString()) : null;
+          const parentEnquiry = enquiries.find((enq) => enq.items.some((it) => it.id === itemId));
+          if (item && parentEnquiry) {
+            const costVal = item.cost ? parseFloat(item.cost.toString()) : null;
             if (costVal !== null && costVal > 0 && numericQuotedRate !== null) {
               const calculatedVa = ((numericQuotedRate / costVal) - 1) * 100;
               const formattedVa = calculatedVa.toFixed(2);
-              
-              // 1. Update the parent enquiry's vaPercent
-              await updateEnquiryFieldAction(parentEnquiry.id, "vaPercent", formattedVa);
-              
-              // 2. Update other items in the same enquiry
+              await dispatch(updateEnquiryField({ enquiryId: parentEnquiry.id, field: "vaPercent", value: formattedVa }));
               if (parentEnquiry.items) {
-                for (const item of parentEnquiry.items) {
-                  if (item.id === itemId) continue;
-                  const otherCost = item.cost ? parseFloat(item.cost.toString()) : null;
+                for (const siblingItem of parentEnquiry.items) {
+                  if (siblingItem.id === itemId) continue;
+                  const otherCost = siblingItem.cost ? parseFloat(siblingItem.cost.toString()) : null;
                   if (otherCost !== null && otherCost > 0) {
                     const otherQuotedRate = otherCost * (1 + (calculatedVa / 100));
-                    await updateItemFieldAction(item.id, "quotedRate", otherQuotedRate.toFixed(2));
+                    await dispatch(updateItemField({ itemId: siblingItem.id, field: "quotedRate", value: otherQuotedRate.toFixed(2) }));
                   }
                 }
               }
             }
           }
         }
-        
+
         toast.success("Saved successfully.", { id: toastId });
       } else {
-        toast.error(res.error || "Failed to save.", { id: toastId });
+        toast.error((resultAction.payload as string) || "Failed to save.", { id: toastId });
       }
     } catch {
       toast.error("An error occurred while saving.", { id: toastId });
@@ -598,7 +447,60 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     return true;
   });
 
-  const paginatedEnquiries = filteredEnquiries.slice(
+  const getSortValue = (enquiry: any, field: string) => {
+    const enquiryFields = [
+      "enquiryDate", "docketNumber", "partyName", "enquiryType", "state", 
+      "paymentTerms", "inspection", "pbg", "utility", "vaPercent", "orderStatus"
+    ];
+    
+    if (enquiryFields.includes(field)) {
+      return enquiry[field];
+    }
+    
+    if (field === "attachment") {
+      return enquiry.attachments ? enquiry.attachments.length : 0;
+    }
+    
+    const firstItem = enquiry.items && enquiry.items[0];
+    if (!firstItem) return null;
+    
+    return firstItem[field];
+  };
+
+  const sortedEnquiries = [...filteredEnquiries].sort((a, b) => {
+    if (!sortField) return 0;
+    
+    const valA = getSortValue(a, sortField);
+    const valB = getSortValue(b, sortField);
+    
+    if (valA === null || valA === undefined || valA === "") return 1;
+    if (valB === null || valB === undefined || valB === "") return -1;
+    
+    if (typeof valA === "number" && typeof valB === "number") {
+      return sortDirection === "asc" ? valA - valB : valB - valA;
+    }
+    
+    if (valA instanceof Date && valB instanceof Date) {
+      return sortDirection === "asc" 
+        ? valA.getTime() - valB.getTime() 
+        : valB.getTime() - valA.getTime();
+    }
+    
+    if (sortField === "enquiryDate") {
+      const timeA = new Date(valA).getTime();
+      const timeB = new Date(valB).getTime();
+      return sortDirection === "asc" ? timeA - timeB : timeB - timeA;
+    }
+    
+    const strA = String(valA).toLowerCase();
+    const strB = String(valB).toLowerCase();
+    
+    return sortDirection === "asc"
+      ? strA.localeCompare(strB, undefined, { numeric: true })
+      : strB.localeCompare(strA, undefined, { numeric: true });
+  });
+
+  const paginatedEnquiries = sortedEnquiries.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
@@ -608,7 +510,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
     try {
       const rows: any[] = [];
 
-      filteredEnquiries.forEach((enquiry) => {
+      sortedEnquiries.forEach((enquiry) => {
         if (!enquiry.items || enquiry.items.length === 0) {
           rows.push({
             "Enquiry Date": new Date(enquiry.enquiryDate).toLocaleDateString("en-GB"),
@@ -740,13 +642,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
           <tr className="bg-slate-50/75 select-none">
             {/* 0. Enquiry Date */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Enquiry Date</div>
+              <div className="flex items-center justify-between">
+                <span>Enquiry Date</span>
+                {renderSortArrow("enquiryDate")}
+              </div>
               <div className="flex gap-1 items-center mt-1.5">
                 <input
                   type="date"
                   value={filters.enquiryDateFrom}
                   onChange={(e) =>
-                    setFilters((prev) => ({ ...prev, enquiryDateFrom: e.target.value }))
+                    dispatch(setFilter({ field: "enquiryDateFrom", value: e.target.value }))
                   }
                   className="h-6 w-full text-[9px] p-0.5 border rounded bg-white text-slate-700 outline-none font-normal"
                 />
@@ -755,7 +660,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                   type="date"
                   value={filters.enquiryDateTo}
                   onChange={(e) =>
-                    setFilters((prev) => ({ ...prev, enquiryDateTo: e.target.value }))
+                    dispatch(setFilter({ field: "enquiryDateTo", value: e.target.value }))
                   }
                   className="h-6 w-full text-[9px] p-0.5 border rounded bg-white text-slate-700 outline-none font-normal"
                 />
@@ -772,13 +677,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 1. Docket No */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Docket No</div>
+              <div className="flex items-center justify-between">
+                <span>Docket No</span>
+                {renderSortArrow("docketNumber")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.docketNumber}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, docketNumber: e.target.value }))
+                  dispatch(setFilter({ field: "docketNumber", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -794,11 +702,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 2. Party Name */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Party Name</div>
+              <div className="flex items-center justify-between">
+                <span>Party Name</span>
+                {renderSortArrow("partyName")}
+              </div>
               <div className="relative mt-1.5 normal-case font-normal text-left text-slate-700">
                 <button
                   type="button"
-                  onClick={() => setIsPartyFilterOpen(!isPartyFilterOpen)}
+                  onClick={() => dispatch(setPartyFilterOpen(!isPartyFilterOpen))}
                   className="w-full h-7 rounded border border-slate-200 bg-white px-2 py-0.5 text-[10px] text-left cursor-pointer flex items-center justify-between hover:bg-slate-50 outline-none"
                 >
                   <span className="truncate">
@@ -814,8 +725,8 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                     <div
                       className="fixed inset-0 z-40 cursor-default"
                       onClick={() => {
-                        setIsPartyFilterOpen(false);
-                        setPartySearch("");
+                        dispatch(setPartyFilterOpen(false));
+                        dispatch(setPartySearch(""));
                       }}
                     />
                     <div className="absolute top-8 left-0 w-64 z-50 rounded border border-slate-200 bg-white shadow-lg p-2 flex flex-col gap-2 max-h-72">
@@ -824,8 +735,8 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                         <input
                           type="text"
                           placeholder="Search parties..."
-                          value={partySearch}
-                          onChange={(e) => setPartySearch(e.target.value)}
+                          value={partySearchVal}
+                          onChange={(e) => dispatch(setPartySearch(e.target.value))}
                           className="w-full text-[10px] bg-transparent outline-none border-none placeholder:text-slate-400 p-0 h-4 normal-case"
                         />
                       </div>
@@ -834,10 +745,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                         <button
                           type="button"
                           onClick={() =>
-                            setFilters((prev) => ({
-                              ...prev,
-                              partyNames: PARTY_NAMES,
-                            }))
+                            dispatch(setPartyNamesFilter(PARTY_NAMES))
                           }
                           className="text-blue-600 font-bold hover:underline cursor-pointer"
                         >
@@ -846,10 +754,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                         <button
                           type="button"
                           onClick={() =>
-                            setFilters((prev) => ({
-                              ...prev,
-                              partyNames: [],
-                            }))
+                            dispatch(setPartyNamesFilter([]))
                           }
                           className="text-slate-500 font-bold hover:underline cursor-pointer"
                         >
@@ -859,7 +764,7 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
                       <div className="flex-1 overflow-y-auto divide-y divide-slate-100 max-h-48 pr-0.5">
                         {PARTY_NAMES.filter((name) =>
-                          name.toLowerCase().includes(partySearch.toLowerCase())
+                          name.toLowerCase().includes(partySearchVal.toLowerCase())
                         ).map((name) => {
                           const isChecked = filters.partyNames.includes(name);
                           return (
@@ -871,13 +776,11 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
                                 type="checkbox"
                                 checked={isChecked}
                                 onChange={() => {
-                                  setFilters((prev) => {
-                                    const exist = prev.partyNames.includes(name);
-                                    const next = exist
-                                      ? prev.partyNames.filter((n) => n !== name)
-                                      : [...prev.partyNames, name];
-                                    return { ...prev, partyNames: next };
-                                  });
+                                  dispatch(setPartyNamesFilter(
+                                    filters.partyNames.includes(name)
+                                      ? filters.partyNames.filter((n) => n !== name)
+                                      : [...filters.partyNames, name]
+                                  ));
                                 }}
                                 className="h-3 w-3 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
                               />
@@ -902,11 +805,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 3. Enquiry Type Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Enquiry Type</div>
+              <div className="flex items-center justify-between">
+                <span>Enquiry Type</span>
+                {renderSortArrow("enquiryType")}
+              </div>
               <select
                 value={filters.enquiryType}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, enquiryType: e.target.value }))
+                  dispatch(setFilter({ field: "enquiryType", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -927,11 +833,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 4. State Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>State</div>
+              <div className="flex items-center justify-between">
+                <span>State</span>
+                {renderSortArrow("state")}
+              </div>
               <select
                 value={filters.state}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, state: e.target.value }))
+                  dispatch(setFilter({ field: "state", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -952,11 +861,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 5. Payment Terms Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Payment Terms</div>
+              <div className="flex items-center justify-between">
+                <span>Payment Terms</span>
+                {renderSortArrow("paymentTerms")}
+              </div>
               <select
                 value={filters.paymentTerms}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, paymentTerms: e.target.value }))
+                  dispatch(setFilter({ field: "paymentTerms", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -977,11 +889,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 6. Inspection Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Inspection</div>
+              <div className="flex items-center justify-between">
+                <span>Inspection</span>
+                {renderSortArrow("inspection")}
+              </div>
               <select
                 value={filters.inspection}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, inspection: e.target.value }))
+                  dispatch(setFilter({ field: "inspection", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -1002,11 +917,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 7. PBG Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>PBG</div>
+              <div className="flex items-center justify-between">
+                <span>PBG</span>
+                {renderSortArrow("pbg")}
+              </div>
               <select
                 value={filters.pbg}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, pbg: e.target.value }))
+                  dispatch(setFilter({ field: "pbg", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -1027,13 +945,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 8. Utility Search */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Utility</div>
+              <div className="flex items-center justify-between">
+                <span>Utility</span>
+                {renderSortArrow("utility")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.utility}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, utility: e.target.value }))
+                  dispatch(setFilter({ field: "utility", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1049,13 +970,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 9. VA% Search */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>VA%</div>
+              <div className="flex items-center justify-between">
+                <span>VA%</span>
+                {renderSortArrow("vaPercent")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.vaPercent}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, vaPercent: e.target.value }))
+                  dispatch(setFilter({ field: "vaPercent", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1071,11 +995,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 10. Order Status Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Order Status</div>
+              <div className="flex items-center justify-between">
+                <span>Order Status</span>
+                {renderSortArrow("orderStatus")}
+              </div>
               <select
                 value={filters.orderStatus}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, orderStatus: e.target.value }))
+                  dispatch(setFilter({ field: "orderStatus", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -1096,13 +1023,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 11. Item Name As Per Party */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Item Name</div>
+              <div className="flex items-center justify-between">
+                <span>Item Name</span>
+                {renderSortArrow("itemName")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.itemName}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, itemName: e.target.value }))
+                  dispatch(setFilter({ field: "itemName", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1118,13 +1048,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 12. Quantity */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Quantity</div>
+              <div className="flex items-center justify-between">
+                <span>Quantity</span>
+                {renderSortArrow("quantity")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.quantity}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, quantity: e.target.value }))
+                  dispatch(setFilter({ field: "quantity", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1140,11 +1073,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 13. Item Type Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Item Type</div>
+              <div className="flex items-center justify-between">
+                <span>Item Type</span>
+                {renderSortArrow("itemType")}
+              </div>
               <select
                 value={filters.itemType}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, itemType: e.target.value }))
+                  dispatch(setFilter({ field: "itemType", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -1165,11 +1101,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 14. MOC Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>MOC</div>
+              <div className="flex items-center justify-between">
+                <span>MOC</span>
+                {renderSortArrow("moc")}
+              </div>
               <select
                 value={filters.moc}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, moc: e.target.value }))
+                  dispatch(setFilter({ field: "moc", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -1190,11 +1129,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 15. Size Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Size</div>
+              <div className="flex items-center justify-between">
+                <span>Size</span>
+                {renderSortArrow("size")}
+              </div>
               <select
                 value={filters.size}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, size: e.target.value }))
+                  dispatch(setFilter({ field: "size", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -1215,11 +1157,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 16. PN Rating Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>PN Rating</div>
+              <div className="flex items-center justify-between">
+                <span>PN Rating</span>
+                {renderSortArrow("pnRating")}
+              </div>
               <select
                 value={filters.pnRating}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, pnRating: e.target.value }))
+                  dispatch(setFilter({ field: "pnRating", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -1240,11 +1185,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 17. Operation Type Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Operation Type</div>
+              <div className="flex items-center justify-between">
+                <span>Operation Type</span>
+                {renderSortArrow("operationType")}
+              </div>
               <select
                 value={filters.operationType}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, operationType: e.target.value }))
+                  dispatch(setFilter({ field: "operationType", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -1265,11 +1213,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 18. Extension Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Extension</div>
+              <div className="flex items-center justify-between">
+                <span>Extension</span>
+                {renderSortArrow("extension")}
+              </div>
               <select
                 value={filters.extension}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, extension: e.target.value }))
+                  dispatch(setFilter({ field: "extension", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -1290,11 +1241,14 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 19. Bypass Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Bypass</div>
+              <div className="flex items-center justify-between">
+                <span>Bypass</span>
+                {renderSortArrow("bypass")}
+              </div>
               <select
                 value={filters.bypass}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, bypass: e.target.value }))
+                  dispatch(setFilter({ field: "bypass", value: e.target.value }))
                 }
                 className={selectClass}
               >
@@ -1315,13 +1269,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 20. Product Cost */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Product Cost</div>
+              <div className="flex items-center justify-between">
+                <span>Product Cost</span>
+                {renderSortArrow("productCost")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.productCost}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, productCost: e.target.value }))
+                  dispatch(setFilter({ field: "productCost", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1337,13 +1294,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 21. Cost Ref Code */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Cost Ref Code</div>
+              <div className="flex items-center justify-between">
+                <span>Cost Ref Code</span>
+                {renderSortArrow("costRefCode")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.costRefCode}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, costRefCode: e.target.value }))
+                  dispatch(setFilter({ field: "costRefCode", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1359,13 +1319,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 22. Cost */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Cost</div>
+              <div className="flex items-center justify-between">
+                <span>Cost</span>
+                {renderSortArrow("cost")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.cost}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, cost: e.target.value }))
+                  dispatch(setFilter({ field: "cost", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1381,13 +1344,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 23. Stock Status */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Stock Status</div>
+              <div className="flex items-center justify-between">
+                <span>Stock Status</span>
+                {renderSortArrow("stockStatus")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.stockStatus}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, stockStatus: e.target.value }))
+                  dispatch(setFilter({ field: "stockStatus", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1403,13 +1369,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 24. Discount */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Discount</div>
+              <div className="flex items-center justify-between">
+                <span>Discount</span>
+                {renderSortArrow("discount")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.discount}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, discount: e.target.value }))
+                  dispatch(setFilter({ field: "discount", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1425,13 +1394,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 25. Quoted Rate */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Quotation Rate</div>
+              <div className="flex items-center justify-between">
+                <span>Quotation Rate</span>
+                {renderSortArrow("quotedRate")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.quotedRate}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, quotedRate: e.target.value }))
+                  dispatch(setFilter({ field: "quotedRate", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1447,13 +1419,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 26. Item Name Merge */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Item Name (Merge)</div>
+              <div className="flex items-center justify-between">
+                <span>Item Name (Merge)</span>
+                {renderSortArrow("itemNameMerge")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.itemNameMerge}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, itemNameMerge: e.target.value }))
+                  dispatch(setFilter({ field: "itemNameMerge", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1469,13 +1444,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 27. Total Value */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Total Value</div>
+              <div className="flex items-center justify-between">
+                <span>Total Value</span>
+                {renderSortArrow("totalValue")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.totalValue}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, totalValue: e.target.value }))
+                  dispatch(setFilter({ field: "totalValue", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1491,13 +1469,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 28. Itemwise Total Value */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Itemwise Total Value</div>
+              <div className="flex items-center justify-between">
+                <span>Itemwise Total Value</span>
+                {renderSortArrow("itemWiseTotalValue")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.itemWiseTotalValue}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, itemWiseTotalValue: e.target.value }))
+                  dispatch(setFilter({ field: "itemWiseTotalValue", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1513,13 +1494,16 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
 
             {/* 29. Attachment */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div>Attachment</div>
+              <div className="flex items-center justify-between">
+                <span>Attachment</span>
+                {renderSortArrow("attachment")}
+              </div>
               <input
                 type="text"
                 placeholder="Search..."
                 value={filters.attachment}
                 onChange={(e) =>
-                  setFilters((prev) => ({ ...prev, attachment: e.target.value }))
+                  dispatch(setFilter({ field: "attachment", value: e.target.value }))
                 }
                 className={inputClass}
               />
@@ -1562,8 +1546,8 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
               const { company, branch } = parseParty(enquiry.partyName);
               const initials = getInitials(enquiry.partyName);
               const hasMultiple = enquiry.items.length > 1;
-              const isExpanded = expanded[enquiry.id] !== undefined
-                ? expanded[enquiry.id]
+              const isExpanded = expandedRows[enquiry.id] !== undefined
+                ? expandedRows[enquiry.id]
                 : hasActiveFilters;
               const firstItem = enquiry.items[0];
 
@@ -2390,10 +2374,10 @@ export default function EnquiryTable({ enquiries, dropdownOptions }: EnquiryTabl
         currentPage={currentPage}
         totalCount={filteredEnquiries.length}
         pageSize={pageSize}
-        onPageChange={(page) => setCurrentPage(page)}
+        onPageChange={(page) => dispatch(setPage(page))}
         onPageSizeChange={(size) => {
-          setPageSize(size);
-          setCurrentPage(1);
+          dispatch(setPageSize(size));
+          dispatch(setPage(1));
         }}
       />
     )}

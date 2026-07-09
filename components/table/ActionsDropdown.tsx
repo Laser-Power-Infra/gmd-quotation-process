@@ -22,6 +22,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { updateEnquiryItemAction, deleteEnquiryItemAction } from "@/app/actions";
 import { PARTY_NAMES } from "@/lib/partyNames";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { openViewDialog, closeViewDialog, openEditDialog, closeEditDialog, openDeleteDialog, closeDeleteDialog } from "@/lib/dialogsSlice";
 
 interface Attachment {
   id: string;
@@ -98,10 +100,9 @@ interface ActionsDropdownProps {
 }
 
 export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdownProps) {
+  const dispatch = useAppDispatch();
+  const dialogs = useAppSelector((s) => s.dialogs);
   const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [isViewOpen, setIsViewOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 
   // Edit form state
   const [docketNumber, setDocketNumber] = useState(item.enquiry.docketNumber);
@@ -313,7 +314,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
       if (res.success) {
         toast.success("Enquiry updated successfully.", { id: toastId });
-        setIsEditOpen(false);
+        dispatch(closeEditDialog());
       } else {
         toast.error(res.error || "Failed to update enquiry.", { id: toastId });
       }
@@ -330,7 +331,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
       const res = await deleteEnquiryItemAction(item.id);
       if (res.success) {
         toast.success("Item deleted successfully.");
-        setIsDeleteOpen(false);
+        dispatch(closeDeleteDialog());
       } else {
         toast.error(res.error || "Failed to delete item.");
       }
@@ -355,7 +356,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
           <DropdownMenuItem
             className="cursor-pointer"
             onClick={() => {
-              setIsViewOpen(true);
+              dispatch(openViewDialog(item.id));
               setDropdownOpen(false);
             }}
           >
@@ -365,7 +366,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
           <DropdownMenuItem
             className="cursor-pointer"
             onClick={() => {
-              setIsEditOpen(true);
+              dispatch(openEditDialog(item.id));
               setDropdownOpen(false);
             }}
           >
@@ -375,7 +376,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
           <DropdownMenuItem
             className="text-red-600 focus:text-red-600 cursor-pointer"
             onClick={() => {
-              setIsDeleteOpen(true);
+              dispatch(openDeleteDialog(item.id));
               setDropdownOpen(false);
             }}
           >
@@ -386,7 +387,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
       </DropdownMenu>
 
       {/* VIEW DETAILS DIALOG */}
-      <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+      <Dialog open={dialogs.viewItemId === item.id} onOpenChange={(v) => { if (!v) dispatch(closeViewDialog()); }}>
         <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-foreground">
@@ -654,7 +655,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
       </Dialog>
 
       {/* EDIT ENQUIRY DIALOG */}
-      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+      <Dialog open={dialogs.editItemId === item.id} onOpenChange={(v) => { if (!v) dispatch(closeEditDialog()); }}>
         <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-foreground">
@@ -1087,7 +1088,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
       </Dialog>
 
       {/* DELETE CONFIRM DIALOG */}
-      <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+      <Dialog open={dialogs.deleteItemId === item.id} onOpenChange={(v) => { if (!v) dispatch(closeDeleteDialog()); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-foreground">

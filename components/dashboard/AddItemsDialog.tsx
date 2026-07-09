@@ -23,18 +23,18 @@ import {
 } from "@/components/ui/select";
 import { addItemsAction } from "@/app/actions";
 import { parseClipboardText } from "@/lib/pasteParser";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { closeAddItemsDialog } from "@/lib/dialogsSlice";
 
 interface AddItemsDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   enquiries: { id: string; docketNumber: string; partyName: string }[];
 }
 
 export default function AddItemsDialog({
-  open,
-  onOpenChange,
   enquiries,
 }: AddItemsDialogProps) {
+  const dispatch = useAppDispatch();
+  const open = useAppSelector((state) => state.dialogs.isAddItemsOpen);
   const [enquiryId, setEnquiryId] = useState("");
   const [items, setItems] = useState<{ itemName: string; quantity: string }[]>([
     { itemName: "", quantity: "" },
@@ -130,7 +130,7 @@ export default function AddItemsDialog({
         setSearchQuery("");
         setIsOpen(false);
         setItems([{ itemName: "", quantity: "" }]);
-        onOpenChange(false);
+        dispatch(closeAddItemsDialog());
       } else {
         toast.error(res.error || "Failed to add items.");
       }
@@ -142,7 +142,7 @@ export default function AddItemsDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) dispatch(closeAddItemsDialog()); }}>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold text-foreground">

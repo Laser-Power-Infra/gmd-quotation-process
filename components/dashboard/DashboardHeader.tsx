@@ -2,8 +2,10 @@
 
 import React, { useState, useTransition, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Filter, Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAppDispatch } from "@/lib/hooks";
+import { openAddItemsDialog, openNewEnquiryDialog } from "@/lib/dialogsSlice";
 import AddItemsDialog from "./AddItemsDialog";
 import NewEnquiryDialog from "./NewEnquiryDialog";
 
@@ -22,9 +24,7 @@ export default function DashboardHeader({
   const searchParams = useSearchParams();
   const [searchVal, setSearchVal] = useState(searchParams.get("search") || "");
   const [isPending, startTransition] = useTransition();
-
-  const [isAddItemsOpen, setIsAddItemsOpen] = useState(false);
-  const [isNewEnquiryOpen, setIsNewEnquiryOpen] = useState(false);
+  const dispatch = useAppDispatch();
 
   // Debounce search update
   useEffect(() => {
@@ -35,7 +35,6 @@ export default function DashboardHeader({
       } else {
         params.delete("search");
       }
-      // Reset page when search changes
       params.delete("page");
 
       startTransition(() => {
@@ -69,43 +68,31 @@ export default function DashboardHeader({
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
-        {/* <Button
-          variant="outline"
-          className="flex h-9 items-center gap-2 px-3 text-sm font-medium"
-        >
-          <Filter className="h-4 w-4" />
-          More Filters
-          <ChevronDown className="h-3.5 w-3.5 ml-1" />
-        </Button> */}
-
-        {/* Add Items Button */}
         <Button
-          onClick={() => setIsAddItemsOpen(true)}
+          onClick={() => dispatch(openAddItemsDialog())}
           className="flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9]"
         >
-          <Plus className="h-4 w-4" />
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
           Add Items
         </Button>
 
-        {/* New Enquiry Button */}
         <Button
-          onClick={() => setIsNewEnquiryOpen(true)}
+          onClick={() => dispatch(openNewEnquiryDialog())}
           className="flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9]"
         >
-          <Plus className="h-4 w-4" />
+          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
           New Enquiry
         </Button>
       </div>
 
-      {/* Dialog Modals */}
       <AddItemsDialog
-        open={isAddItemsOpen}
-        onOpenChange={setIsAddItemsOpen}
         enquiries={enquiries}
       />
       <NewEnquiryDialog
-        open={isNewEnquiryOpen}
-        onOpenChange={setIsNewEnquiryOpen}
         nextDocketNumber={nextDocketNumber}
         dropdownOptions={dropdownOptions}
       />

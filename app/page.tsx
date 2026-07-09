@@ -1,11 +1,7 @@
 import React, { Suspense } from "react";
 import Navbar from "@/components/layout/Navbar";
-import DashboardHeader from "@/components/dashboard/DashboardHeader";
-import EnquiryTable from "@/components/table/EnquiryTable";
-import Pagination from "@/components/table/Pagination";
+import DashboardContainer from "./DashboardContainer";
 import { prisma } from "@/lib/prisma";
-import { SearchX, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 interface PageProps {
   searchParams: Promise<{
@@ -62,9 +58,9 @@ export default async function Page({ searchParams }: PageProps) {
         },
         attachments: true,
       },
-      // orderBy: {
-      //   enquiryDate: "desc",
-      // },
+      orderBy: {
+        createdAt: "desc",
+      },
     })
   ).map((enquiry) => ({
     ...enquiry,
@@ -487,18 +483,14 @@ export default async function Page({ searchParams }: PageProps) {
 
       <main className="flex-1 flex flex-col p-6 w-full gap-4 max-w-[1600px] mx-auto">
         <Suspense>
-          <DashboardHeader
-            enquiries={enquiries}
-            nextDocketNumber={nextDocketNumber}
+          <DashboardContainer
+            enquiries={enquiriesList}
             dropdownOptions={dropdownOptions}
+            nextDocketNumber={nextDocketNumber}
+            enquiriesList={enquiries}
           />
         </Suspense>
-
-        <div className="bg-white rounded-lg border border-slate-100 overflow-hidden shadow-sm flex flex-col flex-1">
-          <EnquiryTable enquiries={enquiriesList} dropdownOptions={dropdownOptions} />
-        </div>
       </main>
     </div>
   );
 }
-// Touched to reload generated client

@@ -17,10 +17,10 @@ import { Label } from "@/components/ui/label";
 import { createNewEnquiryAction } from "@/app/actions";
 import { PARTY_NAMES } from "@/lib/partyNames";
 import { parseClipboardText } from "@/lib/pasteParser";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { closeNewEnquiryDialog } from "@/lib/dialogsSlice";
 
 interface NewEnquiryDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   nextDocketNumber: string;
   dropdownOptions: {
     enquiryTypes: string[];
@@ -54,11 +54,11 @@ const fileToBase64 = (file: File): Promise<string> => {
 };
 
 export default function NewEnquiryDialog({
-  open,
-  onOpenChange,
   nextDocketNumber,
   dropdownOptions,
 }: NewEnquiryDialogProps) {
+  const dispatch = useAppDispatch();
+  const open = useAppSelector((state) => state.dialogs.isNewEnquiryOpen);
   const [docketNumber, setDocketNumber] = useState("");
 
   React.useEffect(() => {
@@ -334,7 +334,7 @@ export default function NewEnquiryDialog({
             discount: "",
           },
         ]);
-        onOpenChange(false);
+        dispatch(closeNewEnquiryDialog());
       } else {
         toast.error(res.error || "Failed to create enquiry.", { id: toastId });
       }
@@ -354,7 +354,7 @@ export default function NewEnquiryDialog({
   const itemSelectClass = "w-full h-8 rounded border border-input bg-background px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) dispatch(closeNewEnquiryDialog()); }}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold text-foreground">
