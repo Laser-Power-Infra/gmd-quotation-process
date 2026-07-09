@@ -362,7 +362,6 @@ export async function updateEnquiryFieldAction(
       where: { id: enquiryId },
       data: { [field]: parsedVal },
     });
-    revalidatePath("/");
     return { success: true };
   } catch (error: any) {
     console.error(`Error updating enquiry ${field}:`, error);
@@ -385,10 +384,9 @@ export async function updateItemFieldAction(
       where: { id: itemId },
       data: { [field]: parsedVal },
     });
-    revalidatePath("/");
     return { success: true };
   } catch (error: any) {
     console.error(`Error updating item ${field}:`, error);
-    return { success: false, error: error.message || `Failed to update ${field}.` };
+    return { success: false, error: error.message || `Failed to update ${itemId}.` };
   }
 }
