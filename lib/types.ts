@@ -21,6 +21,7 @@ export interface EnquiryItemData {
   itemNameMerge: string | null;
   totalValue: string | null;
   itemWiseTotalValue: string | null;
+  vaPercent: number | null;
 }
 
 export interface AttachmentData {
@@ -44,7 +45,6 @@ export interface EnquiryData {
   inspection: string | null;
   pbg: string | null;
   utility: string | null;
-  vaPercent: number | null;
   orderStatus: string | null;
   attachments: AttachmentData[];
   items: EnquiryItemData[];

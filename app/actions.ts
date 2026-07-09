@@ -15,7 +15,6 @@ export async function createNewEnquiryAction(formData: {
   inspection?: string | null;
   pbg?: string | null;
   utility?: string | null;
-  vaPercent?: number | null;
   orderStatus?: string | null;
   attachments: { name: string; size: number; type: string; content?: string }[];
   items: {
@@ -33,6 +32,7 @@ export async function createNewEnquiryAction(formData: {
     cost?: number | null;
     stockStatus?: string | null;
     discount?: number | null;
+    vaPercent?: number | null;
   }[];
 }) {
   try {
@@ -79,7 +79,6 @@ export async function createNewEnquiryAction(formData: {
         inspection: formData.inspection || null,
         pbg: formData.pbg || null,
         utility: formData.utility || null,
-        vaPercent: formData.vaPercent || null,
         orderStatus: formData.orderStatus || null,
         attachments: {
           create: attachmentCreates,
@@ -100,6 +99,7 @@ export async function createNewEnquiryAction(formData: {
             cost: item.cost || null,
             stockStatus: item.stockStatus || null,
             discount: item.discount || null,
+            vaPercent: item.vaPercent || null,
           })),
         },
       },
@@ -131,6 +131,7 @@ export async function addItemsAction(formData: {
     cost?: number;
     stockStatus?: string;
     discount?: number;
+    vaPercent?: number;
   }[];
 }) {
   try {
@@ -151,6 +152,7 @@ export async function addItemsAction(formData: {
         cost: item.cost || null,
         stockStatus: item.stockStatus || null,
         discount: item.discount || null,
+        vaPercent: item.vaPercent || null,
       })),
     });
 
@@ -214,6 +216,40 @@ export async function updateEnquiryItemAction(formData: {
       return { success: false, error: "Docket Number already exists on another enquiry." };
     }
 
+    const updatedCost = formData.cost !== undefined ? formData.cost : (item.cost ? parseFloat(item.cost.toString()) : null);
+    const updatedVa = formData.vaPercent !== undefined ? formData.vaPercent : (item.vaPercent ? parseFloat(item.vaPercent.toString()) : null);
+    const updatedQty = formData.quantity !== undefined ? formData.quantity : (item.quantity ? parseFloat(item.quantity.toString()) : 0);
+
+    let updatedQuotedRate = item.quotedRate;
+    let updatedItemWise = item.itemWiseTotalValue;
+    let updatedTotalVal = item.totalValue;
+
+    if (updatedCost !== null && updatedCost > 0) {
+      if (updatedVa !== null) {
+        const qr = updatedCost * (1 + (updatedVa / 100));
+        updatedQuotedRate = qr.toFixed(2);
+      } else {
+        updatedQuotedRate = null;
+      }
+    } else {
+      updatedQuotedRate = null;
+    }
+
+    if (updatedQuotedRate) {
+      const qrFloat = parseFloat(updatedQuotedRate);
+      if (updatedQty > 0 && qrFloat > 0) {
+        const itemWise = updatedQty * qrFloat;
+        updatedItemWise = itemWise.toFixed(2);
+        updatedTotalVal = (itemWise * 1.18).toFixed(2);
+      } else {
+        updatedItemWise = null;
+        updatedTotalVal = null;
+      }
+    } else {
+      updatedItemWise = null;
+      updatedTotalVal = null;
+    }
+
     // Update item
     await prisma.enquiryItem.update({
       where: { id: formData.itemId },
@@ -232,6 +268,10 @@ export async function updateEnquiryItemAction(formData: {
         cost: formData.cost || null,
         stockStatus: formData.stockStatus || null,
         discount: formData.discount || null,
+        vaPercent: formData.vaPercent !== undefined ? formData.vaPercent : null,
+        quotedRate: updatedQuotedRate,
+        itemWiseTotalValue: updatedItemWise,
+        totalValue: updatedTotalVal,
       },
     });
 
@@ -282,7 +322,6 @@ export async function updateEnquiryItemAction(formData: {
         inspection: formData.inspection || null,
         pbg: formData.pbg || null,
         utility: formData.utility || null,
-        vaPercent: formData.vaPercent || null,
         orderStatus: formData.orderStatus || null,
       },
     });
@@ -355,9 +394,6 @@ export async function updateEnquiryFieldAction(
 ) {
   try {
     let parsedVal = value;
-    if (field === "vaPercent" && value !== null) {
-      parsedVal = parseFloat(String(value).replace(/%/g, "")) || null;
-    }
     await prisma.enquiry.update({
       where: { id: enquiryId },
       data: { [field]: parsedVal },
@@ -377,7 +413,9 @@ export async function updateItemFieldAction(
 ) {
   try {
     let parsedVal = value;
-    if (["quantity", "productCost", "cost", "discount"].includes(field) && value !== null) {
+    if (field === "vaPercent" && value !== null) {
+      parsedVal = parseFloat(String(value).replace(/%/g, "")) || null;
+    } else if (["quantity", "productCost", "cost", "discount"].includes(field) && value !== null) {
       parsedVal = parseFloat(String(value)) || 0;
     }
     await prisma.enquiryItem.update({

@@ -81,7 +81,7 @@ export default function NewEnquiryDialog({
   const [inspection, setInspection] = useState("");
   const [pbg, setPbg] = useState("");
   const [utility, setUtility] = useState("");
-  const [vaPercent, setVaPercent] = useState("");
+
   const [orderStatus, setOrderStatus] = useState("");
 
   // File uploader state
@@ -281,7 +281,6 @@ export default function NewEnquiryDialog({
         inspection,
         pbg,
         utility,
-        vaPercent: vaPercent ? parseFloat(vaPercent.replace(/%/g, "")) : null,
         orderStatus: orderStatus || null,
         attachments: attachmentsPayload,
         items: items.map((item) => ({
@@ -569,18 +568,6 @@ export default function NewEnquiryDialog({
                 />
               </div>
 
-              {/* VA% */}
-              <div className="space-y-1">
-                <Label className="text-[10px] font-semibold text-slate-600">
-                  VA%
-                </Label>
-                <Input
-                  placeholder="e.g. 10%"
-                  value={vaPercent}
-                  onChange={(e) => setVaPercent(e.target.value)}
-                  className="text-xs h-9"
-                />
-              </div>
 
               {/* Order Status */}
               <div className="space-y-1">

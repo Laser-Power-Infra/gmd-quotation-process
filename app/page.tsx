@@ -70,6 +70,7 @@ export default async function Page({ searchParams }: PageProps) {
       productCost: item.productCost ? Number(item.productCost) : null,
       cost: item.cost ? Number(item.cost) : null,
       discount: item.discount ? Number(item.discount) : null,
+      vaPercent: item.vaPercent !== null && item.vaPercent !== undefined ? Number(item.vaPercent) : null,
       quotedRate: item.quotedRate || null,
     })),
   }));
@@ -144,7 +145,7 @@ export default async function Page({ searchParams }: PageProps) {
     prisma.enquiry.findMany({ select: { inspection: true }, distinct: ["inspection"] }),
     prisma.enquiry.findMany({ select: { pbg: true }, distinct: ["pbg"] }),
     prisma.enquiry.findMany({ select: { utility: true }, distinct: ["utility"] }),
-    prisma.enquiry.findMany({ select: { vaPercent: true }, distinct: ["vaPercent"] }),
+    prisma.enquiryItem.findMany({ select: { vaPercent: true }, distinct: ["vaPercent"] }),
     prisma.enquiry.findMany({ select: { orderStatus: true }, distinct: ["orderStatus"] }),
     prisma.enquiryItem.findMany({ select: { itemType: true }, distinct: ["itemType"] }),
     prisma.enquiryItem.findMany({ select: { moc: true }, distinct: ["moc"] }),

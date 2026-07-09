@@ -91,7 +91,6 @@ interface ActionsDropdownProps {
       inspection: string | null;
       pbg: string | null;
       utility: string | null;
-      vaPercent: number | null;
       orderStatus: string | null;
       attachments: Attachment[];
     };
@@ -118,7 +117,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
   const [inspection, setInspection] = useState(item.enquiry.inspection || "");
   const [pbg, setPbg] = useState(item.enquiry.pbg || "");
   const [utility, setUtility] = useState(item.enquiry.utility || "");
-  const [vaPercent, setVaPercent] = useState(item.enquiry.vaPercent ? `${item.enquiry.vaPercent}%` : "");
+  const [vaPercent, setVaPercent] = useState(item.vaPercent !== null ? `${item.vaPercent}%` : "");
   const [orderStatus, setOrderStatus] = useState(item.enquiry.orderStatus || "");
 
   // Item-level specs states
@@ -470,14 +469,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                     {item.enquiry.utility || "-"}
                   </span>
                 </div>
-                <div>
-                  <span className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider block">
-                    VA%
-                  </span>
-                  <span className="text-foreground font-medium text-xs">
-                    {item.enquiry.vaPercent ? `${item.enquiry.vaPercent}%` : "-"}
-                  </span>
-                </div>
+
                 <div>
                   <span className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider block">
                     Order Status
@@ -613,6 +605,14 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                   </span>
                   <span className="text-foreground font-medium text-xs">
                     {item.discount ? `${Number(item.discount).toLocaleString()}%` : "-"}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider block">
+                    VA%
+                  </span>
+                  <span className="text-foreground font-medium text-xs font-semibold">
+                    {item.vaPercent !== null ? `${item.vaPercent}%` : "-"}
                   </span>
                 </div>
               </div>
@@ -819,18 +819,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                   />
                 </div>
 
-                {/* VA% */}
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
-                    VA% <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    placeholder="e.g. 10%"
-                    value={vaPercent}
-                    onChange={(e) => setVaPercent(e.target.value)}
-                    className="text-xs h-9"
-                  />
-                </div>
+
 
                 {/* Order Status */}
                 <div className="space-y-1">
@@ -1069,6 +1058,18 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                     type="number"
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-semibold text-slate-600">
+                    VA% <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    type="text"
+                    value={vaPercent}
+                    onChange={(e) => setVaPercent(e.target.value)}
                     className="h-8 text-xs"
                   />
                 </div>

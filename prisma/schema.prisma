@@ -63,6 +63,7 @@ model EnquiryItem {
   cost          Decimal?
   stockStatus   String?
   discount      Decimal?
+  vaPercent     String?
   quotedRate    String?
   itemNameMerge String?
   totalValue   String?
