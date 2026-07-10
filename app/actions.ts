@@ -68,7 +68,7 @@ export async function createNewEnquiryAction(formData: {
       })
     );
 
-    await prisma.enquiry.create({
+    const created = await prisma.enquiry.create({
       data: {
         docketNumber: cleanDocket,
         partyName: formData.partyName,
@@ -103,10 +103,26 @@ export async function createNewEnquiryAction(formData: {
           })),
         },
       },
+      include: {
+        items: true,
+        attachments: true,
+      },
     });
 
-    revalidatePath("/");
-    return { success: true };
+    const serialized = {
+      ...created,
+      items: created.items.map((item) => ({
+        ...item,
+        quantity: Number(item.quantity),
+        productCost: item.productCost ? Number(item.productCost) : null,
+        cost: item.cost ? Number(item.cost) : null,
+        discount: item.discount ? Number(item.discount) : null,
+        vaPercent: item.vaPercent !== null && item.vaPercent !== undefined ? Number(item.vaPercent) : null,
+        quotedRate: item.quotedRate || null,
+      })),
+    };
+
+    return { success: true, data: serialized };
   } catch (error: any) {
     console.error("Error creating enquiry:", error);
     return { success: false, error: error.message || "Failed to create enquiry." };
@@ -428,3 +444,104 @@ export async function updateItemFieldAction(
     return { success: false, error: error.message || `Failed to update ${itemId}.` };
   }
 }
+
+export async function importExcelDataAction(rows: any[]) {
+  try {
+    let matchedCount = 0;
+    let updatedCount = 0;
+
+    for (const row of rows) {
+      const { docketNumber, itemName, cost, quotedRate } = row;
+      if (!docketNumber || !itemName) continue;
+
+      // Find the parent Enquiry
+      const enquiry = await prisma.enquiry.findUnique({
+        where: { docketNumber: String(docketNumber).trim() },
+        include: { items: true },
+      });
+
+      if (!enquiry) continue;
+
+      // Find the corresponding EnquiryItem (match case-insensitively)
+      const item = enquiry.items.find(
+        (it) => it.itemName.trim().toLowerCase() === String(itemName).trim().toLowerCase()
+      );
+
+      if (!item) continue;
+
+      matchedCount++;
+
+      const existingCost = item.cost ? parseFloat(item.cost.toString()) : null;
+      const existingVa = item.vaPercent !== null ? parseFloat(item.vaPercent.toString()) : null;
+      const existingQuotedRate = item.quotedRate ? parseFloat(item.quotedRate) : null;
+      const quantity = item.quantity ? parseFloat(item.quantity.toString()) : 0;
+
+      let newCost = existingCost;
+      let newVa = existingVa;
+      let newQuotedRate = existingQuotedRate;
+
+      if (cost !== undefined && cost !== null && cost !== "") {
+        newCost = parseFloat(String(cost));
+      }
+      if (quotedRate !== undefined && quotedRate !== null && quotedRate !== "") {
+        newQuotedRate = parseFloat(String(quotedRate));
+      }
+
+      // If cost changed and vaPercent exists, recalculate quotedRate:
+      if (
+        cost !== undefined &&
+        cost !== null &&
+        cost !== "" &&
+        newCost !== null &&
+        newCost > 0 &&
+        newVa !== null &&
+        (quotedRate === undefined || quotedRate === null || quotedRate === "")
+      ) {
+        newQuotedRate = parseFloat((newCost * (1 + newVa / 100)).toFixed(2));
+      }
+
+      // If quotedRate changed and cost exists, recalculate vaPercent:
+      if (
+        quotedRate !== undefined &&
+        quotedRate !== null &&
+        quotedRate !== "" &&
+        newQuotedRate !== null &&
+        newQuotedRate > 0 &&
+        newCost !== null &&
+        newCost > 0
+      ) {
+        newVa = parseFloat((((newQuotedRate / newCost) - 1) * 100).toFixed(2));
+      }
+
+      // Recalculate totals
+      let itemWiseTotal = null;
+      let totalVal = null;
+      if (quantity > 0 && newQuotedRate !== null && newQuotedRate > 0) {
+        const itemWise = quantity * newQuotedRate;
+        itemWiseTotal = itemWise.toFixed(2);
+        totalVal = (itemWise * 1.18).toFixed(2);
+      }
+
+      // Update EnquiryItem in database
+      await prisma.enquiryItem.update({
+        where: { id: item.id },
+        data: {
+          cost: newCost,
+          quotedRate: newQuotedRate !== null ? newQuotedRate.toFixed(2) : null,
+          vaPercent: newVa,
+          itemWiseTotalValue: itemWiseTotal,
+          totalValue: totalVal,
+        },
+      });
+
+      updatedCount++;
+    }
+
+    revalidatePath("/");
+    return { success: true, matchedCount, updatedCount };
+  } catch (error: any) {
+    console.error("Error importing excel data:", error);
+    return { success: false, error: error.message || "Failed to import excel data." };
+  }
+}
+

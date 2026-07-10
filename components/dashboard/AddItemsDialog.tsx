@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useDebounce } from "@/lib/hooks/useDebounce";
 import { Plus, Trash, Search, Check, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -41,6 +42,7 @@ export default function AddItemsDialog({
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebounce(searchQuery, 300);
   const [isOpen, setIsOpen] = useState(false);
 
   const handleAddItemRow = () => {
@@ -117,28 +119,33 @@ export default function AddItemsDialog({
     }
 
     setIsSubmitting(true);
-    try {
-      const formattedItems = items.map((item) => ({
-        itemName: item.itemName.trim(),
-        quantity: parseFloat(item.quantity),
-      }));
+    dispatch(closeAddItemsDialog());
 
-      const res = await addItemsAction({ enquiryId, items: formattedItems });
-      if (res.success) {
-        toast.success("Items added successfully!");
+    toast.promise(
+      (async () => {
+        const formattedItems = items.map((item) => ({
+          itemName: item.itemName.trim(),
+          quantity: parseFloat(item.quantity),
+        }));
+
+        const res = await addItemsAction({ enquiryId, items: formattedItems });
+        if (!res.success) {
+          throw new Error(res.error || "Failed to add items.");
+        }
+
         setEnquiryId("");
         setSearchQuery("");
         setIsOpen(false);
         setItems([{ itemName: "", quantity: "" }]);
-        dispatch(closeAddItemsDialog());
-      } else {
-        toast.error(res.error || "Failed to add items.");
+        return res;
+      })(),
+      {
+        loading: "Adding items to enquiry...",
+        success: "Items added successfully!",
+        error: (err) => err.message,
       }
-    } catch (err) {
-      toast.error("Something went wrong.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    );
+    setIsSubmitting(false);
   };
 
   return (
@@ -198,8 +205,8 @@ export default function AddItemsDialog({
                       {(() => {
                         const filtered = enquiries.filter(
                           (enq) =>
-                            enq.docketNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            enq.partyName.toLowerCase().includes(searchQuery.toLowerCase())
+                            enq.docketNumber.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+                            enq.partyName.toLowerCase().includes(debouncedSearch.toLowerCase())
                         );
                         if (filtered.length > 0) {
                           return filtered.map((enq) => {

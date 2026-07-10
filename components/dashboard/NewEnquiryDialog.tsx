@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useDebounce } from "@/lib/hooks/useDebounce";
 import { toast } from "sonner";
 import { Plus, Search, Trash } from "lucide-react";
 import {
@@ -14,7 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { createNewEnquiryAction } from "@/app/actions";
+import { createEnquiry } from "@/lib/enquiriesSlice";
 import { PARTY_NAMES } from "@/lib/partyNames";
 import { parseClipboardText } from "@/lib/pasteParser";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
@@ -257,52 +258,52 @@ export default function NewEnquiryDialog({
     }
 
     setIsSubmitting(true);
-    const toastId = toast.loading("Uploading attachments to Google Drive & saving enquiry...");
-    try {
-      const attachmentsPayload = await Promise.all(
-        selectedFiles.map(async (file) => {
-          const content = await fileToBase64(file);
-          return {
-            name: file.name,
-            size: file.size,
-            type: file.type || file.name.split(".").pop() || "",
-            content,
-          };
-        })
-      );
+    dispatch(closeNewEnquiryDialog());
 
-      const res = await createNewEnquiryAction({
-        docketNumber: docketNumber.trim(),
-        partyName,
-        enquiryDate,
-        enquiryType,
-        state,
-        paymentTerms,
-        inspection,
-        pbg,
-        utility,
-        orderStatus: orderStatus || null,
-        attachments: attachmentsPayload,
-        items: items.map((item) => ({
-          itemName: item.itemName.trim(),
-          quantity: parseFloat(item.quantity),
-          itemType: item.itemType ? item.itemType.trim() : null,
-          moc: item.moc ? item.moc.trim() : null,
-          size: item.size ? item.size.trim() : null,
-          pnRating: item.pnRating ? item.pnRating.trim() : null,
-          operationType: item.operationType ? item.operationType.trim() : null,
-          extension: item.extension ? item.extension.trim() : null,
-          bypass: item.bypass ? item.bypass.trim() : null,
-          productCost: item.productCost ? parseFloat(item.productCost) : null,
-          costRefCode: item.costRefCode ? item.costRefCode.trim() : null,
-          cost: item.cost ? parseFloat(item.cost) : null,
-          stockStatus: item.stockStatus ? item.stockStatus.trim() : null,
-          discount: item.discount ? parseFloat(item.discount) : null,
-        })),
-      });
+    toast.promise(
+      (async () => {
+        const attachmentsPayload = await Promise.all(
+          selectedFiles.map(async (file) => {
+            const content = await fileToBase64(file);
+            return {
+              name: file.name,
+              size: file.size,
+              type: file.type || file.name.split(".").pop() || "",
+              content,
+            };
+          })
+        );
 
-      if (res.success) {
-        toast.success("Enquiry created successfully.", { id: toastId });
+        await dispatch(createEnquiry({
+          docketNumber: docketNumber.trim(),
+          partyName,
+          enquiryDate,
+          enquiryType,
+          state,
+          paymentTerms,
+          inspection,
+          pbg,
+          utility,
+          orderStatus: orderStatus || null,
+          attachments: attachmentsPayload,
+          items: items.map((item) => ({
+            itemName: item.itemName.trim(),
+            quantity: parseFloat(item.quantity),
+            itemType: item.itemType ? item.itemType.trim() : null,
+            moc: item.moc ? item.moc.trim() : null,
+            size: item.size ? item.size.trim() : null,
+            pnRating: item.pnRating ? item.pnRating.trim() : null,
+            operationType: item.operationType ? item.operationType.trim() : null,
+            extension: item.extension ? item.extension.trim() : null,
+            bypass: item.bypass ? item.bypass.trim() : null,
+            productCost: item.productCost ? parseFloat(item.productCost) : null,
+            costRefCode: item.costRefCode ? item.costRefCode.trim() : null,
+            cost: item.cost ? parseFloat(item.cost) : null,
+            stockStatus: item.stockStatus ? item.stockStatus.trim() : null,
+            discount: item.discount ? parseFloat(item.discount) : null,
+          })),
+        })).unwrap();
+
         // Reset state
         setPartyName("");
         setEnquiryType("");
@@ -311,7 +312,6 @@ export default function NewEnquiryDialog({
         setInspection("");
         setPbg("");
         setUtility("");
-        setVaPercent("");
         setOrderStatus("");
         setFiles([]);
         setSelectedFiles([]);
@@ -333,20 +333,21 @@ export default function NewEnquiryDialog({
             discount: "",
           },
         ]);
-        dispatch(closeNewEnquiryDialog());
-      } else {
-        toast.error(res.error || "Failed to create enquiry.", { id: toastId });
+      })(),
+      {
+        loading: "Uploading attachments & saving new enquiry...",
+        success: "Enquiry created successfully.",
+        error: (err: Error) => err.message,
       }
-    } catch (err) {
-      toast.error("An unexpected error occurred.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    );
+    setIsSubmitting(false);
   };
+
+  const debouncedPartySearch = useDebounce(partySearch, 300);
 
   // Filter party names dropdown
   const filteredParties = PARTY_NAMES.filter((name) =>
-    name.toLowerCase().includes(partySearch.toLowerCase())
+    name.toLowerCase().includes(debouncedPartySearch.toLowerCase())
   );
 
   const selectClass = "w-full h-9 rounded border border-input bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring";

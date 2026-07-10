@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { FileText, ChevronDown, ChevronRight, Search, Download } from "lucide-react";
+import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import ActionsDropdown from "./ActionsDropdown";
@@ -9,11 +9,15 @@ import Pagination from "./Pagination";
 import { PARTY_NAMES } from "@/lib/partyNames";
 import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { useDebounce } from "@/lib/hooks/useDebounce";
 import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField } from "@/lib/enquiriesSlice";
 import { setFilter, setPartyNamesFilter } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
 import { toggleRow, setColumnWidth, setPartyFilterOpen, setPartySearch } from "@/lib/uiSlice";
 import type { DropdownOptions } from "@/lib/types";
+import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
+import type { OfferLetterTemplateData } from "@/types/offer-lettter";
+import { importExcelDataAction } from "@/app/actions";
 
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
@@ -51,6 +55,16 @@ function formatQuantity(itemName: string, quantity: any) {
   return qty.toLocaleString();
 }
 
+function useFilterInput(reduxValue: string, field: string) {
+  const dispatch = useAppDispatch();
+  const [local, setLocal] = useState(reduxValue);
+  const debounced = useDebounce(local, 300);
+  useEffect(() => {
+    dispatch(setFilter({ field: field as any, value: debounced }));
+  }, [debounced, field, dispatch]);
+  return [local, setLocal] as const;
+}
+
 export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const dispatch = useAppDispatch();
   const enquiries = useAppSelector(selectAllEnquiries);
@@ -61,6 +75,33 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [editingPartyEnquiryId, setEditingPartyEnquiryId] = useState<string | null>(null);
+
+  // Debounced filter inputs
+  const [filterEnquiryDateFrom, setFilterEnquiryDateFrom] = useFilterInput(filters.enquiryDateFrom, "enquiryDateFrom");
+  const [filterEnquiryDateTo, setFilterEnquiryDateTo] = useFilterInput(filters.enquiryDateTo, "enquiryDateTo");
+  const [filterDocketNumber, setFilterDocketNumber] = useFilterInput(filters.docketNumber, "docketNumber");
+  const [filterUtility, setFilterUtility] = useFilterInput(filters.utility, "utility");
+  const [filterItemName, setFilterItemName] = useFilterInput(filters.itemName, "itemName");
+  const [filterQuantity, setFilterQuantity] = useFilterInput(filters.quantity, "quantity");
+  const [filterProductCost, setFilterProductCost] = useFilterInput(filters.productCost, "productCost");
+  const [filterCostRefCode, setFilterCostRefCode] = useFilterInput(filters.costRefCode, "costRefCode");
+  const [filterCost, setFilterCost] = useFilterInput(filters.cost, "cost");
+  const [filterStockStatus, setFilterStockStatus] = useFilterInput(filters.stockStatus, "stockStatus");
+  const [filterDiscount, setFilterDiscount] = useFilterInput(filters.discount, "discount");
+  const [filterVaPercent, setFilterVaPercent] = useFilterInput(filters.vaPercent, "vaPercent");
+  const [filterQuotedRate, setFilterQuotedRate] = useFilterInput(filters.quotedRate, "quotedRate");
+  const [filterItemNameMerge, setFilterItemNameMerge] = useFilterInput(filters.itemNameMerge, "itemNameMerge");
+  const [filterTotalValue, setFilterTotalValue] = useFilterInput(filters.totalValue, "totalValue");
+  const [filterItemWiseTotalValue, setFilterItemWiseTotalValue] = useFilterInput(filters.itemWiseTotalValue, "itemWiseTotalValue");
+  const [filterAttachment, setFilterAttachment] = useFilterInput(filters.attachment, "attachment");
+
+  // Debounced party search (dispatches setPartySearch instead of setFilter)
+  const [localPartySearch, setLocalPartySearch] = useState(partySearchVal);
+  const debouncedPartySearch = useDebounce(localPartySearch, 300);
+  useEffect(() => {
+    dispatch(setPartySearch(debouncedPartySearch));
+  }, [debouncedPartySearch, dispatch]);
 
   // Reset pagination to first page when filters change
   useEffect(() => {
@@ -153,18 +194,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
   // Inline table cell dropdown update handlers
   const handleEnquiryFieldChange = async (enquiryId: string, field: string, val: string) => {
-    const toastId = toast.loading(`Saving ${field}...`);
-    try {
-      const dbVal = val === "" ? null : val;
-      const resultAction = await dispatch(updateEnquiryField({ enquiryId, field, value: dbVal }));
-      if (updateEnquiryField.fulfilled.match(resultAction)) {
-        toast.success("Saved successfully.", { id: toastId });
-      } else {
-        toast.error((resultAction.payload as string) || "Failed to save.", { id: toastId });
+    const dbVal = val === "" ? null : val;
+    toast.promise(
+      dispatch(updateEnquiryField({ enquiryId, field, value: dbVal })).unwrap(),
+      {
+        loading: `Saving ${field}...`,
+        success: `Saved successfully.`,
+        error: (err) => err || `Failed to save.`,
       }
-    } catch {
-      toast.error("An error occurred while saving.", { id: toastId });
-    }
+    );
   };
 
   const getItemNameMerge = (item: any) => {
@@ -184,17 +222,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   };
 
   const handleItemFieldChange = async (itemId: string, field: string, val: string) => {
-    const toastId = toast.loading(`Saving ${field}...`);
     const item = allItems.find((it) => it.id === itemId);
-    try {
-      const dbVal = val === "" ? null : val;
-      const resultAction = await dispatch(updateItemField({ itemId, field, value: dbVal }));
-      if (updateItemField.fulfilled.match(resultAction)) {
+    const dbVal = val === "" ? null : val;
+
+    toast.promise(
+      (async () => {
+        const result = await dispatch(updateItemField({ itemId, field, value: dbVal })).unwrap();
+        
         const sourceFields = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass"];
         if (sourceFields.includes(field)) {
           const updatedItem = { ...item, [field]: dbVal };
           const mergedVal = getItemNameMerge(updatedItem);
-          await dispatch(updateItemField({ itemId, field: "itemNameMerge", value: mergedVal === "" ? null : mergedVal }));
+          await dispatch(updateItemField({ itemId, field: "itemNameMerge", value: mergedVal === "" ? null : mergedVal })).unwrap();
         }
 
         if (field === "quantity") {
@@ -207,7 +246,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           if (numericCost !== null && numericCost > 0 && vaPercentVal !== null) {
             const calculated = numericCost * (1 + (vaPercentVal / 100));
             const newQuotedRate = calculated.toFixed(2);
-            await dispatch(updateItemField({ itemId, field: "quotedRate", value: newQuotedRate }));
+            await dispatch(updateItemField({ itemId, field: "quotedRate", value: newQuotedRate })).unwrap();
             await recalculateTotals(itemId, { quotedRate: newQuotedRate, cost: numericCost });
           } else {
             await recalculateTotals(itemId, { cost: numericCost });
@@ -221,7 +260,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             if (costVal !== null && costVal > 0 && numericVa !== null) {
               const calculated = costVal * (1 + (numericVa / 100));
               const newQuotedRate = calculated.toFixed(2);
-              await dispatch(updateItemField({ itemId, field: "quotedRate", value: newQuotedRate }));
+              await dispatch(updateItemField({ itemId, field: "quotedRate", value: newQuotedRate })).unwrap();
               await recalculateTotals(itemId, { quotedRate: newQuotedRate, vaPercent: numericVa });
             } else {
               await recalculateTotals(itemId, { vaPercent: numericVa });
@@ -236,7 +275,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             if (costVal !== null && costVal > 0 && numericQuotedRate !== null) {
               const calculatedVa = ((numericQuotedRate / costVal) - 1) * 100;
               const formattedVa = parseFloat(calculatedVa.toFixed(2));
-              await dispatch(updateItemField({ itemId, field: "vaPercent", value: formattedVa }));
+              await dispatch(updateItemField({ itemId, field: "vaPercent", value: formattedVa })).unwrap();
               await recalculateTotals(itemId, { quotedRate: dbVal, vaPercent: formattedVa });
             } else {
               await recalculateTotals(itemId, { quotedRate: dbVal });
@@ -246,13 +285,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           }
         }
 
-        toast.success("Saved successfully.", { id: toastId });
-      } else {
-        toast.error((resultAction.payload as string) || "Failed to save.", { id: toastId });
+        return result;
+      })(),
+      {
+        loading: `Saving ${field}...`,
+        success: `Saved successfully.`,
+        error: (err) => err?.message || err || `Failed to save.`,
       }
-    } catch {
-      toast.error("An error occurred while saving.", { id: toastId });
-    }
+    );
   };
 
   // Filter logic matching dropdown selections exactly
@@ -527,6 +567,84 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     currentPage * pageSize
   );
 
+  const handleImportFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const toastId = toast.loading("Reading Excel file...");
+    const reader = new FileReader();
+
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target?.result;
+        if (!data) {
+          toast.error("Failed to read file data.", { id: toastId });
+          return;
+        }
+
+        const workbook = XLSX.read(data, { type: "binary" });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json<any>(sheet);
+
+        if (rows.length === 0) {
+          toast.error("No data rows found in the sheet.", { id: toastId });
+          return;
+        }
+
+        const mappedRows = rows.map((row) => {
+          let docketNumber = "";
+          let itemName = "";
+          let cost: number | null = null;
+          let quotedRate: number | null = null;
+
+          for (const key of Object.keys(row)) {
+            const lowerKey = key.toLowerCase();
+            const val = row[key];
+
+            if (lowerKey.includes("docket") || lowerKey === "offer no" || lowerKey === "offerno") {
+              docketNumber = String(val).trim();
+            } else if (lowerKey.includes("item name") || lowerKey === "itemname") {
+              itemName = String(val).trim();
+            } else if (lowerKey === "cost" || lowerKey.includes("product cost")) {
+              cost = val !== undefined && val !== null && val !== "" ? parseFloat(String(val)) : null;
+            } else if (
+              lowerKey.includes("quotation rate") ||
+              lowerKey.includes("quoted rate") ||
+              lowerKey === "rate" ||
+              lowerKey === "rate/unit"
+            ) {
+              quotedRate = val !== undefined && val !== null && val !== "" ? parseFloat(String(val)) : null;
+            }
+          }
+
+          return { docketNumber, itemName, cost, quotedRate };
+        }).filter(r => r.docketNumber && r.itemName);
+
+        if (mappedRows.length === 0) {
+          toast.error("Could not find matching docket number and item name columns in the Excel sheet.", { id: toastId });
+          return;
+        }
+
+        toast.loading(`Importing ${mappedRows.length} rows...`, { id: toastId });
+
+        const result = await importExcelDataAction(mappedRows);
+        if (result.success) {
+          toast.success(`Imported successfully. Matched ${result.matchedCount} and updated ${result.updatedCount} items.`, { id: toastId });
+          window.location.reload();
+        } else {
+          toast.error(result.error || "Failed to import excel data.", { id: toastId });
+        }
+      } catch (err: any) {
+        toast.error(err.message || "An error occurred during parsing.", { id: toastId });
+      } finally {
+        e.target.value = "";
+      }
+    };
+
+    reader.readAsBinaryString(file);
+  };
+
   const handleExportToExcel = () => {
     const toastId = toast.loading("Preparing Excel file...");
     try {
@@ -640,14 +758,34 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           Showing {filteredEnquiries.length} of {enquiries.length} enquiries
         </span>
         
-        <Button
-          type="button"
-          onClick={handleExportToExcel}
-          className="flex h-8 items-center gap-1.5 px-3 text-xs font-semibold text-[#0f62fe] border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-md cursor-pointer transition-all shadow-xs shrink-0"
-        >
-          <Download className="h-3.5 w-3.5 text-[#0f62fe] stroke-[2]" />
-          Export Excel
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            type="button"
+            onClick={handleExportToExcel}
+            className="flex h-8 items-center gap-1.5 px-3 text-xs font-semibold text-[#0f62fe] border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-md cursor-pointer transition-all shadow-xs shrink-0"
+          >
+            <Download className="h-3.5 w-3.5 text-[#0f62fe] stroke-[2]" />
+            Export Excel
+          </Button>
+
+          <div className="relative">
+            <input
+              type="file"
+              id="excel-import-file"
+              accept=".xlsx, .xls"
+              onChange={handleImportFromExcel}
+              className="hidden"
+            />
+            <Button
+              type="button"
+              onClick={() => document.getElementById("excel-import-file")?.click()}
+              className="flex h-8 items-center gap-1.5 px-3 text-xs font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 rounded-md cursor-pointer transition-all shadow-xs shrink-0"
+            >
+              <Upload className="h-3.5 w-3.5 text-emerald-700 stroke-[2]" />
+              Import Excel
+            </Button>
+          </div>
+        </div>
       </div>
 
       <div className="flex-1 overflow-x-auto overflow-y-auto max-h-[70vh] w-full min-w-0 border-b border-slate-200">
@@ -671,19 +809,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <div className="flex gap-1 items-center mt-1.5">
                 <input
                   type="date"
-                  value={filters.enquiryDateFrom}
-                  onChange={(e) =>
-                    dispatch(setFilter({ field: "enquiryDateFrom", value: e.target.value }))
-                  }
+                  value={filterEnquiryDateFrom}
+                  onChange={(e) => setFilterEnquiryDateFrom(e.target.value)}
                   className="h-6 w-full text-[9px] p-0.5 border rounded bg-white text-slate-700 outline-none font-normal"
                 />
                 <span className="text-[9px] text-slate-400 font-normal">to</span>
                 <input
                   type="date"
-                  value={filters.enquiryDateTo}
-                  onChange={(e) =>
-                    dispatch(setFilter({ field: "enquiryDateTo", value: e.target.value }))
-                  }
+                  value={filterEnquiryDateTo}
+                  onChange={(e) => setFilterEnquiryDateTo(e.target.value)}
                   className="h-6 w-full text-[9px] p-0.5 border rounded bg-white text-slate-700 outline-none font-normal"
                 />
               </div>
@@ -706,10 +840,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.docketNumber}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "docketNumber", value: e.target.value }))
-                }
+                value={filterDocketNumber}
+                onChange={(e) => setFilterDocketNumber(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -748,6 +880,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       className="fixed inset-0 z-40 cursor-default"
                       onClick={() => {
                         dispatch(setPartyFilterOpen(false));
+                        setLocalPartySearch("");
                         dispatch(setPartySearch(""));
                       }}
                     />
@@ -757,8 +890,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         <input
                           type="text"
                           placeholder="Search parties..."
-                          value={partySearchVal}
-                          onChange={(e) => dispatch(setPartySearch(e.target.value))}
+                          value={localPartySearch}
+                          onChange={(e) => setLocalPartySearch(e.target.value)}
                           className="w-full text-[10px] bg-transparent outline-none border-none placeholder:text-slate-400 p-0 h-4 normal-case"
                         />
                       </div>
@@ -786,7 +919,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
                       <div className="flex-1 overflow-y-auto divide-y divide-slate-100 max-h-48 pr-0.5">
                         {PARTY_NAMES.filter((name) =>
-                          name.toLowerCase().includes(partySearchVal.toLowerCase())
+                          name.toLowerCase().includes(localPartySearch.toLowerCase())
                         ).map((name) => {
                           const isChecked = filters.partyNames.includes(name);
                           return (
@@ -974,10 +1107,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.utility}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "utility", value: e.target.value }))
-                }
+                value={filterUtility}
+                onChange={(e) => setFilterUtility(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1029,10 +1160,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.itemName}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "itemName", value: e.target.value }))
-                }
+                value={filterItemName}
+                onChange={(e) => setFilterItemName(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1054,10 +1183,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.quantity}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "quantity", value: e.target.value }))
-                }
+                value={filterQuantity}
+                onChange={(e) => setFilterQuantity(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1275,10 +1402,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.productCost}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "productCost", value: e.target.value }))
-                }
+                value={filterProductCost}
+                onChange={(e) => setFilterProductCost(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1300,10 +1425,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.costRefCode}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "costRefCode", value: e.target.value }))
-                }
+                value={filterCostRefCode}
+                onChange={(e) => setFilterCostRefCode(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1325,10 +1448,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.cost}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "cost", value: e.target.value }))
-                }
+                value={filterCost}
+                onChange={(e) => setFilterCost(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1350,10 +1471,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.stockStatus}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "stockStatus", value: e.target.value }))
-                }
+                value={filterStockStatus}
+                onChange={(e) => setFilterStockStatus(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1375,10 +1494,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.discount}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "discount", value: e.target.value }))
-                }
+                value={filterDiscount}
+                onChange={(e) => setFilterDiscount(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1400,10 +1517,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.vaPercent}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "vaPercent", value: e.target.value }))
-                }
+                value={filterVaPercent}
+                onChange={(e) => setFilterVaPercent(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1425,10 +1540,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.quotedRate}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "quotedRate", value: e.target.value }))
-                }
+                value={filterQuotedRate}
+                onChange={(e) => setFilterQuotedRate(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1450,10 +1563,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.itemNameMerge}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "itemNameMerge", value: e.target.value }))
-                }
+                value={filterItemNameMerge}
+                onChange={(e) => setFilterItemNameMerge(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1475,10 +1586,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.totalValue}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "totalValue", value: e.target.value }))
-                }
+                value={filterTotalValue}
+                onChange={(e) => setFilterTotalValue(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1500,10 +1609,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.itemWiseTotalValue}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "itemWiseTotalValue", value: e.target.value }))
-                }
+                value={filterItemWiseTotalValue}
+                onChange={(e) => setFilterItemWiseTotalValue(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1525,10 +1632,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <input
                 type="text"
                 placeholder="Search..."
-                value={filters.attachment}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "attachment", value: e.target.value }))
-                }
+                value={filterAttachment}
+                onChange={(e) => setFilterAttachment(e.target.value)}
                 className={inputClass}
               />
               <div
@@ -1541,7 +1646,23 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 30. Actions */}
+            {/* 30. Offer PDF */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Offer PDF</span>
+              </div>
+              <div className="h-7 mt-1.5" />
+              <div
+                onMouseDown={(e) => handleMouseDown(30, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] transition-colors" />
+              </div>
+            </th>
+
+            {/* 31. Actions */}
             <th className="sticky top-0 z-30 bg-slate-50 py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-b border-slate-200 text-right">
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
@@ -1551,7 +1672,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         <tbody className="bg-white">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={31} className="py-20 px-4 text-center border-b border-slate-200">
+              <td colSpan={32} className="py-20 px-4 text-center border-b border-slate-200">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 text-slate-400 mb-4 border border-slate-100">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -1628,24 +1749,52 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     </td>
 
                     {/* Party Name */}
-                    <td className="py-3.5 px-4 border-r border-b border-slate-200 last:border-r-0 truncate">
-                      <div className="flex items-center gap-3 truncate">
-                        <div
-                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${badgeBg}`}
+                    <td className="py-2.5 px-4 border-r border-b border-slate-200 last:border-r-0 truncate">
+                      {editingPartyEnquiryId === enquiry.id ? (
+                        <select
+                          value={enquiry.partyName}
+                          onChange={(e) => {
+                            handleEnquiryFieldChange(enquiry.id, "partyName", e.target.value);
+                            setEditingPartyEnquiryId(null);
+                          }}
+                          onBlur={() => setEditingPartyEnquiryId(null)}
+                          autoFocus
+                          className="w-full h-8 rounded border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-700 outline-none focus:border-blue-500 normal-case cursor-pointer font-semibold"
                         >
-                          {initials}
+                          {PARTY_NAMES.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="flex items-center justify-between w-full group truncate">
+                          <div className="flex items-center gap-3 truncate">
+                            <div
+                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${badgeBg}`}
+                            >
+                              {initials}
+                            </div>
+                            <div className="flex flex-col truncate">
+                              <span className="text-xs font-bold text-slate-800 truncate">
+                                {company}
+                              </span>
+                              {branch && (
+                                <span className="text-[10px] text-slate-400 font-medium truncate">
+                                  {branch}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setEditingPartyEnquiryId(enquiry.id)}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 cursor-pointer shrink-0 transition-opacity ml-2"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
-                        <div className="flex flex-col truncate">
-                          <span className="text-xs font-bold text-slate-800 truncate">
-                            {company}
-                          </span>
-                          {branch && (
-                            <span className="text-[10px] text-slate-400 font-medium truncate">
-                              {branch}
-                            </span>
-                          )}
-                        </div>
-                      </div>
+                      )}
                     </td>
 
                     {/* 3. Enquiry Type Inline Select */}
@@ -2093,6 +2242,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       )}
                     </td>
 
+                    {/* Offer PDF */}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      <OfferPdfCell enquiry={enquiry} />
+                    </td>
+
                     {/* Actions */}
                     <td className="py-3.5 px-4 text-right border-b border-slate-200">
                       {firstItem && (
@@ -2409,6 +2563,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         {/* Empty attachment column */}
                         <td className="py-3 px-4 border-r border-b border-slate-200 last:border-r-0"></td>
 
+                        {/* Empty Offer PDF column */}
+                        <td className="py-3 px-4 border-r border-b border-slate-200 last:border-r-0"></td>
+
                         {/* Actions on this item */}
                         <td className="py-3.5 px-4 text-right border-b border-slate-200">
                           <ActionsDropdown
@@ -2456,4 +2613,107 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     )}
   </div>
   );
+}
+
+function triggerDownload(base64: string, fileName: string) {
+  const byteChars = atob(base64);
+  const byteNums = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    byteNums[i] = byteChars.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNums);
+  const blob = new Blob([byteArray], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function OfferPdfCell({ enquiry }: { enquiry: any }) {
+  const [status, setStatus] = useState<"idle" | "generating" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState<string>("");
+
+  const handleGenerate = async () => {
+    setStatus("generating");
+    try {
+      // Map data into OfferLetterTemplateData shape
+      const rowData: OfferLetterTemplateData = {
+        docketNo: enquiry.docketNumber,
+        partyName: enquiry.partyName,
+        subject: `Offer For Supply under @ ${enquiry.utility || ""}`,
+        price: "The Quoted prices are on Firm basis, valid for 60days.",
+        paymentTerms: enquiry.paymentTerms || "",
+        inspection: enquiry.inspection || "",
+        warranty: "",
+        approval: "It shall be in our scope",
+        deliveryDestination: "",
+        items: (enquiry.items || []).map((item: any) => ({
+          itemName: item.itemName,
+          partyItemName: item.itemNameMerge || "",
+          quantity: item.quantity ? Number(item.quantity) : 0,
+          quotationRate: item.quotedRate ? parseFloat(item.quotedRate) : 0,
+          unit: "NO.S",
+          deliverySchedule: "",
+        })),
+      };
+
+      const res = await generateOfferPdfAction(rowData);
+      if (res.success && res.pdfBase64) {
+        triggerDownload(res.pdfBase64, res.fileName);
+        setStatus("idle");
+      } else {
+        setErrorMessage(res.error || "Generation failed");
+        setStatus("error");
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || "An error occurred");
+      setStatus("error");
+    }
+  };
+
+  if (status === "idle") {
+    return (
+      <div className="flex justify-center py-1">
+        <button
+          type="button"
+          onClick={handleGenerate}
+          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-[#0f62fe] border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded cursor-pointer transition-all shadow-2xs whitespace-nowrap"
+        >
+          <FileText className="h-3.5 w-3.5 stroke-[2.5]" />
+          Generate PDF
+        </button>
+      </div>
+    );
+  }
+
+  if (status === "generating") {
+    return (
+      <div className="flex items-center gap-1.5 justify-center py-1">
+        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+        <span className="text-[10px] text-slate-500 font-medium animate-pulse">Generating...</span>
+      </div>
+    );
+  }
+
+  if (status === "error") {
+    return (
+      <div className="flex flex-col items-center justify-center gap-1 py-1">
+        <span className="text-[9px] text-red-500 font-medium truncate max-w-[100px]" title={errorMessage}>{errorMessage}</span>
+        <button
+          type="button"
+          onClick={handleGenerate}
+          className="text-[9px] text-blue-600 font-bold hover:underline cursor-pointer"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  return null;
 }

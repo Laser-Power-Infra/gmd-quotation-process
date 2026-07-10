@@ -6,7 +6,21 @@ import {
 } from "@reduxjs/toolkit";
 import type { RootState } from "./store";
 import type { EnquiryData, EnquiryItemData } from "./types";
-import { updateEnquiryFieldAction, updateItemFieldAction } from "@/app/actions";
+import { updateEnquiryFieldAction, updateItemFieldAction, createNewEnquiryAction } from "@/app/actions";
+
+export const createEnquiry = createAsyncThunk(
+  "enquiries/createEnquiry",
+  async (
+    payload: Parameters<typeof createNewEnquiryAction>[0],
+    { rejectWithValue }
+  ) => {
+    const result = await createNewEnquiryAction(payload);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to create enquiry");
+    }
+    return result.data!;
+  }
+);
 
 export const updateEnquiryField = createAsyncThunk(
   "enquiries/updateEnquiryField",
@@ -40,7 +54,9 @@ export const updateItemField = createAsyncThunk(
   }
 );
 
-const enquiriesAdapter = createEntityAdapter<EnquiryData>();
+const enquiriesAdapter = createEntityAdapter<EnquiryData>({
+  sortComparer: (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+});
 
 const itemsAdapter = createEntityAdapter<EnquiryItemData>();
 
@@ -51,6 +67,8 @@ interface EnquiriesState {
   error: string | null;
   updateStatus: "idle" | "loading" | "succeeded" | "failed";
   updateError: string | null;
+  createStatus: "idle" | "loading" | "succeeded" | "failed";
+  createError: string | null;
 }
 
 const initialState: EnquiriesState = {
@@ -60,6 +78,8 @@ const initialState: EnquiriesState = {
   error: null,
   updateStatus: "idle",
   updateError: null,
+  createStatus: "idle",
+  createError: null,
 };
 
 const enquiriesSlice = createSlice({
@@ -81,6 +101,20 @@ const enquiriesSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      .addCase(createEnquiry.pending, (state) => {
+        state.createStatus = "loading";
+        state.createError = null;
+      })
+      .addCase(createEnquiry.fulfilled, (state, action) => {
+        const payload = action.payload as any;
+        enquiriesAdapter.addOne(state.enquiries, payload);
+        itemsAdapter.addMany(state.items, payload.items);
+        state.createStatus = "succeeded";
+      })
+      .addCase(createEnquiry.rejected, (state, action) => {
+        state.createStatus = "failed";
+        state.createError = (action.payload as string) || "Create failed";
+      })
       .addCase(updateEnquiryField.fulfilled, (state, action) => {
         const { enquiryId, field, value } = action.payload;
         const enquiry = state.enquiries.entities[enquiryId];
@@ -144,5 +178,7 @@ export const selectEnquiriesLoading = (state: RootState) => state.enquiries.load
 export const selectEnquiriesError = (state: RootState) => state.enquiries.error;
 export const selectUpdateStatus = (state: RootState) => state.enquiries.updateStatus;
 export const selectUpdateError = (state: RootState) => state.enquiries.updateError;
+export const selectCreateStatus = (state: RootState) => state.enquiries.createStatus;
+export const selectCreateError = (state: RootState) => state.enquiries.createError;
 
 export default enquiriesSlice.reducer;

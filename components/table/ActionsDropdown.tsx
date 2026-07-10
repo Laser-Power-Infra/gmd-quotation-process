@@ -265,80 +265,87 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
     }
 
     setIsSubmitting(true);
-    const toastId = toast.loading("Uploading new attachments to Google Drive and updating enquiry...");
-    try {
-      const attachmentsPayload = selectedEditFiles.length > 0
-        ? await Promise.all(
-            selectedEditFiles.map(async (file) => {
-              const content = await fileToBase64(file);
-              return {
-                name: file.name,
-                size: file.size,
-                type: file.type || file.name.split(".").pop() || "",
-                content,
-              };
-            })
-          )
-        : undefined;
+    dispatch(closeEditDialog());
 
-      const res = await updateEnquiryItemAction({
-        itemId: item.id,
-        itemName: itemName.trim(),
-        quantity: parseFloat(quantity),
-        docketNumber: docketNumber.trim(),
-        partyName,
-        enquiryDate,
-        enquiryType,
-        state,
-        paymentTerms,
-        inspection,
-        pbg,
-        utility,
-        vaPercent: parseFloat(vaPercent.replace(/%/g, "")),
-        orderStatus,
-        itemType: itemType.trim(),
-        moc: moc.trim(),
-        size: size.trim(),
-        pnRating: pnRating.trim(),
-        operationType: operationType.trim(),
-        extension: extension.trim(),
-        bypass: bypass.trim(),
-        productCost: parseFloat(productCost),
-        costRefCode: costRefCode.trim(),
-        cost: parseFloat(cost),
-        stockStatus: stockStatus.trim(),
-        discount: parseFloat(discount),
-        attachments: attachmentsPayload,
-      });
+    toast.promise(
+      (async () => {
+        const attachmentsPayload = selectedEditFiles.length > 0
+          ? await Promise.all(
+              selectedEditFiles.map(async (file) => {
+                const content = await fileToBase64(file);
+                return {
+                  name: file.name,
+                  size: file.size,
+                  type: file.type || file.name.split(".").pop() || "",
+                  content,
+                };
+              })
+            )
+          : undefined;
 
-      if (res.success) {
-        toast.success("Enquiry updated successfully.", { id: toastId });
-        dispatch(closeEditDialog());
-      } else {
-        toast.error(res.error || "Failed to update enquiry.", { id: toastId });
+        const res = await updateEnquiryItemAction({
+          itemId: item.id,
+          itemName: itemName.trim(),
+          quantity: parseFloat(quantity),
+          docketNumber: docketNumber.trim(),
+          partyName,
+          enquiryDate,
+          enquiryType,
+          state,
+          paymentTerms,
+          inspection,
+          pbg,
+          utility,
+          vaPercent: parseFloat(vaPercent.replace(/%/g, "")),
+          orderStatus,
+          itemType: itemType.trim(),
+          moc: moc.trim(),
+          size: size.trim(),
+          pnRating: pnRating.trim(),
+          operationType: operationType.trim(),
+          extension: extension.trim(),
+          bypass: bypass.trim(),
+          productCost: parseFloat(productCost),
+          costRefCode: costRefCode.trim(),
+          cost: parseFloat(cost),
+          stockStatus: stockStatus.trim(),
+          discount: parseFloat(discount),
+          attachments: attachmentsPayload,
+        });
+
+        if (!res.success) {
+          throw new Error(res.error || "Failed to update enquiry.");
+        }
+        return res;
+      })(),
+      {
+        loading: "Uploading attachments and updating enquiry...",
+        success: "Enquiry updated successfully.",
+        error: (err) => err.message,
       }
-    } catch (err) {
-      toast.error("An unexpected error occurred.", { id: toastId });
-    } finally {
-      setIsSubmitting(false);
-    }
+    );
+    setIsSubmitting(false);
   };
 
   const handleDelete = async () => {
     setIsSubmitting(true);
-    try {
-      const res = await deleteEnquiryItemAction(item.id);
-      if (res.success) {
-        toast.success("Item deleted successfully.");
-        dispatch(closeDeleteDialog());
-      } else {
-        toast.error(res.error || "Failed to delete item.");
+    dispatch(closeDeleteDialog());
+
+    toast.promise(
+      (async () => {
+        const res = await deleteEnquiryItemAction(item.id);
+        if (!res.success) {
+          throw new Error(res.error || "Failed to delete item.");
+        }
+        return res;
+      })(),
+      {
+        loading: "Deleting item...",
+        success: "Item deleted successfully.",
+        error: (err) => err.message,
       }
-    } catch (err) {
-      toast.error("An unexpected error occurred.");
-    } finally {
-      setIsSubmitting(false);
-    }
+    );
+    setIsSubmitting(false);
   };
 
   const selectClass = "w-full h-9 rounded border border-input bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer";

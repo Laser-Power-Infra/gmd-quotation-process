@@ -45,3 +45,4 @@ next-env.d.ts
 credentials.json
 token.json
 assets/
+public/offers
