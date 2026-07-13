@@ -11,7 +11,7 @@ import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField } from "@/lib/enquiriesSlice";
-import { setFilter, setPartyNamesFilter } from "@/lib/filtersSlice";
+import { setFilter, setPartyNamesFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
 import { toggleRow, setColumnWidth, setPartyFilterOpen, setPartySearch } from "@/lib/uiSlice";
 import type { DropdownOptions } from "@/lib/types";
@@ -59,9 +59,15 @@ function useFilterInput(reduxValue: string, field: string) {
   const dispatch = useAppDispatch();
   const [local, setLocal] = useState(reduxValue);
   const debounced = useDebounce(local, 300);
+
+  useEffect(() => {
+    setLocal(reduxValue);
+  }, [reduxValue]);
+
   useEffect(() => {
     dispatch(setFilter({ field: field as any, value: debounced }));
   }, [debounced, field, dispatch]);
+
   return [local, setLocal] as const;
 }
 
@@ -95,6 +101,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterTotalValue, setFilterTotalValue] = useFilterInput(filters.totalValue, "totalValue");
   const [filterItemWiseTotalValue, setFilterItemWiseTotalValue] = useFilterInput(filters.itemWiseTotalValue, "itemWiseTotalValue");
   const [filterAttachment, setFilterAttachment] = useFilterInput(filters.attachment, "attachment");
+  const [filterClosureStatus, setFilterClosureStatus] = useFilterInput(filters.closureStatus, "closureStatus");
+  const [editingItemNameId, setEditingItemNameId] = useState<string | null>(null);
 
   // Debounced party search (dispatches setPartySearch instead of setFilter)
   const [localPartySearch, setLocalPartySearch] = useState(partySearchVal);
@@ -112,6 +120,154 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     if (Array.isArray(val)) return val.length > 0;
     return val !== "" && val !== "All";
   });
+
+  const handleResetAllFilters = () => {
+    dispatch(resetFilters());
+    setLocalPartySearch("");
+    toast.success("All filters reset successfully.");
+  };
+
+  const getFilteredItems = (enquiry: any) => {
+    if (!enquiry.items) return [];
+    return enquiry.items.filter((item: any) => {
+      if (
+        filters.itemName &&
+        !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.quantity &&
+        !item.quantity.toString().includes(filters.quantity)
+      ) {
+        return false;
+      }
+      if (filters.itemType !== "All") {
+        if (filters.itemType === "Blank") {
+          if (item.itemType !== null && item.itemType !== undefined && item.itemType !== "" && item.itemType !== "-") {
+            return false;
+          }
+        } else if (item.itemType !== filters.itemType) {
+          return false;
+        }
+      }
+      if (filters.moc !== "All") {
+        if (filters.moc === "Blank") {
+          if (item.moc !== null && item.moc !== undefined && item.moc !== "" && item.moc !== "-") {
+            return false;
+          }
+        } else if (item.moc !== filters.moc) {
+          return false;
+        }
+      }
+      if (filters.size !== "All") {
+        if (filters.size === "Blank") {
+          if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-") {
+            return false;
+          }
+        } else if (item.size !== filters.size) {
+          return false;
+        }
+      }
+      if (filters.pnRating !== "All") {
+        if (filters.pnRating === "Blank") {
+          if (item.pnRating !== null && item.pnRating !== undefined && item.pnRating !== "" && item.pnRating !== "-") {
+            return false;
+          }
+        } else if (item.pnRating !== filters.pnRating) {
+          return false;
+        }
+      }
+      if (filters.operationType !== "All") {
+        if (filters.operationType === "Blank") {
+          if (item.operationType !== null && item.operationType !== undefined && item.operationType !== "" && item.operationType !== "-") {
+            return false;
+          }
+        } else if (item.operationType !== filters.operationType) {
+          return false;
+        }
+      }
+      if (filters.extension !== "All") {
+        if (filters.extension === "Blank") {
+          if (item.extension !== null && item.extension !== undefined && item.extension !== "" && item.extension !== "-") {
+            return false;
+          }
+        } else if (item.extension !== filters.extension) {
+          return false;
+        }
+      }
+      if (filters.bypass !== "All") {
+        if (filters.bypass === "Blank") {
+          if (item.bypass !== null && item.bypass !== undefined && item.bypass !== "" && item.bypass !== "-") {
+            return false;
+          }
+        } else if (item.bypass !== filters.bypass) {
+          return false;
+        }
+      }
+      if (
+        filters.productCost &&
+        !(item.productCost?.toString() || "").includes(filters.productCost)
+      ) {
+        return false;
+      }
+      if (
+        filters.costRefCode &&
+        !(item.costRefCode || "").toLowerCase().includes(filters.costRefCode.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.cost &&
+        !(item.cost?.toString() || "").includes(filters.cost)
+      ) {
+        return false;
+      }
+      if (
+        filters.stockStatus &&
+        !(item.stockStatus || "").toLowerCase().includes(filters.stockStatus.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.discount &&
+        !(item.discount?.toString() || "").includes(filters.discount)
+      ) {
+        return false;
+      }
+      if (
+        filters.vaPercent &&
+        !(item.vaPercent || "").includes(filters.vaPercent)
+      ) {
+        return false;
+      }
+      if (
+        filters.quotedRate &&
+        !(item.quotedRate || "").includes(filters.quotedRate)
+      ) {
+        return false;
+      }
+      if (
+        filters.itemNameMerge &&
+        !(item.itemNameMerge || "").toLowerCase().includes(filters.itemNameMerge.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.totalValue &&
+        !(item.totalValue || "").includes(filters.totalValue)
+      ) {
+        return false;
+      }
+      if (
+        filters.itemWiseTotalValue &&
+        !(item.itemWiseTotalValue || "").includes(filters.itemWiseTotalValue)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  };
 
   const toggleExpand = (id: string) => {
     dispatch(toggleRow(id));
@@ -170,27 +326,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     document.addEventListener("mouseup", handleMouseUp);
   };
 
-  const recalculateTotals = async (itemId: string, updatedItem?: any) => {
-    const item = allItems.find((it) => it.id === itemId);
-    if (!item) return;
 
-    const currentItem = updatedItem ? { ...item, ...updatedItem } : item;
-
-    const qty = currentItem.quantity ? parseFloat(currentItem.quantity.toString()) : 0;
-    const quotedRateVal = currentItem.quotedRate ? parseFloat(currentItem.quotedRate.toString()) : 0;
-
-    let itemWiseTotal = "";
-    let totalVal = "";
-
-    if (qty > 0 && quotedRateVal > 0) {
-      const itemWise = qty * quotedRateVal;
-      itemWiseTotal = itemWise.toFixed(2);
-      totalVal = (itemWise * 1.18).toFixed(2);
-    }
-
-    await dispatch(updateItemField({ itemId, field: "itemWiseTotalValue", value: itemWiseTotal === "" ? null : itemWiseTotal }));
-    await dispatch(updateItemField({ itemId, field: "totalValue", value: totalVal === "" ? null : totalVal }));
-  };
 
   // Inline table cell dropdown update handlers
   const handleEnquiryFieldChange = async (enquiryId: string, field: string, val: string) => {
@@ -222,71 +358,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   };
 
   const handleItemFieldChange = async (itemId: string, field: string, val: string) => {
-    const item = allItems.find((it) => it.id === itemId);
     const dbVal = val === "" ? null : val;
 
     toast.promise(
-      (async () => {
-        const result = await dispatch(updateItemField({ itemId, field, value: dbVal })).unwrap();
-        
-        const sourceFields = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass"];
-        if (sourceFields.includes(field)) {
-          const updatedItem = { ...item, [field]: dbVal };
-          const mergedVal = getItemNameMerge(updatedItem);
-          await dispatch(updateItemField({ itemId, field: "itemNameMerge", value: mergedVal === "" ? null : mergedVal })).unwrap();
-        }
-
-        if (field === "quantity") {
-          await recalculateTotals(itemId, { quantity: dbVal });
-        }
-
-        if (field === "cost") {
-          const numericCost = val === "" ? null : parseFloat(val);
-          const vaPercentVal = item && item.vaPercent !== null ? parseFloat(item.vaPercent.toString()) : null;
-          if (numericCost !== null && numericCost > 0 && vaPercentVal !== null) {
-            const calculated = numericCost * (1 + (vaPercentVal / 100));
-            const newQuotedRate = calculated.toFixed(2);
-            await dispatch(updateItemField({ itemId, field: "quotedRate", value: newQuotedRate })).unwrap();
-            await recalculateTotals(itemId, { quotedRate: newQuotedRate, cost: numericCost });
-          } else {
-            await recalculateTotals(itemId, { cost: numericCost });
-          }
-        }
-
-        if (field === "vaPercent") {
-          const numericVa = val === "" ? null : parseFloat(val.replace(/%/g, ""));
-          if (item) {
-            const costVal = item.cost ? parseFloat(item.cost.toString()) : null;
-            if (costVal !== null && costVal > 0 && numericVa !== null) {
-              const calculated = costVal * (1 + (numericVa / 100));
-              const newQuotedRate = calculated.toFixed(2);
-              await dispatch(updateItemField({ itemId, field: "quotedRate", value: newQuotedRate })).unwrap();
-              await recalculateTotals(itemId, { quotedRate: newQuotedRate, vaPercent: numericVa });
-            } else {
-              await recalculateTotals(itemId, { vaPercent: numericVa });
-            }
-          }
-        }
-
-        if (field === "quotedRate") {
-          const numericQuotedRate = val === "" ? null : parseFloat(val);
-          if (item) {
-            const costVal = item.cost ? parseFloat(item.cost.toString()) : null;
-            if (costVal !== null && costVal > 0 && numericQuotedRate !== null) {
-              const calculatedVa = ((numericQuotedRate / costVal) - 1) * 100;
-              const formattedVa = parseFloat(calculatedVa.toFixed(2));
-              await dispatch(updateItemField({ itemId, field: "vaPercent", value: formattedVa })).unwrap();
-              await recalculateTotals(itemId, { quotedRate: dbVal, vaPercent: formattedVa });
-            } else {
-              await recalculateTotals(itemId, { quotedRate: dbVal });
-            }
-          } else {
-            await recalculateTotals(itemId, { quotedRate: dbVal });
-          }
-        }
-
-        return result;
-      })(),
+      dispatch(updateItemField({ itemId, field, value: dbVal })).unwrap(),
       {
         loading: `Saving ${field}...`,
         success: `Saved successfully.`,
@@ -328,35 +403,50 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
 
     // 4-10. Enquiry-level Metadata Dropdown Filters
-    if (
-      filters.enquiryType !== "All" &&
-      enquiry.enquiryType !== filters.enquiryType
-    ) {
-      return false;
+    if (filters.enquiryType !== "All") {
+      if (filters.enquiryType === "Blank") {
+        if (enquiry.enquiryType !== null && enquiry.enquiryType !== undefined && enquiry.enquiryType !== "" && enquiry.enquiryType !== "-") {
+          return false;
+        }
+      } else if (enquiry.enquiryType !== filters.enquiryType) {
+        return false;
+      }
     }
-    if (
-      filters.state !== "All" &&
-      enquiry.state !== filters.state
-    ) {
-      return false;
+    if (filters.state !== "All") {
+      if (filters.state === "Blank") {
+        if (enquiry.state !== null && enquiry.state !== undefined && enquiry.state !== "" && enquiry.state !== "-") {
+          return false;
+        }
+      } else if (enquiry.state !== filters.state) {
+        return false;
+      }
     }
-    if (
-      filters.paymentTerms !== "All" &&
-      enquiry.paymentTerms !== filters.paymentTerms
-    ) {
-      return false;
+    if (filters.paymentTerms !== "All") {
+      if (filters.paymentTerms === "Blank") {
+        if (enquiry.paymentTerms !== null && enquiry.paymentTerms !== undefined && enquiry.paymentTerms !== "" && enquiry.paymentTerms !== "-") {
+          return false;
+        }
+      } else if (enquiry.paymentTerms !== filters.paymentTerms) {
+        return false;
+      }
     }
-    if (
-      filters.inspection !== "All" &&
-      enquiry.inspection !== filters.inspection
-    ) {
-      return false;
+    if (filters.inspection !== "All") {
+      if (filters.inspection === "Blank") {
+        if (enquiry.inspection !== null && enquiry.inspection !== undefined && enquiry.inspection !== "" && enquiry.inspection !== "-") {
+          return false;
+        }
+      } else if (enquiry.inspection !== filters.inspection) {
+        return false;
+      }
     }
-    if (
-      filters.pbg !== "All" &&
-      enquiry.pbg !== filters.pbg
-    ) {
-      return false;
+    if (filters.pbg !== "All") {
+      if (filters.pbg === "Blank") {
+        if (enquiry.pbg !== null && enquiry.pbg !== undefined && enquiry.pbg !== "" && enquiry.pbg !== "-") {
+          return false;
+        }
+      } else if (enquiry.pbg !== filters.pbg) {
+        return false;
+      }
     }
     if (
       filters.utility &&
@@ -367,9 +457,20 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       return false;
     }
 
+    if (filters.orderStatus !== "All") {
+      if (filters.orderStatus === "Blank") {
+        if (enquiry.orderStatus !== null && enquiry.orderStatus !== undefined && enquiry.orderStatus !== "" && enquiry.orderStatus !== "-") {
+          return false;
+        }
+      } else if (enquiry.orderStatus !== filters.orderStatus) {
+        return false;
+      }
+    }
     if (
-      filters.orderStatus !== "All" &&
-      enquiry.orderStatus !== filters.orderStatus
+      filters.closureStatus &&
+      !(enquiry.closureStatus || "")
+        .toLowerCase()
+        .includes(filters.closureStatus.toLowerCase())
     ) {
       return false;
     }
@@ -388,47 +489,68 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       ) {
         return false;
       }
-      if (
-        filters.itemType !== "All" &&
-        item.itemType !== filters.itemType
-      ) {
-        return false;
+      if (filters.itemType !== "All") {
+        if (filters.itemType === "Blank") {
+          if (item.itemType !== null && item.itemType !== undefined && item.itemType !== "" && item.itemType !== "-") {
+            return false;
+          }
+        } else if (item.itemType !== filters.itemType) {
+          return false;
+        }
       }
-      if (
-        filters.moc !== "All" &&
-        item.moc !== filters.moc
-      ) {
-        return false;
+      if (filters.moc !== "All") {
+        if (filters.moc === "Blank") {
+          if (item.moc !== null && item.moc !== undefined && item.moc !== "" && item.moc !== "-") {
+            return false;
+          }
+        } else if (item.moc !== filters.moc) {
+          return false;
+        }
       }
-      if (
-        filters.size !== "All" &&
-        item.size !== filters.size
-      ) {
-        return false;
+      if (filters.size !== "All") {
+        if (filters.size === "Blank") {
+          if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-") {
+            return false;
+          }
+        } else if (item.size !== filters.size) {
+          return false;
+        }
       }
-      if (
-        filters.pnRating !== "All" &&
-        item.pnRating !== filters.pnRating
-      ) {
-        return false;
+      if (filters.pnRating !== "All") {
+        if (filters.pnRating === "Blank") {
+          if (item.pnRating !== null && item.pnRating !== undefined && item.pnRating !== "" && item.pnRating !== "-") {
+            return false;
+          }
+        } else if (item.pnRating !== filters.pnRating) {
+          return false;
+        }
       }
-      if (
-        filters.operationType !== "All" &&
-        item.operationType !== filters.operationType
-      ) {
-        return false;
+      if (filters.operationType !== "All") {
+        if (filters.operationType === "Blank") {
+          if (item.operationType !== null && item.operationType !== undefined && item.operationType !== "" && item.operationType !== "-") {
+            return false;
+          }
+        } else if (item.operationType !== filters.operationType) {
+          return false;
+        }
       }
-      if (
-        filters.extension !== "All" &&
-        item.extension !== filters.extension
-      ) {
-        return false;
+      if (filters.extension !== "All") {
+        if (filters.extension === "Blank") {
+          if (item.extension !== null && item.extension !== undefined && item.extension !== "" && item.extension !== "-") {
+            return false;
+          }
+        } else if (item.extension !== filters.extension) {
+          return false;
+        }
       }
-      if (
-        filters.bypass !== "All" &&
-        item.bypass !== filters.bypass
-      ) {
-        return false;
+      if (filters.bypass !== "All") {
+        if (filters.bypass === "Blank") {
+          if (item.bypass !== null && item.bypass !== undefined && item.bypass !== "" && item.bypass !== "-") {
+            return false;
+          }
+        } else if (item.bypass !== filters.bypass) {
+          return false;
+        }
       }
       if (
         filters.productCost &&
@@ -664,6 +786,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             "Utility": enquiry.utility || "",
             "VA%": "",
             "Order Status": enquiry.orderStatus || "",
+            "Closure Status": enquiry.closureStatus || "",
             "Item Name": "",
             "Quantity": "",
             "Item Type": "",
@@ -699,6 +822,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               "Utility": enquiry.utility || "",
               "VA%": item.vaPercent !== null ? `${item.vaPercent}%` : "",
               "Order Status": enquiry.orderStatus || "",
+              "Closure Status": enquiry.closureStatus || "",
               "Item Name": item.itemName,
               "Quantity": item.quantity ? Number(item.quantity) : "",
               "Item Type": item.itemType || "",
@@ -759,6 +883,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         </span>
         
         <div className="flex items-center gap-2 shrink-0">
+          {hasActiveFilters && (
+            <Button
+              type="button"
+              onClick={handleResetAllFilters}
+              className="flex h-8 items-center gap-1.5 px-3 text-xs font-semibold text-rose-700 border border-rose-200 bg-rose-50 hover:bg-rose-100 rounded-md cursor-pointer transition-all shadow-xs shrink-0"
+            >
+              <svg className="h-3.5 w-3.5 text-rose-700" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10" />
+              </svg>
+              Reset Filters
+            </Button>
+          )}
+
           <Button
             type="button"
             onClick={handleExportToExcel}
@@ -972,6 +1109,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All Types</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.enquiryTypes.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
@@ -1000,6 +1138,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All States</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.states.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
@@ -1028,6 +1167,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All Terms</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.paymentTerms.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
@@ -1056,6 +1196,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.inspections.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
@@ -1084,6 +1225,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.pbgs.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
@@ -1137,12 +1279,36 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All Statuses</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.orderStatuses.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(9, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] transition-colors" />
+              </div>
+            </th>
+
+            {/* Closure Status */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Closure Status</span>
+                {renderSortArrow("closureStatus")}
+              </div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filterClosureStatus}
+                onChange={(e) => setFilterClosureStatus(e.target.value)}
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(10, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1165,7 +1331,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(10, e)}
+                onMouseDown={(e) => handleMouseDown(11, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1188,7 +1354,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(11, e)}
+                onMouseDown={(e) => handleMouseDown(12, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1211,12 +1377,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All Types</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.itemTypes.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
               <div
-                onMouseDown={(e) => handleMouseDown(12, e)}
+                onMouseDown={(e) => handleMouseDown(13, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1239,12 +1406,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All MOCs</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.mocs.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
               <div
-                onMouseDown={(e) => handleMouseDown(13, e)}
+                onMouseDown={(e) => handleMouseDown(14, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1267,12 +1435,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All Sizes</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.sizes.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
               <div
-                onMouseDown={(e) => handleMouseDown(14, e)}
+                onMouseDown={(e) => handleMouseDown(15, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1295,12 +1464,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All Ratings</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.pnRatings.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
               <div
-                onMouseDown={(e) => handleMouseDown(15, e)}
+                onMouseDown={(e) => handleMouseDown(16, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1323,12 +1493,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All Operations</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.operationTypes.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
               <div
-                onMouseDown={(e) => handleMouseDown(16, e)}
+                onMouseDown={(e) => handleMouseDown(17, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1351,12 +1522,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.extensions.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
               <div
-                onMouseDown={(e) => handleMouseDown(17, e)}
+                onMouseDown={(e) => handleMouseDown(18, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1379,12 +1551,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={selectClass}
               >
                 <option value="All">All</option>
+                <option value="Blank">(Blank)</option>
                 {dropdownOptions.bypasses.map((opt) => (
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
               <div
-                onMouseDown={(e) => handleMouseDown(18, e)}
+                onMouseDown={(e) => handleMouseDown(19, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1407,7 +1580,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(19, e)}
+                onMouseDown={(e) => handleMouseDown(20, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1430,7 +1603,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(20, e)}
+                onMouseDown={(e) => handleMouseDown(21, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1453,7 +1626,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(21, e)}
+                onMouseDown={(e) => handleMouseDown(22, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1476,7 +1649,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(22, e)}
+                onMouseDown={(e) => handleMouseDown(23, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1499,7 +1672,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(23, e)}
+                onMouseDown={(e) => handleMouseDown(24, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1522,7 +1695,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(24, e)}
+                onMouseDown={(e) => handleMouseDown(25, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1545,7 +1718,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(25, e)}
+                onMouseDown={(e) => handleMouseDown(26, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1568,7 +1741,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(26, e)}
+                onMouseDown={(e) => handleMouseDown(27, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1591,7 +1764,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(27, e)}
+                onMouseDown={(e) => handleMouseDown(28, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1614,7 +1787,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(28, e)}
+                onMouseDown={(e) => handleMouseDown(29, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1637,7 +1810,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(29, e)}
+                onMouseDown={(e) => handleMouseDown(30, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1653,7 +1826,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(30, e)}
+                onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1672,7 +1845,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         <tbody className="bg-white">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={32} className="py-20 px-4 text-center border-b border-slate-200">
+              <td colSpan={33} className="py-20 px-4 text-center border-b border-slate-200">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 text-slate-400 mb-4 border border-slate-100">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -1690,11 +1863,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             paginatedEnquiries.map((enquiry) => {
               const { company, branch } = parseParty(enquiry.partyName);
               const initials = getInitials(enquiry.partyName);
-              const hasMultiple = enquiry.items.length > 1;
+              const displayItems = getFilteredItems(enquiry);
+              const hasMultiple = displayItems.length > 1;
               const isExpanded = expandedRows[enquiry.id] !== undefined
                 ? expandedRows[enquiry.id]
                 : hasActiveFilters;
-              const firstItem = enquiry.items[0];
+              const firstItem = displayItems[0];
 
               // Setup custom brand avatar styles
               let badgeBg = "bg-blue-50 text-blue-600 border border-blue-100";
@@ -1742,7 +1916,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         </span>
                         {hasMultiple && !isExpanded && (
                           <span className="ml-1.5 px-1.5 py-0.5 text-[9px] font-medium bg-blue-50 text-blue-600 rounded-full border border-blue-100 shrink-0">
-                            +{enquiry.items.length - 1} more items
+                            +{displayItems.length - 1} more items
                           </span>
                         )}
                       </div>
@@ -1920,11 +2094,68 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       </select>
                     </td>
 
+                    {/* Closure Status */}
+                    <td className="py-2 px-1 border-r border-b border-slate-200 last:border-r-0">
+                      <input
+                        key={enquiry.id + "-closureStatus-" + (enquiry.closureStatus || "")}
+                        type="text"
+                        defaultValue={enquiry.closureStatus || ""}
+                        onBlur={(e) => {
+                          if (e.target.value !== (enquiry.closureStatus || "")) {
+                            handleEnquiryFieldChange(enquiry.id, "closureStatus", e.target.value);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            (e.target as HTMLInputElement).blur();
+                          }
+                        }}
+                        placeholder="-"
+                        className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-center"
+                      />
+                    </td>
+
                     {/* First Item Name */}
                     <td className="py-2 px-2 text-xs text-slate-600 font-medium border-r border-b border-slate-200 last:border-r-0 align-top">
-                      <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable break-words whitespace-normal leading-normal">
-                        {firstItem ? firstItem.itemName : "No items"}
-                      </div>
+                      {firstItem ? (
+                        editingItemNameId === firstItem.id ? (
+                          <input
+                            type="text"
+                            defaultValue={firstItem.itemName}
+                            autoFocus
+                            onBlur={(e) => {
+                              if (e.target.value.trim() !== firstItem.itemName) {
+                                handleItemFieldChange(firstItem.id, "itemName", e.target.value.trim());
+                              }
+                              setEditingItemNameId(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                (e.target as HTMLInputElement).blur();
+                              } else if (e.key === "Escape") {
+                                setEditingItemNameId(null);
+                              }
+                            }}
+                            className="w-full bg-white border border-blue-500 text-xs text-slate-800 outline-none p-1 rounded font-medium"
+                          />
+                        ) : (
+                          <div className="flex items-center justify-between w-full group truncate">
+                            <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable break-words whitespace-normal leading-normal">
+                              {firstItem.itemName}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setEditingItemNameId(firstItem.id)}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 cursor-pointer shrink-0 transition-opacity ml-1.5 align-middle"
+                              title="Edit item name"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )
+                      ) : (
+                        "No items"
+                      )}
                     </td>
 
                     {/* First Item Quantity */}
@@ -2277,7 +2508,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                   {/* Additional Items Sub-Rows */}
                   {isExpanded &&
                     hasMultiple &&
-                    enquiry.items.slice(1).map((item) => (
+                    displayItems.slice(1).map((item: any) => (
                       <tr
                         key={item.id}
                         className="bg-slate-50/10 hover:bg-slate-50/20 transition-colors"
@@ -2293,12 +2524,45 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         <td className="py-3 px-4 border-r border-b border-slate-200 last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-slate-200 last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-slate-200 last:border-r-0"></td>
+                        <td className="py-3 px-4 border-r border-b border-slate-200 last:border-r-0"></td>
 
                         {/* Additional Item Name */}
                         <td className="py-2 px-2 text-xs text-slate-600 font-medium border-r border-b border-slate-200 last:border-r-0 align-top">
-                          <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable break-words whitespace-normal leading-normal">
-                            {item.itemName}
-                          </div>
+                          {editingItemNameId === item.id ? (
+                            <input
+                              type="text"
+                              defaultValue={item.itemName}
+                              autoFocus
+                              onBlur={(e) => {
+                                if (e.target.value.trim() !== item.itemName) {
+                                  handleItemFieldChange(item.id, "itemName", e.target.value.trim());
+                                }
+                                setEditingItemNameId(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  (e.target as HTMLInputElement).blur();
+                                } else if (e.key === "Escape") {
+                                  setEditingItemNameId(null);
+                                }
+                              }}
+                              className="w-full bg-white border border-blue-500 text-xs text-slate-800 outline-none p-1 rounded font-medium"
+                            />
+                          ) : (
+                            <div className="flex items-center justify-between w-full group truncate">
+                              <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable break-words whitespace-normal leading-normal">
+                                {item.itemName}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setEditingItemNameId(item.id)}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 cursor-pointer shrink-0 transition-opacity ml-1.5 align-middle"
+                                title="Edit item name"
+                              >
+                                <Edit2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )}
                         </td>
                         
                         {/* Additional Item Quantity */}
@@ -2644,6 +2908,7 @@ function OfferPdfCell({ enquiry }: { enquiry: any }) {
       // Map data into OfferLetterTemplateData shape
       const rowData: OfferLetterTemplateData = {
         docketNo: enquiry.docketNumber,
+        state: enquiry.state || "",
         partyName: enquiry.partyName,
         subject: `Offer For Supply under @ ${enquiry.utility || ""}`,
         price: "The Quoted prices are on Firm basis, valid for 60days.",

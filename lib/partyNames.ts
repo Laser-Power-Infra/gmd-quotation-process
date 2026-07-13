@@ -141,5 +141,10 @@ export const PARTY_NAMES = [
   "Department Of Military Affairs",
   "Nirmal Industrial Controls Pvt. Ltd.",
   "MADRAS FERTILIZERS LIMITED",
-  "HINDUSTAN PETROLEUM CORPORATION LTD."
+  "HINDUSTAN PETROLEUM CORPORATION LTD.",
+  "SJ Environmental Solutions.",
+  "Bhabha Atomic Research Centre(BARC)",
+  "Damodar Valley Corporation(DVC)",
+  "Uttar Pradesh Rajya Vidyut Utpadan Nigam Limited(uprvunl) Lucknow",
+  "Hindustan Copper Limited",
 ];

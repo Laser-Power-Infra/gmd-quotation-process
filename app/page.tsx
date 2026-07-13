@@ -482,7 +482,7 @@ export default async function Page({ searchParams }: PageProps) {
     <div className="flex min-h-screen flex-col bg-background">
       <Navbar />
 
-      <main className="flex-1 flex flex-col p-6 w-full gap-4 max-w-[1600px] mx-auto">
+      <main className="flex-1 flex flex-col p-6 w-full gap-4 mx-auto">
         <Suspense>
           <DashboardContainer
             enquiries={enquiriesList}

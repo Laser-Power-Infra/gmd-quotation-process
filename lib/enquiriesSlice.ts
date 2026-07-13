@@ -36,7 +36,7 @@ export const updateEnquiryField = createAsyncThunk(
     if (!result.success) {
       return rejectWithValue(result.error || "Failed to update enquiry field");
     }
-    return { enquiryId: payload.enquiryId, field: payload.field, value: payload.value };
+    return result.data!;
   }
 );
 
@@ -50,7 +50,7 @@ export const updateItemField = createAsyncThunk(
     if (!result.success) {
       return rejectWithValue(result.error || "Failed to update item field");
     }
-    return { itemId: payload.itemId, field: payload.field, value: payload.value };
+    return result.data!;
   }
 );
 
@@ -116,10 +116,14 @@ const enquiriesSlice = createSlice({
         state.createError = (action.payload as string) || "Create failed";
       })
       .addCase(updateEnquiryField.fulfilled, (state, action) => {
-        const { enquiryId, field, value } = action.payload;
-        const enquiry = state.enquiries.entities[enquiryId];
-        if (enquiry) {
-          (enquiry as any)[field] = value;
+        const { enquiry, items } = action.payload;
+        enquiriesAdapter.upsertOne(state.enquiries, enquiry);
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const storedEnquiry = state.enquiries.entities[enquiry.id];
+          if (storedEnquiry) {
+            storedEnquiry.items = items;
+          }
         }
       })
       .addCase(updateEnquiryField.rejected, (state, action) => {
@@ -127,16 +131,13 @@ const enquiriesSlice = createSlice({
         state.updateError = (action.payload as string) || "Update failed";
       })
       .addCase(updateItemField.fulfilled, (state, action) => {
-        const { itemId, field, value } = action.payload;
-        const item = state.items.entities[itemId];
-        if (item) {
-          (item as any)[field] = value;
-          const parentEnquiry = state.enquiries.entities[item.enquiryId];
-          if (parentEnquiry) {
-            const nestedItem = parentEnquiry.items.find((i) => i.id === itemId);
-            if (nestedItem) {
-              (nestedItem as any)[field] = value;
-            }
+        const updatedItem = action.payload;
+        itemsAdapter.upsertOne(state.items, updatedItem);
+        const parentEnquiry = state.enquiries.entities[updatedItem.enquiryId];
+        if (parentEnquiry) {
+          const idx = parentEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+          if (idx !== -1) {
+            parentEnquiry.items[idx] = updatedItem;
           }
         }
       })

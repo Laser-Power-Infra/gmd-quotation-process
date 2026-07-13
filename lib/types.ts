@@ -46,6 +46,7 @@ export interface EnquiryData {
   pbg: string | null;
   utility: string | null;
   orderStatus: string | null;
+  closureStatus: string | null;
   attachments: AttachmentData[];
   items: EnquiryItemData[];
 }
@@ -81,6 +82,7 @@ export interface FiltersState {
   utility: string;
   vaPercent: string;
   orderStatus: string;
+  closureStatus: string;
   itemName: string;
   quantity: string;
   itemType: string;

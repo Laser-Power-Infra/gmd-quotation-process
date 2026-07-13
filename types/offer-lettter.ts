@@ -22,6 +22,9 @@ export interface OfferLetterTemplateData {
   /** OFFER NO field. Sourced from dashboard <DOCKET NO>. */
   docketNo: string;
 
+  /** State field for naming format and other logic */
+  state?: string;
+
   /** "To" field. Sourced from dashboard <PARTY NAME>. */
   partyName: string;
 

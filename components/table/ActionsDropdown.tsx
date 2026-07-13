@@ -80,6 +80,8 @@ interface ActionsDropdownProps {
     cost?: any | null;
     stockStatus?: string | null;
     discount?: any | null;
+    vaPercent?: any | null;
+    quotedRate?: string | null;
     enquiry: {
       id: string;
       docketNumber: string;
@@ -135,6 +137,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
   const [cost, setCost] = useState(item.cost?.toString() || "");
   const [stockStatus, setStockStatus] = useState(item.stockStatus || "");
   const [discount, setDiscount] = useState(item.discount?.toString() || "");
+  const [quotedRate, setQuotedRate] = useState(item.quotedRate || "");
 
   const [editFiles, setEditFiles] = useState<{ name: string; size: number; type: string }[]>(
     item.enquiry.attachments.map((att) => ({
@@ -297,6 +300,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
           pbg,
           utility,
           vaPercent: parseFloat(vaPercent.replace(/%/g, "")),
+          quotedRate: quotedRate || undefined,
           orderStatus,
           itemType: itemType.trim(),
           moc: moc.trim(),
@@ -1042,6 +1046,19 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                     value={cost}
                     onChange={(e) => setCost(e.target.value)}
                     className="h-8 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-semibold text-slate-600">
+                    Quotation Rate
+                  </Label>
+                  <Input
+                    type="text"
+                    value={quotedRate}
+                    onChange={(e) => setQuotedRate(e.target.value)}
+                    className="h-8 text-xs"
+                    placeholder="Auto-calculated"
                   />
                 </div>
 

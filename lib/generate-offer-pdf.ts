@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { generateOfferLetterPdf } from "./generatePdf";
 import { OfferLetterTemplateData } from "@/types/offer-lettter";
+import { uploadFileToDrive } from "./gdrive";
 
 export async function generateOfferPdfAction(rowData: OfferLetterTemplateData) {
   try {
@@ -26,11 +27,20 @@ export async function generateOfferPdfAction(rowData: OfferLetterTemplateData) {
       console.error("Failed to load logo.jpg for PDF:", e);
     }
 
-    const safeDocketName = rowData.docketNo.replace(/[^a-zA-Z0-9-_]/g, "_");
-    const fileName = `Offer-${safeDocketName}.pdf`;
+    const cleanState = (rowData.state || "UNKNOWN").trim().toUpperCase().replace(/[^A-Z0-9]/g, "_");
+    const cleanParty = (rowData.partyName || "PARTY").trim().toUpperCase().replace(/[^A-Z0-9]/g, "_");
+    const cleanDocket = (rowData.docketNo || "DOCKET").trim().toUpperCase().replace(/[^A-Z0-9]/g, "_");
+    const fileName = `${cleanState}_${cleanParty}_${cleanDocket}.pdf`.replace(/__+/g, "_");
 
     // Generate PDF in memory (no filesystem write)
     const pdfBuffer = await generateOfferLetterPdf(templateSource, rowData, {});
+
+    // Upload generated PDF to Google Drive
+    try {
+      await uploadFileToDrive(fileName, "application/pdf", pdfBuffer.toString("base64"));
+    } catch (e) {
+      console.error("Failed to upload generated PDF to Google Drive:", e);
+    }
 
     return {
       success: true,

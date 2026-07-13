@@ -31,7 +31,7 @@ async function main() {
       await prisma.enquiryItem.update({
         where: { id: item.id },
         data: {
-          vaPercent: enq.vaPercent,
+          vaPercent: enq.vaPercent !== null ? String(enq.vaPercent) : null,
         },
       });
       count++;

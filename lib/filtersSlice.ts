@@ -14,6 +14,7 @@ const initialState: FiltersState = {
   utility: "",
   vaPercent: "",
   orderStatus: "All",
+  closureStatus: "",
   itemName: "",
   quantity: "",
   itemType: "All",

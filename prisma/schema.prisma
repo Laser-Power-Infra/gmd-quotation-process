@@ -22,6 +22,7 @@ model Enquiry {
   utility          String?
   vaPercent        Float?
   orderStatus      String?
+  closureStatus    String?
 
   attachments      Attachment[]
   items            EnquiryItem[]
@@ -71,4 +72,48 @@ model EnquiryItem {
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+model ExtensionCost {
+  id        String   @id @default(cuid())
+  length    String    @unique
+  cost      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BypassCost {
+  id        String   @id @default(cuid())
+  size      String   @unique
+  cost      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model PaymentTermsCost {
+  id        String   @id @default(cuid())
+  terms     String   @unique
+  costPct   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model InspectionCost {
+  id        String   @id @default(cuid())
+  type      String   @unique
+  costPct   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model PbgCost {
+  id        String   @id @default(cuid())
+  pbg       String   @unique
+  costPct   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model TransportationCost {
+  id        String   @id @default(cuid())
+  state     String   @unique
+  fullLoad  String
+  partLoad  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

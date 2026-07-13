@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { uploadFileToDrive } from "@/lib/gdrive";
+import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry, autoDetectItemType, autoDetectMoc } from "@/lib/costCalculator";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -84,23 +85,32 @@ export async function createNewEnquiryAction(formData: {
           create: attachmentCreates,
         },
         items: {
-          create: formData.items.map((item) => ({
-            itemName: item.itemName,
-            quantity: item.quantity,
-            itemType: item.itemType || null,
-            moc: item.moc || null,
-            size: item.size || null,
-            pnRating: item.pnRating || null,
-            operationType: item.operationType || null,
-            extension: item.extension || null,
-            bypass: item.bypass || null,
-            productCost: item.productCost || null,
-            costRefCode: item.costRefCode || null,
-            cost: item.cost || null,
-            stockStatus: item.stockStatus || null,
-            discount: item.discount || null,
-            vaPercent: item.vaPercent || null,
-          })),
+          create: formData.items.map((item) => {
+            const itemCost = item.cost || null;
+            const itemVa = item.vaPercent || null;
+            let itemQR: string | null = null;
+            if (itemCost !== null && itemCost > 0 && itemVa !== null) {
+              itemQR = (itemCost * (1 + (itemVa / 100))).toFixed(2);
+            }
+            return {
+              itemName: item.itemName,
+              quantity: item.quantity,
+              itemType: item.itemType || autoDetectItemType(item.itemName) || null,
+              moc: item.moc || autoDetectMoc(item.itemName) || null,
+              size: item.size || null,
+              pnRating: item.pnRating || null,
+              operationType: item.operationType || null,
+              extension: item.extension || null,
+              bypass: item.bypass || null,
+              productCost: item.productCost || null,
+              costRefCode: item.costRefCode || null,
+              cost: itemCost,
+              stockStatus: item.stockStatus || null,
+              discount: item.discount || null,
+              vaPercent: itemVa !== null ? String(itemVa) : null,
+              quotedRate: itemQR,
+            };
+          }),
         },
       },
       include: {
@@ -109,19 +119,21 @@ export async function createNewEnquiryAction(formData: {
       },
     });
 
-    const serialized = {
-      ...created,
-      items: created.items.map((item) => ({
-        ...item,
-        quantity: Number(item.quantity),
-        productCost: item.productCost ? Number(item.productCost) : null,
-        cost: item.cost ? Number(item.cost) : null,
-        discount: item.discount ? Number(item.discount) : null,
-        vaPercent: item.vaPercent !== null && item.vaPercent !== undefined ? Number(item.vaPercent) : null,
-        quotedRate: item.quotedRate || null,
-      })),
-    };
+    // Run recalculation on each item to set the correct Cost based on lookup tables
+    for (const item of created.items) {
+      await recalculateItem(item.id);
+    }
 
+    // Refetch the fully updated enquiry with calculated costs
+    const finalEnquiry = await prisma.enquiry.findUnique({
+      where: { id: created.id },
+      include: {
+        items: { orderBy: { createdAt: "asc" } },
+        attachments: true,
+      },
+    });
+
+    const serialized = serializeEnquiry(finalEnquiry);
     return { success: true, data: serialized };
   } catch (error: any) {
     console.error("Error creating enquiry:", error);
@@ -152,25 +164,42 @@ export async function addItemsAction(formData: {
 }) {
   try {
     await prisma.enquiryItem.createMany({
-      data: formData.items.map((item) => ({
-        enquiryId: formData.enquiryId,
-        itemName: item.itemName,
-        quantity: item.quantity,
-        itemType: item.itemType || null,
-        moc: item.moc || null,
-        size: item.size || null,
-        pnRating: item.pnRating || null,
-        operationType: item.operationType || null,
-        extension: item.extension || null,
-        bypass: item.bypass || null,
-        productCost: item.productCost || null,
-        costRefCode: item.costRefCode || null,
-        cost: item.cost || null,
-        stockStatus: item.stockStatus || null,
-        discount: item.discount || null,
-        vaPercent: item.vaPercent || null,
-      })),
+      data: formData.items.map((item) => {
+        const itemCost = item.cost || null;
+        const itemVa = item.vaPercent || null;
+        let itemQR: string | null = null;
+        if (itemCost !== null && itemCost > 0 && itemVa !== null) {
+          itemQR = (itemCost * (1 + (itemVa / 100))).toFixed(2);
+        }
+        return {
+          enquiryId: formData.enquiryId,
+          itemName: item.itemName,
+          quantity: item.quantity,
+          itemType: item.itemType || autoDetectItemType(item.itemName) || null,
+          moc: item.moc || autoDetectMoc(item.itemName) || null,
+          size: item.size || null,
+          pnRating: item.pnRating || null,
+          operationType: item.operationType || null,
+          extension: item.extension || null,
+          bypass: item.bypass || null,
+          productCost: item.productCost || null,
+          costRefCode: item.costRefCode || null,
+          cost: itemCost,
+          stockStatus: item.stockStatus || null,
+          discount: item.discount || null,
+          vaPercent: itemVa !== null ? String(itemVa) : null,
+          quotedRate: itemQR,
+        };
+      }),
     });
+
+    // Run recalculation on all items of this enquiry to set correct costs
+    const items = await prisma.enquiryItem.findMany({
+      where: { enquiryId: formData.enquiryId },
+    });
+    for (const item of items) {
+      await recalculateItem(item.id);
+    }
 
     revalidatePath("/");
     return { success: true };
@@ -208,6 +237,7 @@ export async function updateEnquiryItemAction(formData: {
   pbg?: string;
   utility?: string;
   vaPercent?: number;
+  quotedRate?: string;
   orderStatus?: string;
 }) {
   try {
@@ -236,34 +266,40 @@ export async function updateEnquiryItemAction(formData: {
     const updatedVa = formData.vaPercent !== undefined ? formData.vaPercent : (item.vaPercent ? parseFloat(item.vaPercent.toString()) : null);
     const updatedQty = formData.quantity !== undefined ? formData.quantity : (item.quantity ? parseFloat(item.quantity.toString()) : 0);
 
-    let updatedQuotedRate = item.quotedRate;
-    let updatedItemWise = item.itemWiseTotalValue;
-    let updatedTotalVal = item.totalValue;
+    let finalVa: number | null = updatedVa;
+    let finalQuotedRate: string | null;
+    let updatedItemWise: string | null = null;
+    let updatedTotalVal: string | null = null;
 
-    if (updatedCost !== null && updatedCost > 0) {
-      if (updatedVa !== null) {
-        const qr = updatedCost * (1 + (updatedVa / 100));
-        updatedQuotedRate = qr.toFixed(2);
-      } else {
-        updatedQuotedRate = null;
+    if (formData.quotedRate !== undefined) {
+      // Reverse: QR explicitly provided — calculate VA% from QR/Cost
+      const qrRaw = formData.quotedRate;
+      finalQuotedRate = qrRaw === "" ? null : qrRaw;
+      if (finalQuotedRate !== null && updatedCost !== null && updatedCost > 0) {
+        const qrNum = parseFloat(finalQuotedRate);
+        if (!isNaN(qrNum) && qrNum > 0) {
+          finalVa = parseFloat(((qrNum / updatedCost - 1) * 100).toFixed(2));
+          finalQuotedRate = qrNum.toFixed(2);
+        }
       }
     } else {
-      updatedQuotedRate = null;
+      // Forward: QR not provided — calculate from Cost+VA% if both exist
+      if (updatedCost !== null && updatedCost > 0 && finalVa !== null) {
+        const qr = updatedCost * (1 + (finalVa / 100));
+        finalQuotedRate = qr.toFixed(2);
+      } else {
+        finalQuotedRate = item.quotedRate || null;
+      }
     }
 
-    if (updatedQuotedRate) {
-      const qrFloat = parseFloat(updatedQuotedRate);
+    // Calculate totals if QR exists
+    if (finalQuotedRate) {
+      const qrFloat = parseFloat(finalQuotedRate);
       if (updatedQty > 0 && qrFloat > 0) {
         const itemWise = updatedQty * qrFloat;
         updatedItemWise = itemWise.toFixed(2);
         updatedTotalVal = (itemWise * 1.18).toFixed(2);
-      } else {
-        updatedItemWise = null;
-        updatedTotalVal = null;
       }
-    } else {
-      updatedItemWise = null;
-      updatedTotalVal = null;
     }
 
     // Update item
@@ -272,8 +308,8 @@ export async function updateEnquiryItemAction(formData: {
       data: {
         itemName: formData.itemName,
         quantity: formData.quantity,
-        itemType: formData.itemType || null,
-        moc: formData.moc || null,
+        itemType: formData.itemType || autoDetectItemType(formData.itemName) || null,
+        moc: formData.moc || autoDetectMoc(formData.itemName) || null,
         size: formData.size || null,
         pnRating: formData.pnRating || null,
         operationType: formData.operationType || null,
@@ -284,8 +320,8 @@ export async function updateEnquiryItemAction(formData: {
         cost: formData.cost || null,
         stockStatus: formData.stockStatus || null,
         discount: formData.discount || null,
-        vaPercent: formData.vaPercent !== undefined ? formData.vaPercent : null,
-        quotedRate: updatedQuotedRate,
+        vaPercent: finalVa !== null ? String(finalVa) : null,
+        quotedRate: finalQuotedRate,
         itemWiseTotalValue: updatedItemWise,
         totalValue: updatedTotalVal,
       },
@@ -414,7 +450,27 @@ export async function updateEnquiryFieldAction(
       where: { id: enquiryId },
       data: { [field]: parsedVal },
     });
-    return { success: true };
+
+    // Recalculate costs of all items if an enquiry field affecting cost changed
+    let updatedItems = null;
+    if (["state", "paymentTerms", "inspection", "pbg"].includes(field)) {
+      updatedItems = await recalculateEnquiryItems(enquiryId);
+    }
+
+    // Fetch the full enquiry with items to return
+    const fullEnquiry = await prisma.enquiry.findUnique({
+      where: { id: enquiryId },
+      include: { items: true },
+    });
+
+    revalidatePath("/");
+    return {
+      success: true,
+      data: {
+        enquiry: serializeEnquiry(fullEnquiry),
+        items: updatedItems,
+      },
+    };
   } catch (error: any) {
     console.error(`Error updating enquiry ${field}:`, error);
     return { success: false, error: error.message || `Failed to update ${field}.` };
@@ -430,15 +486,44 @@ export async function updateItemFieldAction(
   try {
     let parsedVal = value;
     if (field === "vaPercent" && value !== null) {
-      parsedVal = parseFloat(String(value).replace(/%/g, "")) || null;
+      const num = parseFloat(String(value).replace(/%/g, ""));
+      parsedVal = !isNaN(num) ? String(num) : null;
     } else if (["quantity", "productCost", "cost", "discount"].includes(field) && value !== null) {
       parsedVal = parseFloat(String(value)) || 0;
     }
-    await prisma.enquiryItem.update({
-      where: { id: itemId },
-      data: { [field]: parsedVal },
-    });
-    return { success: true };
+
+    let updatedItem;
+    if (["productCost", "extension", "bypass", "quantity", "vaPercent", "quotedRate"].includes(field)) {
+      const updates: any = {};
+      if (field === "vaPercent") {
+        updates.vaPercent = parsedVal !== null ? parseFloat(parsedVal) : null;
+      } else if (field === "quotedRate") {
+        updates.quotedRate = parsedVal !== null ? parseFloat(parsedVal) : null;
+      } else {
+        updates[field] = parsedVal;
+      }
+      updatedItem = await recalculateItem(itemId, updates);
+    } else {
+      const updateData: any = { [field]: parsedVal };
+      if (field === "itemName") {
+        const autoType = autoDetectItemType(parsedVal);
+        if (autoType) {
+          updateData.itemType = autoType;
+        }
+        const autoMoc = autoDetectMoc(parsedVal);
+        if (autoMoc) {
+          updateData.moc = autoMoc;
+        }
+      }
+      const dbItem = await prisma.enquiryItem.update({
+        where: { id: itemId },
+        data: updateData,
+      });
+      updatedItem = serializeItem(dbItem);
+    }
+
+    revalidatePath("/");
+    return { success: true, data: updatedItem };
   } catch (error: any) {
     console.error(`Error updating item ${field}:`, error);
     return { success: false, error: error.message || `Failed to update ${itemId}.` };
@@ -471,69 +556,15 @@ export async function importExcelDataAction(rows: any[]) {
 
       matchedCount++;
 
-      const existingCost = item.cost ? parseFloat(item.cost.toString()) : null;
-      const existingVa = item.vaPercent !== null ? parseFloat(item.vaPercent.toString()) : null;
-      const existingQuotedRate = item.quotedRate ? parseFloat(item.quotedRate) : null;
-      const quantity = item.quantity ? parseFloat(item.quantity.toString()) : 0;
-
-      let newCost = existingCost;
-      let newVa = existingVa;
-      let newQuotedRate = existingQuotedRate;
-
+      const updates: any = {};
       if (cost !== undefined && cost !== null && cost !== "") {
-        newCost = parseFloat(String(cost));
+        updates.productCost = parseFloat(String(cost));
       }
       if (quotedRate !== undefined && quotedRate !== null && quotedRate !== "") {
-        newQuotedRate = parseFloat(String(quotedRate));
+        updates.quotedRate = parseFloat(String(quotedRate));
       }
 
-      // If cost changed and vaPercent exists, recalculate quotedRate:
-      if (
-        cost !== undefined &&
-        cost !== null &&
-        cost !== "" &&
-        newCost !== null &&
-        newCost > 0 &&
-        newVa !== null &&
-        (quotedRate === undefined || quotedRate === null || quotedRate === "")
-      ) {
-        newQuotedRate = parseFloat((newCost * (1 + newVa / 100)).toFixed(2));
-      }
-
-      // If quotedRate changed and cost exists, recalculate vaPercent:
-      if (
-        quotedRate !== undefined &&
-        quotedRate !== null &&
-        quotedRate !== "" &&
-        newQuotedRate !== null &&
-        newQuotedRate > 0 &&
-        newCost !== null &&
-        newCost > 0
-      ) {
-        newVa = parseFloat((((newQuotedRate / newCost) - 1) * 100).toFixed(2));
-      }
-
-      // Recalculate totals
-      let itemWiseTotal = null;
-      let totalVal = null;
-      if (quantity > 0 && newQuotedRate !== null && newQuotedRate > 0) {
-        const itemWise = quantity * newQuotedRate;
-        itemWiseTotal = itemWise.toFixed(2);
-        totalVal = (itemWise * 1.18).toFixed(2);
-      }
-
-      // Update EnquiryItem in database
-      await prisma.enquiryItem.update({
-        where: { id: item.id },
-        data: {
-          cost: newCost,
-          quotedRate: newQuotedRate !== null ? newQuotedRate.toFixed(2) : null,
-          vaPercent: newVa,
-          itemWiseTotalValue: itemWiseTotal,
-          totalValue: totalVal,
-        },
-      });
-
+      await recalculateItem(item.id, updates);
       updatedCount++;
     }
 
