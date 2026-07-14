@@ -84,6 +84,7 @@ export default function Pagination({
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
               className="h-7 rounded border border-border bg-white px-2 text-xs text-foreground outline-none cursor-pointer focus:border-slate-300"
             >
+              <option value={5}>5 rows</option>
               <option value={10}>10 rows</option>
               <option value={20}>20 rows</option>
               <option value={50}>50 rows</option>

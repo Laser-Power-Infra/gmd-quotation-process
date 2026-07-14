@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { uploadFileToDrive } from "@/lib/gdrive";
 import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry, autoDetectItemType, autoDetectMoc } from "@/lib/costCalculator";
+import { resolveItemCategory } from "@/lib/itemCategoryResolver";
+import { extractSizeFromItemName } from "@/lib/sizeExtractor";
+import { roundToNearest10 } from "@/lib/rounding";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -69,6 +72,21 @@ export async function createNewEnquiryAction(formData: {
       })
     );
 
+    const resolvedItems = await Promise.all(
+      formData.items.map(async (item) => {
+        const resolved = await resolveItemCategory({
+          itemName: item.itemName,
+          sheetItemType: item.itemType,
+          sheetMoc: item.moc,
+          sheetSize: item.size,
+        });
+        return {
+          ...item,
+          resolved,
+        };
+      })
+    );
+
     const created = await prisma.enquiry.create({
       data: {
         docketNumber: cleanDocket,
@@ -85,7 +103,7 @@ export async function createNewEnquiryAction(formData: {
           create: attachmentCreates,
         },
         items: {
-          create: formData.items.map((item) => {
+          create: resolvedItems.map((item) => {
             const itemCost = item.cost || null;
             const itemVa = item.vaPercent || null;
             let itemQR: string | null = null;
@@ -95,9 +113,11 @@ export async function createNewEnquiryAction(formData: {
             return {
               itemName: item.itemName,
               quantity: item.quantity,
-              itemType: item.itemType || autoDetectItemType(item.itemName) || null,
-              moc: item.moc || autoDetectMoc(item.itemName) || null,
-              size: item.size || null,
+              itemType: item.resolved.itemType,
+              moc: item.resolved.moc,
+              itemTypeSource: item.resolved.itemTypeSource,
+              mocSource: item.resolved.mocSource,
+              size: item.resolved.size,
               pnRating: item.pnRating || null,
               operationType: item.operationType || null,
               extension: item.extension || null,
@@ -163,8 +183,23 @@ export async function addItemsAction(formData: {
   }[];
 }) {
   try {
+    const resolvedItems = await Promise.all(
+      formData.items.map(async (item) => {
+        const resolved = await resolveItemCategory({
+          itemName: item.itemName,
+          sheetItemType: item.itemType,
+          sheetMoc: item.moc,
+          sheetSize: item.size,
+        });
+        return {
+          ...item,
+          resolved,
+        };
+      })
+    );
+
     await prisma.enquiryItem.createMany({
-      data: formData.items.map((item) => {
+      data: resolvedItems.map((item) => {
         const itemCost = item.cost || null;
         const itemVa = item.vaPercent || null;
         let itemQR: string | null = null;
@@ -175,9 +210,11 @@ export async function addItemsAction(formData: {
           enquiryId: formData.enquiryId,
           itemName: item.itemName,
           quantity: item.quantity,
-          itemType: item.itemType || autoDetectItemType(item.itemName) || null,
-          moc: item.moc || autoDetectMoc(item.itemName) || null,
-          size: item.size || null,
+          itemType: item.resolved.itemType,
+          moc: item.resolved.moc,
+          itemTypeSource: item.resolved.itemTypeSource,
+          mocSource: item.resolved.mocSource,
+          size: item.resolved.size,
           pnRating: item.pnRating || null,
           operationType: item.operationType || null,
           extension: item.extension || null,
@@ -279,16 +316,25 @@ export async function updateEnquiryItemAction(formData: {
         const qrNum = parseFloat(finalQuotedRate);
         if (!isNaN(qrNum) && qrNum > 0) {
           finalVa = parseFloat(((qrNum / updatedCost - 1) * 100).toFixed(2));
-          finalQuotedRate = qrNum.toFixed(2);
+          finalQuotedRate = roundToNearest10(qrNum).toFixed(2);
         }
       }
     } else {
       // Forward: QR not provided — calculate from Cost+VA% if both exist
       if (updatedCost !== null && updatedCost > 0 && finalVa !== null) {
         const qr = updatedCost * (1 + (finalVa / 100));
-        finalQuotedRate = qr.toFixed(2);
+        finalQuotedRate = roundToNearest10(qr).toFixed(2);
       } else {
         finalQuotedRate = item.quotedRate || null;
+      }
+    }
+
+    // Calculate QR incl. GST
+    let finalQuotedRateGst: string | null = null;
+    if (finalQuotedRate) {
+      const qrFloat = parseFloat(finalQuotedRate);
+      if (qrFloat > 0) {
+        finalQuotedRateGst = (qrFloat * 1.18).toFixed(2);
       }
     }
 
@@ -302,15 +348,24 @@ export async function updateEnquiryItemAction(formData: {
       }
     }
 
+    const resolved = await resolveItemCategory({
+      itemName: formData.itemName,
+      sheetItemType: formData.itemType,
+      sheetMoc: formData.moc,
+      sheetSize: formData.size,
+    });
+
     // Update item
     await prisma.enquiryItem.update({
       where: { id: formData.itemId },
       data: {
         itemName: formData.itemName,
         quantity: formData.quantity,
-        itemType: formData.itemType || autoDetectItemType(formData.itemName) || null,
-        moc: formData.moc || autoDetectMoc(formData.itemName) || null,
-        size: formData.size || null,
+        itemType: resolved.itemType,
+        moc: resolved.moc,
+        itemTypeSource: resolved.itemTypeSource,
+        mocSource: resolved.mocSource,
+        size: resolved.size,
         pnRating: formData.pnRating || null,
         operationType: formData.operationType || null,
         extension: formData.extension || null,
@@ -322,6 +377,7 @@ export async function updateEnquiryItemAction(formData: {
         discount: formData.discount || null,
         vaPercent: finalVa !== null ? String(finalVa) : null,
         quotedRate: finalQuotedRate,
+        quotedRateGst: finalQuotedRateGst,
         itemWiseTotalValue: updatedItemWise,
         totalValue: updatedTotalVal,
       },
@@ -506,14 +562,25 @@ export async function updateItemFieldAction(
     } else {
       const updateData: any = { [field]: parsedVal };
       if (field === "itemName") {
-        const autoType = autoDetectItemType(parsedVal);
-        if (autoType) {
-          updateData.itemType = autoType;
-        }
-        const autoMoc = autoDetectMoc(parsedVal);
-        if (autoMoc) {
-          updateData.moc = autoMoc;
-        }
+        const currentItem = await prisma.enquiryItem.findUnique({
+          where: { id: itemId },
+          select: { itemType: true, moc: true, itemTypeSource: true, mocSource: true },
+        });
+        const resolved = await resolveItemCategory({
+          itemName: parsedVal,
+          sheetItemType: currentItem?.itemTypeSource === "sheet" ? currentItem.itemType : null,
+          sheetMoc: currentItem?.mocSource === "sheet" ? currentItem.moc : null,
+          sheetSize: null,
+        });
+        updateData.itemType = resolved.itemType;
+        updateData.moc = resolved.moc;
+        updateData.itemTypeSource = resolved.itemTypeSource;
+        updateData.mocSource = resolved.mocSource;
+        updateData.size = resolved.size;
+      } else if (field === "itemType") {
+        updateData.itemTypeSource = "sheet";
+      } else if (field === "moc") {
+        updateData.mocSource = "sheet";
       }
       const dbItem = await prisma.enquiryItem.update({
         where: { id: itemId },
@@ -573,6 +640,55 @@ export async function importExcelDataAction(rows: any[]) {
   } catch (error: any) {
     console.error("Error importing excel data:", error);
     return { success: false, error: error.message || "Failed to import excel data." };
+  }
+}
+
+export async function autoFillBlanksAction(itemIds: string[]) {
+  try {
+    const items = await prisma.enquiryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true, itemName: true, itemType: true, moc: true, size: true, itemTypeSource: true, mocSource: true },
+    })
+
+    console.log(`\n=== AUTO-FILL BLANKS START ===`)
+    console.log(`Total items to process: ${items.length}`)
+
+    let updated = 0
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      process.stdout.write(`\r[${i + 1}/${items.length}] ${item.itemName.substring(0, 60).padEnd(60)}`)
+
+      const resolved = await resolveItemCategory({ itemName: item.itemName })
+      const updates: any = {}
+      if (!item.itemType && resolved.itemType) {
+        updates.itemType = resolved.itemType
+        updates.itemTypeSource = resolved.itemTypeSource
+      }
+      if (!item.moc && resolved.moc) {
+        updates.moc = resolved.moc
+        updates.mocSource = resolved.mocSource
+      }
+      if ((!item.size || item.size === "Not detectable" || item.size === "Not mentioned/cant detect size") && resolved.size && resolved.size !== "Not detectable") {
+        updates.size = resolved.size
+      }
+      if (Object.keys(updates).length > 0) {
+        await prisma.enquiryItem.update({ where: { id: item.id }, data: updates })
+        updated++
+        console.log(`\n  ✓ ${item.itemName.substring(0, 50)}`)
+        if (updates.itemType) console.log(`    itemType: "${item.itemType || ""}" → "${updates.itemType}" (${updates.itemTypeSource})`)
+        if (updates.moc) console.log(`    moc:      "${item.moc || ""}" → "${updates.moc}" (${updates.mocSource})`)
+        if (updates.size) console.log(`    size:     "${item.size || ""}" → "${updates.size}"`)
+      }
+    }
+
+    console.log(`\n\n=== AUTO-FILL BLANKS DONE ===`)
+    console.log(`Updated: ${updated} of ${items.length} items\n`)
+
+    revalidatePath("/")
+    return { success: true, updated }
+  } catch (error: any) {
+    console.error("Error auto-filling blanks:", error)
+    return { success: false, error: error.message || "Failed to auto-fill blanks." }
   }
 }
 

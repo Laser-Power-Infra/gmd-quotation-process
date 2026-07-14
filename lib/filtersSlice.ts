@@ -30,6 +30,7 @@ const initialState: FiltersState = {
   stockStatus: "",
   discount: "",
   quotedRate: "",
+  quotedRateGst: "",
   itemNameMerge: "",
   totalValue: "",
   itemWiseTotalValue: "",

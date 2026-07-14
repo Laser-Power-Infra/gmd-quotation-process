@@ -54,6 +54,8 @@ model EnquiryItem {
 
   itemType      String?
   moc           String?
+  itemTypeSource String?
+  mocSource      String?
   size          String?
   pnRating      String?
   operationType String?
@@ -66,6 +68,7 @@ model EnquiryItem {
   discount      Decimal?
   vaPercent     String?
   quotedRate    String?
+  quotedRateGst String?
   itemNameMerge String?
   totalValue   String?
   itemWiseTotalValue String?

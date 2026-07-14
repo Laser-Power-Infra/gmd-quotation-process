@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2 } from "lucide-react";
+import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import ActionsDropdown from "./ActionsDropdown";
@@ -17,7 +17,7 @@ import { toggleRow, setColumnWidth, setPartyFilterOpen, setPartySearch } from "@
 import type { DropdownOptions } from "@/lib/types";
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
-import { importExcelDataAction } from "@/app/actions";
+import { importExcelDataAction, autoFillBlanksAction } from "@/app/actions";
 
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
@@ -97,12 +97,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterDiscount, setFilterDiscount] = useFilterInput(filters.discount, "discount");
   const [filterVaPercent, setFilterVaPercent] = useFilterInput(filters.vaPercent, "vaPercent");
   const [filterQuotedRate, setFilterQuotedRate] = useFilterInput(filters.quotedRate, "quotedRate");
+  const [filterQuotedRateGst, setFilterQuotedRateGst] = useFilterInput(filters.quotedRateGst || "", "quotedRateGst");
   const [filterItemNameMerge, setFilterItemNameMerge] = useFilterInput(filters.itemNameMerge, "itemNameMerge");
   const [filterTotalValue, setFilterTotalValue] = useFilterInput(filters.totalValue, "totalValue");
   const [filterItemWiseTotalValue, setFilterItemWiseTotalValue] = useFilterInput(filters.itemWiseTotalValue, "itemWiseTotalValue");
   const [filterAttachment, setFilterAttachment] = useFilterInput(filters.attachment, "attachment");
   const [filterClosureStatus, setFilterClosureStatus] = useFilterInput(filters.closureStatus, "closureStatus");
   const [editingItemNameId, setEditingItemNameId] = useState<string | null>(null);
+  const [autoFillStatus, setAutoFillStatus] = useState<"idle" | "running">("idle");
 
   // Debounced party search (dispatches setPartySearch instead of setFilter)
   const [localPartySearch, setLocalPartySearch] = useState(partySearchVal);
@@ -162,7 +164,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       }
       if (filters.size !== "All") {
         if (filters.size === "Blank") {
-          if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-") {
+          if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-" && item.size !== "Not detectable" && item.size !=="Not mentioned/cant detect size") {
             return false;
           }
         } else if (item.size !== filters.size) {
@@ -244,6 +246,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (
         filters.quotedRate &&
         !(item.quotedRate || "").includes(filters.quotedRate)
+      ) {
+        return false;
+      }
+      if (
+        filters.quotedRateGst &&
+        !(item.quotedRateGst || "").includes(filters.quotedRateGst)
       ) {
         return false;
       }
@@ -509,7 +517,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       }
       if (filters.size !== "All") {
         if (filters.size === "Blank") {
-          if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-") {
+          if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-" && item.size !== "Not detectable"&& item.size !=="Not mentioned/cant detect size") {
             return false;
           }
         } else if (item.size !== filters.size) {
@@ -593,6 +601,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (
         filters.quotedRate &&
         !(item.quotedRate || "").toLowerCase().includes(filters.quotedRate.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.quotedRateGst &&
+        !(item.quotedRateGst || "").toLowerCase().includes(filters.quotedRateGst.toLowerCase())
       ) {
         return false;
       }
@@ -861,6 +875,59 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   };
 
+  const handleAutoFillBlanks = async () => {
+    // Collect items that pass all active filters (same logic as filteredEnquiries)
+    const matchedItems: any[] = []
+    for (const enquiry of filteredEnquiries) {
+      for (const item of enquiry.items) {
+        let pass = true
+        if (filters.itemName && !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())) pass = false
+        if (filters.quantity && !item.quantity.toString().includes(filters.quantity)) pass = false
+        if (filters.itemType !== "All") {
+          if (filters.itemType === "Blank") {
+            if (item.itemType !== null && item.itemType !== undefined && item.itemType !== "" && item.itemType !== "-") pass = false
+          } else if (item.itemType !== filters.itemType) pass = false
+        }
+        if (filters.moc !== "All") {
+          if (filters.moc === "Blank") {
+            if (item.moc !== null && item.moc !== undefined && item.moc !== "" && item.moc !== "-") pass = false
+          } else if (item.moc !== filters.moc) pass = false
+        }
+        if (filters.size !== "All") {
+          if (filters.size === "Blank") {
+            if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-" && item.size !== "Not detectable" && item.size !== "Not mentioned/cant detect size") pass = false
+          } else if (item.size !== filters.size) pass = false
+        }
+        if (pass) matchedItems.push(item)
+      }
+    }
+
+    const blankItems = matchedItems.filter(
+      (i: any) =>
+        !i.itemType ||
+        !i.moc ||
+        !i.size ||
+        i.size === "Not detectable" ||
+        i.size === "Not mentioned/cant detect size"
+    )
+    if (blankItems.length === 0) {
+      toast.info("No blank fields to fill.")
+      return
+    }
+    if (!confirm(`Auto-fill ${blankItems.length} items (itemType, MOC, Size)? This uses AI tokens for complex cases.`)) return
+
+    setAutoFillStatus("running")
+    const res = await autoFillBlanksAction(blankItems.map((i: any) => i.id))
+    setAutoFillStatus("idle")
+
+    if (res.success) {
+      toast.success(`Updated ${res.updated} of ${blankItems.length} items. Refreshing...`)
+      window.location.reload()
+    } else {
+      toast.error(res.error || "Failed to auto-fill blanks.")
+    }
+  }
+
   const totalTableWidth = Object.values(columnWidths).reduce((a, b) => a + b, 0);
 
   const inputClass =
@@ -922,6 +989,16 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               Import Excel
             </Button>
           </div>
+
+          <Button
+            type="button"
+            onClick={handleAutoFillBlanks}
+            disabled={autoFillStatus === "running"}
+            className="flex h-8 items-center gap-1.5 px-3 text-xs font-semibold text-purple-700 border border-purple-200 bg-purple-50 hover:bg-purple-100 rounded-md cursor-pointer transition-all shadow-xs shrink-0 disabled:opacity-50"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-purple-700 stroke-[2]" />
+            {autoFillStatus === "running" ? "Filling..." : "Auto-Fill Blanks"}
+          </Button>
         </div>
       </div>
 
@@ -1704,7 +1781,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 25. Quoted Rate */}
+            {/* 26. Quoted Rate */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Quotation Rate</span>
@@ -1727,7 +1804,30 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 26. Item Name Merge */}
+            {/* 27. QR incl. GST */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>QR incl. GST</span>
+                {renderSortArrow("quotedRateGst")}
+              </div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filterQuotedRateGst}
+                onChange={(e) => setFilterQuotedRateGst(e.target.value)}
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(27, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] transition-colors" />
+              </div>
+            </th>
+
+            {/* 28. Item Name (Merge) */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Item Name (Merge)</span>
@@ -1741,7 +1841,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(27, e)}
+                onMouseDown={(e) => handleMouseDown(28, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1750,10 +1850,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 27. Total Value */}
+            {/* 29. Total Value */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div className="flex items-center justify-between">
-                <span>Total Value</span>
+                <span>Total Value incl. GST</span>
                 {renderSortArrow("totalValue")}
               </div>
               <input
@@ -1764,7 +1864,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(28, e)}
+                onMouseDown={(e) => handleMouseDown(29, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1773,7 +1873,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 28. Itemwise Total Value */}
+            {/* 30. Itemwise Total Value */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Itemwise Total Value</span>
@@ -1787,7 +1887,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(29, e)}
+                onMouseDown={(e) => handleMouseDown(30, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -1796,7 +1896,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 29. Attachment */}
+            {/* 31. Attachment */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Attachment</span>
@@ -1810,22 +1910,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(30, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] transition-colors" />
-              </div>
-            </th>
-
-            {/* 30. Offer PDF */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Offer PDF</span>
-              </div>
-              <div className="h-7 mt-1.5" />
-              <div
                 onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
@@ -1835,7 +1919,23 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 31. Actions */}
+            {/* 32. Offer PDF */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Offer PDF</span>
+              </div>
+              <div className="h-7 mt-1.5" />
+              <div
+                onMouseDown={(e) => handleMouseDown(32, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] transition-colors" />
+              </div>
+            </th>
+
+            {/* 33. Actions */}
             <th className="sticky top-0 z-30 bg-slate-50 py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-b border-slate-200 text-right">
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
@@ -1845,7 +1945,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         <tbody className="bg-white">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={33} className="py-20 px-4 text-center border-b border-slate-200">
+              <td colSpan={34} className="py-20 px-4 text-center border-b border-slate-200">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 text-slate-400 mb-4 border border-slate-100">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -2410,6 +2510,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       ) : "-"}
                     </td>
 
+                    {/* First Item QR incl. GST */}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      {firstItem ? (
+                        <span className="block text-xs text-slate-700 p-1 font-medium text-right">
+                          {firstItem.quotedRateGst || "-"}
+                        </span>
+                      ) : "-"}
+                    </td>
+
                     {/* First Item Item Name Merge */}
                     <td className="py-3 px-3 border-r border-b border-slate-200 last:border-r-0 text-xs text-slate-500 font-medium truncate">
                       {firstItem ? getItemNameMerge(firstItem) || "-" : "-"}
@@ -2785,6 +2894,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             placeholder="-"
                             className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
                           />
+                        </td>
+
+                        {/* QR incl. GST */}
+                        <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                          <span className="block text-xs text-slate-700 p-1 font-medium text-right">
+                            {item.quotedRateGst || "-"}
+                          </span>
                         </td>
 
                         {/* Item Name Merge */}

@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { matchItemType, matchMoc } from "./itemTypePatterns";
+import { roundToNearest10 } from "./rounding";
 
 export function serializeItem(item: any) {
   return {
@@ -9,6 +11,7 @@ export function serializeItem(item: any) {
     discount: item.discount ? Number(item.discount) : null,
     vaPercent: item.vaPercent !== null && item.vaPercent !== undefined ? Number(item.vaPercent) : null,
     quotedRate: item.quotedRate || null,
+    quotedRateGst: item.quotedRateGst || null,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
   };
@@ -71,7 +74,7 @@ export async function recalculateItem(
     ? updates.vaPercent
     : (item.vaPercent ? parseFloat(item.vaPercent) : null);
   let quotedRate = updates && updates.quotedRate !== undefined
-    ? updates.quotedRate
+    ? (updates.quotedRate !== null ? roundToNearest10(updates.quotedRate) : null)
     : (item.quotedRate ? parseFloat(item.quotedRate) : null);
 
   // 2. Calculate Cost
@@ -137,7 +140,7 @@ export async function recalculateItem(
       vaPercent = parseFloat((((quotedRate! / cost) - 1) * 100).toFixed(2));
     } else if (vaPercent !== null) {
       // Otherwise, if vaPercent exists, recalculate quotedRate based on new cost
-      quotedRate = parseFloat((cost * (1 + vaPercent / 100)).toFixed(2));
+      quotedRate = roundToNearest10(cost * (1 + vaPercent / 100));
     } else if (quotedRate !== null) {
       // If vaPercent is null/undefined but quotedRate exists, calculate vaPercent
       vaPercent = parseFloat((((quotedRate! / cost) - 1) * 100).toFixed(2));
@@ -150,7 +153,13 @@ export async function recalculateItem(
     }
   }
 
-  // 4. Calculate Totals
+  // 4. Calculate QR incl. GST
+  let quotedRateGst: string | null = null;
+  if (quotedRate !== null && quotedRate > 0) {
+    quotedRateGst = (quotedRate * 1.18).toFixed(2);
+  }
+
+  // 5. Calculate Totals
   let itemWiseTotal: string | null = null;
   let totalVal: string | null = null;
   if (quantity > 0 && quotedRate !== null && quotedRate > 0) {
@@ -181,6 +190,7 @@ export async function recalculateItem(
       cost: cost,
       vaPercent: vaPercent !== null ? String(vaPercent) : null,
       quotedRate: quotedRate !== null ? quotedRate.toFixed(2) : null,
+      quotedRateGst: quotedRateGst,
       itemWiseTotalValue: itemWiseTotal,
       totalValue: totalVal,
       itemNameMerge: mergedNameVal === "" ? null : mergedNameVal,
@@ -203,166 +213,9 @@ export async function recalculateEnquiryItems(enquiryId: string) {
 }
 
 export function autoDetectItemType(itemName: string | null | undefined): string | null {
-  if (!itemName) return null;
-  const nameLower = itemName.toLowerCase();
-
-  if (nameLower.includes("butterfly")) {
-    return "BUTTERFLY VALVE";
-  }
-  if (nameLower.includes("sluice valve") || nameLower.includes("sluice/scoure valve") || nameLower.includes("sluice") || nameLower.includes("gate") || nameLower.includes("scoure")) {
-    if (nameLower.includes("knife")) {
-      return "KNIFE GATE VALVE";
-    }
-    if (nameLower.includes("resilient") && nameLower.includes("rising")) {
-      return "SLUICE VALVE-RESILIENT-RISING";
-    }
-    if (nameLower.includes("resilient")) {
-      return "SLUICE VALVE-RESILIENT-NON-RISING";
-    }
-    if (nameLower.includes("rising")) {
-      return "SLUICE VALVE-METAL-RISING";
-    }
-    return "SLUICE VALVE-METAL-NON-RISING";
-  }
-  if (nameLower.includes("air valve")) {
-    if (nameLower.includes("tamper proof") || nameLower.includes("tpa") || nameLower.includes("tpav")) {
-      return "TPAV";
-    }
-    if (nameLower.includes("vacuum") || nameLower.includes("vacum")) {
-      return "VACUM BREAKER VALVE";
-    }
-    return "AIR VALVE";
-  }
-  if (nameLower.includes("check valve") || nameLower.includes("non return") || nameLower.includes("non-return") || nameLower.includes("dpcv")) {
-    if (nameLower.includes("dual plate") || nameLower.includes("dpcv")) {
-      return "DPCV";
-    }
-    return "CHECK VALVE";
-  }
-  if (nameLower.includes("ball valve")) {
-    return "BALL VALVE";
-  }
-  if (nameLower.includes("globe valve") || (nameLower.includes("globe") && nameLower.includes("valve"))) {
-    return "GLOBE VALVE";
-  }
-  if (nameLower.includes("zero velocity")) {
-    return "ZERO VELOCITY VALVE";
-  }
-  if (nameLower.includes("solenoid")) {
-    return "SOLENOID VALVE";
-  }
-  if (nameLower.includes("foot") && nameLower.includes("valve")) {
-    return "FOOT VALVE";
-  }
-  if (nameLower.includes("plug") && nameLower.includes("valve")) {
-    return "PLUG VALVE";
-  }
-  if (nameLower.includes("control") && nameLower.includes("valve")) {
-    return "ALTITUDE CONTROL VALVE";
-  }
-  if (nameLower.includes("tpav") || nameLower.includes("tamper proof")) {
-    return "TPAV";
-  }
-  if (nameLower.includes("sluice gate") || nameLower.includes("gate")) {
-    if (nameLower.includes("knife")) {
-      return "KNIFE GATE VALVE";
-    }
-    return "SLUICE GATE";
-  }
-  if (nameLower.includes("bellow") || nameLower.includes("expansion")) {
-    return "EXPANSION BELOWS";
-  }
-  if (nameLower.includes("bolts") || nameLower.includes("nuts") || nameLower.includes("screw") || nameLower.includes("bolts or nuts")) {
-    return "BOLTS OR NUTS";
-  }
-  if (nameLower.includes("gasket")) {
-    return "GASKET";
-  }
-  if (nameLower.includes("dismantling")) {
-    return "DISMANTLING JOINT";
-  }
-  if (nameLower.includes("flange")) {
-    return "COMPANION FLANGE";
-  }
-
-  return null;
+  return matchItemType(itemName);
 }
 
 export function autoDetectMoc(itemName: string | null | undefined): string | null {
-  if (!itemName) return null;
-  const nameLower = itemName.toLowerCase();
-
-  // Explicit overrides
-  if (nameLower.includes("ms") || nameLower.includes("m.s.") || nameLower.includes("mild steel")) {
-    return "MILD STEEL";
-  }
-  if (nameLower.includes("cs") || nameLower.includes("c.s.") || nameLower.includes("cast steel") || nameLower.includes("carbon steel") || nameLower.includes("wcb")) {
-    return "CAST STEEL/CARBON STEEL";
-  }
-  if (
-    nameLower.includes("ss") ||
-    nameLower.includes("s.s.") ||
-    nameLower.includes("ss304") ||
-    nameLower.includes("ss316") ||
-    nameLower.includes("cf8") ||
-    nameLower.includes("cf8m") ||
-    nameLower.includes("stainless steel")
-  ) {
-    return "STAINLESS STEEL";
-  }
-  if (nameLower.includes("fs") || nameLower.includes("f.s.") || nameLower.includes("forged steel")) {
-    return "FORGED STEEL";
-  }
-  if (
-    nameLower.includes("gm") ||
-    nameLower.includes("g.m.") ||
-    nameLower.includes("gun metal") ||
-    nameLower.includes("brass") ||
-    nameLower.includes("copper alloy") ||
-    nameLower.includes("bronze")
-  ) {
-    return "GUN METAL/ BRASS";
-  }
-  if (nameLower.includes("actuator")) {
-    return "ACTUATOR";
-  }
-  if (nameLower.includes("rubber") || nameLower.includes("epdm") || nameLower.includes("nbr") || nameLower.includes("neoprene")) {
-    return "RUBBER";
-  }
-  if (nameLower.includes("leather")) {
-    return "LEATHER";
-  }
-  if (nameLower.includes("monel")) {
-    return "MONEL STEEL";
-  }
-  if (nameLower.includes("wooden")) {
-    return "WOODEN";
-  }
-  if (nameLower.includes("gi") || nameLower.includes("g.i.") || nameLower.includes("galvanised") || nameLower.includes("galvanized")) {
-    return "GALVANISED";
-  }
-
-  // Fallbacks
-  if (
-    nameLower.includes("di") ||
-    nameLower.includes("ci") ||
-    nameLower.includes("d.i") ||
-    nameLower.includes("c.i") ||
-    nameLower.includes("ductile") ||
-    nameLower.includes("cast iron") ||
-    nameLower.includes("sg iron") ||
-    nameLower.includes("valve") ||
-    nameLower.includes("gate") ||
-    nameLower.includes("scoure") ||
-    nameLower.includes("kinetic") ||
-    nameLower.includes("dpcv") ||
-    nameLower.includes("tpav") ||
-    nameLower.includes("bellow") ||
-    nameLower.includes("flange") ||
-    nameLower.includes("dismantling")
-  ) {
-    return "DUCTILE IRON/CAST IRON";
-  }
-
-  return null;
+  return matchMoc(itemName);
 }

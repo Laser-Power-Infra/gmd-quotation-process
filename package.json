@@ -9,13 +9,16 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.11",
     "@base-ui/react": "^1.6.0",
+    "@google/genai": "^2.11.0",
     "@hookform/resolvers": "^5.4.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@reduxjs/toolkit": "^2.12.0",
     "@tanstack/react-table": "^8.21.3",
     "@types/pg": "^8.20.0",
+    "ai": "^7.0.22",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",

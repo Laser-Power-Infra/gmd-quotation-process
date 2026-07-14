@@ -3,6 +3,8 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import "dotenv/config";
 import { PARTY_NAMES } from "../lib/partyNames";
+import { resolveItemCategory } from "../lib/itemCategoryResolver";
+import { extractSizeFromItemName } from "../lib/sizeExtractor";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -98,6 +100,8 @@ interface TempItem {
   cost?: number;
   stockStatus?: string;
   discount?: number;
+  itemTypeSource?: string;
+  mocSource?: string;
 }
 
 interface TempEnquiry {
@@ -305,6 +309,13 @@ async function main() {
     const discountRaw = discountIdx !== -1 ? row[discountIdx]?.replace(/,/g, "").trim() : "";
     const discount = discountRaw ? parseFloat(discountRaw) : null;
 
+    const resolved = await resolveItemCategory({
+      itemName,
+      sheetItemType: itemType,
+      sheetMoc: moc,
+      sheetSize: size,
+    });
+
     // Check if parent docket exists, otherwise create a placeholder docket
     if (!docketsMap[docketNo]) {
       docketsMap[docketNo] = {
@@ -319,9 +330,11 @@ async function main() {
     docketsMap[docketNo].items.push({
       itemName,
       quantity,
-      itemType: itemType || undefined,
-      moc: moc || undefined,
-      size: size || undefined,
+      itemType: resolved.itemType || undefined,
+      moc: resolved.moc || undefined,
+      itemTypeSource: resolved.itemTypeSource || undefined,
+      mocSource: resolved.mocSource || undefined,
+      size: resolved.size || undefined,
       pnRating: pnRating || undefined,
       operationType: operationType || undefined,
       extension: extension || undefined,
@@ -393,6 +406,8 @@ async function main() {
                   quantity: item.quantity,
                   itemType: item.itemType,
                   moc: item.moc,
+                  itemTypeSource: item.itemTypeSource,
+                  mocSource: item.mocSource,
                   size: item.size,
                   pnRating: item.pnRating,
                   operationType: item.operationType,

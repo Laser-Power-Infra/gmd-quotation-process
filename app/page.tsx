@@ -131,9 +131,6 @@ export default async function Page({ searchParams }: PageProps) {
     dbUtilities,
     dbVaPercents,
     dbOrderStatuses,
-    dbItemTypes,
-    dbMocs,
-    dbSizes,
     dbPnRatings,
     dbOperationTypes,
     dbExtensions,
@@ -147,9 +144,6 @@ export default async function Page({ searchParams }: PageProps) {
     prisma.enquiry.findMany({ select: { utility: true }, distinct: ["utility"] }),
     prisma.enquiryItem.findMany({ select: { vaPercent: true }, distinct: ["vaPercent"] }),
     prisma.enquiry.findMany({ select: { orderStatus: true }, distinct: ["orderStatus"] }),
-    prisma.enquiryItem.findMany({ select: { itemType: true }, distinct: ["itemType"] }),
-    prisma.enquiryItem.findMany({ select: { moc: true }, distinct: ["moc"] }),
-    prisma.enquiryItem.findMany({ select: { size: true }, distinct: ["size"] }),
     prisma.enquiryItem.findMany({ select: { pnRating: true }, distinct: ["pnRating"] }),
     prisma.enquiryItem.findMany({ select: { operationType: true }, distinct: ["operationType"] }),
     prisma.enquiryItem.findMany({ select: { extension: true }, distinct: ["extension"] }),
@@ -187,6 +181,7 @@ export default async function Page({ searchParams }: PageProps) {
     "FLOAT VALVE",
     "FOOT VALVE",
     "GASKET",
+    "GATE VALVE",
     "GAZAL",
     "GEAR BOX",
     "GLOBE VALVE",
@@ -226,7 +221,7 @@ export default async function Page({ searchParams }: PageProps) {
     "ZERO VELOCITY VALVE"
   ];
 
-  const itemTypes = Array.from(new Set([...staticItemTypes, ...getUniqueOptions(dbItemTypes, "itemType")]))
+  const itemTypes = [...staticItemTypes]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const staticMocs = [
@@ -246,8 +241,17 @@ export default async function Page({ searchParams }: PageProps) {
     "GALVANISED"
   ];
 
-  const mocs = Array.from(new Set([...staticMocs, ...getUniqueOptions(dbMocs, "moc")]))
+  const mocs = [...staticMocs]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  const staticSizes = [
+    "12", "15", "20", "25", "32", "40", "50", "65", "80", "100",
+    "120", "125", "150", "200", "225", "250", "300", "350", "400",
+    "450", "500", "600", "700", "750", "800", "900", "1000", "1100",
+    "1200", "1300", "1400", "1500", "1600", "1700", "1800", "1900",
+    "2000", "2100", "2200", "2300", "2400", "2500", "2600", "2700",
+    "2800",
+  ];
 
   const staticPnRatings = [
     "PN-10/16",
@@ -470,7 +474,7 @@ export default async function Page({ searchParams }: PageProps) {
     orderStatuses,
     itemTypes,
     mocs,
-    sizes: Array.from(new Set(["15", "25", "40", "65", ...getUniqueOptions(dbSizes, "size")]))
+    sizes: [...staticSizes]
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) as string[],
     pnRatings,
     operationTypes,

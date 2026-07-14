@@ -18,10 +18,13 @@ export interface EnquiryItemData {
   stockStatus: string | null;
   discount: number | null;
   quotedRate: string | null;
+  quotedRateGst?: string | null;
   itemNameMerge: string | null;
   totalValue: string | null;
   itemWiseTotalValue: string | null;
   vaPercent: number | null;
+  itemTypeSource?: string | null;
+  mocSource?: string | null;
 }
 
 export interface AttachmentData {
@@ -98,6 +101,7 @@ export interface FiltersState {
   stockStatus: string;
   discount: string;
   quotedRate: string;
+  quotedRateGst: string;
   itemNameMerge: string;
   totalValue: string;
   itemWiseTotalValue: string;
