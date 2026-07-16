@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,11 +13,11 @@ import { useDebounce } from "@/lib/hooks/useDebounce";
 import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField } from "@/lib/enquiriesSlice";
 import { setFilter, setPartyNamesFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
-import { toggleRow, setColumnWidth, setPartyFilterOpen, setPartySearch } from "@/lib/uiSlice";
+import { toggleRow, setColumnWidth, setExpandedRows, setPartyFilterOpen, setPartySearch } from "@/lib/uiSlice";
 import type { DropdownOptions } from "@/lib/types";
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
-import { importExcelDataAction, autoFillBlanksAction } from "@/app/actions";
+import { importExcelData, autoFillBlanks } from "@/lib/enquiriesSlice";
 
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
@@ -71,6 +71,17 @@ function useFilterInput(reduxValue: string, field: string) {
   return [local, setLocal] as const;
 }
 
+// Helper for cascading filter evaluation
+function itemFieldMatches(item: any, field: string, filterValue: string): boolean {
+  if (filterValue === "All") return true;
+  if (filterValue === "Blank") {
+    return item[field] === null || item[field] === undefined || item[field] === "" || item[field] === "-";
+  }
+  return item[field] === filterValue;
+}
+
+const CASCADE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass"] as const;
+
 export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const dispatch = useAppDispatch();
   const enquiries = useAppSelector(selectAllEnquiries);
@@ -103,6 +114,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterItemWiseTotalValue, setFilterItemWiseTotalValue] = useFilterInput(filters.itemWiseTotalValue, "itemWiseTotalValue");
   const [filterAttachment, setFilterAttachment] = useFilterInput(filters.attachment, "attachment");
   const [filterClosureStatus, setFilterClosureStatus] = useFilterInput(filters.closureStatus, "closureStatus");
+  const [filterItemTypeSearch, setFilterItemTypeSearch] = useFilterInput(filters.itemTypeSearch, "itemTypeSearch");
+  const [filterMocSearch, setFilterMocSearch] = useFilterInput(filters.mocSearch, "mocSearch");
   const [editingItemNameId, setEditingItemNameId] = useState<string | null>(null);
   const [autoFillStatus, setAutoFillStatus] = useState<"idle" | "running">("idle");
 
@@ -117,6 +130,47 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   useEffect(() => {
     dispatch(resetPage());
   }, [filters, dispatch]);
+
+  // Cascading filter options: for each item-level field, compute available values
+  // based on currently active filters in OTHER fields
+  const cascadedOptions = useMemo(() => {
+    const result: Record<string, string[]> = {};
+
+    for (const field of CASCADE_FIELDS) {
+      const available = allItems
+        .filter((item: any) => {
+          for (const other of CASCADE_FIELDS) {
+            if (other === field) continue;
+            const val = (filters as any)[other];
+            if (val !== "All" && !itemFieldMatches(item, other, val)) {
+              return false;
+            }
+          }
+          return true;
+        })
+        .map((item: any) => item[field])
+        .filter((v: any) => v !== null && v !== undefined && v !== "")
+        .filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i)
+        .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
+
+      result[field] = available;
+    }
+
+    return result;
+  }, [allItems, filters]);
+
+  // Auto-expand rows when docket number is searched
+  useEffect(() => {
+    if (filters.docketNumber) {
+      const matchingIds: Record<string, boolean> = {};
+      for (const enquiry of enquiries) {
+        if (enquiry.docketNumber.toLowerCase().includes(filters.docketNumber.toLowerCase())) {
+          matchingIds[enquiry.id] = true;
+        }
+      }
+      dispatch(setExpandedRows(matchingIds));
+    }
+  }, [filters.docketNumber, enquiries, dispatch]);
 
   const hasActiveFilters = Object.values(filters).some((val) => {
     if (Array.isArray(val)) return val.length > 0;
@@ -153,6 +207,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           return false;
         }
       }
+      if (
+        filters.itemTypeSearch &&
+        !(item.itemType || "").toLowerCase().includes(filters.itemTypeSearch.toLowerCase())
+      ) {
+        return false;
+      }
       if (filters.moc !== "All") {
         if (filters.moc === "Blank") {
           if (item.moc !== null && item.moc !== undefined && item.moc !== "" && item.moc !== "-") {
@@ -161,6 +221,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         } else if (item.moc !== filters.moc) {
           return false;
         }
+      }
+      if (
+        filters.mocSearch &&
+        !(item.moc || "").toLowerCase().includes(filters.mocSearch.toLowerCase())
+      ) {
+        return false;
       }
       if (filters.size !== "All") {
         if (filters.size === "Blank") {
@@ -339,6 +405,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   // Inline table cell dropdown update handlers
   const handleEnquiryFieldChange = async (enquiryId: string, field: string, val: string) => {
     const dbVal = val === "" ? null : val;
+    console.log(`[Client] updateEnquiryField enquiry=${enquiryId} field=${field} val="${dbVal}"`);
     toast.promise(
       dispatch(updateEnquiryField({ enquiryId, field, value: dbVal })).unwrap(),
       {
@@ -367,15 +434,20 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
   const handleItemFieldChange = async (itemId: string, field: string, val: string) => {
     const dbVal = val === "" ? null : val;
+    console.log(`[Client] updateItemField item=${itemId} field=${field} val="${dbVal}"`);
+    const toastId = toast.loading(`Saving ${field}...`);
 
-    toast.promise(
-      dispatch(updateItemField({ itemId, field, value: dbVal })).unwrap(),
-      {
-        loading: `Saving ${field}...`,
-        success: `Saved successfully.`,
-        error: (err) => err?.message || err || `Failed to save.`,
+    try {
+      const result = await dispatch(updateItemField({ itemId, field, value: dbVal })).unwrap();
+      toast.success(`Saved successfully.`, { id: toastId });
+
+      // When updating item name, warn if size wasn't detected
+      if (field === "itemName" && result && !result.size) {
+        toast.info("Size not mentioned in item name — please add manually.", { id: undefined, duration: 5000 });
       }
-    );
+    } catch (err: any) {
+      toast.error(err?.message || err || `Failed to save.`, { id: toastId });
+    }
   };
 
   // Filter logic matching dropdown selections exactly
@@ -506,6 +578,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           return false;
         }
       }
+      if (
+        filters.itemTypeSearch &&
+        !(item.itemType || "").toLowerCase().includes(filters.itemTypeSearch.toLowerCase())
+      ) {
+        return false;
+      }
       if (filters.moc !== "All") {
         if (filters.moc === "Blank") {
           if (item.moc !== null && item.moc !== undefined && item.moc !== "" && item.moc !== "-") {
@@ -514,6 +592,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         } else if (item.moc !== filters.moc) {
           return false;
         }
+      }
+      if (
+        filters.mocSearch &&
+        !(item.moc || "").toLowerCase().includes(filters.mocSearch.toLowerCase())
+      ) {
+        return false;
       }
       if (filters.size !== "All") {
         if (filters.size === "Blank") {
@@ -764,13 +848,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
         toast.loading(`Importing ${mappedRows.length} rows...`, { id: toastId });
 
-        const result = await importExcelDataAction(mappedRows);
-        if (result.success) {
-          toast.success(`Imported successfully. Matched ${result.matchedCount} and updated ${result.updatedCount} items.`, { id: toastId });
-          window.location.reload();
-        } else {
-          toast.error(result.error || "Failed to import excel data.", { id: toastId });
-        }
+        await dispatch(importExcelData(mappedRows)).unwrap();
+        toast.success(`Imported successfully.`, { id: toastId });
       } catch (err: any) {
         toast.error(err.message || "An error occurred during parsing.", { id: toastId });
       } finally {
@@ -819,6 +898,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             "Item Name Merge": "",
             "Total Value": "",
             "Itemwise Total Value": "",
+            "Delivery Schedule": "",
             "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
             "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
           });
@@ -855,6 +935,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               "Item Name Merge": item.itemNameMerge || "",
               "Total Value": item.totalValue || "",
               "Itemwise Total Value": item.itemWiseTotalValue || "",
+              "Delivery Schedule": item.deliverySchedule || "",
               "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
               "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
             });
@@ -878,7 +959,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const handleAutoFillBlanks = async () => {
     // Collect items that pass all active filters (same logic as filteredEnquiries)
     const matchedItems: any[] = []
-    for (const enquiry of filteredEnquiries) {
+    for (const enquiry of paginatedEnquiries) {
       for (const item of enquiry.items) {
         let pass = true
         if (filters.itemName && !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())) pass = false
@@ -888,11 +969,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             if (item.itemType !== null && item.itemType !== undefined && item.itemType !== "" && item.itemType !== "-") pass = false
           } else if (item.itemType !== filters.itemType) pass = false
         }
+        if (filters.itemTypeSearch && !(item.itemType || "").toLowerCase().includes(filters.itemTypeSearch.toLowerCase())) pass = false
         if (filters.moc !== "All") {
           if (filters.moc === "Blank") {
             if (item.moc !== null && item.moc !== undefined && item.moc !== "" && item.moc !== "-") pass = false
           } else if (item.moc !== filters.moc) pass = false
         }
+        if (filters.mocSearch && !(item.moc || "").toLowerCase().includes(filters.mocSearch.toLowerCase())) pass = false
         if (filters.size !== "All") {
           if (filters.size === "Blank") {
             if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-" && item.size !== "Not detectable" && item.size !== "Not mentioned/cant detect size") pass = false
@@ -908,24 +991,24 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         !i.moc ||
         !i.size ||
         i.size === "Not detectable" ||
-        i.size === "Not mentioned/cant detect size"
+        i.size === "Not mentioned/cant detect size" ||
+        !i.operationType ||
+        !i.extension ||
+        i.extension === "-" ||
+        !i.bypass ||
+        i.bypass === "-"
     )
+    console.log(`[Client] autoFillBlanks: ${blankItems.length} items with blanks out of ${matchedItems.length} matched`);
     if (blankItems.length === 0) {
       toast.info("No blank fields to fill.")
       return
     }
-    if (!confirm(`Auto-fill ${blankItems.length} items (itemType, MOC, Size)? This uses AI tokens for complex cases.`)) return
+    if (!confirm(`Auto-fill ${blankItems.length} items (itemType, MOC, Size, Operation Type, Extension, Bypass)? This uses AI tokens for complex cases.`)) return
 
     setAutoFillStatus("running")
-    const res = await autoFillBlanksAction(blankItems.map((i: any) => i.id))
+    await dispatch(autoFillBlanks(blankItems.map((i: any) => i.id))).unwrap()
     setAutoFillStatus("idle")
-
-    if (res.success) {
-      toast.success(`Updated ${res.updated} of ${blankItems.length} items. Refreshing...`)
-      window.location.reload()
-    } else {
-      toast.error(res.error || "Failed to auto-fill blanks.")
-    }
+    toast.success(`Auto-fill complete.`)
   }
 
   const totalTableWidth = Object.values(columnWidths).reduce((a, b) => a + b, 0);
@@ -1455,10 +1538,21 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All Types</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.itemTypes.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.itemTypes
+                  .filter((opt) =>
+                    cascadedOptions.itemType.includes(opt) || filters.itemType === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
+              <input
+                type="text"
+                placeholder="Search item type..."
+                value={filterItemTypeSearch}
+                onChange={(e) => setFilterItemTypeSearch(e.target.value)}
+                className="mt-1 w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-normal text-slate-700 placeholder-slate-400 outline-none focus:border-blue-500 normal-case"
+              />
               <div
                 onMouseDown={(e) => handleMouseDown(13, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1484,10 +1578,21 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All MOCs</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.mocs.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.mocs
+                  .filter((opt) =>
+                    cascadedOptions.moc.includes(opt) || filters.moc === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
+              <input
+                type="text"
+                placeholder="Search MOC..."
+                value={filterMocSearch}
+                onChange={(e) => setFilterMocSearch(e.target.value)}
+                className="mt-1 w-full h-6 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[9px] font-normal text-slate-700 placeholder-slate-400 outline-none focus:border-blue-500 normal-case"
+              />
               <div
                 onMouseDown={(e) => handleMouseDown(14, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1513,9 +1618,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All Sizes</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.sizes.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.sizes
+                  .filter((opt) =>
+                    cascadedOptions.size.includes(opt) || filters.size === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(15, e)}
@@ -1542,9 +1651,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All Ratings</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.pnRatings.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.pnRatings
+                  .filter((opt) =>
+                    cascadedOptions.pnRating.includes(opt) || filters.pnRating === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(16, e)}
@@ -1571,9 +1684,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All Operations</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.operationTypes.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.operationTypes
+                  .filter((opt) =>
+                    cascadedOptions.operationType.includes(opt) || filters.operationType === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(17, e)}
@@ -1600,9 +1717,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.extensions.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.extensions
+                  .filter((opt) =>
+                    cascadedOptions.extension.includes(opt) || filters.extension === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(18, e)}
@@ -1629,9 +1750,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.bypasses.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.bypasses
+                  .filter((opt) =>
+                    cascadedOptions.bypass.includes(opt) || filters.bypass === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(19, e)}
@@ -1919,10 +2044,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 32. Offer PDF */}
+            {/* 32. Delivery Schedule */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
               <div className="flex items-center justify-between">
-                <span>Offer PDF</span>
+                <span>Delivery Schedule</span>
               </div>
               <div className="h-7 mt-1.5" />
               <div
@@ -1935,7 +2060,23 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 33. Actions */}
+            {/* 33. Offer PDF */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-slate-50 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-r border-b border-slate-200 last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Offer PDF</span>
+              </div>
+              <div className="h-7 mt-1.5" />
+              <div
+                onMouseDown={(e) => handleMouseDown(33, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] transition-colors" />
+              </div>
+            </th>
+
+            {/* 34. Actions */}
             <th className="sticky top-0 z-30 bg-slate-50 py-2.5 px-3 text-[10px] font-bold tracking-wider text-slate-500 uppercase border-b border-slate-200 text-right">
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
@@ -1945,7 +2086,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         <tbody className="bg-white">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={34} className="py-20 px-4 text-center border-b border-slate-200">
+              <td colSpan={35} className="py-20 px-4 text-center border-b border-slate-200">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-50 text-slate-400 mb-4 border border-slate-100">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -2270,6 +2411,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               handleItemFieldChange(firstItem.id, "quantity", e.target.value);
                             }
                           }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-semibold text-right"
                         />
@@ -2399,6 +2543,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               handleItemFieldChange(firstItem.id, "productCost", e.target.value);
                             }
                           }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
                         />
@@ -2415,6 +2562,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.target.value !== (firstItem.costRefCode || "")) {
                               handleItemFieldChange(firstItem.id, "costRefCode", e.target.value);
                             }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
@@ -2433,6 +2583,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               handleItemFieldChange(firstItem.id, "cost", e.target.value);
                             }
                           }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
                         />
@@ -2450,6 +2603,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               handleItemFieldChange(firstItem.id, "stockStatus", e.target.value);
                             }
                           }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
                         />
@@ -2466,6 +2622,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.target.value !== (firstItem.discount ? Number(firstItem.discount).toString() : "")) {
                               handleItemFieldChange(firstItem.id, "discount", e.target.value);
                             }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
@@ -2486,6 +2645,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               handleItemFieldChange(firstItem.id, "vaPercent", val);
                             }
                           }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
                         />
@@ -2503,6 +2665,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.target.value !== (firstItem.quotedRate || "")) {
                               handleItemFieldChange(firstItem.id, "quotedRate", e.target.value);
                             }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
@@ -2536,6 +2701,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               handleItemFieldChange(firstItem.id, "totalValue", e.target.value);
                             }
                           }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
                         />
@@ -2553,6 +2721,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.target.value !== (firstItem.itemWiseTotalValue || "")) {
                               handleItemFieldChange(firstItem.id, "itemWiseTotalValue", e.target.value);
                             }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
@@ -2580,6 +2751,27 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       ) : (
                         <span className="text-slate-300">-</span>
                       )}
+                    </td>
+
+                    {/* Delivery Schedule */}
+                    <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          key={firstItem.id + "-deliverySchedule-" + (firstItem.deliverySchedule || "")}
+                          type="text"
+                          defaultValue={firstItem.deliverySchedule || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.deliverySchedule || "")) {
+                              handleItemFieldChange(firstItem.id, "deliverySchedule", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                        />
+                      ) : "-"}
                     </td>
 
                     {/* Offer PDF */}
@@ -2680,14 +2872,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             key={item.id + "-quantity-" + (item.quantity || "")}
                             type="text"
                             defaultValue={item.quantity ? Number(item.quantity).toString() : ""}
-                            onBlur={(e) => {
-                              if (e.target.value !== (item.quantity ? Number(item.quantity).toString() : "")) {
-                                handleItemFieldChange(item.id, "quantity", e.target.value);
-                              }
-                            }}
-                            placeholder="-"
-                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-semibold text-right"
-                          />
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.quantity ? Number(item.quantity).toString() : "")) {
+                              handleItemFieldChange(item.id, "quantity", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-semibold text-right"
+                        />
                         </td>
 
                         {/* 13. Item Type Inline Select */}
@@ -2793,110 +2988,131 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           <input
                             type="text"
                             defaultValue={item.productCost ? Number(item.productCost).toString() : ""}
-                            onBlur={(e) => {
-                              if (e.target.value !== (item.productCost ? Number(item.productCost).toString() : "")) {
-                                handleItemFieldChange(item.id, "productCost", e.target.value);
-                              }
-                            }}
-                            placeholder="-"
-                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
-                          />
-                        </td>
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.productCost ? Number(item.productCost).toString() : "")) {
+                              handleItemFieldChange(item.id, "productCost", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                        />
+                      </td>
 
-                        {/* Cost Ref Code */}
+                      {/* Cost Ref Code */}
                         <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
                           <input
                             type="text"
                             defaultValue={item.costRefCode || ""}
-                            onBlur={(e) => {
-                              if (e.target.value !== (item.costRefCode || "")) {
-                                handleItemFieldChange(item.id, "costRefCode", e.target.value);
-                              }
-                            }}
-                            placeholder="-"
-                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
-                          />
-                        </td>
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.costRefCode || "")) {
+                              handleItemFieldChange(item.id, "costRefCode", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                        />
+                      </td>
 
-                        {/* Cost */}
+                      {/* Cost */}
                         <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
                           <input
                             type="text"
                             defaultValue={item.cost ? Number(item.cost).toString() : ""}
-                            onBlur={(e) => {
-                              if (e.target.value !== (item.cost ? Number(item.cost).toString() : "")) {
-                                handleItemFieldChange(item.id, "cost", e.target.value);
-                              }
-                            }}
-                            placeholder="-"
-                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
-                          />
-                        </td>
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.cost ? Number(item.cost).toString() : "")) {
+                              handleItemFieldChange(item.id, "cost", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                        />
+                      </td>
 
-                        {/* Stock Status */}
+                      {/* Stock Status */}
                         <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
                           <input
                             type="text"
                             defaultValue={item.stockStatus || ""}
-                            onBlur={(e) => {
-                              if (e.target.value !== (item.stockStatus || "")) {
-                                handleItemFieldChange(item.id, "stockStatus", e.target.value);
-                              }
-                            }}
-                            placeholder="-"
-                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
-                          />
-                        </td>
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.stockStatus || "")) {
+                              handleItemFieldChange(item.id, "stockStatus", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                        />
+                      </td>
 
-                        {/* Discount */}
+                      {/* Discount */}
                         <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
                           <input
                             type="text"
                             defaultValue={item.discount ? Number(item.discount).toString() : ""}
-                            onBlur={(e) => {
-                              if (e.target.value !== (item.discount ? Number(item.discount).toString() : "")) {
-                                handleItemFieldChange(item.id, "discount", e.target.value);
-                              }
-                            }}
-                            placeholder="-"
-                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
-                          />
-                        </td>
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.discount ? Number(item.discount).toString() : "")) {
+                              handleItemFieldChange(item.id, "discount", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                        />
+                      </td>
 
-                        {/* VA% */}
+                      {/* VA% */}
                         <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0 font-semibold">
                           <input
                             key={item.id + "-vaPercent-" + (item.vaPercent !== null ? `${item.vaPercent}%` : "")}
                             type="text"
                             defaultValue={item.vaPercent !== null ? `${item.vaPercent}%` : ""}
-                            onBlur={(e) => {
-                              const val = e.target.value.trim();
-                              if (val !== (item.vaPercent !== null ? `${item.vaPercent}%` : "")) {
-                                handleItemFieldChange(item.id, "vaPercent", val);
-                              }
-                            }}
-                            placeholder="-"
-                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
-                          />
-                        </td>
+                          onBlur={(e) => {
+                            const val = e.target.value.trim();
+                            if (val !== (item.vaPercent !== null ? `${item.vaPercent}%` : "")) {
+                              handleItemFieldChange(item.id, "vaPercent", val);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                        />
+                      </td>
 
-                        {/* Quoted Rate */}
+                      {/* Quoted Rate */}
                         <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
                           <input
                             key={item.id + "-" + (item.quotedRate || "")}
                             type="text"
                             defaultValue={item.quotedRate || ""}
-                            onBlur={(e) => {
-                              if (e.target.value !== (item.quotedRate || "")) {
-                                handleItemFieldChange(item.id, "quotedRate", e.target.value);
-                              }
-                            }}
-                            placeholder="-"
-                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
-                          />
-                        </td>
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.quotedRate || "")) {
+                              handleItemFieldChange(item.id, "quotedRate", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                        />
+                      </td>
 
-                        {/* QR incl. GST */}
+                      {/* QR incl. GST */}
                         <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
                           <span className="block text-xs text-slate-700 p-1 font-medium text-right">
                             {item.quotedRateGst || "-"}
@@ -2914,36 +3130,61 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             key={item.id + "-totalValue-" + (item.totalValue || "")}
                             type="text"
                             defaultValue={item.totalValue || ""}
-                            onBlur={(e) => {
-                              if (e.target.value !== (item.totalValue || "")) {
-                                handleItemFieldChange(item.id, "totalValue", e.target.value);
-                              }
-                            }}
-                            placeholder="-"
-                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
-                          />
-                        </td>
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.totalValue || "")) {
+                              handleItemFieldChange(item.id, "totalValue", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                        />
+                      </td>
 
-                        {/* Itemwise Total Value */}
+                      {/* Itemwise Total Value */}
                         <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
                           <input
                             key={item.id + "-itemWiseTotalValue-" + (item.itemWiseTotalValue || "")}
                             type="text"
                             defaultValue={item.itemWiseTotalValue || ""}
-                            onBlur={(e) => {
-                              if (e.target.value !== (item.itemWiseTotalValue || "")) {
-                                handleItemFieldChange(item.id, "itemWiseTotalValue", e.target.value);
-                              }
-                            }}
-                            placeholder="-"
-                            className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
-                          />
-                        </td>
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.itemWiseTotalValue || "")) {
+                              handleItemFieldChange(item.id, "itemWiseTotalValue", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium text-right"
+                        />
+                      </td>
 
-                        {/* Empty attachment column */}
+                      {/* Empty attachment column */}
                         <td className="py-3 px-4 border-r border-b border-slate-200 last:border-r-0"></td>
 
-                        {/* Empty Offer PDF column */}
+                        {/* Delivery Schedule */}
+                        <td className="py-2 px-2 border-r border-b border-slate-200 last:border-r-0">
+                          <input
+                            key={item.id + "-deliverySchedule-" + (item.deliverySchedule || "")}
+                            type="text"
+                            defaultValue={item.deliverySchedule || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.deliverySchedule || "")) {
+                              handleItemFieldChange(item.id, "deliverySchedule", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-slate-700 outline-none p-1 focus:bg-white focus:ring-1 focus:ring-blue-500 rounded hover:bg-slate-100/80 transition-colors font-medium"
+                        />
+                      </td>
+
+                      {/* Empty Offer PDF column */}
                         <td className="py-3 px-4 border-r border-b border-slate-200 last:border-r-0"></td>
 
                         {/* Actions on this item */}
@@ -3039,7 +3280,7 @@ function OfferPdfCell({ enquiry }: { enquiry: any }) {
           quantity: item.quantity ? Number(item.quantity) : 0,
           quotationRate: item.quotedRate ? parseFloat(item.quotedRate) : 0,
           unit: "NO.S",
-          deliverySchedule: "",
+          deliverySchedule: item.deliverySchedule || "",
         })),
       };
 

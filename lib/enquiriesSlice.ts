@@ -6,7 +6,16 @@ import {
 } from "@reduxjs/toolkit";
 import type { RootState } from "./store";
 import type { EnquiryData, EnquiryItemData } from "./types";
-import { updateEnquiryFieldAction, updateItemFieldAction, createNewEnquiryAction } from "@/app/actions";
+import {
+  updateEnquiryFieldAction,
+  updateItemFieldAction,
+  createNewEnquiryAction,
+  addItemsAction,
+  updateEnquiryItemAction,
+  deleteEnquiryItemAction,
+  importExcelDataAction,
+  autoFillBlanksAction,
+} from "@/app/actions";
 
 export const createEnquiry = createAsyncThunk(
   "enquiries/createEnquiry",
@@ -54,6 +63,76 @@ export const updateItemField = createAsyncThunk(
   }
 );
 
+export const addItems = createAsyncThunk(
+  "enquiries/addItems",
+  async (
+    payload: Parameters<typeof addItemsAction>[0],
+    { rejectWithValue }
+  ) => {
+    const result = await addItemsAction(payload);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to add items");
+    }
+    return result.data!;
+  }
+);
+
+export const updateEnquiryItem = createAsyncThunk(
+  "enquiries/updateEnquiryItem",
+  async (
+    payload: Parameters<typeof updateEnquiryItemAction>[0],
+    { rejectWithValue }
+  ) => {
+    const result = await updateEnquiryItemAction(payload);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to update enquiry item");
+    }
+    return result.data!;
+  }
+);
+
+export const deleteEnquiryItem = createAsyncThunk(
+  "enquiries/deleteEnquiryItem",
+  async (
+    itemId: string,
+    { rejectWithValue }
+  ) => {
+    const result = await deleteEnquiryItemAction(itemId);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to delete item");
+    }
+    return result.data!;
+  }
+);
+
+export const importExcelData = createAsyncThunk(
+  "enquiries/importExcelData",
+  async (
+    payload: Parameters<typeof importExcelDataAction>[0],
+    { rejectWithValue }
+  ) => {
+    const result = await importExcelDataAction(payload);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to import excel data");
+    }
+    return result.data!;
+  }
+);
+
+export const autoFillBlanks = createAsyncThunk(
+  "enquiries/autoFillBlanks",
+  async (
+    payload: Parameters<typeof autoFillBlanksAction>[0],
+    { rejectWithValue }
+  ) => {
+    const result = await autoFillBlanksAction(payload);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to auto-fill blanks");
+    }
+    return result.data!;
+  }
+);
+
 const enquiriesAdapter = createEntityAdapter<EnquiryData>({
   sortComparer: (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
 });
@@ -69,6 +148,14 @@ interface EnquiriesState {
   updateError: string | null;
   createStatus: "idle" | "loading" | "succeeded" | "failed";
   createError: string | null;
+  addItemsStatus: "idle" | "loading" | "succeeded" | "failed";
+  addItemsError: string | null;
+  deleteStatus: "idle" | "loading" | "succeeded" | "failed";
+  deleteError: string | null;
+  importStatus: "idle" | "loading" | "succeeded" | "failed";
+  importError: string | null;
+  autoFillStatus: "idle" | "loading" | "succeeded" | "failed";
+  autoFillError: string | null;
 }
 
 const initialState: EnquiriesState = {
@@ -80,6 +167,14 @@ const initialState: EnquiriesState = {
   updateError: null,
   createStatus: "idle",
   createError: null,
+  addItemsStatus: "idle",
+  addItemsError: null,
+  deleteStatus: "idle",
+  deleteError: null,
+  importStatus: "idle",
+  importError: null,
+  autoFillStatus: "idle",
+  autoFillError: null,
 };
 
 const enquiriesSlice = createSlice({
@@ -144,6 +239,122 @@ const enquiriesSlice = createSlice({
       .addCase(updateItemField.rejected, (state, action) => {
         state.updateStatus = "failed";
         state.updateError = (action.payload as string) || "Update failed";
+      })
+      .addCase(addItems.pending, (state) => {
+        state.addItemsStatus = "loading";
+        state.addItemsError = null;
+      })
+      .addCase(addItems.fulfilled, (state, action) => {
+        const { enquiryId, items } = action.payload;
+        itemsAdapter.addMany(state.items, items);
+        const storedEnquiry = state.enquiries.entities[enquiryId];
+        if (storedEnquiry) {
+          storedEnquiry.items = [...(storedEnquiry.items || []), ...items];
+        }
+        state.addItemsStatus = "succeeded";
+      })
+      .addCase(addItems.rejected, (state, action) => {
+        state.addItemsStatus = "failed";
+        state.addItemsError = (action.payload as string) || "Add items failed";
+      })
+      .addCase(updateEnquiryItem.pending, (state) => {
+        state.updateStatus = "loading";
+        state.updateError = null;
+      })
+      .addCase(updateEnquiryItem.fulfilled, (state, action) => {
+        const { item, enquiry } = action.payload;
+        itemsAdapter.upsertOne(state.items, item);
+        enquiriesAdapter.upsertOne(state.enquiries, enquiry);
+        state.updateStatus = "succeeded";
+      })
+      .addCase(updateEnquiryItem.rejected, (state, action) => {
+        state.updateStatus = "failed";
+        state.updateError = (action.payload as string) || "Update failed";
+      })
+      .addCase(deleteEnquiryItem.pending, (state) => {
+        state.deleteStatus = "loading";
+        state.deleteError = null;
+      })
+      .addCase(deleteEnquiryItem.fulfilled, (state, action) => {
+        const { itemId, enquiryId, enquiryDeleted } = action.payload;
+        itemsAdapter.removeOne(state.items, itemId);
+        if (enquiryDeleted) {
+          enquiriesAdapter.removeOne(state.enquiries, enquiryId);
+        } else {
+          const storedEnquiry = state.enquiries.entities[enquiryId];
+          if (storedEnquiry) {
+            storedEnquiry.items = storedEnquiry.items.filter((i) => i.id !== itemId);
+          }
+        }
+        state.deleteStatus = "succeeded";
+      })
+      .addCase(deleteEnquiryItem.rejected, (state, action) => {
+        state.deleteStatus = "failed";
+        state.deleteError = (action.payload as string) || "Delete failed";
+      })
+      .addCase(importExcelData.pending, (state) => {
+        state.importStatus = "loading";
+        state.importError = null;
+      })
+      .addCase(importExcelData.fulfilled, (state, action) => {
+        const { items } = action.payload;
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, any[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
+        state.importStatus = "succeeded";
+      })
+      .addCase(importExcelData.rejected, (state, action) => {
+        state.importStatus = "failed";
+        state.importError = (action.payload as string) || "Import failed";
+      })
+      .addCase(autoFillBlanks.pending, (state) => {
+        state.autoFillStatus = "loading";
+        state.autoFillError = null;
+      })
+      .addCase(autoFillBlanks.fulfilled, (state, action) => {
+        const { items } = action.payload;
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, any[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
+        state.autoFillStatus = "succeeded";
+      })
+      .addCase(autoFillBlanks.rejected, (state, action) => {
+        state.autoFillStatus = "failed";
+        state.autoFillError = (action.payload as string) || "Auto-fill failed";
       });
   },
 });
@@ -181,5 +392,13 @@ export const selectUpdateStatus = (state: RootState) => state.enquiries.updateSt
 export const selectUpdateError = (state: RootState) => state.enquiries.updateError;
 export const selectCreateStatus = (state: RootState) => state.enquiries.createStatus;
 export const selectCreateError = (state: RootState) => state.enquiries.createError;
+export const selectAddItemsStatus = (state: RootState) => state.enquiries.addItemsStatus;
+export const selectAddItemsError = (state: RootState) => state.enquiries.addItemsError;
+export const selectDeleteStatus = (state: RootState) => state.enquiries.deleteStatus;
+export const selectDeleteError = (state: RootState) => state.enquiries.deleteError;
+export const selectImportStatus = (state: RootState) => state.enquiries.importStatus;
+export const selectImportError = (state: RootState) => state.enquiries.importError;
+export const selectAutoFillStatus = (state: RootState) => state.enquiries.autoFillStatus;
+export const selectAutoFillError = (state: RootState) => state.enquiries.autoFillError;
 
 export default enquiriesSlice.reducer;

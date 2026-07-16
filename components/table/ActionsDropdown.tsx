@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { updateEnquiryItemAction, deleteEnquiryItemAction } from "@/app/actions";
+import { updateEnquiryItem, deleteEnquiryItem } from "@/lib/enquiriesSlice";
 import { PARTY_NAMES } from "@/lib/partyNames";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { openViewDialog, closeViewDialog, openEditDialog, closeEditDialog, openDeleteDialog, closeDeleteDialog } from "@/lib/dialogsSlice";
@@ -286,7 +286,9 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
             )
           : undefined;
 
-        const res = await updateEnquiryItemAction({
+        console.log(`[Client] updateFullItem item=${item.id} itemName="${itemName.trim()}" type="${itemType.trim()}" moc="${moc.trim()}" size="${size.trim()}" opType="${operationType.trim()}" ext="${extension.trim()}" bypass="${bypass.trim()}"`);
+
+        await dispatch(updateEnquiryItem({
           itemId: item.id,
           itemName: itemName.trim(),
           quantity: parseFloat(quantity),
@@ -315,12 +317,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
           stockStatus: stockStatus.trim(),
           discount: parseFloat(discount),
           attachments: attachmentsPayload,
-        });
-
-        if (!res.success) {
-          throw new Error(res.error || "Failed to update enquiry.");
-        }
-        return res;
+        })).unwrap();
       })(),
       {
         loading: "Uploading attachments and updating enquiry...",
@@ -337,11 +334,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
     toast.promise(
       (async () => {
-        const res = await deleteEnquiryItemAction(item.id);
-        if (!res.success) {
-          throw new Error(res.error || "Failed to delete item.");
-        }
-        return res;
+        await dispatch(deleteEnquiryItem(item.id)).unwrap();
       })(),
       {
         loading: "Deleting item...",

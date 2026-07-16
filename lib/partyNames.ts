@@ -147,4 +147,5 @@ export const PARTY_NAMES = [
   "Damodar Valley Corporation(DVC)",
   "Uttar Pradesh Rajya Vidyut Utpadan Nigam Limited(uprvunl) Lucknow",
   "Hindustan Copper Limited",
+  "Rashtriya Ispat Nigam Limited",
 ];

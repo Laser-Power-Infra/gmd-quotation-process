@@ -71,6 +71,7 @@ model EnquiryItem {
   quotedRateGst String?
   itemNameMerge String?
   totalValue   String?
+  deliverySchedule String?
   itemWiseTotalValue String?
 
   createdAt     DateTime @default(now())

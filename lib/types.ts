@@ -20,6 +20,7 @@ export interface EnquiryItemData {
   quotedRate: string | null;
   quotedRateGst?: string | null;
   itemNameMerge: string | null;
+  deliverySchedule: string | null;
   totalValue: string | null;
   itemWiseTotalValue: string | null;
   vaPercent: number | null;
@@ -89,7 +90,9 @@ export interface FiltersState {
   itemName: string;
   quantity: string;
   itemType: string;
+  itemTypeSearch: string;
   moc: string;
+  mocSearch: string;
   size: string;
   pnRating: string;
   operationType: string;

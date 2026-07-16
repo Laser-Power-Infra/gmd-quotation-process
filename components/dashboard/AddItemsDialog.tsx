@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { addItemsAction } from "@/app/actions";
+import { addItems } from "@/lib/enquiriesSlice";
 import { parseClipboardText } from "@/lib/pasteParser";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { closeAddItemsDialog } from "@/lib/dialogsSlice";
@@ -128,16 +128,12 @@ export default function AddItemsDialog({
           quantity: parseFloat(item.quantity),
         }));
 
-        const res = await addItemsAction({ enquiryId, items: formattedItems });
-        if (!res.success) {
-          throw new Error(res.error || "Failed to add items.");
-        }
+        await dispatch(addItems({ enquiryId, items: formattedItems })).unwrap();
 
         setEnquiryId("");
         setSearchQuery("");
         setIsOpen(false);
         setItems([{ itemName: "", quantity: "" }]);
-        return res;
       })(),
       {
         loading: "Adding items to enquiry...",

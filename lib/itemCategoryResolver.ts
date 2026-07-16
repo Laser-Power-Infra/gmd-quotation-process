@@ -1,10 +1,15 @@
 import { matchItemType, matchMoc } from './itemTypePatterns';
 import { validateItem } from './aiValidator';
 import { extractSizeFromItemName, allowedSizes } from './sizeExtractor';
+import { matchPnRating } from './pnRatingMatcher';
+import { ALLOWED_OPERATION_TYPES, OPERATION_TYPE_DEFAULT } from './operationTypePatterns';
+import { ALLOWED_EXTENSIONS, EXTENSION_DEFAULT } from './extensionPatterns';
+import { extractExtensionFromItemName } from './extensionMatcher';
+import { detectBypass } from './bypassDetector';
 
 const VALIDATION_ENABLED = process.env.AI_VALIDATION_ENABLED !== 'false';
 
-const SIZE_NOT_FOUND = "Not detectable";
+const SKIP_AI_PATTERNS = [/pneumatic\s*valve/i]
 
 const MOC_STANDARDIZE: Record<string, string> = {
   "DUCTILE IRON": "DUCTILE IRON/CAST IRON",
@@ -17,24 +22,13 @@ export interface ResolveResult {
   itemType: string | null;
   moc: string | null;
   size: string | null;
+  pnRating: string | null;
+  extension: string | null;
+  bypass: string | null;
+  operationType: string | null;
   itemTypeSource: 'sheet' | 'keyword' | 'ai' | null;
   mocSource: 'sheet' | 'keyword' | 'ai' | null;
-}
-
-function normalizeSize(val: string): string {
-  const trimmed = val.trim().toLowerCase();
-  if (
-    trimmed === "" ||
-    trimmed.includes("not mentioned") ||
-    trimmed.includes("not found") ||
-    trimmed.includes("can't detect") ||
-    trimmed.includes("cannot detect") ||
-    trimmed.includes("unknown") ||
-    trimmed.includes("no size")
-  ) {
-    return SIZE_NOT_FOUND;
-  }
-  return val.trim();
+  operationTypeSource: 'sheet' | 'ai' | 'rule' | null;
 }
 
 export async function resolveItemCategory(params: {
@@ -42,27 +36,31 @@ export async function resolveItemCategory(params: {
   sheetItemType?: string | null;
   sheetMoc?: string | null;
   sheetSize?: string | null;
+  sheetPnRating?: string | null;
 }): Promise<ResolveResult> {
-  const { itemName, sheetItemType, sheetMoc, sheetSize } = params;
+  const { itemName, sheetItemType, sheetMoc, sheetSize, sheetPnRating } = params;
 
   const result: ResolveResult = {
     itemType: sheetItemType || null,
     moc: sheetMoc || null,
     size: sheetSize || null,
+    pnRating: sheetPnRating || null,
+    extension: null,
+    bypass: null,
+    operationType: null,
     itemTypeSource: sheetItemType ? 'sheet' : null,
     mocSource: sheetMoc ? 'sheet' : null,
+    operationTypeSource: null,
   };
 
   if (!itemName || typeof itemName !== 'string' || !itemName.trim()) {
-    if (!result.size) {
-      result.size = SIZE_NOT_FOUND;
-    }
     return result;
   }
 
   const keywordType = matchItemType(itemName);
   const keywordMoc = matchMoc(itemName);
   const keywordSize = extractSizeFromItemName(itemName);
+  const keywordPnRating = matchPnRating(itemName);
 
   if (keywordType) {
     result.itemType = keywordType;
@@ -75,15 +73,29 @@ export async function resolveItemCategory(params: {
   if (keywordSize) {
     result.size = keywordSize;
   }
+  if (keywordPnRating) {
+    result.pnRating = keywordPnRating;
+  }
 
-  if (VALIDATION_ENABLED) {
+  const keywordExtension = extractExtensionFromItemName(itemName);
+  if (keywordExtension) {
+    result.extension = keywordExtension;
+  }
+  if (!result.extension) {
+    result.extension = EXTENSION_DEFAULT;
+  }
+
+  const isGeneric = SKIP_AI_PATTERNS.some((p) => p.test(itemName))
+
+  // AI only fills in gaps — never overrides keyword matches
+  if (VALIDATION_ENABLED && !isGeneric) {
     const aiResult = await validateItem(itemName, result.itemType, result.moc, result.size);
     if (aiResult) {
-      if (aiResult.itemType?.category) {
+      if (!keywordType && aiResult.itemType?.category) {
         result.itemType = aiResult.itemType.category.toUpperCase();
         result.itemTypeSource = 'ai';
       }
-      if (aiResult.moc?.material) {
+      if (!keywordMoc && aiResult.moc?.material) {
         let mocVal = aiResult.moc.material.trim().toUpperCase();
         if (MOC_STANDARDIZE[mocVal]) {
           mocVal = MOC_STANDARDIZE[mocVal];
@@ -93,21 +105,42 @@ export async function resolveItemCategory(params: {
           result.mocSource = 'ai';
         }
       }
-      if (aiResult.size?.value) {
-        const sizeVal = normalizeSize(aiResult.size.value);
-        if (sizeVal === SIZE_NOT_FOUND && !keywordSize) {
-          result.size = SIZE_NOT_FOUND;
-        } else if (sizeVal !== SIZE_NOT_FOUND) {
+      if (!keywordSize && aiResult.size?.value) {
+        const sizeVal = aiResult.size.value.trim();
+        if (sizeVal && !/not (mentioned|found|detectable)|unknown/i.test(sizeVal)) {
           result.size = sizeVal;
         }
       }
-      return result;
+      if (aiResult.operationType?.category) {
+        const opType = aiResult.operationType.category.trim().toUpperCase();
+        if ((ALLOWED_OPERATION_TYPES as readonly string[]).includes(opType)) {
+          result.operationType = opType;
+          result.operationTypeSource = 'ai';
+        }
+      }
+      if (!result.operationType) {
+        result.operationType = OPERATION_TYPE_DEFAULT;
+        result.operationTypeSource = 'ai';
+      }
     }
   }
 
-  if (!result.size) {
-    result.size = SIZE_NOT_FOUND;
+  // Business rule: SLUICE VALVE or BUTTERFLY VALVE with size > 350mm → GB
+  const hasSlutceOrBfv = result.itemType
+    ? /SLUICE|BUTTERFLY/.test(result.itemType)
+    : /sluice|butterfly\s*valve/i.test(itemName || '');
+  if (hasSlutceOrBfv) {
+    const sizeStr = result.size || extractSizeFromItemName(itemName) || '';
+    const sizeNum = parseInt(sizeStr, 10);
+    if (!isNaN(sizeNum) && sizeNum > 350) {
+      if (result.operationType !== 'GB') {
+        result.operationType = 'GB';
+        result.operationTypeSource = 'rule';
+      }
+    }
   }
+
+  result.bypass = detectBypass(result.size);
 
   return result;
 }

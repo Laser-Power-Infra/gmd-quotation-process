@@ -206,9 +206,39 @@ export function extractSizeFromItemName(itemName: string | null | undefined): st
     }
   }
 
-  // Verify against allowed static sizes list
+  // If exact match found in allowed sizes, return it
   if (resolvedSize && allowedSizes.includes(resolvedSize)) {
     return resolvedSize;
+  }
+
+  // Round up non-exact matches (e.g. inch conversions that gave 64 → 65)
+  if (resolvedSize) {
+    const parsed = parseFloat(resolvedSize);
+    if (!isNaN(parsed)) {
+      const numericSizes = allowedSizes.map(Number);
+      for (const sz of numericSizes) {
+        if (sz >= parsed) return String(sz);
+      }
+    }
+    return null;
+  }
+
+  // No exact match. Re-try MM prefix without exact filter, then round up.
+  // Handles cases like "63mm" → 63 → 65
+  // Skip decimal values < 20 — avoids PN decimal fractions like "1.0200mm"
+  // (real sizes are always whole numbers ≥ 12)
+  const mmFallbackRe = /(\d+(?:\.\d+)?)\s*(?:mm|mmm|m\.m\b|millimeter[s]?|millimetre[s]?)/i;
+  const mmFallbackMatch = mmFallbackRe.exec(lower);
+  if (mmFallbackMatch) {
+    const raw = mmFallbackMatch[1];
+    const val = parseFloat(raw);
+    if (!isNaN(val) && val > 0) {
+      if (raw.includes(".") && val < 20) return null;
+      const numericSizes = allowedSizes.map(Number);
+      for (const sz of numericSizes) {
+        if (sz >= val) return String(sz);
+      }
+    }
   }
 
   return null;

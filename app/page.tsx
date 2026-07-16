@@ -2,6 +2,9 @@ import React, { Suspense } from "react";
 import Navbar from "@/components/layout/Navbar";
 import DashboardContainer from "./DashboardContainer";
 import { prisma } from "@/lib/prisma";
+import { ALLOWED_OPERATION_TYPES } from "@/lib/operationTypePatterns";
+import { ALLOWED_EXTENSIONS } from "@/lib/extensionPatterns";
+import { ALLOWED_BYPASSES } from "@/lib/bypassPatterns";
 
 interface PageProps {
   searchParams: Promise<{
@@ -266,54 +269,13 @@ export default async function Page({ searchParams }: PageProps) {
   const pnRatings = Array.from(new Set([...staticPnRatings, ...getUniqueOptions(dbPnRatings, "pnRating")]))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  const staticOperationTypes = [
-    "CAP",
-    "STANDARD",
-    "GB",
-    "PNEUMATIC",
-    "ACT",
-    "ACT+GB",
-    "GB/LEVER",
-    "HYDRAULIC ACT",
-    "WITH ISOLATION METAL SLUICE NON-RISING",
-    "WITH ISOLATION RESILIENT SLUICE NON-RISING",
-    "SPARES",
-    "WITH ISOLATION RESILIENT SLUICE RISING",
-    "WITH ISOLATION METAL SLUICE RISING",
-    "WITH ISOLATION BUTTERFLY VALVE"
-  ];
-
-  const operationTypes = Array.from(new Set([...staticOperationTypes, ...getUniqueOptions(dbOperationTypes, "operationType")]))
+  const operationTypes = Array.from(new Set([...ALLOWED_OPERATION_TYPES, ...getUniqueOptions(dbOperationTypes, "operationType")]))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  const staticExtensions = [
-    "1",
-    "8",
-    "3",
-    "4",
-    "4.5",
-    "6",
-    "5",
-    "2",
-    "0"
-  ];
-
-  const extensions = Array.from(new Set([...staticExtensions, ...getUniqueOptions(dbExtensions, "extension")]))
+  const extensions = Array.from(new Set([...ALLOWED_EXTENSIONS, ...getUniqueOptions(dbExtensions, "extension")]))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  const staticBypasses = [
-    "40",
-    "50",
-    "65",
-    "80",
-    "100",
-    "125",
-    "150",
-    "200",
-    "250",
-    "300",
-    "25"
-  ];
+
 
   const staticEnquiryTypes = [
     "PURCHASE",
@@ -355,7 +317,7 @@ export default async function Page({ searchParams }: PageProps) {
   const states = Array.from(new Set([...staticStates, ...getUniqueOptions(dbStates, "state")]))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  const bypasses = Array.from(new Set([...staticBypasses, ...getUniqueOptions(dbBypasses, "bypass")]))
+  const bypasses = Array.from(new Set([...ALLOWED_BYPASSES, ...getUniqueOptions(dbBypasses, "bypass")]))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const enquiryTypes = Array.from(new Set([...staticEnquiryTypes, ...getUniqueOptions(dbEnquiryTypes, "enquiryType")]))

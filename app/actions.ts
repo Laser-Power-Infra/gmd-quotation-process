@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { uploadFileToDrive } from "@/lib/gdrive";
 import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry, autoDetectItemType, autoDetectMoc } from "@/lib/costCalculator";
@@ -50,6 +49,11 @@ export async function createNewEnquiryAction(formData: {
       return { success: false, error: "Docket Number already exists." };
     }
 
+    console.log(`[Server] createEnquiry docket="${cleanDocket}" party="${formData.partyName}" items=${formData.items.length}`);
+    for (const it of formData.items) {
+      console.log(`  item: "${it.itemName}" qty=${it.quantity} type=${it.itemType || "?"} moc=${it.moc || "?"} size=${it.size || "?"}`);
+    }
+
     // Upload files to Google Drive if content is present
     const attachmentCreates = await Promise.all(
       formData.attachments.map(async (att) => {
@@ -79,6 +83,7 @@ export async function createNewEnquiryAction(formData: {
           sheetItemType: item.itemType,
           sheetMoc: item.moc,
           sheetSize: item.size,
+          sheetPnRating: (item as any).pnRating,
         });
         return {
           ...item,
@@ -118,7 +123,7 @@ export async function createNewEnquiryAction(formData: {
               itemTypeSource: item.resolved.itemTypeSource,
               mocSource: item.resolved.mocSource,
               size: item.resolved.size,
-              pnRating: item.pnRating || null,
+              pnRating: item.resolved.pnRating || null,
               operationType: item.operationType || null,
               extension: item.extension || null,
               bypass: item.bypass || null,
@@ -183,6 +188,11 @@ export async function addItemsAction(formData: {
   }[];
 }) {
   try {
+    console.log(`[Server] addItems enquiry=${formData.enquiryId} items=${formData.items.length}`);
+    for (const it of formData.items) {
+      console.log(`  item: "${it.itemName}" qty=${it.quantity} type=${it.itemType || "?"} moc=${it.moc || "?"} size=${it.size || "?"}`);
+    }
+
     const resolvedItems = await Promise.all(
       formData.items.map(async (item) => {
         const resolved = await resolveItemCategory({
@@ -190,6 +200,7 @@ export async function addItemsAction(formData: {
           sheetItemType: item.itemType,
           sheetMoc: item.moc,
           sheetSize: item.size,
+          sheetPnRating: (item as any).pnRating,
         });
         return {
           ...item,
@@ -238,8 +249,12 @@ export async function addItemsAction(formData: {
       await recalculateItem(item.id);
     }
 
-    revalidatePath("/");
-    return { success: true };
+    const createdItems = await prisma.enquiryItem.findMany({
+      where: { enquiryId: formData.enquiryId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return { success: true, data: { enquiryId: formData.enquiryId, items: createdItems.map(serializeItem) } };
   } catch (error: any) {
     console.error("Error adding items:", error);
     return { success: false, error: error.message || "Failed to add items." };
@@ -285,6 +300,19 @@ export async function updateEnquiryItemAction(formData: {
     if (!item) {
       return { success: false, error: "Item not found." };
     }
+
+    console.log(`[Server] updateEnquiryItem item=${formData.itemId}`);
+    const fieldDiffs: string[] = [];
+    if (formData.itemName !== item.itemName) fieldDiffs.push(`itemName: "${item.itemName}" → "${formData.itemName}"`);
+    if (formData.itemType !== undefined && formData.itemType !== item.itemType) fieldDiffs.push(`itemType: "${item.itemType}" → "${formData.itemType}"`);
+    if (formData.moc !== undefined && formData.moc !== item.moc) fieldDiffs.push(`moc: "${item.moc}" → "${formData.moc}"`);
+    if (formData.size !== undefined && formData.size !== item.size) fieldDiffs.push(`size: "${item.size}" → "${formData.size}"`);
+    if (formData.operationType !== undefined && formData.operationType !== item.operationType) fieldDiffs.push(`opType: "${item.operationType}" → "${formData.operationType}"`);
+    if (formData.extension !== undefined && formData.extension !== item.extension) fieldDiffs.push(`extension: "${item.extension}" → "${formData.extension}"`);
+    if (formData.bypass !== undefined && formData.bypass !== item.bypass) fieldDiffs.push(`bypass: "${item.bypass}" → "${formData.bypass}"`);
+    if (formData.quantity !== undefined && formData.quantity !== Number(item.quantity)) fieldDiffs.push(`qty: "${item.quantity}" → "${formData.quantity}"`);
+    if (formData.cost !== undefined && formData.cost !== (item.cost ? Number(item.cost) : null)) fieldDiffs.push(`cost: "${item.cost}" → "${formData.cost}"`);
+    if (fieldDiffs.length > 0) fieldDiffs.forEach(d => console.log(`  ${d}`));
 
     const cleanDocket = formData.docketNumber.replace(/#/g, "").trim();
     // Check if new docket number conflicts with another enquiry
@@ -353,6 +381,7 @@ export async function updateEnquiryItemAction(formData: {
       sheetItemType: formData.itemType,
       sheetMoc: formData.moc,
       sheetSize: formData.size,
+      sheetPnRating: formData.pnRating,
     });
 
     // Update item
@@ -366,7 +395,7 @@ export async function updateEnquiryItemAction(formData: {
         itemTypeSource: resolved.itemTypeSource,
         mocSource: resolved.mocSource,
         size: resolved.size,
-        pnRating: formData.pnRating || null,
+        pnRating: resolved.pnRating || formData.pnRating || null,
         operationType: formData.operationType || null,
         extension: formData.extension || null,
         bypass: formData.bypass || null,
@@ -434,8 +463,21 @@ export async function updateEnquiryItemAction(formData: {
       },
     });
 
-    revalidatePath("/");
-    return { success: true };
+    const updatedEnquiry = await prisma.enquiry.findUnique({
+      where: { id: item.enquiryId },
+      include: {
+        items: { orderBy: { createdAt: "asc" } },
+        attachments: true,
+      },
+    });
+
+    return {
+      success: true,
+      data: {
+        item: serializeItem(await prisma.enquiryItem.findUnique({ where: { id: formData.itemId } })),
+        enquiry: serializeEnquiry(updatedEnquiry),
+      },
+    };
   } catch (error: any) {
     console.error("Error updating enquiry item:", error);
     return { success: false, error: error.message || "Failed to update item." };
@@ -450,7 +492,6 @@ export async function updateEnquiryOrderStatusAction(enquiryId: string, orderSta
       data: { orderStatus },
     });
 
-    revalidatePath("/");
     return { success: true };
   } catch (error: any) {
     console.error("Error updating order status:", error);
@@ -474,20 +515,24 @@ export async function deleteEnquiryItemAction(itemId: string) {
       where: { enquiryId: item.enquiryId },
     });
 
+    console.log(`[Server] deleteItem item="${item.id}" name="${item.itemName}" enquiry=${item.enquiryId} remaining=${remainingItemsCount - 1}`);
+
     // Delete item
     await prisma.enquiryItem.delete({
       where: { id: itemId },
     });
 
     // If it was the last item, delete the entire enquiry
+    let enquiryDeleted = false;
     if (remainingItemsCount <= 1) {
       await prisma.enquiry.delete({
         where: { id: item.enquiryId },
       });
+      enquiryDeleted = true;
+      console.log(`[Server] Enquiry ${item.enquiryId} also deleted (last item)`);
     }
 
-    revalidatePath("/");
-    return { success: true };
+    return { success: true, data: { itemId, enquiryId: item.enquiryId, enquiryDeleted } };
   } catch (error: any) {
     console.error("Error deleting item:", error);
     return { success: false, error: error.message || "Failed to delete item." };
@@ -501,6 +546,13 @@ export async function updateEnquiryFieldAction(
   value: any
 ) {
   try {
+    const prev = await prisma.enquiry.findUnique({
+      where: { id: enquiryId },
+      select: { [field]: true },
+    });
+    const oldVal = prev ? (prev as any)[field] : undefined;
+    console.log(`[Server] updateEnquiryField enquiry=${enquiryId} field=${field} old="${oldVal}" new="${value}"`);
+
     let parsedVal = value;
     await prisma.enquiry.update({
       where: { id: enquiryId },
@@ -519,7 +571,6 @@ export async function updateEnquiryFieldAction(
       include: { items: true },
     });
 
-    revalidatePath("/");
     return {
       success: true,
       data: {
@@ -540,6 +591,13 @@ export async function updateItemFieldAction(
   value: any
 ) {
   try {
+    const prevItem = await prisma.enquiryItem.findUnique({
+      where: { id: itemId },
+      select: { itemName: true, [field]: true },
+    });
+    const oldVal = prevItem ? (prevItem as any)[field] : undefined;
+    console.log(`[Server] updateItemField item=${itemId} field=${field} old="${oldVal}" new="${value}"`);
+
     let parsedVal = value;
     if (field === "vaPercent" && value !== null) {
       const num = parseFloat(String(value).replace(/%/g, ""));
@@ -564,19 +622,23 @@ export async function updateItemFieldAction(
       if (field === "itemName") {
         const currentItem = await prisma.enquiryItem.findUnique({
           where: { id: itemId },
-          select: { itemType: true, moc: true, itemTypeSource: true, mocSource: true },
+          select: { itemName: true, itemType: true, moc: true, itemTypeSource: true, mocSource: true, size: true, pnRating: true },
         });
+        console.log(`[Server] itemName changed: "${currentItem?.itemName}" → "${parsedVal}"`);
         const resolved = await resolveItemCategory({
           itemName: parsedVal,
           sheetItemType: currentItem?.itemTypeSource === "sheet" ? currentItem.itemType : null,
           sheetMoc: currentItem?.mocSource === "sheet" ? currentItem.moc : null,
           sheetSize: null,
+          sheetPnRating: null,
         });
         updateData.itemType = resolved.itemType;
         updateData.moc = resolved.moc;
+        updateData.pnRating = resolved.pnRating;
         updateData.itemTypeSource = resolved.itemTypeSource;
         updateData.mocSource = resolved.mocSource;
         updateData.size = resolved.size;
+        console.log(`[Server] Re-resolved: itemType="${resolved.itemType}" moc="${resolved.moc}" size="${resolved.size}" pnRating="${resolved.pnRating}"`);
       } else if (field === "itemType") {
         updateData.itemTypeSource = "sheet";
       } else if (field === "moc") {
@@ -589,7 +651,6 @@ export async function updateItemFieldAction(
       updatedItem = serializeItem(dbItem);
     }
 
-    revalidatePath("/");
     return { success: true, data: updatedItem };
   } catch (error: any) {
     console.error(`Error updating item ${field}:`, error);
@@ -601,6 +662,7 @@ export async function importExcelDataAction(rows: any[]) {
   try {
     let matchedCount = 0;
     let updatedCount = 0;
+    const updatedItems: any[] = [];
 
     for (const row of rows) {
       const { docketNumber, itemName, cost, quotedRate } = row;
@@ -632,11 +694,14 @@ export async function importExcelDataAction(rows: any[]) {
       }
 
       await recalculateItem(item.id, updates);
+      const refreshed = await prisma.enquiryItem.findUnique({ where: { id: item.id } });
+      if (refreshed) {
+        updatedItems.push(serializeItem(refreshed));
+      }
       updatedCount++;
     }
 
-    revalidatePath("/");
-    return { success: true, matchedCount, updatedCount };
+    return { success: true, matchedCount, updatedCount, data: { items: updatedItems } };
   } catch (error: any) {
     console.error("Error importing excel data:", error);
     return { success: false, error: error.message || "Failed to import excel data." };
@@ -647,11 +712,11 @@ export async function autoFillBlanksAction(itemIds: string[]) {
   try {
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
-      select: { id: true, itemName: true, itemType: true, moc: true, size: true, itemTypeSource: true, mocSource: true },
+      select: { id: true, itemName: true, itemType: true, moc: true, size: true, pnRating: true, operationType: true, extension: true, bypass: true, itemTypeSource: true, mocSource: true },
     })
 
-    console.log(`\n=== AUTO-FILL BLANKS START ===`)
-    console.log(`Total items to process: ${items.length}`)
+    console.log(`\n=== [Server] AUTO-FILL BLANKS START ===`)
+    console.log(`[Server] Total items to process: ${items.length}`)
 
     let updated = 0
     for (let i = 0; i < items.length; i++) {
@@ -671,21 +736,40 @@ export async function autoFillBlanksAction(itemIds: string[]) {
       if ((!item.size || item.size === "Not detectable" || item.size === "Not mentioned/cant detect size") && resolved.size && resolved.size !== "Not detectable") {
         updates.size = resolved.size
       }
+      if (resolved.pnRating) {
+        updates.pnRating = resolved.pnRating
+      }
+      if (!item.operationType && resolved.operationType) {
+        updates.operationType = resolved.operationType
+      }
+      if ((!item.extension || item.extension === "-") && resolved.extension) {
+        updates.extension = resolved.extension
+      }
+      if ((!item.bypass || item.bypass === "-") && resolved.bypass && resolved.bypass !== "-") {
+        updates.bypass = resolved.bypass
+      }
       if (Object.keys(updates).length > 0) {
         await prisma.enquiryItem.update({ where: { id: item.id }, data: updates })
         updated++
         console.log(`\n  ✓ ${item.itemName.substring(0, 50)}`)
-        if (updates.itemType) console.log(`    itemType: "${item.itemType || ""}" → "${updates.itemType}" (${updates.itemTypeSource})`)
-        if (updates.moc) console.log(`    moc:      "${item.moc || ""}" → "${updates.moc}" (${updates.mocSource})`)
-        if (updates.size) console.log(`    size:     "${item.size || ""}" → "${updates.size}"`)
+        if (updates.itemType) console.log(`    itemType:  "${item.itemType || ""}" → "${updates.itemType}" (${updates.itemTypeSource})`)
+        if (updates.moc) console.log(`    moc:       "${item.moc || ""}" → "${updates.moc}" (${updates.mocSource})`)
+        if (updates.size) console.log(`    size:      "${item.size || ""}" → "${updates.size}"`)
+        if (updates.pnRating) console.log(`    pnRating:  "${item.pnRating || ""}" → "${updates.pnRating}"`)
+        if (updates.operationType) console.log(`    opType:    "${item.operationType || ""}" → "${updates.operationType}"`)
+        if (updates.extension) console.log(`    extension: "${item.extension || ""}" → "${updates.extension}"`)
+        if (updates.bypass) console.log(`    bypass:    "${item.bypass || ""}" → "${updates.bypass}"`)
       }
     }
 
-    console.log(`\n\n=== AUTO-FILL BLANKS DONE ===`)
-    console.log(`Updated: ${updated} of ${items.length} items\n`)
+    console.log(`\n\n=== [Server] AUTO-FILL BLANKS DONE ===`)
+    console.log(`[Server] Updated: ${updated} of ${items.length} items\n`)
 
-    revalidatePath("/")
-    return { success: true, updated }
+    const refreshedItems = await prisma.enquiryItem.findMany({
+      where: { id: { in: itemIds } },
+    });
+
+    return { success: true, updated, data: { items: refreshedItems.map(serializeItem) } }
   } catch (error: any) {
     console.error("Error auto-filling blanks:", error)
     return { success: false, error: error.message || "Failed to auto-fill blanks." }

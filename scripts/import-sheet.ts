@@ -314,6 +314,7 @@ async function main() {
       sheetItemType: itemType,
       sheetMoc: moc,
       sheetSize: size,
+      sheetPnRating: pnRating,
     });
 
     // Check if parent docket exists, otherwise create a placeholder docket
@@ -335,7 +336,7 @@ async function main() {
       itemTypeSource: resolved.itemTypeSource || undefined,
       mocSource: resolved.mocSource || undefined,
       size: resolved.size || undefined,
-      pnRating: pnRating || undefined,
+      pnRating: resolved.pnRating || undefined,
       operationType: operationType || undefined,
       extension: extension || undefined,
       bypass: bypass || undefined,

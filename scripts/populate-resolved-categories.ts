@@ -57,6 +57,7 @@ async function main() {
             moc: resolved.moc,
             itemTypeSource: resolved.itemTypeSource,
             mocSource: resolved.mocSource,
+            operationType: resolved.operationType,
           },
         });
         count++;

@@ -8,40 +8,43 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
+const BLANK_VALUES = new Set(["", null, undefined, "-"]);
+
 async function main() {
   const args = process.argv.slice(2);
   const isDryRun = args.includes("--dry-run");
 
   console.log(
-    isDryRun ? "DRY RUN — no changes will be made" : "Populating blank item types..."
+    isDryRun ? "DRY RUN — no changes will be made" : "Populating blank extensions..."
   );
 
   const allItems = await prisma.enquiryItem.findMany({
     select: {
       id: true,
       itemName: true,
+      extension: true,
       itemType: true,
-      itemTypeSource: true,
       moc: true,
-      size: true,
-      operationType: true,
       enquiry: { select: { docketNumber: true } },
     },
-    where: { itemType: null },
   });
 
+  const blankItems = allItems.filter(
+    (item) => BLANK_VALUES.has(item.extension)
+  );
+
   console.log(`Total items: ${allItems.length}`);
-  console.log(`Items with null itemType: ${allItems.length}\n`);
+  console.log(`Items with blank extension: ${blankItems.length}\n`);
 
   let foundCount = 0;
   let updatedCount = 0;
   let skippedCount = 0;
-  const detected: { docket: string; type: string; itemName: string }[] = [];
+  const detected: { docket: string; ext: string; itemName: string }[] = [];
 
-  for (let i = 0; i < allItems.length; i++) {
-    const item = allItems[i];
+  for (let i = 0; i < blankItems.length; i++) {
+    const item = blankItems[i];
     process.stdout.write(
-      `\r[${i + 1}/${allItems.length}] ${item.enquiry.docketNumber} | ${item.itemName.substring(0, 50).padEnd(50)}`
+      `\r[${i + 1}/${blankItems.length}] ${item.enquiry.docketNumber} | ${item.itemName.substring(0, 50).padEnd(50)}`
     );
 
     const resolved = await resolveItemCategory({
@@ -50,39 +53,33 @@ async function main() {
       sheetMoc: item.moc,
     });
 
-    if (!resolved.itemType) {
+    if (!resolved.extension) {
       skippedCount++;
       continue;
     }
 
     foundCount++;
-    detected.push({ docket: item.enquiry.docketNumber, type: resolved.itemType, itemName: item.itemName });
+    detected.push({ docket: item.enquiry.docketNumber, ext: resolved.extension, itemName: item.itemName });
 
     if (!isDryRun) {
       await prisma.enquiryItem.update({
         where: { id: item.id },
-        data: {
-          itemType: resolved.itemType,
-          itemTypeSource: resolved.itemTypeSource,
-          moc: resolved.moc || item.moc,
-          mocSource: resolved.mocSource || null,
-          operationType: resolved.operationType,
-        },
+        data: { extension: resolved.extension },
       });
       updatedCount++;
     }
   }
 
   console.log(`\n\n=== SUMMARY ===`);
-  console.log(`Total items with null itemType: ${allItems.length}`);
-  console.log(`Detected: ${foundCount}`);
+  console.log(`Total blank items: ${blankItems.length}`);
+  console.log(`Extension detected: ${foundCount}`);
   console.log(`Updated: ${updatedCount}`);
-  console.log(`Skipped (not detectable): ${skippedCount}`);
+  console.log(`Skipped: ${skippedCount}`);
 
   if (detected.length > 0) {
-    console.log("\nDetected item types (first 30):");
+    console.log("\nDetected extensions (first 30):");
     for (const d of detected.slice(0, 30)) {
-      console.log(`  ${d.docket} → ${d.type} | ${d.itemName.substring(0, 60)}`);
+      console.log(`  ${d.docket} → ${d.ext} | ${d.itemName.substring(0, 60)}`);
     }
     if (detected.length > 30) {
       console.log(`  ... and ${detected.length - 30} more`);

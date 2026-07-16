@@ -61,7 +61,7 @@ export async function recalculateItem(
   });
   if (!item) return null;
 
-  // 1. Merge updates
+  // 1. Merge base fields (always applied)
   const productCost = updates && updates.productCost !== undefined
     ? updates.productCost
     : (item.productCost ? parseFloat(item.productCost.toString()) : null);
@@ -70,16 +70,16 @@ export async function recalculateItem(
   const quantity = updates && updates.quantity !== undefined && updates.quantity !== null
     ? updates.quantity
     : (item.quantity ? parseFloat(item.quantity.toString()) : 0);
-  let vaPercent = updates && updates.vaPercent !== undefined
-    ? updates.vaPercent
-    : (item.vaPercent ? parseFloat(item.vaPercent) : null);
-  let quotedRate = updates && updates.quotedRate !== undefined
-    ? (updates.quotedRate !== null ? roundToNearest10(updates.quotedRate) : null)
-    : (item.quotedRate ? parseFloat(item.quotedRate) : null);
 
-  // 2. Calculate Cost
-  let cost: number | null = null;
-  if (productCost !== null && productCost > 0) {
+  const existingCost = item.cost ? Number(item.cost) : null;
+  const existingVaPercent = item.vaPercent ? parseFloat(item.vaPercent) : null;
+  const existingQuotedRate = item.quotedRate ? parseFloat(item.quotedRate) : null;
+
+  // 2. Calculate Cost (only if inputs changed, or cost was null)
+  let cost: number | null = existingCost;
+  const shouldRecalcCost = (updates && (updates.productCost !== undefined || updates.extension !== undefined || updates.bypass !== undefined))
+    || existingCost === null || existingCost <= 0;
+  if (shouldRecalcCost && productCost !== null && productCost > 0) {
     // 2.1. Extension Cost (Flat)
     let extCost = 0;
     if (extension && extension !== "-") {
@@ -120,7 +120,6 @@ export async function recalculateItem(
     if (item.enquiry.state && item.enquiry.state !== "-") {
       const transMapping = await prisma.transportationCost.findUnique({ where: { state: item.enquiry.state } });
       if (transMapping) {
-        // Rule: If Product Cost >= 50 Lakhs (5000000), use fullLoad. Else use partLoad
         const isFullLoad = productCost >= 5000000;
         const pctStr = (isFullLoad ? transMapping.fullLoad : transMapping.partLoad).replace(/%/g, "").trim();
         transPct = parseFloat(pctStr) / 100 || 0;
@@ -133,33 +132,39 @@ export async function recalculateItem(
     cost = parseFloat(cost.toFixed(2));
   }
 
-  // 3. Handle Cost-related side-effects
-  if (cost !== null && cost > 0) {
-    if (updates && updates.quotedRate !== undefined && updates.quotedRate !== null) {
-      // If quotedRate was directly updated, recalculate vaPercent based on new cost
-      vaPercent = parseFloat((((quotedRate! / cost) - 1) * 100).toFixed(2));
-    } else if (vaPercent !== null) {
-      // Otherwise, if vaPercent exists, recalculate quotedRate based on new cost
-      quotedRate = roundToNearest10(cost * (1 + vaPercent / 100));
-    } else if (quotedRate !== null) {
-      // If vaPercent is null/undefined but quotedRate exists, calculate vaPercent
-      vaPercent = parseFloat((((quotedRate! / cost) - 1) * 100).toFixed(2));
-    }
+  // 3. Apply updates for vaPercent and quotedRate (if explicitly provided)
+  let vaPercent: number | null;
+  if (updates && updates.vaPercent !== undefined) {
+    vaPercent = updates.vaPercent;
   } else {
-    // If cost is null/0, quotedRate and vaPercent should probably be reset if cost was cleared
-    if (productCost === null) {
-      quotedRate = null;
-      vaPercent = null;
-    }
+    vaPercent = existingVaPercent;
   }
 
-  // 4. Calculate QR incl. GST
+  let quotedRate: number | null;
+  if (updates && updates.quotedRate !== undefined) {
+    quotedRate = updates.quotedRate !== null ? roundToNearest10(updates.quotedRate) : null;
+  } else {
+    quotedRate = existingQuotedRate;
+  }
+
+  // 4. Fill nulls where possible (only if user didn't explicitly clear the field)
+  const userClearedVaPct = updates && updates.vaPercent !== undefined && updates.vaPercent === null;
+  const userClearedQR = updates && updates.quotedRate !== undefined && updates.quotedRate === null;
+
+  if (!userClearedVaPct && vaPercent === null && cost !== null && cost > 0 && quotedRate !== null && quotedRate > 0) {
+    vaPercent = parseFloat((((quotedRate / cost) - 1) * 100).toFixed(2));
+  }
+  if (!userClearedQR && quotedRate === null && cost !== null && cost > 0 && vaPercent !== null) {
+    quotedRate = roundToNearest10(cost * (1 + vaPercent / 100));
+  }
+
+  // 5. Calculate QR incl. GST
   let quotedRateGst: string | null = null;
   if (quotedRate !== null && quotedRate > 0) {
     quotedRateGst = (quotedRate * 1.18).toFixed(2);
   }
 
-  // 5. Calculate Totals
+  // 6. Calculate Totals
   let itemWiseTotal: string | null = null;
   let totalVal: string | null = null;
   if (quantity > 0 && quotedRate !== null && quotedRate > 0) {
@@ -179,7 +184,7 @@ export async function recalculateItem(
     bypass
   });
 
-  // 5. Update Database
+  // 7. Update Database
   const updatedItem = await prisma.enquiryItem.update({
     where: { id: itemId },
     data: {

@@ -13,30 +13,28 @@ async function main() {
   const isDryRun = args.includes("--dry-run");
 
   console.log(
-    isDryRun ? "DRY RUN — no changes will be made" : "Populating blank item types..."
+    isDryRun ? "DRY RUN — no changes will be made" : "Populating blank operation types..."
   );
 
   const allItems = await prisma.enquiryItem.findMany({
     select: {
       id: true,
       itemName: true,
-      itemType: true,
-      itemTypeSource: true,
-      moc: true,
-      size: true,
       operationType: true,
+      itemType: true,
+      moc: true,
       enquiry: { select: { docketNumber: true } },
     },
-    where: { itemType: null },
+    where: { operationType: null },
   });
 
   console.log(`Total items: ${allItems.length}`);
-  console.log(`Items with null itemType: ${allItems.length}\n`);
+  console.log(`Items with null operationType: ${allItems.length}\n`);
 
   let foundCount = 0;
   let updatedCount = 0;
   let skippedCount = 0;
-  const detected: { docket: string; type: string; itemName: string }[] = [];
+  const detected: { docket: string; opType: string; itemName: string }[] = [];
 
   for (let i = 0; i < allItems.length; i++) {
     const item = allItems[i];
@@ -50,39 +48,33 @@ async function main() {
       sheetMoc: item.moc,
     });
 
-    if (!resolved.itemType) {
+    if (!resolved.operationType) {
       skippedCount++;
       continue;
     }
 
     foundCount++;
-    detected.push({ docket: item.enquiry.docketNumber, type: resolved.itemType, itemName: item.itemName });
+    detected.push({ docket: item.enquiry.docketNumber, opType: resolved.operationType, itemName: item.itemName });
 
     if (!isDryRun) {
       await prisma.enquiryItem.update({
         where: { id: item.id },
-        data: {
-          itemType: resolved.itemType,
-          itemTypeSource: resolved.itemTypeSource,
-          moc: resolved.moc || item.moc,
-          mocSource: resolved.mocSource || null,
-          operationType: resolved.operationType,
-        },
+        data: { operationType: resolved.operationType },
       });
       updatedCount++;
     }
   }
 
   console.log(`\n\n=== SUMMARY ===`);
-  console.log(`Total items with null itemType: ${allItems.length}`);
+  console.log(`Total items with null operationType: ${allItems.length}`);
   console.log(`Detected: ${foundCount}`);
   console.log(`Updated: ${updatedCount}`);
   console.log(`Skipped (not detectable): ${skippedCount}`);
 
   if (detected.length > 0) {
-    console.log("\nDetected item types (first 30):");
+    console.log("\nDetected operation types (first 30):");
     for (const d of detected.slice(0, 30)) {
-      console.log(`  ${d.docket} → ${d.type} | ${d.itemName.substring(0, 60)}`);
+      console.log(`  ${d.docket} → ${d.opType} | ${d.itemName.substring(0, 60)}`);
     }
     if (detected.length > 30) {
       console.log(`  ... and ${detected.length - 30} more`);

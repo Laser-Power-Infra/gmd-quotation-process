@@ -18,6 +18,8 @@ interface ValidationResult {
   newMoc: string | null
   oldSize: string | null
   newSize: string | null
+  oldOperationType: string | null
+  newOperationType: string | null
   itemTypeSource: string | null
   mocSource: string | null
   changed: boolean
@@ -36,6 +38,7 @@ async function fetchItems(docketFilter?: string[]) {
       itemType: true,
       moc: true,
       size: true,
+      operationType: true,
       itemTypeSource: true,
       mocSource: true,
       enquiry: { select: { docketNumber: true } },
@@ -75,7 +78,8 @@ async function main() {
       const changed =
         resolved.itemType !== item.itemType ||
         resolved.moc !== item.moc ||
-        resolved.size !== item.size
+        resolved.size !== item.size ||
+        resolved.operationType !== item.operationType
 
       results.push({
         id: item.id,
@@ -87,6 +91,8 @@ async function main() {
         newMoc: resolved.moc,
         oldSize: item.size,
         newSize: resolved.size,
+        oldOperationType: item.operationType,
+        newOperationType: resolved.operationType,
         itemTypeSource: resolved.itemTypeSource,
         mocSource: resolved.mocSource,
         changed,
@@ -177,12 +183,13 @@ async function apply() {
           itemType: resolved.itemType,
           moc: resolved.moc,
           size: resolved.size,
+          operationType: resolved.operationType,
           itemTypeSource: resolved.itemTypeSource,
           mocSource: resolved.mocSource,
         },
       })
 
-      if (resolved.itemType !== item.itemType || resolved.moc !== item.moc || resolved.size !== item.size) {
+      if (resolved.itemType !== item.itemType || resolved.moc !== item.moc || resolved.size !== item.size || resolved.operationType !== item.operationType) {
         updatedCount++
       }
     } catch (err) {
