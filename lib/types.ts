@@ -1,5 +1,6 @@
 export interface EnquiryItemData {
   id: string;
+  position: number;
   createdAt: Date;
   updatedAt: Date;
   enquiryId: string;
@@ -26,6 +27,7 @@ export interface EnquiryItemData {
   vaPercent: number | null;
   itemTypeSource?: string | null;
   mocSource?: string | null;
+  validation?: string | null;
 }
 
 export interface AttachmentData {
@@ -108,6 +110,7 @@ export interface FiltersState {
   itemNameMerge: string;
   totalValue: string;
   itemWiseTotalValue: string;
+  validation: string;
   attachment: string;
 }
 

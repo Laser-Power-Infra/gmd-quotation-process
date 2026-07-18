@@ -82,7 +82,7 @@ export default function Pagination({
             <select
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
-              className="h-7 rounded border border-border bg-white px-2 text-xs text-foreground outline-none cursor-pointer focus:border-slate-300"
+              className="h-7 rounded border border-border bg-background px-2 text-xs text-foreground outline-none cursor-pointer focus:border-ring"
             >
               <option value={5}>5 rows</option>
               <option value={10}>10 rows</option>
@@ -128,7 +128,7 @@ export default function Pagination({
               variant={isActive ? "default" : "ghost"}
               className={`h-8 w-8 text-xs font-semibold rounded p-0 ${
                 isActive
-                  ? "bg-[#0f62fe] text-white hover:bg-[#0353e9]"
+                  ? "bg-[#0f62fe] text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800"
                   : "text-foreground hover:bg-muted"
               }`}
             >

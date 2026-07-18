@@ -50,7 +50,7 @@ export function extractSizeFromItemName(itemName: string | null | undefined): st
   let resolvedSize: string | null = null;
 
   // 1. Try MM check: digits followed by mm, mmm, m.m, millimeters
-  const mmRegex = /(\d+(?:\.\d+)?)\s*(?:mm|mmm|m\.m\b|millimeter[s]?|millimetre[s]?)/i;
+  const mmRegex = /(\d+)\s*(?:mm|mmm|m\.m\b|millimeter[s]?|millimetre[s]?)/i;
   const mmMatch = mmRegex.exec(lower);
   if (mmMatch) {
     const val = parseFloat(mmMatch[1]);
@@ -227,7 +227,7 @@ export function extractSizeFromItemName(itemName: string | null | undefined): st
   // Handles cases like "63mm" → 63 → 65
   // Skip decimal values < 20 — avoids PN decimal fractions like "1.0200mm"
   // (real sizes are always whole numbers ≥ 12)
-  const mmFallbackRe = /(\d+(?:\.\d+)?)\s*(?:mm|mmm|m\.m\b|millimeter[s]?|millimetre[s]?)/i;
+  const mmFallbackRe = /(\d+)\s*(?:mm|mmm|m\.m\b|millimeter[s]?|millimetre[s]?)/i;
   const mmFallbackMatch = mmFallbackRe.exec(lower);
   if (mmFallbackMatch) {
     const raw = mmFallbackMatch[1];

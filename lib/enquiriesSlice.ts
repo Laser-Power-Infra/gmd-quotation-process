@@ -137,7 +137,9 @@ const enquiriesAdapter = createEntityAdapter<EnquiryData>({
   sortComparer: (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
 });
 
-const itemsAdapter = createEntityAdapter<EnquiryItemData>();
+const itemsAdapter = createEntityAdapter<EnquiryItemData>({
+  sortComparer: (a, b) => a.position - b.position,
+});
 
 interface EnquiriesState {
   enquiries: ReturnType<typeof enquiriesAdapter.getInitialState>;
@@ -383,7 +385,7 @@ export const {
 
 export const selectItemsByEnquiryId = createSelector(
   [selectAllItems, (_, enquiryId: string) => enquiryId],
-  (items, enquiryId) => items.filter((item) => item.enquiryId === enquiryId)
+  (items, enquiryId) => items.filter((item) => item.enquiryId === enquiryId).sort((a, b) => a.position - b.position)
 );
 
 export const selectEnquiriesLoading = (state: RootState) => state.enquiries.loading;

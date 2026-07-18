@@ -36,6 +36,7 @@ const initialState: FiltersState = {
   itemNameMerge: "",
   totalValue: "",
   itemWiseTotalValue: "",
+  validation: "",
   attachment: "",
 };
 

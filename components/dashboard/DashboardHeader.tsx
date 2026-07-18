@@ -59,7 +59,7 @@ export default function DashboardHeader({
             value={searchVal}
             onChange={(e) => setSearchVal(e.target.value)}
             placeholder="Filter by Docket or Party..."
-            className="w-full rounded-md border border-border py-1.5 pr-4 pl-9 text-sm text-foreground placeholder-muted-foreground outline-none transition focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
+            className="w-full rounded-md border border-border py-1.5 pr-4 pl-9 text-sm text-foreground placeholder-muted-foreground outline-none transition focus:border-ring focus:ring-1 focus:ring-ring"
           />
           {isPending && (
             <div className="absolute right-3 top-2.5 h-4 w-4 animate-spin rounded-full border-2 border-border border-t-foreground" />
@@ -70,7 +70,7 @@ export default function DashboardHeader({
       <div className="flex items-center gap-3 shrink-0">
         <Button
           onClick={() => dispatch(openAddItemsDialog())}
-          className="flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9]"
+          className="flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800"
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" />
@@ -80,7 +80,7 @@ export default function DashboardHeader({
 
         <Button
           onClick={() => dispatch(openNewEnquiryDialog())}
-          className="flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9]"
+          className="flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800"
         >
           <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M12 5v14M5 12h14" />

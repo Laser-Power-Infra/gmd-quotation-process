@@ -56,7 +56,7 @@ export default async function Page({ searchParams }: PageProps) {
       include: {
         items: {
           orderBy: {
-            createdAt: "asc"
+            position: "asc"
           }
         },
         attachments: true,

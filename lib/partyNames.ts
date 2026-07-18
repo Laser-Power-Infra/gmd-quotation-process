@@ -148,4 +148,5 @@ export const PARTY_NAMES = [
   "Uttar Pradesh Rajya Vidyut Utpadan Nigam Limited(uprvunl) Lucknow",
   "Hindustan Copper Limited",
   "Rashtriya Ispat Nigam Limited",
+  "Garden Reach Ship Builders & Engineers Limited(grse)",
 ];

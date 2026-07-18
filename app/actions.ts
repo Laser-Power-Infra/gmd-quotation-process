@@ -6,6 +6,7 @@ import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnqui
 import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { extractSizeFromItemName } from "@/lib/sizeExtractor";
 import { roundToNearest10 } from "@/lib/rounding";
+import { validateVaPercent } from "@/lib/vaValidation";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -108,7 +109,7 @@ export async function createNewEnquiryAction(formData: {
           create: attachmentCreates,
         },
         items: {
-          create: resolvedItems.map((item) => {
+          create: resolvedItems.map((item, index) => {
             const itemCost = item.cost || null;
             const itemVa = item.vaPercent || null;
             let itemQR: string | null = null;
@@ -116,6 +117,7 @@ export async function createNewEnquiryAction(formData: {
               itemQR = (itemCost * (1 + (itemVa / 100))).toFixed(2);
             }
             return {
+              position: index,
               itemName: item.itemName,
               quantity: item.quantity,
               itemType: item.resolved.itemType,
@@ -153,7 +155,7 @@ export async function createNewEnquiryAction(formData: {
     const finalEnquiry = await prisma.enquiry.findUnique({
       where: { id: created.id },
       include: {
-        items: { orderBy: { createdAt: "asc" } },
+        items: { orderBy: { position: "asc" } },
         attachments: true,
       },
     });
@@ -209,8 +211,15 @@ export async function addItemsAction(formData: {
       })
     );
 
+    const maxPosItem = await prisma.enquiryItem.findFirst({
+      where: { enquiryId: formData.enquiryId },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    const startPos = (maxPosItem?.position ?? -1) + 1;
+
     await prisma.enquiryItem.createMany({
-      data: resolvedItems.map((item) => {
+      data: resolvedItems.map((item, index) => {
         const itemCost = item.cost || null;
         const itemVa = item.vaPercent || null;
         let itemQR: string | null = null;
@@ -218,6 +227,7 @@ export async function addItemsAction(formData: {
           itemQR = (itemCost * (1 + (itemVa / 100))).toFixed(2);
         }
         return {
+          position: startPos + index,
           enquiryId: formData.enquiryId,
           itemName: item.itemName,
           quantity: item.quantity,
@@ -251,7 +261,7 @@ export async function addItemsAction(formData: {
 
     const createdItems = await prisma.enquiryItem.findMany({
       where: { enquiryId: formData.enquiryId },
-      orderBy: { createdAt: "asc" },
+      orderBy: { position: "asc" },
     });
 
     return { success: true, data: { enquiryId: formData.enquiryId, items: createdItems.map(serializeItem) } };
@@ -466,7 +476,7 @@ export async function updateEnquiryItemAction(formData: {
     const updatedEnquiry = await prisma.enquiry.findUnique({
       where: { id: item.enquiryId },
       include: {
-        items: { orderBy: { createdAt: "asc" } },
+        items: { orderBy: { position: "asc" } },
         attachments: true,
       },
     });
@@ -568,7 +578,7 @@ export async function updateEnquiryFieldAction(
     // Fetch the full enquiry with items to return
     const fullEnquiry = await prisma.enquiry.findUnique({
       where: { id: enquiryId },
-      include: { items: true },
+      include: { items: { orderBy: { position: "asc" } } },
     });
 
     return {
@@ -649,6 +659,31 @@ export async function updateItemFieldAction(
         data: updateData,
       });
       updatedItem = serializeItem(dbItem);
+    }
+
+    if (field === "vaPercent" && updatedItem) {
+      const itemWithDocket = await prisma.enquiryItem.findUnique({
+        where: { id: itemId },
+        include: { enquiry: { select: { docketNumber: true } } },
+      });
+      if (itemWithDocket?.enquiry) {
+        const vaNum = updatedItem.vaPercent !== null && updatedItem.vaPercent !== undefined ? Number(updatedItem.vaPercent) : null;
+        const result = validateVaPercent(updatedItem.itemType, updatedItem.size, vaNum);
+        if (!result.isValid && result.maxVaPercent !== null && vaNum !== null) {
+          const alertPayload = {
+            docketNumber: itemWithDocket.enquiry.docketNumber,
+            itemName: updatedItem.itemName,
+            itemNameMerge: updatedItem.itemNameMerge || null,
+            itemType: updatedItem.itemType,
+            size: updatedItem.size,
+            vaPercent: vaNum,
+            maxVaPercent: result.maxVaPercent,
+          };
+          import("@/lib/services/n8nWebhook").then(({ sendVaAlert }) => {
+            sendVaAlert(alertPayload);
+          });
+        }
+      }
     }
 
     return { success: true, data: updatedItem };

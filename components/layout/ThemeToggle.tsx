@@ -29,7 +29,7 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={toggle}
-      className="p-1 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+      className="p-1 text-muted-foreground hover:text-foreground"
       aria-label="Toggle theme"
     >
       {dark ? <Sun className="size-5 stroke-[1.75]" /> : <Moon className="size-5 stroke-[1.75]" />}

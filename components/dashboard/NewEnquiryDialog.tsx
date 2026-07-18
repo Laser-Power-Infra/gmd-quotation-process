@@ -364,12 +364,12 @@ export default function NewEnquiryDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           {/* Section: Docket Info */}
-          <div className="bg-slate-50/50 p-3 rounded-lg border border-border space-y-3">
-            <span className="text-xs font-bold text-slate-700">Enquiry Main Information</span>
+          <div className="bg-muted/30 p-3 rounded-lg border border-border space-y-3">
+            <span className="text-xs font-bold text-foreground">Enquiry Main Information</span>
             <div className="grid grid-cols-2 gap-3">
               {/* Docket Number */}
               <div className="space-y-1">
-                <Label htmlFor="docket" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="docket" className="text-[10px] font-semibold text-muted-foreground">
                   Docket Number <span className="text-red-500">*</span>
                 </Label>
                 <Input
@@ -383,7 +383,7 @@ export default function NewEnquiryDialog({
 
               {/* Enquiry Date */}
               <div className="space-y-1">
-                <Label htmlFor="date" className="text-[10px] font-semibold text-slate-600">
+                <Label htmlFor="date" className="text-[10px] font-semibold text-muted-foreground">
                   Enquiry Date <span className="text-red-500">*</span>
                 </Label>
                 <Input
@@ -397,7 +397,7 @@ export default function NewEnquiryDialog({
 
               {/* Party Name Dropdown (Searchable combobox) */}
               <div className="col-span-2 space-y-1 relative">
-                <Label className="text-[10px] font-semibold text-slate-600">
+                <Label className="text-[10px] font-semibold text-muted-foreground">
                   Party Name <span className="text-red-500">*</span>
                 </Label>
                 <div className="relative">
@@ -422,14 +422,14 @@ export default function NewEnquiryDialog({
                         }}
                       />
                       <div className="absolute top-10 left-0 w-full z-50 rounded border border-border bg-popover text-popover-foreground shadow-md outline-none animate-in fade-in-80">
-                        <div className="flex items-center gap-2 border-b border-border px-3 py-2 bg-slate-50">
+                        <div className="flex items-center gap-2 border-b border-border px-3 py-2 bg-muted/50">
                           <Search className="h-3.5 w-3.5 stroke-[2] text-muted-foreground" />
                           <input
                             type="text"
                             placeholder="Search party name..."
                             value={partySearch}
                             onChange={(e) => setPartySearch(e.target.value)}
-                            className="w-full text-xs bg-transparent border-none outline-none placeholder:text-muted-foreground"
+                            className="w-full text-xs bg-transparent border-none outline-none text-foreground placeholder:text-muted-foreground"
                           />
                         </div>
 
@@ -468,12 +468,12 @@ export default function NewEnquiryDialog({
           </div>
 
           {/* Section: Enquiry Metadata Dropdowns */}
-          <div className="bg-slate-50/50 p-3 rounded-lg border border-border space-y-3">
-            <span className="text-xs font-bold text-slate-700">Enquiry Metadata Specifications</span>
+          <div className="bg-muted/30 p-3 rounded-lg border border-border space-y-3">
+            <span className="text-xs font-bold text-foreground">Enquiry Metadata Specifications</span>
             <div className="grid grid-cols-2 gap-3">
               {/* Enquiry Type */}
               <div className="space-y-1">
-                <Label className="text-[10px] font-semibold text-slate-600">
+                <Label className="text-[10px] font-semibold text-muted-foreground">
                   Enquiry Type
                 </Label>
                 <select
@@ -490,7 +490,7 @@ export default function NewEnquiryDialog({
 
               {/* State */}
               <div className="space-y-1">
-                <Label className="text-[10px] font-semibold text-slate-600">
+                <Label className="text-[10px] font-semibold text-muted-foreground">
                   State
                 </Label>
                 <select
@@ -507,7 +507,7 @@ export default function NewEnquiryDialog({
 
               {/* Payment Terms */}
               <div className="space-y-1">
-                <Label className="text-[10px] font-semibold text-slate-600">
+                <Label className="text-[10px] font-semibold text-muted-foreground">
                   Payment Terms
                 </Label>
                 <select
@@ -524,7 +524,7 @@ export default function NewEnquiryDialog({
 
               {/* Inspection */}
               <div className="space-y-1">
-                <Label className="text-[10px] font-semibold text-slate-600">
+                <Label className="text-[10px] font-semibold text-muted-foreground">
                   Inspection
                 </Label>
                 <select
@@ -541,7 +541,7 @@ export default function NewEnquiryDialog({
 
               {/* PBG */}
               <div className="space-y-1">
-                <Label className="text-[10px] font-semibold text-slate-600">
+                <Label className="text-[10px] font-semibold text-muted-foreground">
                   PBG
                 </Label>
                 <select
@@ -558,7 +558,7 @@ export default function NewEnquiryDialog({
 
               {/* Utility */}
               <div className="space-y-1">
-                <Label className="text-[10px] font-semibold text-slate-600">
+                <Label className="text-[10px] font-semibold text-muted-foreground">
                   Utility
                 </Label>
                 <Input
@@ -572,7 +572,7 @@ export default function NewEnquiryDialog({
 
               {/* Order Status */}
               <div className="space-y-1">
-                <Label className="text-[10px] font-semibold text-slate-600">
+                <Label className="text-[10px] font-semibold text-muted-foreground">
                   Order Status
                 </Label>
                 <select
@@ -628,15 +628,15 @@ export default function NewEnquiryDialog({
 
             <div className="max-h-60 overflow-y-auto space-y-4 pr-1">
               {items.map((item, index) => (
-                <div key={index} className="p-3 border border-border rounded-lg bg-slate-50/50 space-y-3 relative">
+                <div key={index} className="p-3 border border-border rounded-lg bg-muted/30 space-y-3 relative">
                   <div className="flex justify-between items-center pb-2 border-b border-border">
-                    <span className="text-xs font-bold text-slate-700">Item #{index + 1}</span>
+                    <span className="text-xs font-bold text-foreground">Item #{index + 1}</span>
                     {items.length > 1 && (
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 text-red-500 hover:text-red-700 hover:bg-red-50"
+                        className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
                         onClick={() => handleRemoveItemRow(index)}
                       >
                         <Trash className="h-3.5 w-3.5" />
@@ -646,7 +646,7 @@ export default function NewEnquiryDialog({
 
                   <div className="grid grid-cols-3 gap-2">
                     <div className="col-span-2 space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
+                      <Label className="text-[10px] font-semibold text-muted-foreground">
                         Item Name as per Party <span className="text-red-500">*</span>
                       </Label>
                       <Input
@@ -660,7 +660,7 @@ export default function NewEnquiryDialog({
                     </div>
                     
                     <div className="col-span-1 space-y-1">
-                      <Label className="text-[10px] font-semibold text-slate-600">
+                      <Label className="text-[10px] font-semibold text-muted-foreground">
                         Quantity <span className="text-red-500">*</span>
                       </Label>
                       <Input

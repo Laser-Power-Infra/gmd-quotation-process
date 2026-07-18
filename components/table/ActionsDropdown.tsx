@@ -363,7 +363,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
               setDropdownOpen(false);
             }}
           >
-            <Eye className="mr-2 h-4 w-4 text-slate-500" />
+            <Eye className="mr-2 h-4 w-4 text-muted-foreground" />
             <span>View Details</span>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -373,7 +373,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
               setDropdownOpen(false);
             }}
           >
-            <Edit2 className="mr-2 h-4 w-4 text-slate-500" />
+            <Edit2 className="mr-2 h-4 w-4 text-muted-foreground" />
             <span>Edit Enquiry</span>
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -400,8 +400,8 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
           <div className="space-y-4 py-2">
             {/* Docket Details Section */}
-            <div className="bg-slate-50 p-3 rounded-lg border border-border space-y-2.5">
-              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider pb-1.5 border-b border-slate-200">
+            <div className="bg-muted p-3 rounded-lg border border-border space-y-2.5">
+              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider pb-1.5 border-b border-border">
                 Docket Details
               </h4>
               <div className="grid grid-cols-2 gap-4">
@@ -494,8 +494,8 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
             </div>
 
             {/* Item Details Section */}
-            <div className="bg-slate-50 p-3 rounded-lg border border-border space-y-2.5">
-              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider pb-1.5 border-b border-slate-200">
+            <div className="bg-muted p-3 rounded-lg border border-border space-y-2.5">
+              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider pb-1.5 border-b border-border">
                 Item Details
               </h4>
               <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
@@ -503,7 +503,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                   <span className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider block">
                     Item Name as per Party
                   </span>
-                  <span className="text-slate-800 font-bold text-xs">
+                  <span className="text-foreground font-bold text-xs">
                     {item.itemName}
                   </span>
                 </div>
@@ -635,9 +635,9 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                       href={att.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 rounded border border-border p-2 hover:bg-slate-50 transition-colors text-xs font-semibold text-[#0f62fe] w-full"
+                      className="flex items-center gap-2 rounded border border-border p-2 hover:bg-accent transition-colors text-xs font-semibold text-[#0f62fe] dark:text-blue-400 w-full"
                     >
-                      <FileText className="h-4 w-4 text-[#0f62fe] stroke-[2]" />
+                      <FileText className="h-4 w-4 text-[#0f62fe] dark:text-blue-400 stroke-[2]" />
                       <span className="truncate flex-1">{att.name}</span>
                     </a>
                   ))}
@@ -669,12 +669,12 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
           <form onSubmit={handleUpdate} className="space-y-4 py-2">
             {/* Section: Docket Details */}
-            <div className="bg-slate-50/50 p-3 rounded-lg border border-border space-y-3">
-              <span className="text-xs font-bold text-slate-700">Enquiry Main Information</span>
+            <div className="bg-muted/50 p-3 rounded-lg border border-border space-y-3">
+              <span className="text-xs font-bold text-foreground">Enquiry Main Information</span>
               <div className="grid grid-cols-2 gap-3">
                 {/* Docket Number */}
                 <div className="space-y-1">
-                  <Label htmlFor="edit-docket" className="text-[10px] font-semibold text-slate-600">
+                  <Label htmlFor="edit-docket" className="text-[10px] font-semibold text-muted-foreground">
                     Docket Number <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -687,7 +687,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
                 {/* Enquiry Date */}
                 <div className="space-y-1">
-                  <Label htmlFor="edit-date" className="text-[10px] font-semibold text-slate-600">
+                  <Label htmlFor="edit-date" className="text-[10px] font-semibold text-muted-foreground">
                     Enquiry Date <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -701,7 +701,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
                 {/* Party Name Selector */}
                 <div className="col-span-2 space-y-1">
-                  <Label htmlFor="edit-party" className="text-[10px] font-semibold text-slate-600">
+                  <Label htmlFor="edit-party" className="text-[10px] font-semibold text-muted-foreground">
                     Party Name <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -722,12 +722,12 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
             </div>
 
             {/* Section: Enquiry Metadata Dropdowns */}
-            <div className="bg-slate-50/50 p-3 rounded-lg border border-border space-y-3">
-              <span className="text-xs font-bold text-slate-700">Enquiry Metadata Specifications</span>
+            <div className="bg-muted/50 p-3 rounded-lg border border-border space-y-3">
+              <span className="text-xs font-bold text-foreground">Enquiry Metadata Specifications</span>
               <div className="grid grid-cols-2 gap-3">
                 {/* Enquiry Type */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Enquiry Type <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -744,7 +744,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
                 {/* State */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     State <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -761,7 +761,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
                 {/* Payment Terms */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Payment Terms <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -778,7 +778,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
                 {/* Inspection */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Inspection <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -795,7 +795,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
                 {/* PBG */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     PBG <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -812,7 +812,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
                 {/* Utility */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Utility <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -827,7 +827,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
 
                 {/* Order Status */}
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Order Status <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -866,11 +866,11 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
             </div>
 
             {/* Item Details Fields card grid */}
-            <div className="p-3 border border-border rounded-lg bg-slate-50/50 space-y-3">
-              <span className="text-xs font-bold text-slate-700">Item Specifications</span>
+            <div className="p-3 border border-border rounded-lg bg-muted/50 space-y-3">
+              <span className="text-xs font-bold text-foreground">Item Specifications</span>
               <div className="grid grid-cols-2 gap-2">
                 <div className="col-span-2 space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Item Name as per Party <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -882,7 +882,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Quantity <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -895,7 +895,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Item Type <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -911,7 +911,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     MOC <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -927,7 +927,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Size <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -943,7 +943,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     PN Rating <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -959,7 +959,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Operation Type <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -975,7 +975,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Extension <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -991,7 +991,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Bypass <span className="text-red-500">*</span>
                   </Label>
                   <select
@@ -1007,7 +1007,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Product Cost <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -1019,7 +1019,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Cost Ref Code <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -1031,7 +1031,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Cost <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -1043,7 +1043,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Quotation Rate
                   </Label>
                   <Input
@@ -1056,7 +1056,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Stock Status <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -1068,7 +1068,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     Discount (%) <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -1080,7 +1080,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-slate-600">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
                     VA% <span className="text-red-500">*</span>
                   </Label>
                   <Input

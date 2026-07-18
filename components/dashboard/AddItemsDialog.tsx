@@ -163,7 +163,7 @@ export default function AddItemsDialog({
               <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 text-left text-slate-700 bg-white"
+                className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 text-left text-foreground"
               >
                 <span className="truncate">
                   {enquiryId
@@ -184,20 +184,20 @@ export default function AddItemsDialog({
                     className="fixed inset-0 z-40" 
                     onClick={() => setIsOpen(false)}
                   />
-                  <div className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-md border border-slate-200 bg-white text-slate-900 shadow-lg p-2 space-y-2 max-h-[300px] flex flex-col animate-in fade-in-80 duration-100">
-                    <div className="relative flex items-center border border-slate-200 rounded-md px-2.5 bg-slate-50">
-                      <Search className="h-4 w-4 text-slate-400 mr-2 shrink-0" />
+                  <div className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-md border border-border bg-popover text-popover-foreground shadow-lg p-2 space-y-2 max-h-[300px] flex flex-col animate-in fade-in-80 duration-100">
+                    <div className="relative flex items-center border border-border rounded-md px-2.5 bg-muted">
+                      <Search className="h-4 w-4 text-muted-foreground mr-2 shrink-0" />
                       <input
                         type="text"
                         placeholder="Search docket number..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-transparent py-1.5 text-xs outline-none placeholder:text-slate-400 text-slate-700"
+                        className="w-full bg-transparent py-1.5 text-xs outline-none placeholder:text-muted-foreground text-foreground"
                         autoFocus
                       />
                     </div>
 
-                    <div className="overflow-y-auto flex-1 max-h-[200px] divide-y divide-slate-100">
+                    <div className="overflow-y-auto flex-1 max-h-[200px] divide-y divide-border">
                       {(() => {
                         const filtered = enquiries.filter(
                           (enq) =>
@@ -216,20 +216,20 @@ export default function AddItemsDialog({
                                   setIsOpen(false);
                                   setSearchQuery("");
                                 }}
-                                className={`w-full text-left px-2.5 py-2 text-xs transition-colors rounded hover:bg-slate-100 flex items-center justify-between ${
-                                  isSelected ? "bg-blue-50 font-semibold text-[#0f62fe]" : "text-slate-700"
+                                className={`w-full text-left px-2.5 py-2 text-xs transition-colors rounded hover:bg-accent flex items-center justify-between ${
+                                  isSelected ? "bg-accent font-semibold text-primary" : "text-foreground"
                                 }`}
                               >
                                 <span className="truncate">
                                   {enq.docketNumber} - {enq.partyName}
                                 </span>
-                                {isSelected && <Check className="h-3.5 w-3.5 text-[#0f62fe] shrink-0" />}
+                                {isSelected && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
                               </button>
                             );
                           });
                         } else {
                           return (
-                            <div className="py-4 text-center text-xs text-slate-400">
+                            <div className="py-4 text-center text-xs text-muted-foreground">
                               No docket numbers found.
                             </div>
                           );
@@ -292,7 +292,7 @@ export default function AddItemsDialog({
                       variant="ghost"
                       size="icon"
                       onClick={() => handleRemoveItemRow(index)}
-                      className="text-red-500 hover:bg-red-50 hover:text-red-600 h-9 w-9 shrink-0"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive h-9 w-9 shrink-0"
                     >
                       <Trash className="h-4 w-4" />
                     </Button>
@@ -309,7 +309,7 @@ export default function AddItemsDialog({
             <Button
               type="submit"
               disabled={isSubmitting}
-              className="bg-[#0f62fe] hover:bg-[#0353e9] text-white"
+              className="bg-[#0f62fe] hover:bg-[#0353e9] text-white dark:bg-blue-700 dark:hover:bg-blue-800"
             >
               {isSubmitting ? "Adding..." : "Add Items"}
             </Button>

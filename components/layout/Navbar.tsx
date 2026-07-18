@@ -11,7 +11,7 @@ export default function Navbar() {
             <img
               src="/logo.jpg"
               alt="Dalui Logo"
-              className="h-8 w-auto rounded object-contain bg-white p-0.5"
+              className="h-8 w-auto rounded object-contain bg-background p-0.5"
             />
             <span className="text-base font-bold tracking-tight text-foreground">
               GMD Quotation Process
@@ -25,7 +25,7 @@ export default function Navbar() {
             <input
               type="text"
               placeholder="Global search..."
-              className="w-full rounded-full border border-border bg-muted py-1.5 pr-4 pl-9 text-xs text-foreground placeholder-muted-foreground outline-none transition focus:border-slate-300"
+               className="w-full rounded-full border border-border bg-muted py-1.5 pr-4 pl-9 text-xs text-foreground placeholder-muted-foreground outline-none transition focus:border-ring"
             />
           </div>
 
