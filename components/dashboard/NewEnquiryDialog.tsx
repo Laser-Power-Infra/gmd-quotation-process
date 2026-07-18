@@ -561,12 +561,16 @@ export default function NewEnquiryDialog({
                 <Label className="text-[10px] font-semibold text-muted-foreground">
                   Utility
                 </Label>
-                <Input
-                  placeholder="e.g. Utility name..."
+                <select
                   value={utility}
                   onChange={(e) => setUtility(e.target.value)}
-                  className="text-xs h-9"
-                />
+                  className={selectClass}
+                >
+                  <option value="">Select utility...</option>
+                  {dropdownOptions.utilities.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
               </div>
 
 

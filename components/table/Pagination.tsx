@@ -70,7 +70,7 @@ export default function Pagination({
   };
 
   return (
-    <div className="flex h-14 items-center justify-between border-t border-border bg-muted/30 px-6 py-4">
+    <div className="flex h-14 items-center justify-between border-t border-border bg-muted/50 px-6 py-4">
       <div className="flex items-center gap-4">
         <span className="text-xs text-muted-foreground font-medium">
           Showing <span className="text-foreground">{startItem}-{endItem}</span> of{" "}

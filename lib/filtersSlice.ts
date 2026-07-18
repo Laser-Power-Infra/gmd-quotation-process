@@ -11,7 +11,7 @@ const initialState: FiltersState = {
   paymentTerms: "All",
   inspection: "All",
   pbg: "All",
-  utility: "",
+  utility: "All",
   vaPercent: "",
   orderStatus: "All",
   closureStatus: "",

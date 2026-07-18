@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { ALLOWED_OPERATION_TYPES } from "@/lib/operationTypePatterns";
 import { ALLOWED_EXTENSIONS } from "@/lib/extensionPatterns";
 import { ALLOWED_BYPASSES } from "@/lib/bypassPatterns";
+import { UTILITIES } from "@/lib/utilities";
 
 interface PageProps {
   searchParams: Promise<{
@@ -131,7 +132,6 @@ export default async function Page({ searchParams }: PageProps) {
     dbPaymentTerms,
     dbInspections,
     dbPbgs,
-    dbUtilities,
     dbVaPercents,
     dbOrderStatuses,
     dbPnRatings,
@@ -144,7 +144,6 @@ export default async function Page({ searchParams }: PageProps) {
     prisma.enquiry.findMany({ select: { paymentTerms: true }, distinct: ["paymentTerms"] }),
     prisma.enquiry.findMany({ select: { inspection: true }, distinct: ["inspection"] }),
     prisma.enquiry.findMany({ select: { pbg: true }, distinct: ["pbg"] }),
-    prisma.enquiry.findMany({ select: { utility: true }, distinct: ["utility"] }),
     prisma.enquiryItem.findMany({ select: { vaPercent: true }, distinct: ["vaPercent"] }),
     prisma.enquiry.findMany({ select: { orderStatus: true }, distinct: ["orderStatus"] }),
     prisma.enquiryItem.findMany({ select: { pnRating: true }, distinct: ["pnRating"] }),
@@ -311,7 +310,8 @@ export default async function Page({ searchParams }: PageProps) {
     "TRIPURA",
     "UTTAR PRADESH",
     "UTTARAKHAND",
-    "WEST BENGAL"
+    "WEST BENGAL",
+    "DELHI"
   ];
 
   const states = Array.from(new Set([...staticStates, ...getUniqueOptions(dbStates, "state")]))
@@ -431,7 +431,7 @@ export default async function Page({ searchParams }: PageProps) {
     paymentTerms,
     inspections,
     pbgs,
-    utilities: getUniqueOptions(dbUtilities, "utility") as string[],
+    utilities: UTILITIES,
     vaPercents: getUniqueOptions(dbVaPercents, "vaPercent").map(v => `${v}%`),
     orderStatuses,
     itemTypes,
