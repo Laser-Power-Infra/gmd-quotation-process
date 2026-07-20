@@ -52,6 +52,7 @@ export async function recalculateItem(
     quantity?: number | null;
     vaPercent?: number | null;
     quotedRate?: number | null;
+    cost?: number | null;
   }
 ) {
   // Fetch item and its parent enquiry
@@ -77,8 +78,9 @@ export async function recalculateItem(
 
   // 2. Calculate Cost (only if inputs changed, or cost was null)
   let cost: number | null = existingCost;
-  const shouldRecalcCost = (updates && (updates.productCost !== undefined || updates.extension !== undefined || updates.bypass !== undefined))
-    || existingCost === null || existingCost <= 0;
+  const shouldRecalcCost = (updates && (updates.productCost !== undefined || updates.extension !== undefined || updates.bypass !== undefined || updates.cost !== undefined))
+    || existingCost === null || existingCost <= 0
+    || updates === undefined;
   if (shouldRecalcCost && productCost !== null && productCost > 0) {
     // 2.1. Extension Cost (Flat)
     let extCost = 0;
@@ -132,6 +134,11 @@ export async function recalculateItem(
     cost = parseFloat(cost.toFixed(2));
   }
 
+  // 2.7. If user explicitly provided cost, use it directly
+  if (updates && updates.cost !== undefined) {
+    cost = updates.cost;
+  }
+
   // 3. Apply updates for vaPercent and quotedRate (if explicitly provided)
   let vaPercent: number | null;
   if (updates && updates.vaPercent !== undefined) {
@@ -147,10 +154,34 @@ export async function recalculateItem(
     quotedRate = existingQuotedRate;
   }
 
-  // 4. Fill nulls where possible (only if user didn't explicitly clear the field)
+  // 4. Recalculate dependent fields when user explicitly updates one, or when cost changes
   const userClearedVaPct = updates && updates.vaPercent !== undefined && updates.vaPercent === null;
   const userClearedQR = updates && updates.quotedRate !== undefined && updates.quotedRate === null;
 
+  // 4a. User explicitly updated quotedRate → recalculate vaPercent
+  const userUpdatedQR = updates && updates.quotedRate !== undefined;
+  if (userUpdatedQR && !userClearedVaPct && cost !== null && cost > 0 && quotedRate !== null && quotedRate > 0) {
+    vaPercent = parseFloat((((quotedRate / cost) - 1) * 100).toFixed(2));
+  }
+
+  // 4b. User explicitly updated vaPercent → recalculate quotedRate
+  if (updates && updates.vaPercent !== undefined && !userClearedQR && cost !== null && cost > 0 && vaPercent !== null) {
+    quotedRate = roundToNearest10(cost * (1 + vaPercent / 100));
+  }
+
+  // 4c. Cost was recalculated and neither was explicitly updated:
+  //     - If quotedRate is already set → recalculate vaPercent to match (preserve quotedRate as anchor)
+  //     - If quotedRate is null → recalculate quotedRate from vaPercent (preserve vaPercent as anchor)
+  const neitherExplicitlyUpdated = !(updates && (updates.quotedRate !== undefined || updates.vaPercent !== undefined));
+  if (shouldRecalcCost && neitherExplicitlyUpdated && cost !== null && cost > 0) {
+    if (quotedRate !== null && quotedRate > 0) {
+      vaPercent = parseFloat((((quotedRate / cost) - 1) * 100).toFixed(2));
+    } else if (vaPercent !== null) {
+      quotedRate = roundToNearest10(cost * (1 + vaPercent / 100));
+    }
+  }
+
+  // 4d. Fill nulls where possible (only if user didn't explicitly clear the field)
   if (!userClearedVaPct && vaPercent === null && cost !== null && cost > 0 && quotedRate !== null && quotedRate > 0) {
     vaPercent = parseFloat((((quotedRate / cost) - 1) * 100).toFixed(2));
   }

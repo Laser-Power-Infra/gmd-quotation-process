@@ -1,16 +1,31 @@
 import fs from "fs";
 import Handlebars from "handlebars";
 import puppeteer, { PDFOptions } from "puppeteer";
-import { OfferLetterTemplateData } from "@/types/offer-lettter";
+import type { OfferLetterItem, OfferLetterTemplateData } from "@/types/offer-lettter";
 
-/**
- * Register Handlebars helpers used by the offer letter template.
- * Safe to call multiple times; Handlebars just overwrites the helper.
- */
-function registerHelpers(): void {
-  // {{inc @index}} -> 1-based row number for the SL NO column
-  Handlebars.registerHelper("inc", (index: number) => index + 1);
-}
+// --- Handlebars helpers (registered at module load time) ---
+// {{inc @index}} -> 1-based row number for the SL NO column
+Handlebars.registerHelper("inc", (index: number) => index + 1);
+
+// {{totalQuantity items}} -> sum of quantities across all items
+Handlebars.registerHelper("totalQuantity", (items: OfferLetterItem[]) => {
+  if (!items || !Array.isArray(items)) return 0;
+  return items.reduce((sum, item) => sum + (item.quantity || 0), 0);
+});
+
+// {{totalItemwise items}} -> sum of (quantity × quotationRate) across all items (rounded)
+Handlebars.registerHelper("totalItemwise", (items: OfferLetterItem[]) => {
+  if (!items || !Array.isArray(items)) return 0;
+  const sum = items.reduce((s, item) => s + (item.quantity || 0) * (item.quotationRate || 0), 0);
+  return Math.round(sum);
+});
+
+// {{totalItemwiseGst items}} -> sum of totalValue (incl. GST) across all items (rounded)
+Handlebars.registerHelper("totalItemwiseGst", (items: OfferLetterItem[]) => {
+  if (!items || !Array.isArray(items)) return 0;
+  const sum = items.reduce((s, item) => s + (item.totalValue || 0), 0);
+  return Math.round(sum);
+});
 
 /**
  * Common install locations for a system Chrome/Chromium on Windows.
@@ -67,8 +82,6 @@ export async function generateOfferLetterPdf(
   data: OfferLetterTemplateData,
   options: GeneratePdfOptions
 ): Promise<Buffer> {
-  registerHelpers();
-
   // 1. Compile the Handlebars template with the dynamic data into a final HTML string.
   const template = Handlebars.compile<OfferLetterTemplateData>(templateSource);
   const html = template(data);

@@ -1,5 +1,7 @@
 export const UTILITIES = [
+  "Ajmer Pesangam Project",
   "Amdavad Municipal Corporation",
+  "Andhra Pradesh Jal Jeevan Mission (AP JJM)",
   "ANDHRA PRADESH STATE IRRIGATION DEVELOPMENT CORPORATION LIMITED",
   "Assam Urban Water Supply & Sewerage Board",
   "Bharat Petroleum Corporation Ltd",
@@ -48,5 +50,4 @@ export const UTILITIES = [
   "Visvesvaraya Jala Nigam Ltd",
   "Water Corporation of Odisha – Government of Odisha",
   "Water Resources Department",
-  "Ajmer Pesangam Project",
 ];

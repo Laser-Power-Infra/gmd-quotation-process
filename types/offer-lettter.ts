@@ -11,8 +11,14 @@ export interface OfferLetterItem {
   /** RATE/UNIT column. Sourced from dashboard <QUOTATION RATE>. */
   quotationRate: number;
 
-  /** UNIT column. Always hard-coded to "NO.S". */
-  unit: "NO.S";
+  /** QR with GST column — per-unit rate including 18% GST. */
+  quotedRateGst: number;
+
+  /** Total value including GST (qty × quotedRate × 1.18) — used for the footer sum. */
+  totalValue: number;
+
+  /** UNIT column. Always hard-coded to "Nos.". */
+  unit: "Nos.";
 
   /** Delivery Schedule column. Left blank for now. */
   deliverySchedule?: string;
@@ -51,6 +57,9 @@ export interface OfferLetterTemplateData {
 
   /** Base64 data URL of the company logo */
   logoDataUrl?: string;
+
+  /** Sum of (quantity × quotationRate) across all items — shown in the summary row. */
+  totalItemwiseValue: number;
 
   /** Annexure-A price table rows. SL NO is derived automatically (index + 1). */
   items: OfferLetterItem[];

@@ -237,7 +237,7 @@ const pdftemplate = `<!DOCTYPE html>
         <td class="item-name">{{this.partyItemName}}</td>
         <td>{{this.quantity}}</td>
         <td>{{this.quotationRate}}</td>
-        <td>NO.S</td>
+        <td>Nos.</td>
         <td>{{this.deliverySchedule}}</td>
       </tr>
       {{/each}}

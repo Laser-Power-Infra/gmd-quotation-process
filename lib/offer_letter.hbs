@@ -229,11 +229,12 @@
     <thead>
       <tr>
         <th style="width:6%;">SL NO</th>
-        <th style="width:26%;">PARTY ITEM NAME</th>
-        <th style="width:34%;">OUR ITEM NAME</th>
-        <th style="width:8%;">QTY</th>
+        <th style="width:22%;">PARTY ITEM NAME</th>
+        <th style="width:30%;">OUR ITEM NAME</th>
         <th style="width:10%;">RATE/UNIT</th>
+        <th style="width:8%;">QTY</th>
         <th style="width:8%;">UNIT</th>
+        <th style="width:8%;">QR with GST</th>
         <th style="width:8%;">Delivery Schedule</th>
       </tr>
     </thead>
@@ -243,12 +244,21 @@
         <td>{{inc @index}}</td>
         <td class="item-name">{{this.itemName}}</td>
         <td class="item-name">{{this.partyItemName}}</td>
-        <td>{{this.quantity}}</td>
         <td>{{this.quotationRate}}</td>
-        <td>NO.S</td>
+        <td>{{this.quantity}}</td>
+        <td>Nos.</td>
+        <td>{{this.quotedRateGst}}</td>
         <td>{{this.deliverySchedule}}</td>
       </tr>
       {{/each}}
+      <tr style="font-weight: bold; border-top: 2px solid #7a1f1f;">
+        <td colspan="3" style="text-align: right;">Total</td>
+        <td>{{totalItemwise items}}</td>
+        <td>{{totalQuantity items}}</td>
+        <td></td>
+        <td>{{totalItemwiseGst items}}</td>
+        <td></td>
+      </tr>
     </tbody>
   </table>
 

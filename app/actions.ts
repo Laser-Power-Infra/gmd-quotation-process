@@ -617,7 +617,7 @@ export async function updateItemFieldAction(
     }
 
     let updatedItem;
-    if (["productCost", "extension", "bypass", "quantity", "vaPercent", "quotedRate"].includes(field)) {
+    if (["productCost", "extension", "bypass", "quantity", "vaPercent", "quotedRate", "cost"].includes(field)) {
       const updates: any = {};
       if (field === "vaPercent") {
         updates.vaPercent = parsedVal !== null ? parseFloat(parsedVal) : null;
@@ -661,7 +661,7 @@ export async function updateItemFieldAction(
       updatedItem = serializeItem(dbItem);
     }
 
-    if (field === "vaPercent" && updatedItem) {
+    if (["vaPercent", "quotedRate", "productCost", "extension", "bypass"].includes(field) && updatedItem) {
       const itemWithDocket = await prisma.enquiryItem.findUnique({
         where: { id: itemId },
         include: { enquiry: { select: { docketNumber: true } } },

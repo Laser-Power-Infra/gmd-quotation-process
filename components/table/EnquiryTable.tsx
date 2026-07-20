@@ -1071,7 +1071,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             <button
               type="button"
               onClick={handleResetAllFilters}
-              className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400 dark:hover:bg-rose-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shadow-xs shrink-0"
+              className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400 dark:hover:bg-rose-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0"
             >
               <svg className="h-3.5 w-3.5 text-rose-700 dark:text-rose-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10" />
@@ -1093,7 +1093,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           <button
             type="button"
             onClick={handleExportToExcel}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-[#0f62fe] hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shadow-xs shrink-0"
+            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-[#0f62fe] hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0"
           >
             <Download className="h-3.5 w-3.5 text-[#0f62fe] dark:text-blue-400 stroke-[2]" />
             Export Excel
@@ -1110,7 +1110,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             <button
               type="button"
               onClick={() => document.getElementById("excel-import-file")?.click()}
-              className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shadow-xs shrink-0"
+              className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0"
             >
               <Upload className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400 stroke-[2]" />
               Import Excel
@@ -1121,7 +1121,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             type="button"
             onClick={handleAutoFillBlanks}
             disabled={autoFillStatus === "running"}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-400 dark:hover:bg-purple-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shadow-xs shrink-0 disabled:opacity-50"
+            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-400 dark:hover:bg-purple-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
           >
             <Sparkles className="h-3.5 w-3.5 text-purple-700 dark:text-purple-400 stroke-[2]" />
             {autoFillStatus === "running" ? "Filling..." : "Auto-Fill Blanks"}
@@ -2816,7 +2816,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             onClick={() => handleItemFieldChange(firstItem.id, "validation", firstItem.validation === "Yes" ? "" : "Yes")}
                             className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                               firstItem.validation === "Yes"
-                                ? "bg-emerald-500 text-white shadow-xs"
+                                ? "bg-emerald-500 text-white "
                                 : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950/50"
                             }`}
                           >
@@ -2827,7 +2827,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             onClick={() => handleItemFieldChange(firstItem.id, "validation", firstItem.validation === "No" ? "" : "No")}
                             className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                               firstItem.validation === "No"
-                                ? "bg-rose-500 text-white shadow-xs"
+                                ? "bg-rose-500 text-white "
                                 : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
                             }`}
                           >
@@ -3278,7 +3278,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               onClick={() => handleItemFieldChange(item.id, "validation", item.validation === "Yes" ? "" : "Yes")}
                               className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                                 item.validation === "Yes"
-                                  ? "bg-emerald-500 text-white shadow-xs"
+                                  ? "bg-emerald-500 text-white "
                                   : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950/50"
                               }`}
                             >
@@ -3289,7 +3289,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               onClick={() => handleItemFieldChange(item.id, "validation", item.validation === "No" ? "" : "No")}
                               className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                                 item.validation === "No"
-                                  ? "bg-rose-500 text-white shadow-xs"
+                                  ? "bg-rose-500 text-white "
                                   : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
                               }`}
                             >
@@ -3425,9 +3425,16 @@ function OfferPdfCell({ enquiry }: { enquiry: any }) {
           partyItemName: item.itemNameMerge || "",
           quantity: item.quantity ? Number(item.quantity) : 0,
           quotationRate: item.quotedRate ? parseFloat(item.quotedRate) : 0,
-          unit: "NO.S",
-          deliverySchedule: item.deliverySchedule || "",
+          quotedRateGst: item.quotedRateGst ? parseFloat(item.quotedRateGst) : 0,
+          totalValue: item.totalValue ? parseFloat(item.totalValue) : 0,
+          unit: "Nos.",
+          deliverySchedule: item.deliverySchedule || "2-3 weeks",
         })),
+        totalItemwiseValue: (enquiry.items || []).reduce((sum: number, item: any) => {
+          const qty = item.quantity ? Number(item.quantity) : 0;
+          const rate = item.quotedRate ? parseFloat(item.quotedRate) : 0;
+          return sum + qty * rate;
+        }, 0),
       };
 
       const res = await generateOfferPdfAction(rowData);
@@ -3450,7 +3457,7 @@ function OfferPdfCell({ enquiry }: { enquiry: any }) {
         <button
           type="button"
           onClick={handleGenerate}
-          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-[#0f62fe] border border-blue-200 bg-blue-50 hover:bg-blue-100 dark:text-blue-400 dark:border-blue-800 dark:bg-blue-950/30 dark:hover:bg-blue-950/50 rounded cursor-pointer transition-all shadow-2xs whitespace-nowrap"
+          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-[#0f62fe] border border-blue-200 bg-blue-50 hover:bg-blue-100 dark:text-blue-400 dark:border-blue-800 dark:bg-blue-950/30 dark:hover:bg-blue-950/50 rounded cursor-pointer transition-all  whitespace-nowrap"
         >
           <FileText className="h-3.5 w-3.5 stroke-[2.5]" />
           Generate PDF
