@@ -251,7 +251,7 @@ const enquiriesSlice = createSlice({
         itemsAdapter.addMany(state.items, items);
         const storedEnquiry = state.enquiries.entities[enquiryId];
         if (storedEnquiry) {
-          storedEnquiry.items = [...(storedEnquiry.items || []), ...items];
+          storedEnquiry.items = items;
         }
         state.addItemsStatus = "succeeded";
       })

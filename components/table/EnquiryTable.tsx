@@ -81,7 +81,21 @@ function itemFieldMatches(item: any, field: string, filterValue: string): boolea
   return item[field] === filterValue;
 }
 
-const CASCADE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass"] as const;
+function enquiryFieldMatches(enquiry: any, field: string, filterValue: string): boolean {
+  if (filterValue === "All" || filterValue === "") return true;
+  if (filterValue === "Blank") {
+    return enquiry[field] === null || enquiry[field] === undefined || enquiry[field] === "" || enquiry[field] === "-";
+  }
+  return enquiry[field] === filterValue;
+}
+
+const ALL_DROPDOWN_FIELDS = [
+  "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus",
+  "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass",
+  "validation",
+] as const;
+
+const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus"]);
 
 export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const dispatch = useAppDispatch();
@@ -132,33 +146,80 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     dispatch(resetPage());
   }, [filters, dispatch]);
 
-  // Cascading filter options: for each item-level field, compute available values
-  // based on currently active filters in OTHER fields
   const cascadedOptions = useMemo(() => {
     const result: Record<string, string[]> = {};
 
-    for (const field of CASCADE_FIELDS) {
-      const available = allItems
-        .filter((item: any) => {
-          for (const other of CASCADE_FIELDS) {
-            if (other === field) continue;
-            const val = (filters as any)[other];
-            if (val !== "All" && !itemFieldMatches(item, other, val)) {
-              return false;
-            }
-          }
-          return true;
-        })
-        .map((item: any) => item[field])
-        .filter((v: any) => v !== null && v !== undefined && v !== "")
-        .filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i)
-        .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
+    const enquiryPasses = (enquiry: any, excludeField: string | null): boolean => {
+      if (excludeField !== "partyNames" && filters.partyNames.length > 0) {
+        if (!filters.partyNames.includes(enquiry.partyName)) return false;
+      }
+      for (const other of ALL_DROPDOWN_FIELDS) {
+        if (other === excludeField) continue;
+        if (ENQUIRY_DROPDOWN_SET.has(other)) {
+          const val = (filters as any)[other];
+          if (val !== "All" && val !== "" && !enquiryFieldMatches(enquiry, other, val)) return false;
+        }
+      }
+      return true;
+    };
 
-      result[field] = available;
+    const itemPasses = (item: any, excludeField: string | null): boolean => {
+      for (const other of ALL_DROPDOWN_FIELDS) {
+        if (other === excludeField) continue;
+        if (!ENQUIRY_DROPDOWN_SET.has(other)) {
+          const val = (filters as any)[other];
+          if (val !== "All" && val !== "" && !itemFieldMatches(item, other, val)) return false;
+        }
+      }
+      return true;
+    };
+
+    for (const field of ALL_DROPDOWN_FIELDS) {
+      if (ENQUIRY_DROPDOWN_SET.has(field)) {
+        const available = enquiries
+          .filter((enquiry) => {
+            if (!enquiryPasses(enquiry, field)) return false;
+            return enquiry.items.some((item: any) => itemPasses(item, field));
+          })
+          .map((enquiry) => (enquiry as any)[field])
+          .filter((v: any) => v !== null && v !== undefined && v !== "")
+          .filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i)
+          .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
+        result[field] = available;
+      } else {
+        const matchingEnquiryIds = new Set(
+          enquiries
+            .filter((enquiry) => enquiryPasses(enquiry, field))
+            .map((e) => e.id)
+        );
+        const available = allItems
+          .filter((item: any) => matchingEnquiryIds.has(item.enquiryId))
+          .filter((item: any) => itemPasses(item, field))
+          .map((item: any) => item[field])
+          .filter((v: any) => v !== null && v !== undefined && v !== "")
+          .filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i)
+          .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
+        result[field] = available;
+      }
     }
 
+    const availableParties = enquiries
+      .filter((enquiry) => {
+        for (const other of ALL_DROPDOWN_FIELDS) {
+          if (ENQUIRY_DROPDOWN_SET.has(other)) {
+            const val = (filters as any)[other];
+            if (val !== "All" && val !== "" && !enquiryFieldMatches(enquiry, other, val)) return false;
+          }
+        }
+        return enquiry.items.some((item: any) => itemPasses(item, null));
+      })
+      .map((enquiry) => enquiry.partyName)
+      .filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i)
+      .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
+    result.partyNames = availableParties;
+
     return result;
-  }, [allItems, filters]);
+  }, [enquiries, allItems, filters]);
 
   // VA% validation: compute set of item IDs where VA% exceeds allowed max
   const invalidVaItemIds = useMemo(() => {
@@ -1086,8 +1147,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             className="h-8 text-xs border border-border rounded-md px-2 bg-background text-foreground outline-none cursor-pointer"
           >
             <option value="">Validation: All</option>
-            <option value="Yes">Yes</option>
-            <option value="No">No</option>
+            {["Yes", "No"]
+              .filter((opt) =>
+                cascadedOptions.validation.includes(opt) || filters.validation === opt
+              )
+              .map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
           </select>
 
           <button
@@ -1260,6 +1326,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
                       <div className="flex-1 overflow-y-auto divide-y divide-border max-h-48 pr-0.5">
                         {PARTY_NAMES.filter((name) =>
+                          (cascadedOptions.partyNames.includes(name) || filters.partyNames.includes(name)) &&
                           name.toLowerCase().includes(localPartySearch.toLowerCase())
                         ).map((name) => {
                           const isChecked = filters.partyNames.includes(name);
@@ -1314,9 +1381,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All Types</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.enquiryTypes.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.enquiryTypes
+                  .filter((opt) =>
+                    cascadedOptions.enquiryType.includes(opt) || filters.enquiryType === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(3, e)}
@@ -1343,9 +1414,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All States</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.states.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.states
+                  .filter((opt) =>
+                    cascadedOptions.state.includes(opt) || filters.state === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(4, e)}
@@ -1372,9 +1447,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All Terms</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.paymentTerms.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.paymentTerms
+                  .filter((opt) =>
+                    cascadedOptions.paymentTerms.includes(opt) || filters.paymentTerms === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(5, e)}
@@ -1401,9 +1480,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.inspections.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.inspections
+                  .filter((opt) =>
+                    cascadedOptions.inspection.includes(opt) || filters.inspection === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(6, e)}
@@ -1430,9 +1513,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.pbgs.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.pbgs
+                  .filter((opt) =>
+                    cascadedOptions.pbg.includes(opt) || filters.pbg === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(7, e)}
@@ -1459,9 +1546,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All Utilities</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.utilities.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.utilities
+                  .filter((opt) =>
+                    cascadedOptions.utility.includes(opt) || filters.utility === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(8, e)}
@@ -1490,9 +1581,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               >
                 <option value="All">All Statuses</option>
                 <option value="Blank">(Blank)</option>
-                {dropdownOptions.orderStatuses.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
+                {dropdownOptions.orderStatuses
+                  .filter((opt) =>
+                    cascadedOptions.orderStatus.includes(opt) || filters.orderStatus === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
               </select>
               <div
                 onMouseDown={(e) => handleMouseDown(9, e)}
@@ -2083,8 +2178,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="h-6 w-full text-[9px] p-0.5 border rounded bg-background text-foreground outline-none font-normal cursor-pointer mt-1.5"
               >
                 <option value="">All</option>
-                <option value="Yes">Yes</option>
-                <option value="No">No</option>
+                {["Yes", "No"]
+                  .filter((opt) =>
+                    cascadedOptions.validation.includes(opt) || filters.validation === opt
+                  )
+                  .map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
                 <option value="Blank">Blank</option>
               </select>
               <div
@@ -3394,6 +3494,8 @@ function triggerDownload(base64: string, fileName: string) {
 function OfferPdfCell({ enquiry }: { enquiry: any }) {
   const [status, setStatus] = useState<"idle" | "generating" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const storeItems = useAppSelector(selectAllItems);
+  const items = storeItems.filter((item: any) => item.enquiryId === enquiry.id);
 
   const handleGenerate = async () => {
     setStatus("generating");
@@ -3420,7 +3522,7 @@ function OfferPdfCell({ enquiry }: { enquiry: any }) {
         })(),
         approval: "It shall be in our scope",
         deliveryDestination: enquiry.state || "",
-        items: (enquiry.items || []).map((item: any) => ({
+        items: items.map((item: any) => ({
           itemName: item.itemName,
           partyItemName: item.itemNameMerge || "",
           quantity: item.quantity ? Number(item.quantity) : 0,
@@ -3430,7 +3532,7 @@ function OfferPdfCell({ enquiry }: { enquiry: any }) {
           unit: "Nos.",
           deliverySchedule: item.deliverySchedule || "2-3 weeks",
         })),
-        totalItemwiseValue: (enquiry.items || []).reduce((sum: number, item: any) => {
+        totalItemwiseValue: items.reduce((sum: number, item: any) => {
           const qty = item.quantity ? Number(item.quantity) : 0;
           const rate = item.quotedRate ? parseFloat(item.quotedRate) : 0;
           return sum + qty * rate;

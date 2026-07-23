@@ -149,4 +149,6 @@ export const PARTY_NAMES = [
   "Hindustan Copper Limited",
   "Rashtriya Ispat Nigam Limited",
   "Garden Reach Ship Builders & Engineers Limited(grse)",
+  "Gondwana Engineers Limited",
+  "Kedia Pipes"
 ];
