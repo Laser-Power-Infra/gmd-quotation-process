@@ -123,3 +123,32 @@ model TransportationCost {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model GMDUpdateItem {
+  id              String   @id @default(cuid())
+  erpItemCode     String?
+  itemNameAuto    String?
+  l1              String?
+  l2ValveType     String?
+  l3Dia           String?
+  l7Dimension     String?
+  l4Component     String?
+  l5Material      String?
+  l6Std           String?
+  l8ItemCategory  String?
+  um              String?
+  conv1           String?
+  pcsWgt          String?
+  aum             String?
+  availableStock  String?
+  cost            String?
+  hsnCode         String?
+  conv2           String?
+  majorMarking    String?
+  newItemStatus   String?
+  currentStatus   String?
+  rmType          String?
+  syncedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

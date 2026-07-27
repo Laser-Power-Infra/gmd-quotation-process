@@ -50,10 +50,12 @@ export default async function Page({ searchParams }: PageProps) {
     where: whereClause,
   });
 
-  // Fetch all matching enquiries (pagination is handled client-side inside the table for smooth filtering)
+  // Fetch matching enquiries for the current page
   const enquiriesList = (
     await prisma.enquiry.findMany({
       where: whereClause,
+      take: limit,
+      skip: skip,
       include: {
         items: {
           orderBy: {
@@ -124,37 +126,6 @@ export default async function Page({ searchParams }: PageProps) {
     nextSerial = Math.max(...serials) + 1;
   }
   const nextDocketNumber = `${fiscalPrefix}${nextSerial}`;
-
-  // Get unique options for filters and dropdowns from the database
-  const [
-    dbEnquiryTypes,
-    dbStates,
-    dbPaymentTerms,
-    dbInspections,
-    dbPbgs,
-    dbVaPercents,
-    dbOrderStatuses,
-    dbPnRatings,
-    dbOperationTypes,
-    dbExtensions,
-    dbBypasses,
-  ] = await Promise.all([
-    prisma.enquiry.findMany({ select: { enquiryType: true }, distinct: ["enquiryType"] }),
-    prisma.enquiry.findMany({ select: { state: true }, distinct: ["state"] }),
-    prisma.enquiry.findMany({ select: { paymentTerms: true }, distinct: ["paymentTerms"] }),
-    prisma.enquiry.findMany({ select: { inspection: true }, distinct: ["inspection"] }),
-    prisma.enquiry.findMany({ select: { pbg: true }, distinct: ["pbg"] }),
-    prisma.enquiryItem.findMany({ select: { vaPercent: true }, distinct: ["vaPercent"] }),
-    prisma.enquiry.findMany({ select: { orderStatus: true }, distinct: ["orderStatus"] }),
-    prisma.enquiryItem.findMany({ select: { pnRating: true }, distinct: ["pnRating"] }),
-    prisma.enquiryItem.findMany({ select: { operationType: true }, distinct: ["operationType"] }),
-    prisma.enquiryItem.findMany({ select: { extension: true }, distinct: ["extension"] }),
-    prisma.enquiryItem.findMany({ select: { bypass: true }, distinct: ["bypass"] }),
-  ]);
-
-  const getUniqueOptions = (arr: any[], key: string) =>
-    Array.from(new Set(arr.map((item) => item[key]).filter((val) => val !== null && val !== undefined && val !== "")))
-      .sort((a: any, b: any) => String(a).localeCompare(String(b), undefined, { numeric: true }));
 
   const staticItemTypes = [
     "ACTUATOR",
@@ -265,13 +236,13 @@ export default async function Page({ searchParams }: PageProps) {
     "CLASS-800#"
   ];
 
-  const pnRatings = Array.from(new Set([...staticPnRatings, ...getUniqueOptions(dbPnRatings, "pnRating")]))
+  const pnRatings = [...staticPnRatings]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  const operationTypes = Array.from(new Set([...ALLOWED_OPERATION_TYPES, ...getUniqueOptions(dbOperationTypes, "operationType")]))
+  const operationTypes = [...ALLOWED_OPERATION_TYPES]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  const extensions = Array.from(new Set([...ALLOWED_EXTENSIONS, ...getUniqueOptions(dbExtensions, "extension")]))
+  const extensions = [...ALLOWED_EXTENSIONS]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
 
@@ -314,13 +285,13 @@ export default async function Page({ searchParams }: PageProps) {
     "DELHI"
   ];
 
-  const states = Array.from(new Set([...staticStates, ...getUniqueOptions(dbStates, "state")]))
+  const states = [...staticStates]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  const bypasses = Array.from(new Set([...ALLOWED_BYPASSES, ...getUniqueOptions(dbBypasses, "bypass")]))
+  const bypasses = [...ALLOWED_BYPASSES]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  const enquiryTypes = Array.from(new Set([...staticEnquiryTypes, ...getUniqueOptions(dbEnquiryTypes, "enquiryType")]))
+  const enquiryTypes = [...staticEnquiryTypes]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const staticPaymentTerms = [
@@ -347,7 +318,7 @@ export default async function Page({ searchParams }: PageProps) {
     "180 days VFS  with interest in Seller'S Account"
   ];
 
-  const paymentTerms = Array.from(new Set([...staticPaymentTerms, ...getUniqueOptions(dbPaymentTerms, "paymentTerms")]))
+  const paymentTerms = [...staticPaymentTerms]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const staticInspections = [
@@ -365,7 +336,7 @@ export default async function Page({ searchParams }: PageProps) {
     "NA"
   ];
 
-  const inspections = Array.from(new Set([...staticInspections, ...getUniqueOptions(dbInspections, "inspection")]))
+  const inspections = [...staticInspections]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const staticPbgs = [
@@ -413,7 +384,7 @@ export default async function Page({ searchParams }: PageProps) {
     "1% For 36 Months  from date of invoice."
   ];
 
-  const pbgs = Array.from(new Set([...staticPbgs, ...getUniqueOptions(dbPbgs, "pbg")]))
+  const pbgs = [...staticPbgs]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const staticOrderStatuses = [
@@ -422,7 +393,7 @@ export default async function Page({ searchParams }: PageProps) {
     "ORDER RECVD"
   ];
 
-  const orderStatuses = Array.from(new Set([...staticOrderStatuses, ...getUniqueOptions(dbOrderStatuses, "orderStatus")]))
+  const orderStatuses = [...staticOrderStatuses]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const dropdownOptions = {
@@ -432,7 +403,7 @@ export default async function Page({ searchParams }: PageProps) {
     inspections,
     pbgs,
     utilities: UTILITIES,
-    vaPercents: getUniqueOptions(dbVaPercents, "vaPercent").map(v => `${v}%`),
+    vaPercents: [],
     orderStatuses,
     itemTypes,
     mocs,
@@ -455,6 +426,8 @@ export default async function Page({ searchParams }: PageProps) {
             dropdownOptions={dropdownOptions}
             nextDocketNumber={nextDocketNumber}
             enquiriesList={enquiries}
+            totalCount={totalCount}
+            currentPage={currentPage}
           />
         </Suspense>
       </main>

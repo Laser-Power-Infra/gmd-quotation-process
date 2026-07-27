@@ -21,6 +21,8 @@ import { importExcelData, autoFillBlanks } from "@/lib/enquiriesSlice";
 import { validateVaPercent } from "@/lib/vaValidation";
 
 interface EnquiryTableProps {
+  totalCount: number;
+  currentPage: number;
   dropdownOptions: DropdownOptions;
 }
 
@@ -83,12 +85,12 @@ function itemFieldMatches(item: any, field: string, filterValue: string): boolea
 
 const CASCADE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass"] as const;
 
-export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
+export default function EnquiryTable({ dropdownOptions, totalCount, currentPage }: EnquiryTableProps) {
   const dispatch = useAppDispatch();
   const enquiries = useAppSelector(selectAllEnquiries);
   const allItems = useAppSelector(selectAllItems);
   const filters = useAppSelector((s) => s.filters);
-  const { currentPage, pageSize } = useAppSelector((s) => s.pagination);
+  const { pageSize } = useAppSelector((s) => s.pagination);
   const { expandedRows, columnWidths, isPartyFilterOpen, partySearch: partySearchVal } = useAppSelector((s) => s.ui);
 
   const [sortField, setSortField] = useState<string | null>(null);
@@ -814,10 +816,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       : strB.localeCompare(strA, undefined, { numeric: true });
   });
 
-  const paginatedEnquiries = sortedEnquiries.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize
-  );
+  const paginatedEnquiries = sortedEnquiries;
+
 
   const handleImportFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -3359,9 +3359,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     {filteredEnquiries.length > 0 && (
       <Pagination
         currentPage={currentPage}
-        totalCount={filteredEnquiries.length}
+        totalCount={totalCount}
         pageSize={pageSize}
-        onPageChange={(page) => dispatch(setPage(page))}
         onPageSizeChange={(size) => {
           dispatch(setPageSize(size));
           dispatch(setPage(1));
