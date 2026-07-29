@@ -6,43 +6,50 @@ import GMDUpdateStatusBadge from "./GMDUpdateStatusBadge";
 import {
   STATUS_COLUMNS,
   NUMERIC_COLUMNS,
+  COL_INDEX_TO_DB_FIELD,
 } from "../../lib/gmd_lib/sheet-columns";
 import Pagination from "./Pagination";
+import { useAppDispatch } from "@/lib/hooks";
+import { updateGMDUpdateField } from "@/lib/gmdUpdateSlice";
+import {toast} from "sonner"
 
 interface GMDUpdateTableProps {
   headers: string[];
   rows: unknown[][];
+  ids: string[];
   selectedIndex: number | null;
   onSelect: (index: number) => void;
   title?: string;
   editable?: boolean;
-  onCellEdit?: (rowIndex: number, colIndex: number, value: string) => void;
+  editableColumns?: string[];
   hiddenFilters?: string[];
+  categoryOptions?: Record<string, string[]>;
 }
 
 export default function GMDUpdateTable({
   headers,
   rows,
+  ids,
   selectedIndex,
   onSelect,
   title,
   editable,
-  onCellEdit,
+  editableColumns,
   hiddenFilters,
+  categoryOptions,
 }: GMDUpdateTableProps) {
   const [sortColumn, setSortColumn] = useState<number | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [globalSearch, setGlobalSearch] = useState("");
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
-    {},
-  );
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const dispatch = useAppDispatch();
   const [columnWidths, setColumnWidths] = useState<Record<number, number>>(
     () => {
       const widths: Record<number, number> = {};
       headers.forEach((h, i) => {
-        widths[i] = h === "ITEM NAME (proposed)-AUTO" ? 200 : 120;
+        widths[i] = h === "ITEM NAME (proposed)-AUTO" ? 200 : 180;
       });
       return widths;
     },
@@ -169,14 +176,52 @@ export default function GMDUpdateTable({
     document.body.style.cursor = "default";
   }, [handleResizeMove]);
 
-  const getUniqueColumnValues = (colIdx: number): string[] => {
+  const getUniqueColumnValues = (colIdx: number, excludeCol?: string): string[] => {
+    let sourceRows = sortedRows;
+    for (const [colName, filterVal] of Object.entries(columnFilters)) {
+      if (!filterVal || filterVal === "All" || colName === excludeCol) continue;
+      const cIdx = headers.indexOf(colName);
+      if (cIdx === -1) continue;
+      sourceRows = sourceRows.filter((row) => {
+        const cellVal = String(row[cIdx] ?? "");
+        if (filterVal === "(Blank)") return cellVal === "";
+        return cellVal.toLowerCase().includes(filterVal.toLowerCase());
+      });
+    }
     const vals = new Set<string>();
-    for (const row of rows) {
+    for (const row of sourceRows) {
       const v = String(row[colIdx] ?? "");
       if (v) vals.add(v);
     }
     return [...vals].sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true }),
+    );
+  };
+
+  const handleCellUpdate = (
+    rowIndex: number,
+    colIndex: number,
+    value: string,
+  ) => {
+    const id = ids[rowIndex];
+    if (!id) return;
+    const field = COL_INDEX_TO_DB_FIELD[colIndex];
+    if (!field) return;
+    const header = headers[colIndex];
+
+    // Special handling for USD Rate Option changes
+    if (field === "usdRateOption") {
+      dispatch(updateGMDUpdateField({ id, field, value: value || null }));
+      return;
+    }
+
+    toast.promise(
+      dispatch(updateGMDUpdateField({id,field,value:value ||null})).unwrap(),
+      {
+        loading: `Updating ${header}...`,
+        success: `${header} updated`,
+        error: (err)=> err || `Failed to update ${header}`,
+      },
     );
   };
 
@@ -194,7 +239,7 @@ export default function GMDUpdateTable({
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#e1e6eb] bg-[#f8f9fa]">
         <div className="flex items-center gap-2">
             {title && (
-              <span className="text-xs font-bold uppercase tracking-wider text-[#0a2540]/70">
+              <span className="text-xs font-bold uppercase tracking-wider text-">
                 {title}
               </span>
             )}
@@ -251,13 +296,18 @@ export default function GMDUpdateTable({
             <tr className="bg-[#f4f6f8]">
               {headers.map((header, idx) => {
                 const isSorted = sortColumn === idx;
-                const uniqueVals = STATUS_COLUMNS.has(header)
-                  ? getUniqueColumnValues(idx)
+                const uniqueVals = STATUS_COLUMNS.has(header) || categoryOptions?.[header]
+                  ? (categoryOptions?.[header] || getUniqueColumnValues(idx, header))
                   : [];
                 return (
                   <th
                     key={idx}
-                    className="relative bg-[#f4f6f8] text-[#0a2540] text-xs font-bold uppercase tracking-wider px-3 py-2 text-left border-b-2 border-[#e1e6eb] border-r border-[#e1e6eb] last:border-r-0 select-none align-top"
+                    className={`relative bg-[#f4f6f8] text-[#0a2540] text-xs font-bold uppercase tracking-wider px-3 py-2 text-left border-b-2 border-[#e1e6eb] border-r border-[#e1e6eb] last:border-r-0 select-none align-top${
+                      idx < 2 ? " sticky z-20" : ""
+                    }${
+                      editable && (!editableColumns || editableColumns.includes(header)) ? " bg-amber-50/50" : ""
+                    }`}
+                    style={idx === 1 ? { left: columnWidths[0] } : idx === 0 ? { left: 0 } : undefined}
                   >
                     <div
                       className="flex items-center justify-between gap-1.5 cursor-pointer"
@@ -277,7 +327,7 @@ export default function GMDUpdateTable({
                     {/* Column filter */}
                     {!hiddenFilters?.includes(header) && (
                     <div className="flex items-center gap-1 mt-1.5">
-                      {STATUS_COLUMNS.has(header) ? (
+                      {STATUS_COLUMNS.has(header) || categoryOptions?.[header] ? (
                         <select
                           value={columnFilters[header] ?? "All"}
                           onChange={(e) =>
@@ -362,7 +412,74 @@ export default function GMDUpdateTable({
                     const display = value != null ? String(value) : "";
 
                     let cellContent: React.ReactNode;
-                    if (STATUS_COLUMNS.has(header)) {
+                    const isCellEditable = editable && (!editableColumns || editableColumns.includes(header));
+                    if (isCellEditable) {
+                      if (header === "cost") {
+                        const rawVal = parseFloat(String(row[15] ?? ""));
+                        const rateStr = String(row[16] ?? "").trim();
+                        const rate = parseFloat(rateStr);
+                        if (rateStr && !isNaN(rawVal) && !isNaN(rate)) {
+                          cellContent = (
+                            <span className="font-mono-md text-xs font-semibold">$ {(rawVal / rate).toFixed(2)}</span>
+                          );
+                        } else {
+                          cellContent = (
+                            <input
+                              key={display + "-" + idx + "-" + cellIdx}
+                              type="text"
+                              defaultValue={display}
+                              onBlur={(e) => {
+                                if (e.target.value !== display) {
+                                  handleCellUpdate(idx, cellIdx, e.target.value);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter")
+                                  (e.target as HTMLInputElement).blur();
+                              }}
+                              className="w-full text-xs bg-transparent border-none outline-none"
+                            />
+                          );
+                        }
+                      } else if (STATUS_COLUMNS.has(header) || categoryOptions?.[header]) {
+                        cellContent = (
+                          <select
+                            key={display + "-" + idx + "-" + cellIdx}
+                            defaultValue={display}
+                            onChange={(e) =>
+                              handleCellUpdate(idx, cellIdx, e.target.value)
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full text-xs bg-transparent border-none outline-none cursor-pointer"
+                          >
+                            <option value="">-</option>
+                            {(categoryOptions?.[header] || getUniqueColumnValues(cellIdx)).map((v) => (
+                              <option key={v} value={v}>
+                                {v}
+                              </option>
+                            ))}
+                          </select>
+                        );
+                      } else {
+                        cellContent = (
+                          <input
+                            key={display + "-" + idx + "-" + cellIdx}
+                            type="text"
+                            defaultValue={display}
+                            onBlur={(e) => {
+                              if (e.target.value !== display) {
+                                handleCellUpdate(idx, cellIdx, e.target.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter")
+                                (e.target as HTMLInputElement).blur();
+                            }}
+                            className="w-full text-xs bg-transparent border-none outline-none"
+                          />
+                        );
+                      }
+                    } else if (STATUS_COLUMNS.has(header)) {
                       cellContent = (
                         <GMDUpdateStatusBadge value={display || null} />
                       );
@@ -374,16 +491,21 @@ export default function GMDUpdateTable({
                       );
                     } else {
                       cellContent = (
-                        <span className="truncate block " title={display}>
+                        <span className="truncate block" title={display}>
                           {display || "—"}
                         </span>
                       );
                     }
 
                     return (
-                      <td
+                        <td
                         key={cellIdx}
-                        className="px-3 py-2 text-xs border-b border-[#e1e6eb] border-r border-[#e1e6eb] last:border-r-0"
+                        className={`px-3 py-2 text-xs border-b border-[#e1e6eb] border-r border-[#e1e6eb] last:border-r-0${
+                          cellIdx < 2 ? " sticky z-10 bg-white" : ""
+                        }${
+                          isCellEditable ? " bg-amber-50" : ""
+                        }`}
+                        style={cellIdx === 1 ? { left: columnWidths[0] } : cellIdx === 0 ? { left: 0 } : undefined}
                       >
                         {cellContent}
                       </td>

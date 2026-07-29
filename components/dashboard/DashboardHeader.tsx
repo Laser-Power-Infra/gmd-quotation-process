@@ -65,14 +65,6 @@ export default function DashboardHeader({
             <div className="absolute right-3 top-2.5 h-4 w-4 animate-spin rounded-full border-2 border-border border-t-foreground" />
           )}
         </div>
-        <div className="relative w-full max-w-xs">
-          <Button
-          className="flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800"
-        >
-          
-          GMD Dashboard
-        </Button>
-        </div>
       </div>
 
       <div className="flex items-center gap-3 shrink-0">

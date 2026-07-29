@@ -11,17 +11,20 @@ export function sheetRowToDbItem(row: unknown[], syncedAt: Date) {
     l6Std:          String(row[8] ?? ""),
     l8ItemCategory: String(row[9] ?? ""),
     um:             String(row[10] ?? ""),
-    conv1:          String(row[11] ?? ""),
-    pcsWgt:         String(row[12] ?? ""),
-    aum:            String(row[13] ?? ""),
-    availableStock: String(row[14] ?? ""),
+    availableStock: String(row[11] ?? ""),
+    conv1:          String(row[12] ?? ""),
+    pcsWgt:         String(row[13] ?? ""),
+    aum:            String(row[14] ?? ""),
     cost:           String(row[15] ?? ""),
-    hsnCode:        String(row[16] ?? ""),
-    conv2:          String(row[17] ?? ""),
-    majorMarking:   String(row[18] ?? ""),
-    newItemStatus:  String(row[19] ?? ""),
-    currentStatus:  String(row[20] ?? ""),
-    rmType:         String(row[21] ?? ""),
+    usdRateOption:  String(row[16] ?? ""),
+    hsnCode:        String(row[17] ?? ""),
+    hsnCodeValidation: String(row[18] ?? ""),
+    conv2:          String(row[19] ?? ""),
+    majorMarking:   String(row[20] ?? ""),
+    newItemStatus:  String(row[21] ?? ""),
+    currentStatus:  String(row[22] ?? ""),
+    rmType:         String(row[23] ?? ""),
+    indianImported: String(row[24] ?? ""),
     syncedAt,
   };
 }
@@ -43,18 +46,21 @@ export function dbItemToRow(item: {
   aum: string | null;
   availableStock: string | null;
   cost: string | null;
+  usdRateOption: string | null;
   hsnCode: string | null;
+  hsnCodeValidation: string | null;
   conv2: string | null;
   majorMarking: string | null;
   newItemStatus: string | null;
   currentStatus: string | null;
   rmType: string | null;
+  indianImported: string | null;
 }): unknown[] {
   return [
     item.erpItemCode, item.itemNameAuto, item.l1, item.l2ValveType, item.l3Dia,
     item.l7Dimension, item.l4Component, item.l5Material, item.l6Std, item.l8ItemCategory,
-    item.um, item.conv1, item.pcsWgt, item.aum, item.availableStock,
-    item.cost, item.hsnCode, item.conv2, item.majorMarking, item.newItemStatus,
-    item.currentStatus, item.rmType,
+    item.um, item.availableStock, item.conv1, item.pcsWgt, item.aum,
+    item.cost, item.usdRateOption, item.hsnCode, item.hsnCodeValidation, item.conv2,
+    item.majorMarking, item.newItemStatus, item.currentStatus, item.rmType, item.indianImported,
   ];
 }

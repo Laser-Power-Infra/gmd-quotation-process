@@ -1,6 +1,8 @@
 import React from "react";
 import { Bell, Search } from "lucide-react";
 import ThemeToggle from "./ThemeToggle";
+import { redirect } from "next/navigation";
+import Link from "next/link";
 
 export default function Navbar() {
   return (
@@ -17,6 +19,15 @@ export default function Navbar() {
               GMD Quotation Process
             </span>
           </div>
+          
+           <Link
+          href="/gmd_dashboard"
+          className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
+        >
+          
+          GMD Dashboard
+        </Link>
+        
         </div>
 
         <div className="flex items-center gap-6">

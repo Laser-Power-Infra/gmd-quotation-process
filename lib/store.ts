@@ -4,6 +4,7 @@ import filtersReducer from "./filtersSlice";
 import paginationReducer from "./paginationSlice";
 import uiReducer from "./uiSlice";
 import dialogsReducer from "./dialogsSlice";
+import gmdUpdateReducer from "./gmdUpdateSlice";
 
 export const makeStore = () => {
   return configureStore({
@@ -13,6 +14,7 @@ export const makeStore = () => {
       pagination: paginationReducer,
       ui: uiReducer,
       dialogs: dialogsReducer,
+      gmdUpdate: gmdUpdateReducer,
     },
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({
