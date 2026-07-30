@@ -13,6 +13,15 @@ import { useAppDispatch } from "@/lib/hooks";
 import { updateGMDUpdateField } from "@/lib/gmdUpdateSlice";
 import {toast} from "sonner"
 
+function isUrl(text: string): boolean {
+  try {
+    const url = new URL(text);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 interface GMDUpdateTableProps {
   headers: string[];
   rows: unknown[][];
@@ -24,6 +33,7 @@ interface GMDUpdateTableProps {
   editableColumns?: string[];
   hiddenFilters?: string[];
   categoryOptions?: Record<string, string[]>;
+  onCellUpdate?: (id: string, colIndex: number, value: string) => Promise<void>;
 }
 
 export default function GMDUpdateTable({
@@ -37,6 +47,7 @@ export default function GMDUpdateTable({
   editableColumns,
   hiddenFilters,
   categoryOptions,
+  onCellUpdate,
 }: GMDUpdateTableProps) {
   const [sortColumn, setSortColumn] = useState<number | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -49,7 +60,7 @@ export default function GMDUpdateTable({
     () => {
       const widths: Record<number, number> = {};
       headers.forEach((h, i) => {
-        widths[i] = h === "ITEM NAME (proposed)-AUTO" ? 200 : 180;
+        widths[i] = h === "ITEM NAME (proposed)-AUTO" ? 200 : h === "Party Mail Address" ? 300 : 180;
       });
       return widths;
     },
@@ -198,16 +209,22 @@ export default function GMDUpdateTable({
     );
   };
 
-  const handleCellUpdate = (
+  const handleCellUpdate = async (
     rowIndex: number,
     colIndex: number,
     value: string,
   ) => {
     const id = ids[rowIndex];
     if (!id) return;
+    const header = headers[colIndex];
+
+    if (onCellUpdate) {
+      await onCellUpdate(id, colIndex, value);
+      return;
+    }
+
     const field = COL_INDEX_TO_DB_FIELD[colIndex];
     if (!field) return;
-    const header = headers[colIndex];
 
     toast.promise(
       dispatch(updateGMDUpdateField({id,field,value:value ||null})).unwrap(),
@@ -286,7 +303,7 @@ export default function GMDUpdateTable({
               <col key={i} style={{ width: `${columnWidths[i]}px` }} />
             ))}
           </colgroup>
-          <thead className="sticky top-0 z-10">
+          <thead className="sticky top-0 z-20">
             <tr className="bg-[#f4f6f8]">
               {headers.map((header, idx) => {
                 const isSorted = sortColumn === idx;
@@ -455,6 +472,18 @@ export default function GMDUpdateTable({
                         <span className="font-mono-md text-right text-foreground">
                           {display || "—"}
                         </span>
+                      );
+                    } else if (display && isUrl(display)) {
+                      cellContent = (
+                        <a
+                          href={display}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate block underline text-blue-600 hover:text-blue-800"
+                          title={display}
+                        >
+                          {display}
+                        </a>
                       );
                     } else {
                       cellContent = (

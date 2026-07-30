@@ -824,3 +824,16 @@ export async function updateGMDUpdateFieldAction(
   return { id, field, value };
 }
 
+export async function updateSupplyHistoryFieldAction(
+  id: string,
+  field: string,
+  value: string | null,
+) {
+  "use server";
+  const updated = await prisma.supplyHistoryItem.update({
+    where: { id },
+    data: { [field]: value },
+  });
+  return { id, field, value };
+}
+

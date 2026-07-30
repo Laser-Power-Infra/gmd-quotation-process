@@ -1,46 +1,79 @@
-import { google } from "googleapis";
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import {
+  SUPPLY_HISTORY_HEADERS,
+  dbItemToRow,
+} from "@/lib/gmd_lib/supply-history-columns";
 
-const SPREADSHEET_ID =
-  process.env.SUPPLY_HISTORY_SPREADSHEET_ID;
-const SHEET_NAME = "MASTER";
+const DISPLAY_HEADERS = <const>[
+  "INVOICE NO",
+  "item name",
+  "FINANCIAL YEAR",
+  "party name",
+  "ERP PARTY NAME",
+  "Date",
+  "PARTY Order No.",
+  "PARTY Date",
+  "Quantity",
+  "UOM",
+  "Value",
+  "Gross Total- INVOICE VALUE",
+  "LR NO & DT",
+  "DELIVERY DESTINATION",
+  "CONSIGNEE ADDRESS",
+  "CONSIGNEE NAME",
+  "ERP CONTRACT NO",
+  "ERP ITEM CODE",
+  "TYPE OF VALVE",
+  "SIZE OF VALVE",
+  "CLASS OF VALVE",
+  "SPARES (TYPE)",
+  "MOC",
+  "ORDER COPY",
+  "INVOICE",
+  "INSPECTION REPORT",
+  "State",
+  "UTILITY",
+  "performance certificate",
+  "service period complete",
+  "WARRANTY VALID TILL AS PER CONTRACT",
+  "Warranty valid/Not",
+  "BG NO",
+  "PBG VALID TILL",
+  "as per order warranty period",
+  "PBG CLAIM TILL",
+  "PBG AMOUNT",
+  "Warranty Exp Date as Per Inv",
+  "Party Mail Address",
+];
 
-function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_PRIVATE_KEY;
-  if (!email || !key) {
-    throw new Error("Google service account credentials not configured");
-  }
-  return new google.auth.JWT({
-    email,
-    key: key.replace(/\\n/g, "\n"),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
-}
+const displayColumnMap = DISPLAY_HEADERS.map(
+  (h) => SUPPLY_HISTORY_HEADERS.indexOf(h),
+);
 
 export async function GET() {
   try {
-    const auth = getAuth();
-    const sheets = google.sheets({ version: "v4", auth });
-
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `'${SHEET_NAME}'!A:ZZZ`,
-      valueRenderOption: "UNFORMATTED_VALUE",
+    const items = await prisma.supplyHistoryItem.findMany({
+      orderBy: { syncedAt: "desc" },
     });
 
-    const allRows = response.data.values ?? [];
-    if (allRows.length === 0) {
-      return Response.json({ headers: [], rows: [], totalRows: 0 });
-    }
+    const lastSynced = items.length > 0
+      ? items.reduce((latest: Date, item) => item.syncedAt > latest ? item.syncedAt : latest, items[0].syncedAt)
+      : null;
 
-    const headers = allRows[0].map(String);
-    const rows = allRows.slice(1).filter((r) =>
-      r.some((c) => c !== null && c !== ""),
+    const rows = items.map(dbItemToRow).map((canonicalRow) =>
+      displayColumnMap.map((idx) => canonicalRow[idx]),
     );
 
-    return Response.json({ headers, rows, totalRows: rows.length });
+    return NextResponse.json({
+      headers: DISPLAY_HEADERS,
+      rows,
+      ids: items.map((i) => i.id),
+      totalRows: rows.length,
+      syncedAt: lastSynced?.toISOString() ?? null,
+    });
   } catch (error) {
-    return Response.json(
+    return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 },
     );

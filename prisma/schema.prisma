@@ -124,6 +124,54 @@ model TransportationCost {
   updatedAt DateTime @updatedAt
 }
 
+model SupplyHistoryItem {
+  id              String   @id @default(cuid())
+  financialYear   String?
+  partyName       String?
+  erpPartyName    String?
+  itemName        String
+  invoiceNo       String
+  date            String?
+  partyOrderNo    String?
+  partyDate       String?
+  quantity        String?
+  uom             String?
+  value           String?
+  grossTotalInvoiceValue String?
+  lrNoDt          String?
+  deliveryDestination    String?
+  consigneeAddress       String?
+  consigneeName          String?
+  erpContractNo   String?
+  erpItemCode     String?
+  typeOfValve     String?
+  sizeOfValve     String?
+  classOfValve    String?
+  sparesType      String?
+  moc             String?
+  orderCopy       String?
+  invoice         String?
+  inspectionReport String?
+  state           String?
+  utility         String?
+  performanceCertificate String?
+  servicePeriodComplete   String?
+  warrantyValidTillAsPerContract String?
+  warrantyValidNot String?
+  bgNo            String?
+  pbgValidTill    String?
+  asPerOrderWarrantyPeriod String?
+  pbgClaimTill    String?
+  pbgAmount       String?
+  warrantyExpDateAsPerInv   String?
+  partyMailAddress String?
+  syncedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([invoiceNo, itemName])
+}
+
 model GMDUpdateItem {
   id              String   @id @default(cuid())
   erpItemCode     String?
