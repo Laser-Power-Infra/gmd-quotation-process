@@ -75,7 +75,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/gmd_dashboard/api/gmd-update");
+      const res = await fetch("/raw_material/api/gmd-update");
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Request failed (${res.status})`);
@@ -93,7 +93,7 @@ export default function Home() {
     setSyncing(true);
     setError(null);
     try {
-      const res = await fetch("/gmd_dashboard/api/gmd-update/sync", { method: "POST" });
+      const res = await fetch("/raw_material/api/gmd-update/sync", { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Sync failed (${res.status})`);
@@ -111,7 +111,7 @@ export default function Home() {
   }, [fetchData]);
 
   useEffect(() => {
-    fetch("/gmd_dashboard/api/gmd-category")
+    fetch("/raw_material/api/gmd-category")
       .then((res) => res.json())
       .then(setCategoryOptions)
       .catch(() => {});
@@ -189,7 +189,7 @@ export default function Home() {
             hiddenFilters={["NEW ITEM STATUS"]}
             categoryOptions={enhancedCategoryOptions}
             editable
-            editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD Rate Option"]}
+            editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD cost"]}
           />
           <GMDUpdateTable
             headers={headers}

@@ -15,18 +15,25 @@ export default function Navbar() {
               alt="Dalui Logo"
               className="h-8 w-auto rounded object-contain bg-background p-0.5"
             />
-            <span className="text-base font-bold tracking-tight text-foreground">
-              GMD Quotation Process
-            </span>
+         
           </div>
+          <Link href="/" className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
+          >
+            Quotation Process
+          </Link>
           
-           <Link
-          href="/gmd_dashboard"
-          className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
-        >
-          
-          GMD Dashboard
-        </Link>
+          <Link
+            href="/raw_material"
+            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
+          >
+            Raw Material
+          </Link>
+          <Link
+            href="/supply_history"
+            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
+          >
+            Supply History
+          </Link>
         
         </div>
 

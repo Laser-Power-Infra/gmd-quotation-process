@@ -1,11 +1,9 @@
 import React from "react";
-import Navbar from "@/components/layout/Navbar";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Loading() {
   return (
     <div className="flex min-h-screen flex-col bg-slate-50/30">
-      <Navbar />
       <main className="flex-1 flex flex-col p-6 w-full gap-4 mx-auto">
         {/* Header Toolbar Skeleton */}
         <div className="flex flex-col gap-4 py-5 px-6 bg-white sm:flex-row sm:items-center sm:justify-between border border-slate-100 rounded-lg shadow-sm">

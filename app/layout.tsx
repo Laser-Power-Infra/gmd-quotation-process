@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import "./globals.css";
 import StoreProvider from "./StoreProvider";
+import Navbar from "@/components/layout/Navbar";
 import { Toaster } from "@/components/ui/sonner";
 
 const poppins = Poppins({
@@ -45,6 +46,7 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block"
         />
         <StoreProvider>
+          <Navbar />
           {children}
           <Toaster position="top-right" richColors theme="light"/>
         </StoreProvider>

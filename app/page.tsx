@@ -1,5 +1,4 @@
 import React, { Suspense } from "react";
-import Navbar from "@/components/layout/Navbar";
 import DashboardContainer from "./DashboardContainer";
 import { prisma } from "@/lib/prisma";
 import { ALLOWED_OPERATION_TYPES } from "@/lib/operationTypePatterns";
@@ -417,8 +416,6 @@ export default async function Page({ searchParams }: PageProps) {
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <Navbar />
-
       <main className="flex-1 flex flex-col p-6 w-full gap-4 mx-auto">
         <Suspense>
           <DashboardContainer

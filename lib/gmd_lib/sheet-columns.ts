@@ -16,7 +16,7 @@ export const CANONICAL_COLUMNS = [
   "1 pcs wgt",
   "AUM",
   "cost",
-  "USD Rate Option",
+  "USD cost",
   "HSN CODE",
   "HSN Code Validation",
   "CONV",

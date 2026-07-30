@@ -209,12 +209,6 @@ export default function GMDUpdateTable({
     if (!field) return;
     const header = headers[colIndex];
 
-    // Special handling for USD Rate Option changes
-    if (field === "usdRateOption") {
-      dispatch(updateGMDUpdateField({ id, field, value: value || null }));
-      return;
-    }
-
     toast.promise(
       dispatch(updateGMDUpdateField({id,field,value:value ||null})).unwrap(),
       {
@@ -414,34 +408,7 @@ export default function GMDUpdateTable({
                     let cellContent: React.ReactNode;
                     const isCellEditable = editable && (!editableColumns || editableColumns.includes(header));
                     if (isCellEditable) {
-                      if (header === "cost") {
-                        const rawVal = parseFloat(String(row[15] ?? ""));
-                        const rateStr = String(row[16] ?? "").trim();
-                        const rate = parseFloat(rateStr);
-                        if (rateStr && !isNaN(rawVal) && !isNaN(rate)) {
-                          cellContent = (
-                            <span className="font-mono-md text-xs font-semibold">$ {(rawVal / rate).toFixed(2)}</span>
-                          );
-                        } else {
-                          cellContent = (
-                            <input
-                              key={display + "-" + idx + "-" + cellIdx}
-                              type="text"
-                              defaultValue={display}
-                              onBlur={(e) => {
-                                if (e.target.value !== display) {
-                                  handleCellUpdate(idx, cellIdx, e.target.value);
-                                }
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter")
-                                  (e.target as HTMLInputElement).blur();
-                              }}
-                              className="w-full text-xs bg-transparent border-none outline-none"
-                            />
-                          );
-                        }
-                      } else if (STATUS_COLUMNS.has(header) || categoryOptions?.[header]) {
+                      if (STATUS_COLUMNS.has(header) || categoryOptions?.[header]) {
                         cellContent = (
                           <select
                             key={display + "-" + idx + "-" + cellIdx}
