@@ -165,6 +165,10 @@ model SupplyHistoryItem {
   pbgAmount       String?
   warrantyExpDateAsPerInv   String?
   partyMailAddress String?
+  orderList       String?
+  derivedItemType String?
+  derivedMoc      String?
+  derivedSize     String?
   syncedAt        DateTime @default(now())
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

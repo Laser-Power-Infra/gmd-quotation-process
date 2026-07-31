@@ -1,17 +1,20 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback } from "react";
-import { ChevronUp, ChevronDown, Search, RotateCcw, X } from "lucide-react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { ChevronUp, ChevronDown, Search, RotateCcw, X, Download } from "lucide-react";
 import GMDUpdateStatusBadge from "./GMDUpdateStatusBadge";
 import {
   STATUS_COLUMNS,
   NUMERIC_COLUMNS,
   COL_INDEX_TO_DB_FIELD,
 } from "../../lib/gmd_lib/sheet-columns";
+import { useDebounce } from "@/lib/hooks/useDebounce";
 import Pagination from "./Pagination";
 import { useAppDispatch } from "@/lib/hooks";
 import { updateGMDUpdateField } from "@/lib/gmdUpdateSlice";
-import {toast} from "sonner"
+import { toast } from "sonner";
+
+import * as XLSX from "xlsx";
 
 function isUrl(text: string): boolean {
   try {
@@ -20,6 +23,143 @@ function isUrl(text: string): boolean {
   } catch {
     return false;
   }
+}
+
+function parseDate(str: string): Date | null {
+  if (!str) return null;
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) return d;
+  const m = str.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
+  if (m) return new Date(`${m[2]} ${m[1]}, ${m[3]}`);
+  return null;
+}
+
+function MultiSelect({
+  options,
+  selected,
+  onChange,
+}: {
+  options: string[];
+  selected: string[];
+  onChange: (vals: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node))
+        setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative flex-1 min-w-0">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(!open);
+        }}
+        className="w-full text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 text-left outline-none cursor-pointer truncate"
+      >
+        {selected.length ? `${selected.length} selected` : "All"}
+      </button>
+      {open && (
+        <div
+          className="absolute top-full left-0 z-50 mt-1 w-48 bg-white border border-[#e1e6eb] rounded shadow-lg"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => onChange([])}
+            className="w-full text-[10px] text-left px-2 py-1.5 hover:bg-gray-100 text-red-600 font-semibold border-b border-[#e1e6eb]"
+          >
+            Clear
+          </button>
+          <div className="max-h-48 overflow-y-auto">
+            <label className="flex items-center gap-1.5 px-2 py-1 hover:bg-gray-50 cursor-pointer text-[10px]">
+              <input
+                type="checkbox"
+                checked={selected.includes("(Blank)")}
+                onChange={() => {
+                  const next = selected.includes("(Blank)")
+                    ? selected.filter((v) => v !== "(Blank)")
+                    : [...selected, "(Blank)"];
+                  onChange(next);
+                }}
+                className="accent-blue-600"
+              />
+              <span className="italic text-gray-400">(Blank)</span>
+            </label>
+            {options.map((opt) => (
+              <label
+                key={opt}
+                className="flex items-center gap-1.5 px-2 py-1 hover:bg-gray-50 cursor-pointer text-[10px]"
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.includes(opt)}
+                  onChange={() => {
+                    const next = selected.includes(opt)
+                      ? selected.filter((v) => v !== opt)
+                      : [...selected, opt];
+                    onChange(next);
+                  }}
+                  className="accent-blue-600"
+                />
+                <span className="truncate">{opt}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DebouncedSearchInput({
+  value,
+  onCommit,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onCommit: (val: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const [local, setLocal] = useState(value);
+  const debounced = useDebounce(local, 300);
+  const isTypingRef = useRef(false);
+
+  useEffect(() => {
+    setLocal(value);
+    isTypingRef.current = false;
+  }, [value]);
+
+  useEffect(() => {
+    if (isTypingRef.current && debounced !== value) onCommit(debounced);
+  }, [debounced, value, onCommit]);
+
+  return (
+    <input
+      type="text"
+      placeholder={placeholder}
+      value={local}
+      onChange={(e) => {
+        isTypingRef.current = true;
+        setLocal(e.target.value);
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className={
+        className ||
+        "flex-1 min-w-0 text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 outline-none placeholder:text-[#0a2540]/30"
+      }
+    />
+  );
 }
 
 interface GMDUpdateTableProps {
@@ -34,6 +174,25 @@ interface GMDUpdateTableProps {
   hiddenFilters?: string[];
   categoryOptions?: Record<string, string[]>;
   onCellUpdate?: (id: string, colIndex: number, value: string) => Promise<void>;
+  filterState?: {
+    columnFilters: Record<string, string>;
+    multiFilters: Record<string, string[]>;
+    dateFrom: string;
+    dateTo: string;
+    globalSearch: string;
+    currentPage: number;
+    pageSize: number;
+  };
+  filterActions?: {
+    onColumnFilter: (header: string, value: string) => void;
+    onMultiFilter: (header: string, values: string[]) => void;
+    onDateFrom: (val: string) => void;
+    onDateTo: (val: string) => void;
+    onGlobalSearch: (val: string) => void;
+    onResetFilters: () => void;
+    onPageChange: (page: number) => void;
+    onPageSizeChange: (size: number) => void;
+  };
 }
 
 export default function GMDUpdateTable({
@@ -48,19 +207,61 @@ export default function GMDUpdateTable({
   hiddenFilters,
   categoryOptions,
   onCellUpdate,
+  filterState,
+  filterActions,
 }: GMDUpdateTableProps) {
+  const isControlled = !!filterState;
+
   const [sortColumn, setSortColumn] = useState<number | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [globalSearch, setGlobalSearch] = useState("");
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [localCurrentPage, setLocalCurrentPage] = useState(1);
+  const [localPageSize, setLocalPageSize] = useState(25);
+  const [localGlobalSearch, setLocalGlobalSearch] = useState("");
+  const [localColumnFilters, setLocalColumnFilters] = useState<
+    Record<string, string>
+  >({});
+  const [localMultiFilters, setLocalMultiFilters] = useState<
+    Record<string, string[]>
+  >({});
+  const [localDateFrom, setLocalDateFrom] = useState("");
+  const [localDateTo, setLocalDateTo] = useState("");
+
+  const currentPage = isControlled
+    ? filterState!.currentPage
+    : localCurrentPage;
+  const pageSize = isControlled ? filterState!.pageSize : localPageSize;
+  const globalSearch = isControlled
+    ? filterState!.globalSearch
+    : localGlobalSearch;
+  const columnFilters = isControlled
+    ? filterState!.columnFilters
+    : localColumnFilters;
+  const multiFilters = isControlled
+    ? filterState!.multiFilters
+    : localMultiFilters;
+  const dateFrom = isControlled ? filterState!.dateFrom : localDateFrom;
+  const dateTo = isControlled ? filterState!.dateTo : localDateTo;
+  const setCurrentPage = isControlled
+    ? filterActions!.onPageChange
+    : setLocalCurrentPage;
+  const setPageSize = isControlled
+    ? filterActions!.onPageSizeChange
+    : setLocalPageSize;
+
+  const dateColIdx = useMemo(() => headers.indexOf("Date"), [headers]);
   const dispatch = useAppDispatch();
   const [columnWidths, setColumnWidths] = useState<Record<number, number>>(
     () => {
       const widths: Record<number, number> = {};
       headers.forEach((h, i) => {
-        widths[i] = h === "ITEM NAME (proposed)-AUTO" ? 200 : h === "Party Mail Address" ? 300 : 180;
+        widths[i] =
+          h === "ITEM NAME (proposed)-AUTO"
+            ? 200
+            : h === "Party Mail Address"
+              ? 300
+              : h === "ORDER LIST"
+                ? 300
+                : 180;
       });
       return widths;
     },
@@ -82,54 +283,109 @@ export default function GMDUpdateTable({
   };
 
   const handleColumnFilter = (header: string, value: string) => {
-    setColumnFilters((prev) => ({ ...prev, [header]: value }));
+    if (isControlled) filterActions!.onColumnFilter(header, value);
+    else setLocalColumnFilters((prev) => ({ ...prev, [header]: value }));
     setCurrentPage(1);
   };
 
+  const handleMultiFilter = (header: string, values: string[]) => {
+    if (isControlled) filterActions!.onMultiFilter(header, values);
+    else
+      setLocalMultiFilters((prev) => {
+        const next = { ...prev };
+        if (values.length) next[header] = values;
+        else delete next[header];
+        return next;
+      });
+    setCurrentPage(1);
+  };
+  const handleExportToExcel = () => {
+    const toastId = toast.loading("Preparing Excel file...");
+    try {
+      const rows = filteredRows.map((row) => {
+        const obj: Record<string, unknown> = {};
+        headers.forEach((h, i) => {
+          const v = row[i];
+          obj[h] = v != null ? String(v) : "";
+        });
+        return obj;
+      });
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Data");
+      const dateStr = new Date().toISOString().split("T")[0];
+      XLSX.writeFile(
+        workbook,
+        `${title?.replace(/\s+/g, "_") || "Export"}_${dateStr}.xlsx`,
+      );
+      toast.success("Excel file downloaded successfully!", { id: toastId });
+    } catch (err: any) {
+      console.error("Export to Excel failed:", err);
+      toast.error("Failed to export Excel file.", { id: toastId });
+    }
+  };
+
   const handleResetFilters = () => {
-    setColumnFilters({});
-    setGlobalSearch("");
+    if (isControlled) filterActions!.onResetFilters();
+    else {
+      setLocalColumnFilters({});
+      setLocalMultiFilters({});
+      setLocalGlobalSearch("");
+      setLocalDateFrom("");
+      setLocalDateTo("");
+    }
     setCurrentPage(1);
   };
 
   const hasActiveFilters =
     Object.values(columnFilters).some((v) => v && v !== "All") ||
-    globalSearch.trim() !== "";
+    Object.values(multiFilters).some((v) => v.length > 0) ||
+    globalSearch.trim() !== "" ||
+    dateFrom !== "" ||
+    dateTo !== "";
 
   const sortedRows = useMemo(() => {
     if (sortColumn === null) return rows;
-    return [...rows].sort((a, b) => {
-      const valA = a[sortColumn];
-      const valB = b[sortColumn];
-
-      if (valA === null || valA === undefined)
-        return sortDirection === "asc" ? -1 : 1;
-      if (valB === null || valB === undefined)
-        return sortDirection === "asc" ? 1 : -1;
-
-      if (typeof valA === "number" && typeof valB === "number") {
-        return sortDirection === "asc" ? valA - valB : valB - valA;
-      }
-
-      const strA = String(valA);
-      const strB = String(valB);
-      return sortDirection === "asc"
-        ? strA.localeCompare(strB, undefined, { numeric: true })
-        : strB.localeCompare(strA, undefined, { numeric: true });
+    const decorated = rows.map((row, i) => {
+      const val = row[sortColumn];
+      const isNum = typeof val === "number";
+      const num = isNum ? val : NaN;
+      const key = isNum ? "" : String(val ?? "").toLowerCase();
+      return { row, i, num, key };
     });
+    const dir = sortDirection === "asc" ? 1 : -1;
+    decorated.sort((a, b) => {
+      if (!isNaN(a.num) && !isNaN(b.num)) return (a.num - b.num) * dir;
+      const aNull = a.key === "" && isNaN(a.num);
+      const bNull = b.key === "" && isNaN(b.num);
+      if (aNull && bNull) return a.i - b.i;
+      if (aNull) return dir;
+      if (bNull) return -dir;
+      const c = a.key.localeCompare(b.key, undefined, { numeric: true });
+      return c * dir;
+    });
+    return decorated.map((d) => d.row);
   }, [rows, sortColumn, sortDirection]);
+
+  const rowSearchCache = useMemo(() => {
+    const cache = new Map<unknown[], string>();
+    for (const row of rows) {
+      cache.set(
+        row,
+        headers.map((_, i) => String(row[i] ?? "").toLowerCase()).join(" "),
+      );
+    }
+    return cache;
+  }, [rows, headers]);
 
   const filteredRows = useMemo(() => {
     let result = sortedRows;
 
-    if (globalSearch.trim()) {
-      const q = globalSearch.toLowerCase();
+    const gs = globalSearch;
+    if (gs.trim()) {
+      const q = gs.toLowerCase();
       result = result.filter((row) =>
-        headers.some((_, idx) =>
-          String(row[idx] ?? "")
-            .toLowerCase()
-            .includes(q),
-        ),
+        (rowSearchCache.get(row) ?? "").includes(q),
       );
     }
 
@@ -145,12 +401,66 @@ export default function GMDUpdateTable({
       });
     }
 
+    for (const [colName, selected] of Object.entries(multiFilters)) {
+      if (!selected.length) continue;
+      const colIdx = headers.indexOf(colName);
+      if (colIdx === -1) continue;
+      result = result.filter((row) => {
+        const cellVal = String(row[colIdx] ?? "").trim();
+        const matchesBlank = selected.includes("(Blank)") && cellVal === "";
+        return matchesBlank || selected.includes(cellVal);
+      });
+    }
+
+    if (dateColIdx !== -1 && (dateFrom || dateTo)) {
+      const fromDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
+      const toEnd = dateTo ? new Date(dateTo + "T23:59:59") : null;
+      result = result.filter((row) => {
+        const dateStr = String(row[dateColIdx] ?? "");
+        if (!dateStr) return false;
+        const date = parseDate(dateStr);
+        if (!date) return true;
+        if (fromDate && date < fromDate) return false;
+        if (toEnd && date > toEnd) return false;
+        return true;
+      });
+    }
+
     return result;
-  }, [sortedRows, globalSearch, columnFilters, headers]);
+  }, [
+    sortedRows,
+    globalSearch,
+    columnFilters,
+    multiFilters,
+    headers,
+    dateFrom,
+    dateTo,
+    dateColIdx,
+    rowSearchCache,
+  ]);
+
+  const pbgAmountSum = useMemo(() => {
+    const colIdx = headers.indexOf("PBG AMOUNT");
+    if (colIdx === -1) return null;
+    return filteredRows.reduce((sum, row) => {
+      const cleaned = String(row[colIdx] ?? "").replace(/,/g, "");
+      const num = parseFloat(cleaned);
+      return sum + (isNaN(num) ? 0 : num);
+    }, 0);
+  }, [filteredRows, headers]);
 
   const totalRecords = filteredRows.length;
   const totalPages = Math.ceil(totalRecords / pageSize) || 1;
   const activePage = Math.min(currentPage, totalPages);
+
+  const columnUniqueVals = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    for (const h of headers) {
+      const idx = headers.indexOf(h);
+      result[h] = categoryOptions?.[h] || getUniqueColumnValues(idx);
+    }
+    return result;
+  }, [headers, categoryOptions, rows]);
 
   const paginatedRows = useMemo(() => {
     const start = (activePage - 1) * pageSize;
@@ -187,27 +497,16 @@ export default function GMDUpdateTable({
     document.body.style.cursor = "default";
   }, [handleResizeMove]);
 
-  const getUniqueColumnValues = (colIdx: number, excludeCol?: string): string[] => {
-    let sourceRows = sortedRows;
-    for (const [colName, filterVal] of Object.entries(columnFilters)) {
-      if (!filterVal || filterVal === "All" || colName === excludeCol) continue;
-      const cIdx = headers.indexOf(colName);
-      if (cIdx === -1) continue;
-      sourceRows = sourceRows.filter((row) => {
-        const cellVal = String(row[cIdx] ?? "");
-        if (filterVal === "(Blank)") return cellVal === "";
-        return cellVal.toLowerCase().includes(filterVal.toLowerCase());
-      });
-    }
+  function getUniqueColumnValues(colIdx: number): string[] {
     const vals = new Set<string>();
-    for (const row of sourceRows) {
+    for (const row of rows) {
       const v = String(row[colIdx] ?? "");
       if (v) vals.add(v);
     }
     return [...vals].sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true }),
     );
-  };
+  }
 
   const handleCellUpdate = async (
     rowIndex: number,
@@ -227,11 +526,13 @@ export default function GMDUpdateTable({
     if (!field) return;
 
     toast.promise(
-      dispatch(updateGMDUpdateField({id,field,value:value ||null})).unwrap(),
+      dispatch(
+        updateGMDUpdateField({ id, field, value: value || null }),
+      ).unwrap(),
       {
         loading: `Updating ${header}...`,
         success: `${header} updated`,
-        error: (err)=> err || `Failed to update ${header}`,
+        error: (err) => err || `Failed to update ${header}`,
       },
     );
   };
@@ -249,31 +550,45 @@ export default function GMDUpdateTable({
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#e1e6eb] bg-[#f8f9fa]">
         <div className="flex items-center gap-2">
-            {title && (
-              <span className="text-xs font-bold uppercase tracking-wider text-">
-                {title}
-              </span>
-            )}
-            <span className="text-xs font-semibold text-[#0a2540]/60">
-              Showing {filteredRows.length} of {rows.length} records
+          {title && (
+            <span className="text-xs font-bold uppercase tracking-wider text-">
+              {title}
             </span>
-          </div>
+          )}
+          <span className="text-xs font-semibold text-[#0a2540]/60">
+            Showing {filteredRows.length} of {rows.length} records
+          </span>
+        </div>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search
               size={13}
               className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#0a2540]/40"
             />
-            <input
-              type="text"
-              placeholder="Search all columns..."
+            <DebouncedSearchInput
               value={globalSearch}
-              onChange={(e) => {
-                setGlobalSearch(e.target.value);
+              onCommit={(val) => {
+                if (isControlled) filterActions!.onGlobalSearch(val);
+                else setLocalGlobalSearch(val);
                 setCurrentPage(1);
               }}
-              className="w-60 pl-8 pr-3 py-1.5 text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] outline-none focus:border-[#0070f3] placeholder:text-[#0a2540]/30"
+              placeholder="Search all columns..."
+              className="w-60 pl-8 pr-7 py-1.5 text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] outline-none focus:border-[#0070f3] placeholder:text-[#0a2540]/30"
             />
+            {globalSearch && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isControlled) filterActions!.onGlobalSearch("");
+                  else setLocalGlobalSearch("");
+                  setCurrentPage(1);
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 flex-shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
+                title="Clear search"
+              >
+                <X size={12} />
+              </button>
+            )}
           </div>
           {hasActiveFilters && (
             <button
@@ -284,6 +599,14 @@ export default function GMDUpdateTable({
               Reset Filters
             </button>
           )}
+          <button
+            type="button"
+            onClick={handleExportToExcel}
+            className="flex items-center gap-1 text-xs font-semibold text-[#0f62fe] hover:text-[#0a2540] transition-colors px-2 py-1.5 rounded hover:bg-white/80 border border-[#e1e6eb]"
+          >
+            <Download size={12} />
+            Export Excel
+          </button>
         </div>
       </div>
 
@@ -307,18 +630,25 @@ export default function GMDUpdateTable({
             <tr className="bg-[#f4f6f8]">
               {headers.map((header, idx) => {
                 const isSorted = sortColumn === idx;
-                const uniqueVals = STATUS_COLUMNS.has(header) || categoryOptions?.[header]
-                  ? (categoryOptions?.[header] || getUniqueColumnValues(idx, header))
-                  : [];
+                const uniqueVals = columnUniqueVals[header] ?? [];
                 return (
                   <th
                     key={idx}
                     className={`relative bg-[#f4f6f8] text-[#0a2540] text-xs font-bold uppercase tracking-wider px-3 py-2 text-left border-b-2 border-[#e1e6eb] border-r border-[#e1e6eb] last:border-r-0 select-none align-top${
                       idx < 2 ? " sticky z-20" : ""
                     }${
-                      editable && (!editableColumns || editableColumns.includes(header)) ? " bg-amber-50/50" : ""
+                      editable &&
+                      (!editableColumns || editableColumns.includes(header))
+                        ? " bg-amber-50/50"
+                        : ""
                     }`}
-                    style={idx === 1 ? { left: columnWidths[0] } : idx === 0 ? { left: 0 } : undefined}
+                    style={
+                      idx === 1
+                        ? { left: columnWidths[0] }
+                        : idx === 0
+                          ? { left: 0 }
+                          : undefined
+                    }
                   >
                     <div
                       className="flex items-center justify-between gap-1.5 cursor-pointer"
@@ -336,54 +666,97 @@ export default function GMDUpdateTable({
                       )}
                     </div>
                     {/* Column filter */}
-                    {!hiddenFilters?.includes(header) && (
-                    <div className="flex items-center gap-1 mt-1.5">
-                      {STATUS_COLUMNS.has(header) || categoryOptions?.[header] ? (
-                        <select
-                          value={columnFilters[header] ?? "All"}
-                          onChange={(e) =>
-                            handleColumnFilter(header, e.target.value)
-                          }
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex-1 min-w-0 text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 outline-none cursor-pointer"
-                        >
-                          <option value="All">All</option>
-                          <option value="(Blank)">(Blank)</option>
-                          {uniqueVals.map((v) => (
-                            <option key={v} value={v}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
+                    {!hiddenFilters?.includes(header) &&
+                      (header === "Date" ? (
+                        <div className="flex flex-col gap-1 mt-1.5">
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="date"
+                              value={dateFrom}
+                              onChange={(e) => {
+                                if (isControlled)
+                                  filterActions!.onDateFrom(e.target.value);
+                                else setLocalDateFrom(e.target.value);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex-1 min-w-0 text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 outline-none"
+                            />
+                            <input
+                              type="date"
+                              value={dateTo}
+                              onChange={(e) => {
+                                if (isControlled)
+                                  filterActions!.onDateTo(e.target.value);
+                                else setLocalDateTo(e.target.value);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex-1 min-w-0 text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 outline-none"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <DebouncedSearchInput
+                              value={columnFilters["Date"] ?? ""}
+                              onCommit={(val) =>
+                                handleColumnFilter("Date", val)
+                              }
+                              placeholder="Search Date..."
+                            />
+                            {(columnFilters["Date"] || dateFrom || dateTo) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleColumnFilter("Date", "");
+                                  if (isControlled)
+                                    filterActions!.onDateFrom("");
+                                  else setLocalDateFrom("");
+                                  if (isControlled) filterActions!.onDateTo("");
+                                  else setLocalDateTo("");
+                                }}
+                                className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
+                                title="Clear filter"
+                              >
+                                <X size={10} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       ) : (
-                        <input
-                          type="text"
-                          placeholder={`Filter ${header}...`}
-                          value={columnFilters[header] ?? ""}
-                          onChange={(e) =>
-                            handleColumnFilter(header, e.target.value)
-                          }
-                          onClick={(e) => e.stopPropagation()}
-                          className="flex-1 min-w-0 text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 outline-none placeholder:text-[#0a2540]/30"
-                        />
-                      )}
-                      {columnFilters[header] &&
-                        columnFilters[header] !== "All" && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleColumnFilter(
-                                header,
-                                STATUS_COLUMNS.has(header) ? "All" : "",
-                              );
-                            }}
-                            className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
-                            title="Clear filter"
-                          >
-                            <X size={10} />
-                          </button>
-                        )}
-                    </div>
+                        <div className="flex flex-col gap-1 mt-1.5">
+                          <MultiSelect
+                            options={uniqueVals}
+                            selected={multiFilters[header] ?? []}
+                            onChange={(vals) => handleMultiFilter(header, vals)}
+                          />
+                          <div className="flex items-center gap-1">
+                            <DebouncedSearchInput
+                              value={columnFilters[header] ?? ""}
+                              onCommit={(val) =>
+                                handleColumnFilter(header, val)
+                              }
+                              placeholder={`Search ${header}...`}
+                            />
+                            {columnFilters[header] && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleColumnFilter(header, "");
+                                }}
+                                className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
+                                title="Clear filter"
+                              >
+                                <X size={10} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    {header === "PBG AMOUNT" && pbgAmountSum !== null && (
+                      <div className="mt-1 text-[11px] font-semibold text-blue-700">
+                        Total: ₹
+                        {pbgAmountSum.toLocaleString("en-IN", {
+                          maximumFractionDigits: 1,
+                        })}
+                      </div>
                     )}
                     {/* Resize handle */}
                     <div
@@ -423,9 +796,14 @@ export default function GMDUpdateTable({
                     const display = value != null ? String(value) : "";
 
                     let cellContent: React.ReactNode;
-                    const isCellEditable = editable && (!editableColumns || editableColumns.includes(header));
+                    const isCellEditable =
+                      editable &&
+                      (!editableColumns || editableColumns.includes(header));
                     if (isCellEditable) {
-                      if (STATUS_COLUMNS.has(header) || categoryOptions?.[header]) {
+                      if (
+                        STATUS_COLUMNS.has(header) ||
+                        categoryOptions?.[header]
+                      ) {
                         cellContent = (
                           <select
                             key={display + "-" + idx + "-" + cellIdx}
@@ -437,7 +815,11 @@ export default function GMDUpdateTable({
                             className="w-full text-xs bg-transparent border-none outline-none cursor-pointer"
                           >
                             <option value="">-</option>
-                            {(categoryOptions?.[header] || getUniqueColumnValues(cellIdx)).map((v) => (
+                            {(
+                              categoryOptions?.[header] ||
+                              columnUniqueVals[header] ||
+                              []
+                            ).map((v) => (
                               <option key={v} value={v}>
                                 {v}
                               </option>
@@ -494,14 +876,18 @@ export default function GMDUpdateTable({
                     }
 
                     return (
-                        <td
+                      <td
                         key={cellIdx}
                         className={`px-3 py-2 text-xs border-b border-[#e1e6eb] border-r border-[#e1e6eb] last:border-r-0${
                           cellIdx < 2 ? " sticky z-10 bg-white" : ""
-                        }${
-                          isCellEditable ? " bg-amber-50" : ""
-                        }`}
-                        style={cellIdx === 1 ? { left: columnWidths[0] } : cellIdx === 0 ? { left: 0 } : undefined}
+                        }${isCellEditable ? " bg-amber-50" : ""}`}
+                        style={
+                          cellIdx === 1
+                            ? { left: columnWidths[0] }
+                            : cellIdx === 0
+                              ? { left: 0 }
+                              : undefined
+                        }
                       >
                         {cellContent}
                       </td>

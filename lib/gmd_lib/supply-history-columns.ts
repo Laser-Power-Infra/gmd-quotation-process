@@ -38,6 +38,10 @@ export const SUPPLY_HISTORY_HEADERS = [
   "PBG AMOUNT",
   "Warranty Exp Date as Per Inv",
   "Party Mail Address",
+  "Item Type",
+  "MOC",
+  "Size",
+  "ORDER LIST",
 ] as const;
 
 function normalizeHeader(h: string): string {
@@ -76,11 +80,11 @@ export function mapSheetRowToDb(
   };
 
   return {
-    financialYear:   getVal(0),
-    partyName:       getVal(1),
-    erpPartyName:    getVal(2),
-    itemName:        getRequired(3),
-    invoiceNo:       getRequired(4),
+    itemName:        getRequired(0),
+    invoiceNo:       getRequired(1),
+    financialYear:   getVal(2),
+    partyName:       getVal(3),
+    erpPartyName:    getVal(4),
     date:            getVal(5),
     partyOrderNo:    getVal(6),
     partyDate:       getVal(7),
@@ -115,12 +119,16 @@ export function mapSheetRowToDb(
     pbgAmount:       getVal(36),
     warrantyExpDateAsPerInv:   getVal(37),
     partyMailAddress: getVal(38),
+    orderList:        null as string | null,
     syncedAt,
   };
 }
 
 export const SUPPLY_HEADER_TO_DB_FIELD: Record<string, string> = {
   "Party Mail Address": "partyMailAddress",
+  "Item Type": "derivedItemType",
+  "MOC": "derivedMoc",
+  "Size": "derivedSize",
 };
 
 export function dbItemToRow(item: {
@@ -163,10 +171,14 @@ export function dbItemToRow(item: {
   pbgAmount: string | null;
   warrantyExpDateAsPerInv: string | null;
   partyMailAddress: string | null;
+  orderList: string | null;
+  derivedItemType: string | null;
+  derivedMoc: string | null;
+  derivedSize: string | null;
 }): unknown[] {
   return [
-    item.financialYear, item.partyName, item.erpPartyName,
-    item.itemName, item.invoiceNo, item.date,
+    item.itemName, item.invoiceNo, item.financialYear,
+    item.partyName, item.erpPartyName, item.date,
     item.partyOrderNo, item.partyDate, item.quantity,
     item.uom, item.value, item.grossTotalInvoiceValue,
     item.lrNoDt, item.deliveryDestination, item.consigneeAddress,
@@ -179,5 +191,7 @@ export function dbItemToRow(item: {
     item.bgNo, item.pbgValidTill, item.asPerOrderWarrantyPeriod,
     item.pbgClaimTill, item.pbgAmount, item.warrantyExpDateAsPerInv,
     item.partyMailAddress,
+    item.derivedItemType, item.derivedMoc, item.derivedSize,
+    item.orderList,
   ];
 }

@@ -6,6 +6,10 @@ import {
   buildColumnMap,
   mapSheetRowToDb,
 } from "@/lib/gmd_lib/supply-history-columns";
+import {
+  buildContractOrderLinkMap,
+  matchOrderLink,
+} from "@/lib/gmd_lib/contract-order-links";
 
 const SPREADSHEET_ID = process.env.SUPPLY_HISTORY_SPREADSHEET_ID;
 const SHEET_NAME = "MASTER";
@@ -47,12 +51,24 @@ export async function POST() {
       r.some((c) => c !== null && c !== ""),
     );
 
+    // await prisma.supplyHistoryItem.deleteMany();
+
+    let contractLinkMap: Map<string, string>;
+    try {
+      contractLinkMap = await buildContractOrderLinkMap();
+    } catch (err) {
+      console.error("Failed to load contract order links:", err);
+      contractLinkMap = new Map();
+    }
+
     let upserted = 0;
     for (const rawRow of rawRows) {
       const mapped = mapSheetRowToDb(rawRow, columnMap, syncedAt);
 
       if (!mapped.itemName || !mapped.invoiceNo) continue;
-      // await prisma.supplyHistoryItem.deleteMany();
+
+      mapped.orderList = matchOrderLink(mapped.partyOrderNo, contractLinkMap);
+
       await prisma.supplyHistoryItem.upsert({
         where: {
           invoiceNo_itemName: {
@@ -98,6 +114,7 @@ export async function POST() {
           pbgAmount: mapped.pbgAmount,
           warrantyExpDateAsPerInv: mapped.warrantyExpDateAsPerInv,
           partyMailAddress: mapped.partyMailAddress,
+          orderList: mapped.orderList,
           syncedAt,
         },
         create: mapped,

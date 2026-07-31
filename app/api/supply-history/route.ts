@@ -8,11 +8,14 @@ import {
 const DISPLAY_HEADERS = <const>[
   "INVOICE NO",
   "item name",
+  "ERP ITEM CODE",
+
   "FINANCIAL YEAR",
   "party name",
-  "ERP PARTY NAME",
+  // "ERP PARTY NAME",
   "Date",
   "PARTY Order No.",
+  "ORDER LIST",
   "PARTY Date",
   "Quantity",
   "UOM",
@@ -23,12 +26,11 @@ const DISPLAY_HEADERS = <const>[
   "CONSIGNEE ADDRESS",
   "CONSIGNEE NAME",
   "ERP CONTRACT NO",
-  "ERP ITEM CODE",
-  "TYPE OF VALVE",
-  "SIZE OF VALVE",
+  "Item Type",
+  "MOC",
+  "Size",
   "CLASS OF VALVE",
   "SPARES (TYPE)",
-  "MOC",
   "ORDER COPY",
   "INVOICE",
   "INSPECTION REPORT",
@@ -47,8 +49,8 @@ const DISPLAY_HEADERS = <const>[
   "Party Mail Address",
 ];
 
-const displayColumnMap = DISPLAY_HEADERS.map(
-  (h) => SUPPLY_HISTORY_HEADERS.indexOf(h),
+const displayColumnMap = DISPLAY_HEADERS.map((h) =>
+  SUPPLY_HISTORY_HEADERS.indexOf(h),
 );
 
 export async function GET() {
@@ -57,13 +59,18 @@ export async function GET() {
       orderBy: { syncedAt: "desc" },
     });
 
-    const lastSynced = items.length > 0
-      ? items.reduce((latest: Date, item) => item.syncedAt > latest ? item.syncedAt : latest, items[0].syncedAt)
-      : null;
+    const lastSynced =
+      items.length > 0
+        ? items.reduce(
+            (latest: Date, item) =>
+              item.syncedAt > latest ? item.syncedAt : latest,
+            items[0].syncedAt,
+          )
+        : null;
 
-    const rows = items.map(dbItemToRow).map((canonicalRow) =>
-      displayColumnMap.map((idx) => canonicalRow[idx]),
-    );
+    const rows = items
+      .map(dbItemToRow)
+      .map((canonicalRow) => displayColumnMap.map((idx) => canonicalRow[idx]));
 
     return NextResponse.json({
       headers: DISPLAY_HEADERS,

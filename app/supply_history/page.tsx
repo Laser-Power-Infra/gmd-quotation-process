@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
@@ -8,6 +8,17 @@ import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdat
 import { toast } from "sonner";
 import { updateSupplyHistoryFieldAction } from "@/app/actions";
 import { SUPPLY_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/supply-history-columns";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import {
+  setColumnFilter,
+  setMultiFilter,
+  setDateFrom,
+  setDateTo,
+  setGlobalSearch,
+  setPage,
+  setPageSize,
+  resetFilters,
+} from "@/lib/supplyHistoryFiltersSlice";
 
 interface SupplyHistoryData {
   headers: string[];
@@ -23,6 +34,8 @@ export default function SupplyHistoryPage() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const dispatch = useAppDispatch();
+  const filterState = useAppSelector((s) => s.supplyHistoryFilters);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -85,6 +98,37 @@ export default function SupplyHistoryPage() {
   const headers = data?.headers ?? [];
   const ids = data?.ids ?? [];
 
+  const categoryOptions = useMemo(() => {
+    if (!data) return {};
+    const opts: Record<string, string[]> = {};
+    const dropdownCols = [
+      "INVOICE NO", "item name", "party name",
+      "Item Type", "MOC", "Size", "State",
+      "FINANCIAL YEAR", "CLASS OF VALVE", "Warranty valid/Not",
+      "BG NO", "PBG VALID TILL",
+    ];
+    for (const col of dropdownCols) {
+      const idx = headers.indexOf(col);
+      if (idx === -1) continue;
+      const vals = [...new Set(data.rows.map((r) => String(r[idx] ?? "").trim()).filter(Boolean))].sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true }),
+      );
+      if (vals.length > 0) opts[col] = vals;
+    }
+    return opts;
+  }, [data, headers]);
+
+  const filterActions = useMemo(() => ({
+    onColumnFilter: (header: string, value: string) => dispatch(setColumnFilter({ header, value })),
+    onMultiFilter: (header: string, values: string[]) => dispatch(setMultiFilter({ header, values })),
+    onDateFrom: (val: string) => dispatch(setDateFrom(val)),
+    onDateTo: (val: string) => dispatch(setDateTo(val)),
+    onGlobalSearch: (val: string) => dispatch(setGlobalSearch(val)),
+    onResetFilters: () => dispatch(resetFilters()),
+    onPageChange: (page: number) => dispatch(setPage(page)),
+    onPageSizeChange: (size: number) => dispatch(setPageSize(size)),
+  }), [dispatch]);
+
   if (loading) {
     return (
       <main className="h-screen flex flex-col bg-background">
@@ -131,6 +175,9 @@ export default function SupplyHistoryPage() {
             editable
             editableColumns={["Party Mail Address"]}
             onCellUpdate={handleCellUpdate}
+            categoryOptions={categoryOptions}
+            filterState={filterState}
+            filterActions={filterActions}
           />
         </div>
       </div>
