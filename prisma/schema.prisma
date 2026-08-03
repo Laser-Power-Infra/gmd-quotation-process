@@ -123,3 +123,14 @@ model TransportationCost {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+model LookupOption {
+  id        String   @id @default(cuid())
+  type      String
+  value     String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([type, value])
+  @@index([type, isActive])
+}
