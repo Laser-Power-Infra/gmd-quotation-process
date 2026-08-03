@@ -53,6 +53,12 @@ const displayColumnMap = DISPLAY_HEADERS.map((h) =>
   SUPPLY_HISTORY_HEADERS.indexOf(h),
 );
 
+const MERGE_FIELDS: Record<string, [string, string]> = {
+  "Item Type": ["typeOfValve", "derivedItemType"],
+  MOC: ["moc", "derivedMoc"],
+  Size: ["sizeOfValve", "derivedSize"],
+};
+
 export async function GET() {
   try {
     const items = await prisma.supplyHistoryItem.findMany({
@@ -68,9 +74,20 @@ export async function GET() {
           )
         : null;
 
-    const rows = items
-      .map(dbItemToRow)
-      .map((canonicalRow) => displayColumnMap.map((idx) => canonicalRow[idx]));
+    const rows = items.map((item) => {
+      const canonicalRow = dbItemToRow(item);
+      const row = displayColumnMap.map((idx) => canonicalRow[idx]);
+      for (const [header, [sheetField, derivedField]] of Object.entries(
+        MERGE_FIELDS,
+      )) {
+        const idx = (DISPLAY_HEADERS as readonly string[]).indexOf(header);
+        if (idx === -1) continue;
+        const sheetVal = (item as any)[sheetField];
+        const derivedVal = (item as any)[derivedField];
+        row[idx] = sheetVal || derivedVal || null;
+      }
+      return row;
+    });
 
     return NextResponse.json({
       headers: DISPLAY_HEADERS,

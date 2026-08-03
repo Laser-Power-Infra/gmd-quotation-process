@@ -1,7 +1,7 @@
 export const CONTRACT_REVIEW_HEADERS = [
   "CONTRACT NO",
-  "MC NO",
   "ITEM_CODE",
+  "MC NO",
   "ITEM_NAME",
   "PARTY ITEM NAME",
   "RATE",
@@ -50,8 +50,8 @@ export const CONTRACT_REVIEW_HEADERS = [
 
 export const CONTRACTS_SHEET_COLUMNS = [
   "CONTRACT NO",
-  "MC NO",
   "ITEM_CODE",
+  "MC NO",
   "ITEM_NAME",
   "PARTY ITEM NAME",
   "RATE",
@@ -238,7 +238,7 @@ export function dbContractReviewToRow(item: {
   icQty: string | null;
 }): unknown[] {
   return [
-    item.contractNo, item.mcNo, item.itemCode,
+    item.contractNo, item.itemCode, item.mcNo,
     item.itemName, item.partyItemName, item.rate,
     item.cv, item.vaPercent, item.orderQty,
     item.freeStock, item.finalReq, item.mcQty,
