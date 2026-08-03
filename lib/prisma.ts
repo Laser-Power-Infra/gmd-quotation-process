@@ -10,7 +10,7 @@ if (process.env.NODE_ENV === "production") {
   prismaInstance = new PrismaClient({ adapter });
 } else {
   if (!globalForPrisma.prisma) {
-    globalForPrisma.prisma = new PrismaClient({ adapter, log: ["query"] });
+    globalForPrisma.prisma = new PrismaClient({ adapter });
   }
   prismaInstance = globalForPrisma.prisma;
 }

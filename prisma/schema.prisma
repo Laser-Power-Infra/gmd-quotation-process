@@ -123,6 +123,160 @@ model TransportationCost {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+model SupplyHistoryItem {
+  id              String   @id @default(cuid())
+  financialYear   String?
+  partyName       String?
+  erpPartyName    String?
+  itemName        String
+  invoiceNo       String
+  date            String?
+  partyOrderNo    String?
+  partyDate       String?
+  quantity        String?
+  uom             String?
+  value           String?
+  grossTotalInvoiceValue String?
+  lrNoDt          String?
+  deliveryDestination    String?
+  consigneeAddress       String?
+  consigneeName          String?
+  erpContractNo   String?
+  erpItemCode     String?
+  typeOfValve     String?
+  sizeOfValve     String?
+  classOfValve    String?
+  sparesType      String?
+  moc             String?
+  orderCopy       String?
+  invoice         String?
+  inspectionReport String?
+  state           String?
+  utility         String?
+  performanceCertificate String?
+  servicePeriodComplete   String?
+  warrantyValidTillAsPerContract String?
+  warrantyValidNot String?
+  bgNo            String?
+  pbgValidTill    String?
+  asPerOrderWarrantyPeriod String?
+  pbgClaimTill    String?
+  pbgAmount       String?
+  warrantyExpDateAsPerInv   String?
+  partyMailAddress String?
+  orderList       String?
+  derivedItemType String?
+  derivedMoc      String?
+  derivedSize     String?
+  syncedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([invoiceNo, itemName])
+}
+
+model GMDUpdateItem {
+  id              String   @id @default(cuid())
+  erpItemCode     String?
+  itemNameAuto    String?
+  l1              String?
+  l2ValveType     String?
+  l3Dia           String?
+  l7Dimension     String?
+  l4Component     String?
+  l5Material      String?
+  l6Std           String?
+  l8ItemCategory  String?
+  um              String?
+  conv1           String?
+  pcsWgt          String?
+  aum             String?
+  availableStock  String?
+  cost            String?
+  usdRateOption   String?
+  hsnCode         String?
+  hsnCodeValidation String?
+  conv2           String?
+  majorMarking    String?
+  newItemStatus   String?
+  currentStatus   String?
+  rmType          String?
+  indianImported  String?
+  syncedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ContractReview {
+  id                     String   @id @default(cuid())
+  contractNo             String
+  itemCode               String
+  mcNo                   String?
+  itemName               String?
+  partyItemName          String?
+  rate                   String?
+  cv                     String?
+  vaPercent              String?
+  orderQty               String?
+  freeStock              String?
+  finalReq               String?
+  mcQty                  String?
+  balanceMc              String?
+  prodOrdQty             String?
+  balanceToProdOrd       String?
+  balanceToProdEnt       String?
+  diQty                  String?
+  billedQty              String?
+  balBillAgMc            String?
+  balBillAgCont          String?
+  item                   String?
+  value                  String?
+  size                   String?
+  pnRating               String?
+  dateOfContract         String?
+  clearanceStatus        String?
+  actuator               String?
+  rmCodeForActuator      String?
+  rmCodeForGb            String?
+  paymentTerms           String?
+  lcRtgsRefNo            String?
+  lcDateRtgsDate         String?
+  lastDateOfShipmentDateOfLc String?
+  issuingBankName        String?
+  bomFormulaTrial        String?
+  erpPartyNameFromGmdSupplyHistory String?
+  itemType               String?
+  jobCode                String?
+  balDiQty               String?
+  balMcVal               String?
+  balProdOrdVal          String?
+  balToProdOrdEntVal     String?
+  balBillAgMcVal         String?
+  balBillAgContVal       String?
+  balDiVal               String?
+  diVal                  String?
+  icQty                  String?
+  syncedAt               DateTime @default(now())
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([itemCode, contractNo])
+}
+
+model VerifyBom {
+  id         String   @id @default(cuid())
+  bomId      String
+  itemCode   String
+  rmItemCode String
+  bomIdType  String?
+  bomItemQty String?
+  syncedAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([bomId, itemCode, rmItemCode])
+}
 model LookupOption {
   id        String   @id @default(cuid())
   type      String
