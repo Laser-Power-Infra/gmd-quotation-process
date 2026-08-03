@@ -110,6 +110,12 @@ const MOC_STANDARDIZE: Record<string, string> = {
   "CAST IRON": "DUCTILE IRON/CAST IRON",
   "GALVANIZED IRON": "GALVANISED",
   "CARBON STEEL": "CAST STEEL/CARBON STEEL",
+  "D.I.": "DUCTILE IRON/CAST IRON",
+  "C.I.": "DUCTILE IRON/CAST IRON",
+  "G.I.": "GALVANISED",
+  "C.S.": "CAST STEEL/CARBON STEEL",
+  "S.S.": "STAINLESS STEEL",
+  "M.S.": "MILD STEEL",
 };
 
 const supplyAllowedSizes = [

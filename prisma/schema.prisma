@@ -207,3 +207,73 @@ model GMDUpdateItem {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
+
+model ContractReview {
+  id                     String   @id @default(cuid())
+  contractNo             String
+  itemCode               String
+  mcNo                   String?
+  itemName               String?
+  partyItemName          String?
+  rate                   String?
+  cv                     String?
+  vaPercent              String?
+  orderQty               String?
+  freeStock              String?
+  finalReq               String?
+  mcQty                  String?
+  balanceMc              String?
+  prodOrdQty             String?
+  balanceToProdOrd       String?
+  balanceToProdEnt       String?
+  diQty                  String?
+  billedQty              String?
+  balBillAgMc            String?
+  balBillAgCont          String?
+  item                   String?
+  value                  String?
+  size                   String?
+  pnRating               String?
+  dateOfContract         String?
+  clearanceStatus        String?
+  actuator               String?
+  rmCodeForActuator      String?
+  rmCodeForGb            String?
+  paymentTerms           String?
+  lcRtgsRefNo            String?
+  lcDateRtgsDate         String?
+  lastDateOfShipmentDateOfLc String?
+  issuingBankName        String?
+  bomFormulaTrial        String?
+  erpPartyNameFromGmdSupplyHistory String?
+  itemType               String?
+  jobCode                String?
+  balDiQty               String?
+  balMcVal               String?
+  balProdOrdVal          String?
+  balToProdOrdEntVal     String?
+  balBillAgMcVal         String?
+  balBillAgContVal       String?
+  balDiVal               String?
+  diVal                  String?
+  icQty                  String?
+  syncedAt               DateTime @default(now())
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([itemCode, contractNo])
+}
+
+model VerifyBom {
+  id         String   @id @default(cuid())
+  bomId      String
+  itemCode   String
+  rmItemCode String
+  bomIdType  String?
+  bomItemQty String?
+  syncedAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([bomId, itemCode, rmItemCode])
+}

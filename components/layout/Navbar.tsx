@@ -1,6 +1,5 @@
 import React from "react";
 import { Bell, Search } from "lucide-react";
-import ThemeToggle from "./ThemeToggle";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
@@ -34,7 +33,18 @@ export default function Navbar() {
           >
             Supply History
           </Link>
-        
+          <Link
+            href="/contract_review"
+            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
+          >
+            Contract Review
+          </Link>
+          <Link
+            href="/bom"
+            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
+          >
+            BOM
+          </Link>
         </div>
 
         <div className="flex items-center gap-6">
@@ -55,8 +65,6 @@ export default function Navbar() {
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
               </span>
             </button>
-
-            <ThemeToggle />
           </div>
 
         </div>

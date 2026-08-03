@@ -29,18 +29,6 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col overflow-x-hidden overflow-y-hidden">
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                var t = localStorage.getItem("theme");
-                if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
-                  document.documentElement.classList.add("dark");
-                }
-              } catch(e) {}
-            `,
-          }}
-        />
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block"
