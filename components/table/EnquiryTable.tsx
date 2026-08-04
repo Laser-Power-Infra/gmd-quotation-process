@@ -6,14 +6,14 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import ActionsDropdown from "./ActionsDropdown";
 import Pagination from "./Pagination";
-import { PARTY_NAMES } from "@/lib/partyNames";
+import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
 import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField } from "@/lib/enquiriesSlice";
-import { setFilter, setPartyNamesFilter, resetFilters } from "@/lib/filtersSlice";
+import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
-import { toggleRow, setColumnWidth, setExpandedRows, setPartyFilterOpen, setPartySearch } from "@/lib/uiSlice";
+import { toggleRow, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
 import type { DropdownOptions } from "@/lib/types";
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
@@ -21,8 +21,6 @@ import { importExcelData, autoFillBlanks } from "@/lib/enquiriesSlice";
 import { validateVaPercent } from "@/lib/vaValidation";
 
 interface EnquiryTableProps {
-  totalCount: number;
-  currentPage: number;
   dropdownOptions: DropdownOptions;
 }
 
@@ -74,21 +72,28 @@ function useFilterInput(reduxValue: string, field: string) {
   return [local, setLocal] as const;
 }
 
-// Helper for cascading filter evaluation
-function itemFieldMatches(item: any, field: string, filterValue: string): boolean {
-  if (filterValue === "All") return true;
-  if (filterValue === "Blank") {
-    return item[field] === null || item[field] === undefined || item[field] === "" || item[field] === "-";
-  }
-  return item[field] === filterValue;
+function isBlankValue(value: any): boolean {
+  return value === null || value === undefined || value === "" || value === "-";
 }
 
-function enquiryFieldMatches(enquiry: any, field: string, filterValue: string): boolean {
-  if (filterValue === "All" || filterValue === "") return true;
-  if (filterValue === "Blank") {
-    return enquiry[field] === null || enquiry[field] === undefined || enquiry[field] === "" || enquiry[field] === "-";
-  }
-  return enquiry[field] === filterValue;
+function isBlankSize(value: any): boolean {
+  return isBlankValue(value) || value === "Not detectable" || value === "Not mentioned/cant detect size";
+}
+
+function matchesMulti(values: string[], actual: any, blankCheck: (v: any) => boolean = isBlankValue): boolean {
+  if (!values || values.length === 0) return true;
+  if (values.includes(BLANK) && blankCheck(actual)) return true;
+  return values.includes(actual);
+}
+
+// Helper for cascading filter evaluation
+function itemFieldMatches(item: any, field: string, filterValue: string[]): boolean {
+  const blankCheck = field === "size" ? isBlankSize : isBlankValue;
+  return matchesMulti(filterValue, item[field], blankCheck);
+}
+
+function enquiryFieldMatches(enquiry: any, field: string, filterValue: string[]): boolean {
+  return matchesMulti(filterValue, enquiry[field]);
 }
 
 const ALL_DROPDOWN_FIELDS = [
@@ -99,13 +104,13 @@ const ALL_DROPDOWN_FIELDS = [
 
 const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus"]);
 
-export default function EnquiryTable({ dropdownOptions, totalCount, currentPage }: EnquiryTableProps) {
+export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const dispatch = useAppDispatch();
   const enquiries = useAppSelector(selectAllEnquiries);
   const allItems = useAppSelector(selectAllItems);
   const filters = useAppSelector((s) => s.filters);
-  const { pageSize } = useAppSelector((s) => s.pagination);
-  const { expandedRows, columnWidths, isPartyFilterOpen, partySearch: partySearchVal } = useAppSelector((s) => s.ui);
+  const { currentPage, pageSize } = useAppSelector((s) => s.pagination);
+  const { expandedRows, columnWidths } = useAppSelector((s) => s.ui);
 
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -128,20 +133,12 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
   const [filterItemNameMerge, setFilterItemNameMerge] = useFilterInput(filters.itemNameMerge, "itemNameMerge");
   const [filterTotalValue, setFilterTotalValue] = useFilterInput(filters.totalValue, "totalValue");
   const [filterItemWiseTotalValue, setFilterItemWiseTotalValue] = useFilterInput(filters.itemWiseTotalValue, "itemWiseTotalValue");
-  const [filterValidation, setFilterValidation] = useFilterInput(filters.validation, "validation");
   const [filterAttachment, setFilterAttachment] = useFilterInput(filters.attachment, "attachment");
   const [filterClosureStatus, setFilterClosureStatus] = useFilterInput(filters.closureStatus, "closureStatus");
   const [filterItemTypeSearch, setFilterItemTypeSearch] = useFilterInput(filters.itemTypeSearch, "itemTypeSearch");
   const [filterMocSearch, setFilterMocSearch] = useFilterInput(filters.mocSearch, "mocSearch");
   const [editingItemNameId, setEditingItemNameId] = useState<string | null>(null);
   const [autoFillStatus, setAutoFillStatus] = useState<"idle" | "running">("idle");
-
-  // Debounced party search (dispatches setPartySearch instead of setFilter)
-  const [localPartySearch, setLocalPartySearch] = useState(partySearchVal);
-  const debouncedPartySearch = useDebounce(localPartySearch, 300);
-  useEffect(() => {
-    dispatch(setPartySearch(debouncedPartySearch));
-  }, [debouncedPartySearch, dispatch]);
 
   // Reset pagination to first page when filters change
   useEffect(() => {
@@ -159,7 +156,7 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
         if (other === excludeField) continue;
         if (ENQUIRY_DROPDOWN_SET.has(other)) {
           const val = (filters as any)[other];
-          if (val !== "All" && val !== "" && !enquiryFieldMatches(enquiry, other, val)) return false;
+          if (val.length > 0 && !enquiryFieldMatches(enquiry, other, val)) return false;
         }
       }
       return true;
@@ -170,7 +167,7 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
         if (other === excludeField) continue;
         if (!ENQUIRY_DROPDOWN_SET.has(other)) {
           const val = (filters as any)[other];
-          if (val !== "All" && val !== "" && !itemFieldMatches(item, other, val)) return false;
+          if (val.length > 0 && !itemFieldMatches(item, other, val)) return false;
         }
       }
       return true;
@@ -255,7 +252,6 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
 
   const handleResetAllFilters = () => {
     dispatch(resetFilters());
-    setLocalPartySearch("");
     toast.success("All filters reset successfully.");
   };
 
@@ -274,14 +270,8 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
       ) {
         return false;
       }
-      if (filters.itemType !== "All") {
-        if (filters.itemType === "Blank") {
-          if (item.itemType !== null && item.itemType !== undefined && item.itemType !== "" && item.itemType !== "-") {
-            return false;
-          }
-        } else if (item.itemType !== filters.itemType) {
-          return false;
-        }
+      if (!matchesMulti(filters.itemType, item.itemType)) {
+        return false;
       }
       if (
         filters.itemTypeSearch &&
@@ -289,14 +279,8 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
       ) {
         return false;
       }
-      if (filters.moc !== "All") {
-        if (filters.moc === "Blank") {
-          if (item.moc !== null && item.moc !== undefined && item.moc !== "" && item.moc !== "-") {
-            return false;
-          }
-        } else if (item.moc !== filters.moc) {
-          return false;
-        }
+      if (!matchesMulti(filters.moc, item.moc)) {
+        return false;
       }
       if (
         filters.mocSearch &&
@@ -304,50 +288,20 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
       ) {
         return false;
       }
-      if (filters.size !== "All") {
-        if (filters.size === "Blank") {
-          if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-" && item.size !== "Not detectable" && item.size !=="Not mentioned/cant detect size") {
-            return false;
-          }
-        } else if (item.size !== filters.size) {
-          return false;
-        }
+      if (!matchesMulti(filters.size, item.size, isBlankSize)) {
+        return false;
       }
-      if (filters.pnRating !== "All") {
-        if (filters.pnRating === "Blank") {
-          if (item.pnRating !== null && item.pnRating !== undefined && item.pnRating !== "" && item.pnRating !== "-") {
-            return false;
-          }
-        } else if (item.pnRating !== filters.pnRating) {
-          return false;
-        }
+      if (!matchesMulti(filters.pnRating, item.pnRating)) {
+        return false;
       }
-      if (filters.operationType !== "All") {
-        if (filters.operationType === "Blank") {
-          if (item.operationType !== null && item.operationType !== undefined && item.operationType !== "" && item.operationType !== "-") {
-            return false;
-          }
-        } else if (item.operationType !== filters.operationType) {
-          return false;
-        }
+      if (!matchesMulti(filters.operationType, item.operationType)) {
+        return false;
       }
-      if (filters.extension !== "All") {
-        if (filters.extension === "Blank") {
-          if (item.extension !== null && item.extension !== undefined && item.extension !== "" && item.extension !== "-") {
-            return false;
-          }
-        } else if (item.extension !== filters.extension) {
-          return false;
-        }
+      if (!matchesMulti(filters.extension, item.extension)) {
+        return false;
       }
-      if (filters.bypass !== "All") {
-        if (filters.bypass === "Blank") {
-          if (item.bypass !== null && item.bypass !== undefined && item.bypass !== "" && item.bypass !== "-") {
-            return false;
-          }
-        } else if (item.bypass !== filters.bypass) {
-          return false;
-        }
+      if (!matchesMulti(filters.bypass, item.bypass)) {
+        return false;
       }
       if (
         filters.productCost &&
@@ -415,12 +369,8 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
       ) {
         return false;
       }
-      if (filters.validation !== "All" && filters.validation !== "") {
-        if (filters.validation === "Blank") {
-          if (item.validation !== null && item.validation !== undefined && item.validation !== "" && item.validation !== "-") {
-            return false;
-          }
-        } else if ((item.validation || "") !== filters.validation) {
+      if (filters.validation.length > 0) {
+        if (!matchesMulti(filters.validation, item.validation)) {
           return false;
         }
       }
@@ -568,69 +518,26 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
     }
 
     // 4-10. Enquiry-level Metadata Dropdown Filters
-    if (filters.enquiryType !== "All") {
-      if (filters.enquiryType === "Blank") {
-        if (enquiry.enquiryType !== null && enquiry.enquiryType !== undefined && enquiry.enquiryType !== "" && enquiry.enquiryType !== "-") {
-          return false;
-        }
-      } else if (enquiry.enquiryType !== filters.enquiryType) {
-        return false;
-      }
+    if (!matchesMulti(filters.enquiryType, enquiry.enquiryType)) {
+      return false;
     }
-    if (filters.state !== "All") {
-      if (filters.state === "Blank") {
-        if (enquiry.state !== null && enquiry.state !== undefined && enquiry.state !== "" && enquiry.state !== "-") {
-          return false;
-        }
-      } else if (enquiry.state !== filters.state) {
-        return false;
-      }
+    if (!matchesMulti(filters.state, enquiry.state)) {
+      return false;
     }
-    if (filters.paymentTerms !== "All") {
-      if (filters.paymentTerms === "Blank") {
-        if (enquiry.paymentTerms !== null && enquiry.paymentTerms !== undefined && enquiry.paymentTerms !== "" && enquiry.paymentTerms !== "-") {
-          return false;
-        }
-      } else if (enquiry.paymentTerms !== filters.paymentTerms) {
-        return false;
-      }
+    if (!matchesMulti(filters.paymentTerms, enquiry.paymentTerms)) {
+      return false;
     }
-    if (filters.inspection !== "All") {
-      if (filters.inspection === "Blank") {
-        if (enquiry.inspection !== null && enquiry.inspection !== undefined && enquiry.inspection !== "" && enquiry.inspection !== "-") {
-          return false;
-        }
-      } else if (enquiry.inspection !== filters.inspection) {
-        return false;
-      }
+    if (!matchesMulti(filters.inspection, enquiry.inspection)) {
+      return false;
     }
-    if (filters.pbg !== "All") {
-      if (filters.pbg === "Blank") {
-        if (enquiry.pbg !== null && enquiry.pbg !== undefined && enquiry.pbg !== "" && enquiry.pbg !== "-") {
-          return false;
-        }
-      } else if (enquiry.pbg !== filters.pbg) {
-        return false;
-      }
+    if (!matchesMulti(filters.pbg, enquiry.pbg)) {
+      return false;
     }
-    if (filters.utility !== "All") {
-      if (filters.utility === "Blank") {
-        if (enquiry.utility !== null && enquiry.utility !== undefined && enquiry.utility !== "" && enquiry.utility !== "-") {
-          return false;
-        }
-      } else if (enquiry.utility !== filters.utility) {
-        return false;
-      }
+    if (!matchesMulti(filters.utility, enquiry.utility)) {
+      return false;
     }
-
-    if (filters.orderStatus !== "All") {
-      if (filters.orderStatus === "Blank") {
-        if (enquiry.orderStatus !== null && enquiry.orderStatus !== undefined && enquiry.orderStatus !== "" && enquiry.orderStatus !== "-") {
-          return false;
-        }
-      } else if (enquiry.orderStatus !== filters.orderStatus) {
-        return false;
-      }
+    if (!matchesMulti(filters.orderStatus, enquiry.orderStatus)) {
+      return false;
     }
     if (
       filters.closureStatus &&
@@ -655,14 +562,8 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
       ) {
         return false;
       }
-      if (filters.itemType !== "All") {
-        if (filters.itemType === "Blank") {
-          if (item.itemType !== null && item.itemType !== undefined && item.itemType !== "" && item.itemType !== "-") {
-            return false;
-          }
-        } else if (item.itemType !== filters.itemType) {
-          return false;
-        }
+      if (!matchesMulti(filters.itemType, item.itemType)) {
+        return false;
       }
       if (
         filters.itemTypeSearch &&
@@ -670,14 +571,8 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
       ) {
         return false;
       }
-      if (filters.moc !== "All") {
-        if (filters.moc === "Blank") {
-          if (item.moc !== null && item.moc !== undefined && item.moc !== "" && item.moc !== "-") {
-            return false;
-          }
-        } else if (item.moc !== filters.moc) {
-          return false;
-        }
+      if (!matchesMulti(filters.moc, item.moc)) {
+        return false;
       }
       if (
         filters.mocSearch &&
@@ -685,50 +580,20 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
       ) {
         return false;
       }
-      if (filters.size !== "All") {
-        if (filters.size === "Blank") {
-          if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-" && item.size !== "Not detectable"&& item.size !=="Not mentioned/cant detect size") {
-            return false;
-          }
-        } else if (item.size !== filters.size) {
-          return false;
-        }
+      if (!matchesMulti(filters.size, item.size, isBlankSize)) {
+        return false;
       }
-      if (filters.pnRating !== "All") {
-        if (filters.pnRating === "Blank") {
-          if (item.pnRating !== null && item.pnRating !== undefined && item.pnRating !== "" && item.pnRating !== "-") {
-            return false;
-          }
-        } else if (item.pnRating !== filters.pnRating) {
-          return false;
-        }
+      if (!matchesMulti(filters.pnRating, item.pnRating)) {
+        return false;
       }
-      if (filters.operationType !== "All") {
-        if (filters.operationType === "Blank") {
-          if (item.operationType !== null && item.operationType !== undefined && item.operationType !== "" && item.operationType !== "-") {
-            return false;
-          }
-        } else if (item.operationType !== filters.operationType) {
-          return false;
-        }
+      if (!matchesMulti(filters.operationType, item.operationType)) {
+        return false;
       }
-      if (filters.extension !== "All") {
-        if (filters.extension === "Blank") {
-          if (item.extension !== null && item.extension !== undefined && item.extension !== "" && item.extension !== "-") {
-            return false;
-          }
-        } else if (item.extension !== filters.extension) {
-          return false;
-        }
+      if (!matchesMulti(filters.extension, item.extension)) {
+        return false;
       }
-      if (filters.bypass !== "All") {
-        if (filters.bypass === "Blank") {
-          if (item.bypass !== null && item.bypass !== undefined && item.bypass !== "" && item.bypass !== "-") {
-            return false;
-          }
-        } else if (item.bypass !== filters.bypass) {
-          return false;
-        }
+      if (!matchesMulti(filters.bypass, item.bypass)) {
+        return false;
       }
       if (
         filters.productCost &&
@@ -798,12 +663,8 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
       ) {
         return false;
       }
-      if (filters.validation !== "All" && filters.validation !== "") {
-        if (filters.validation === "Blank") {
-          if (item.validation !== null && item.validation !== undefined && item.validation !== "" && item.validation !== "-") {
-            return false;
-          }
-        } else if ((item.validation || "") !== filters.validation) {
+      if (filters.validation.length > 0) {
+        if (!matchesMulti(filters.validation, item.validation)) {
           return false;
         }
       }
@@ -877,7 +738,10 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
       : strB.localeCompare(strA, undefined, { numeric: true });
   });
 
-  const paginatedEnquiries = sortedEnquiries;
+  const paginatedEnquiries = sortedEnquiries.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
 
 
   const handleImportFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1059,23 +923,11 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
         let pass = true
         if (filters.itemName && !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())) pass = false
         if (filters.quantity && !item.quantity.toString().includes(filters.quantity)) pass = false
-        if (filters.itemType !== "All") {
-          if (filters.itemType === "Blank") {
-            if (item.itemType !== null && item.itemType !== undefined && item.itemType !== "" && item.itemType !== "-") pass = false
-          } else if (item.itemType !== filters.itemType) pass = false
-        }
+        if (!matchesMulti(filters.itemType, item.itemType)) pass = false
         if (filters.itemTypeSearch && !(item.itemType || "").toLowerCase().includes(filters.itemTypeSearch.toLowerCase())) pass = false
-        if (filters.moc !== "All") {
-          if (filters.moc === "Blank") {
-            if (item.moc !== null && item.moc !== undefined && item.moc !== "" && item.moc !== "-") pass = false
-          } else if (item.moc !== filters.moc) pass = false
-        }
+        if (!matchesMulti(filters.moc, item.moc)) pass = false
         if (filters.mocSearch && !(item.moc || "").toLowerCase().includes(filters.mocSearch.toLowerCase())) pass = false
-        if (filters.size !== "All") {
-          if (filters.size === "Blank") {
-            if (item.size !== null && item.size !== undefined && item.size !== "" && item.size !== "-" && item.size !== "Not detectable" && item.size !== "Not mentioned/cant detect size") pass = false
-          } else if (item.size !== filters.size) pass = false
-        }
+        if (!matchesMulti(filters.size, item.size, isBlankSize)) pass = false
         if (pass) matchedItems.push(item)
       }
     }
@@ -1110,8 +962,6 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
 
   const inputClass =
     "mt-1.5 w-full h-7 rounded border border-input bg-background px-2 py-0.5 text-[10px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 normal-case";
-  const selectClass =
-    "mt-1.5 w-full h-7 rounded border border-input bg-background px-1.5 py-0.5 text-[10px] font-normal text-foreground outline-none focus:border-blue-500 normal-case cursor-pointer";
 
   // Active inline cell dropdown styles (Google Sheets-like transparent border, visible chevron, hover background)
   const cellSelectClass =
@@ -1141,20 +991,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
             </button>
           )}
 
-          <select
-            value={filterValidation}
-            onChange={(e) => setFilterValidation(e.target.value)}
-            className="h-8 text-xs border border-border rounded-md px-2 bg-background text-foreground outline-none cursor-pointer"
-          >
-            <option value="">Validation: All</option>
-            {["Yes", "No"]
-              .filter((opt) =>
-                cascadedOptions.validation.includes(opt) || filters.validation === opt
-              )
-              .map((opt) => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-          </select>
+          <MultiSelectFilter
+            label="Validation"
+            allLabel="Validation: All"
+            options={["Yes", "No"]}
+            cascadedOptions={cascadedOptions.validation}
+            selected={filters.validation}
+            onChange={(v) => dispatch(setFilter({ field: "validation", value: v }))}
+            includeBlank
+            className="h-8 w-40 rounded-md border border-border bg-background text-foreground"
+            panelClassName="w-56"
+          />
 
           <button
             type="button"
@@ -1268,93 +1115,14 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 {renderSortArrow("partyName")}
               </div>
               <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <button
-                  type="button"
-                  onClick={() => dispatch(setPartyFilterOpen(!isPartyFilterOpen))}
-                  className="w-full h-7 rounded border border-border bg-background px-2 py-0.5 text-[10px] text-left cursor-pointer flex items-center justify-between hover:bg-accent outline-none"
-                >
-                  <span className="truncate">
-                    {filters.partyNames.length === 0
-                      ? "All Parties"
-                      : `${filters.partyNames.length} Selected`}
-                  </span>
-                  <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0 ml-1" />
-                </button>
-
-                {isPartyFilterOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40 cursor-default"
-                      onClick={() => {
-                        dispatch(setPartyFilterOpen(false));
-                        setLocalPartySearch("");
-                        dispatch(setPartySearch(""));
-                      }}
-                    />
-                    <div className="absolute top-8 left-0 w-64 z-50 rounded border border-border bg-popover text-popover-foreground shadow-lg p-2 flex flex-col gap-2 max-h-72">
-                      <div className="flex items-center gap-1.5 border border-border rounded px-2 py-1 bg-muted">
-                        <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        <input
-                          type="text"
-                          placeholder="Search parties..."
-                          value={localPartySearch}
-                          onChange={(e) => setLocalPartySearch(e.target.value)}
-                          className="w-full text-[10px] bg-transparent outline-none border-none placeholder:text-muted-foreground p-0 h-4 normal-case"
-                        />
-                      </div>
-
-                      <div className="flex justify-between items-center px-1 text-[9px]">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            dispatch(setPartyNamesFilter(PARTY_NAMES))
-                          }
-                          className="text-blue-600 font-bold hover:underline cursor-pointer"
-                        >
-                          Select All
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            dispatch(setPartyNamesFilter([]))
-                          }
-                          className="text-muted-foreground font-bold hover:underline cursor-pointer"
-                        >
-                          Clear
-                        </button>
-                      </div>
-
-                      <div className="flex-1 overflow-y-auto divide-y divide-border max-h-48 pr-0.5">
-                        {PARTY_NAMES.filter((name) =>
-                          (cascadedOptions.partyNames.includes(name) || filters.partyNames.includes(name)) &&
-                          name.toLowerCase().includes(localPartySearch.toLowerCase())
-                        ).map((name) => {
-                          const isChecked = filters.partyNames.includes(name);
-                          return (
-                            <label
-                              key={name}
-                              className="flex items-center gap-2 py-1 px-1 hover:bg-accent cursor-pointer select-none text-[10px] text-foreground font-medium truncate"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => {
-                                  dispatch(setPartyNamesFilter(
-                                    filters.partyNames.includes(name)
-                                      ? filters.partyNames.filter((n) => n !== name)
-                                      : [...filters.partyNames, name]
-                                  ));
-                                }}
-                                className="h-3 w-3 rounded text-blue-600 focus:ring-blue-500 border-border cursor-pointer"
-                              />
-                              <span className="truncate">{name}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </>
-                )}
+                <MultiSelectFilter
+                  label="Party Name"
+                  allLabel="All Parties"
+                  options={dropdownOptions.partyNames}
+                  cascadedOptions={cascadedOptions.partyNames}
+                  selected={filters.partyNames}
+                  onChange={(v) => dispatch(setFilter({ field: "partyNames", value: v }))}
+                />
               </div>
               <div
                 onMouseDown={(e) => handleMouseDown(2, e)}
@@ -1372,23 +1140,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Enquiry Type</span>
                 {renderSortArrow("enquiryType")}
               </div>
-              <select
-                value={filters.enquiryType}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "enquiryType", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All Types</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.enquiryTypes
-                  .filter((opt) =>
-                    cascadedOptions.enquiryType.includes(opt) || filters.enquiryType === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Enquiry Type"
+                  allLabel="All Types"
+                  options={dropdownOptions.enquiryTypes}
+                  cascadedOptions={cascadedOptions.enquiryType}
+                  selected={filters.enquiryType}
+                  onChange={(v) => dispatch(setFilter({ field: "enquiryType", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(3, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1405,23 +1167,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>State</span>
                 {renderSortArrow("state")}
               </div>
-              <select
-                value={filters.state}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "state", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All States</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.states
-                  .filter((opt) =>
-                    cascadedOptions.state.includes(opt) || filters.state === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="State"
+                  allLabel="All States"
+                  options={dropdownOptions.states}
+                  cascadedOptions={cascadedOptions.state}
+                  selected={filters.state}
+                  onChange={(v) => dispatch(setFilter({ field: "state", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(4, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1438,23 +1194,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Payment Terms</span>
                 {renderSortArrow("paymentTerms")}
               </div>
-              <select
-                value={filters.paymentTerms}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "paymentTerms", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All Terms</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.paymentTerms
-                  .filter((opt) =>
-                    cascadedOptions.paymentTerms.includes(opt) || filters.paymentTerms === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Payment Terms"
+                  allLabel="All Terms"
+                  options={dropdownOptions.paymentTerms}
+                  cascadedOptions={cascadedOptions.paymentTerms}
+                  selected={filters.paymentTerms}
+                  onChange={(v) => dispatch(setFilter({ field: "paymentTerms", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(5, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1471,23 +1221,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Inspection</span>
                 {renderSortArrow("inspection")}
               </div>
-              <select
-                value={filters.inspection}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "inspection", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.inspections
-                  .filter((opt) =>
-                    cascadedOptions.inspection.includes(opt) || filters.inspection === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Inspection"
+                  allLabel="All"
+                  options={dropdownOptions.inspections}
+                  cascadedOptions={cascadedOptions.inspection}
+                  selected={filters.inspection}
+                  onChange={(v) => dispatch(setFilter({ field: "inspection", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(6, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1504,23 +1248,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>PBG</span>
                 {renderSortArrow("pbg")}
               </div>
-              <select
-                value={filters.pbg}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "pbg", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.pbgs
-                  .filter((opt) =>
-                    cascadedOptions.pbg.includes(opt) || filters.pbg === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="PBG"
+                  allLabel="All"
+                  options={dropdownOptions.pbgs}
+                  cascadedOptions={cascadedOptions.pbg}
+                  selected={filters.pbg}
+                  onChange={(v) => dispatch(setFilter({ field: "pbg", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(7, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1537,23 +1275,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Utility</span>
                 {renderSortArrow("utility")}
               </div>
-              <select
-                value={filters.utility}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "utility", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All Utilities</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.utilities
-                  .filter((opt) =>
-                    cascadedOptions.utility.includes(opt) || filters.utility === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Utility"
+                  allLabel="All Utilities"
+                  options={dropdownOptions.utilities}
+                  cascadedOptions={cascadedOptions.utility}
+                  selected={filters.utility}
+                  onChange={(v) => dispatch(setFilter({ field: "utility", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(8, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1572,23 +1304,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Order Status</span>
                 {renderSortArrow("orderStatus")}
               </div>
-              <select
-                value={filters.orderStatus}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "orderStatus", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All Statuses</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.orderStatuses
-                  .filter((opt) =>
-                    cascadedOptions.orderStatus.includes(opt) || filters.orderStatus === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Order Status"
+                  allLabel="All Statuses"
+                  options={dropdownOptions.orderStatuses}
+                  cascadedOptions={cascadedOptions.orderStatus}
+                  selected={filters.orderStatus}
+                  onChange={(v) => dispatch(setFilter({ field: "orderStatus", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(9, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1674,23 +1400,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Item Type</span>
                 {renderSortArrow("itemType")}
               </div>
-              <select
-                value={filters.itemType}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "itemType", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All Types</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.itemTypes
-                  .filter((opt) =>
-                    cascadedOptions.itemType.includes(opt) || filters.itemType === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Item Type"
+                  allLabel="All Types"
+                  options={dropdownOptions.itemTypes}
+                  cascadedOptions={cascadedOptions.itemType}
+                  selected={filters.itemType}
+                  onChange={(v) => dispatch(setFilter({ field: "itemType", value: v }))}
+                  includeBlank
+                />
+              </div>
               <input
                 type="text"
                 placeholder="Search item type..."
@@ -1714,23 +1434,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>MOC</span>
                 {renderSortArrow("moc")}
               </div>
-              <select
-                value={filters.moc}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "moc", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All MOCs</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.mocs
-                  .filter((opt) =>
-                    cascadedOptions.moc.includes(opt) || filters.moc === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="MOC"
+                  allLabel="All MOCs"
+                  options={dropdownOptions.mocs}
+                  cascadedOptions={cascadedOptions.moc}
+                  selected={filters.moc}
+                  onChange={(v) => dispatch(setFilter({ field: "moc", value: v }))}
+                  includeBlank
+                />
+              </div>
               <input
                 type="text"
                 placeholder="Search MOC..."
@@ -1754,23 +1468,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Size</span>
                 {renderSortArrow("size")}
               </div>
-              <select
-                value={filters.size}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "size", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All Sizes</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.sizes
-                  .filter((opt) =>
-                    cascadedOptions.size.includes(opt) || filters.size === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Size"
+                  allLabel="All Sizes"
+                  options={dropdownOptions.sizes}
+                  cascadedOptions={cascadedOptions.size}
+                  selected={filters.size}
+                  onChange={(v) => dispatch(setFilter({ field: "size", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(15, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1787,23 +1495,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>PN Rating</span>
                 {renderSortArrow("pnRating")}
               </div>
-              <select
-                value={filters.pnRating}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "pnRating", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All Ratings</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.pnRatings
-                  .filter((opt) =>
-                    cascadedOptions.pnRating.includes(opt) || filters.pnRating === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="PN Rating"
+                  allLabel="All Ratings"
+                  options={dropdownOptions.pnRatings}
+                  cascadedOptions={cascadedOptions.pnRating}
+                  selected={filters.pnRating}
+                  onChange={(v) => dispatch(setFilter({ field: "pnRating", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(16, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1820,23 +1522,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Operation Type</span>
                 {renderSortArrow("operationType")}
               </div>
-              <select
-                value={filters.operationType}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "operationType", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All Operations</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.operationTypes
-                  .filter((opt) =>
-                    cascadedOptions.operationType.includes(opt) || filters.operationType === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Operation Type"
+                  allLabel="All Operations"
+                  options={dropdownOptions.operationTypes}
+                  cascadedOptions={cascadedOptions.operationType}
+                  selected={filters.operationType}
+                  onChange={(v) => dispatch(setFilter({ field: "operationType", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(17, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1853,23 +1549,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Extension</span>
                 {renderSortArrow("extension")}
               </div>
-              <select
-                value={filters.extension}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "extension", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.extensions
-                  .filter((opt) =>
-                    cascadedOptions.extension.includes(opt) || filters.extension === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Extension"
+                  allLabel="All"
+                  options={dropdownOptions.extensions}
+                  cascadedOptions={cascadedOptions.extension}
+                  selected={filters.extension}
+                  onChange={(v) => dispatch(setFilter({ field: "extension", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(18, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1886,23 +1576,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Bypass</span>
                 {renderSortArrow("bypass")}
               </div>
-              <select
-                value={filters.bypass}
-                onChange={(e) =>
-                  dispatch(setFilter({ field: "bypass", value: e.target.value }))
-                }
-                className={selectClass}
-              >
-                <option value="All">All</option>
-                <option value="Blank">(Blank)</option>
-                {dropdownOptions.bypasses
-                  .filter((opt) =>
-                    cascadedOptions.bypass.includes(opt) || filters.bypass === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Bypass"
+                  allLabel="All"
+                  options={dropdownOptions.bypasses}
+                  cascadedOptions={cascadedOptions.bypass}
+                  selected={filters.bypass}
+                  onChange={(v) => dispatch(setFilter({ field: "bypass", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(19, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -2172,21 +1856,17 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                 <span>Validation</span>
                 {renderSortArrow("validation")}
               </div>
-              <select
-                value={filterValidation}
-                onChange={(e) => setFilterValidation(e.target.value)}
-                className="h-6 w-full text-[9px] p-0.5 border rounded bg-background text-foreground outline-none font-normal cursor-pointer mt-1.5"
-              >
-                <option value="">All</option>
-                {["Yes", "No"]
-                  .filter((opt) =>
-                    cascadedOptions.validation.includes(opt) || filters.validation === opt
-                  )
-                  .map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                <option value="Blank">Blank</option>
-              </select>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Validation"
+                  allLabel="All"
+                  options={["Yes", "No"]}
+                  cascadedOptions={cascadedOptions.validation}
+                  selected={filters.validation}
+                  onChange={(v) => dispatch(setFilter({ field: "validation", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -2353,7 +2033,7 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
                           autoFocus
                           className="w-full h-8 rounded border border-border bg-background px-2 py-0.5 text-xs text-foreground outline-none focus:border-blue-500 normal-case cursor-pointer font-semibold"
                         >
-                          {PARTY_NAMES.map((name) => (
+                          {dropdownOptions.partyNames.map((name) => (
                             <option key={name} value={name}>
                               {name}
                             </option>
@@ -3459,8 +3139,9 @@ export default function EnquiryTable({ dropdownOptions, totalCount, currentPage 
     {filteredEnquiries.length > 0 && (
       <Pagination
         currentPage={currentPage}
-        totalCount={totalCount}
+        totalCount={filteredEnquiries.length}
         pageSize={pageSize}
+        onPageChange={(page) => dispatch(setPage(page))}
         onPageSizeChange={(size) => {
           dispatch(setPageSize(size));
           dispatch(setPage(1));

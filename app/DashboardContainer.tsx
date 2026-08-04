@@ -12,8 +12,6 @@ interface DashboardContainerProps {
   dropdownOptions: DropdownOptions;
   nextDocketNumber: string;
   enquiriesList: { id: string; docketNumber: string; partyName: string }[];
-  totalCount: number;
-  currentPage: number;
 }
 
 function extractUniqueStringValues(arr: any[], key: string): string[] {
@@ -34,8 +32,6 @@ export default function DashboardContainer({
   dropdownOptions,
   nextDocketNumber,
   enquiriesList,
-  totalCount,
-  currentPage,
 }: DashboardContainerProps) {
   const dispatch = useAppDispatch();
 
@@ -73,8 +69,6 @@ export default function DashboardContainer({
       <div className="bg-white rounded-lg border border-slate-100 overflow-hidden shadow-sm flex flex-col flex-1">
         <EnquiryTable
           dropdownOptions={mergedDropdownOptions}
-          totalCount={totalCount}
-          currentPage={currentPage}
         />
       </div>
     </>

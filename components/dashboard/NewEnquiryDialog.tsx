@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { createEnquiry } from "@/lib/enquiriesSlice";
-import { PARTY_NAMES } from "@/lib/partyNames";
 import { parseClipboardText } from "@/lib/pasteParser";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { closeNewEnquiryDialog } from "@/lib/dialogsSlice";
@@ -24,6 +23,7 @@ import { closeNewEnquiryDialog } from "@/lib/dialogsSlice";
 interface NewEnquiryDialogProps {
   nextDocketNumber: string;
   dropdownOptions: {
+    partyNames: string[];
     enquiryTypes: string[];
     states: string[];
     paymentTerms: string[];
@@ -346,7 +346,7 @@ export default function NewEnquiryDialog({
   const debouncedPartySearch = useDebounce(partySearch, 300);
 
   // Filter party names dropdown
-  const filteredParties = PARTY_NAMES.filter((name) =>
+  const filteredParties = dropdownOptions.partyNames.filter((name) =>
     name.toLowerCase().includes(debouncedPartySearch.toLowerCase())
   );
 

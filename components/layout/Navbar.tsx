@@ -45,6 +45,12 @@ export default function Navbar() {
           >
             BOM
           </Link>
+          <Link
+            href="/admin/lookup-options"
+            className="inline-flex h-9 items-center gap-1.5 bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-800 rounded-md"
+          >
+            Admin
+          </Link>
         </div>
 
         <div className="flex items-center gap-6">

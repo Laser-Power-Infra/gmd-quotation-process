@@ -21,7 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { updateEnquiryItem, deleteEnquiryItem } from "@/lib/enquiriesSlice";
-import { PARTY_NAMES } from "@/lib/partyNames";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { openViewDialog, closeViewDialog, openEditDialog, closeEditDialog, openDeleteDialog, closeDeleteDialog } from "@/lib/dialogsSlice";
 
@@ -34,6 +33,7 @@ interface Attachment {
 }
 
 interface DropdownOptions {
+  partyNames: string[];
   enquiryTypes: string[];
   states: string[];
   paymentTerms: string[];
@@ -711,7 +711,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                     className={selectClass}
                   >
                     <option value="">Select party...</option>
-                    {PARTY_NAMES.map((name) => (
+                    {dropdownOptions.partyNames.map((name) => (
                       <option key={name} value={name}>
                         {name}
                       </option>

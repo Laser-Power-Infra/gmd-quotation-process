@@ -41,8 +41,6 @@ const initialState: UiState = {
      34: 140,
      35: 80,
   },
-  isPartyFilterOpen: false,
-  partySearch: "",
 };
 
 const uiSlice = createSlice({
@@ -66,12 +64,6 @@ const uiSlice = createSlice({
     ) {
       state.columnWidths[action.payload.index] = action.payload.width;
     },
-    setPartyFilterOpen(state, action: PayloadAction<boolean>) {
-      state.isPartyFilterOpen = action.payload;
-    },
-    setPartySearch(state, action: PayloadAction<string>) {
-      state.partySearch = action.payload;
-    },
   },
 });
 
@@ -79,8 +71,6 @@ export const {
   toggleRow,
   setExpandedRows,
   setColumnWidth,
-  setPartyFilterOpen,
-  setPartySearch,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;
