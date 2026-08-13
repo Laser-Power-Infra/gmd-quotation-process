@@ -494,6 +494,58 @@ export async function updateEnquiryItemAction(formData: {
   }
 }
 
+// Append extra attachments to an existing enquiry without touching existing ones
+export async function addAttachmentsAction(formData: {
+  enquiryId: string;
+  attachments: { name: string; size: number; type: string; content?: string }[];
+}) {
+  try {
+    if (formData.attachments.length === 0) {
+      return { success: false, error: "No files selected." };
+    }
+
+    const attachmentCreates = await Promise.all(
+      formData.attachments.map(async (att) => {
+        if (att.content) {
+          const res = await uploadFileToDrive(att.name, att.type, att.content);
+          return {
+            enquiryId: formData.enquiryId,
+            name: att.name,
+            url: res.url,
+            type: att.type,
+            size: att.size,
+          };
+        } else {
+          return {
+            enquiryId: formData.enquiryId,
+            name: att.name,
+            url: `/files/${att.name}`,
+            type: att.type,
+            size: att.size,
+          };
+        }
+      })
+    );
+
+    await prisma.attachment.createMany({
+      data: attachmentCreates,
+    });
+
+    const updatedEnquiry = await prisma.enquiry.findUnique({
+      where: { id: formData.enquiryId },
+      include: {
+        items: { orderBy: { position: "asc" } },
+        attachments: true,
+      },
+    });
+
+    return { success: true, data: serializeEnquiry(updatedEnquiry) };
+  } catch (error) {
+    console.error("Error adding attachments:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Failed to add attachments." };
+  }
+}
+
 // Update the orderStatus of an enquiry directly
 export async function updateEnquiryOrderStatusAction(enquiryId: string, orderStatus: string) {
   try {

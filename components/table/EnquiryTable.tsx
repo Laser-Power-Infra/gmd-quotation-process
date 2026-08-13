@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
-import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import ActionsDropdown from "./ActionsDropdown";
@@ -10,11 +10,11 @@ import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
 import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { useDebounce } from "@/lib/hooks/useDebounce";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments } from "@/lib/enquiriesSlice";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
 import { toggleRow, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
-import type { DropdownOptions } from "@/lib/types";
+import type { DropdownOptions, EnquiryData } from "@/lib/types";
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { importExcelData, autoFillBlanks } from "@/lib/enquiriesSlice";
@@ -55,6 +55,18 @@ function formatQuantity(itemName: string, quantity: any) {
   const qty = Number(quantity);
   return qty.toLocaleString();
 }
+
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => {
+      const base64String = (reader.result as string).split(",")[1];
+      resolve(base64String);
+    };
+    reader.onerror = (error) => reject(error);
+  });
+};
 
 function useFilterInput(reduxValue: string, field: string) {
   const dispatch = useAppDispatch();
@@ -115,6 +127,37 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [editingPartyEnquiryId, setEditingPartyEnquiryId] = useState<string | null>(null);
+
+  const attachInputRefs = useRef<Record<string, HTMLInputElement>>({});
+
+  const handleAddAttachments = async (e: React.ChangeEvent<HTMLInputElement>, enquiryId: string) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    e.target.value = "";
+    try {
+      const payload = await Promise.all(
+        files.map(async (file) => ({
+          name: file.name,
+          size: file.size,
+          type: file.type || file.name.split(".").pop() || "",
+          content: await fileToBase64(file),
+        }))
+      );
+      toast.promise(
+        (async () => {
+          await dispatch(addAttachments({ enquiryId, attachments: payload })).unwrap();
+        })(),
+        {
+          loading: "Uploading attachments...",
+          success: "Attachments added successfully.",
+          error: (err) => err.message,
+        }
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to add attachments.");
+    }
+  };
 
   // Debounced filter inputs
   const [filterEnquiryDateFrom, setFilterEnquiryDateFrom] = useFilterInput(filters.enquiryDateFrom, "enquiryDateFrom");
@@ -482,6 +525,95 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       }
     } catch (err: any) {
       toast.error(err?.message || err || `Failed to save.`, { id: toastId });
+    }
+  };
+
+  // Paste a column of Cost / VA% values into a docket's items in order.
+  const handleBulkFieldPaste = async (
+    enquiry: EnquiryData,
+    field: "cost" | "vaPercent",
+    e: React.ClipboardEvent<HTMLInputElement>,
+    startIndex: number
+  ) => {
+    const clipboardData = e.clipboardData.getData("text");
+    if (!clipboardData) return;
+
+    const lines = clipboardData
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length <= 1) {
+      return; // Single value → allow the normal paste
+    }
+
+    e.preventDefault();
+
+    const targets = getFilteredItems(enquiry).slice(startIndex);
+    if (targets.length === 0) return;
+
+    const updates: { item: { id: string }; cost?: number; vaPercent?: number }[] = [];
+    let invalid = false;
+
+    lines.forEach((line, idx) => {
+      const target = targets[idx];
+      if (!target) return;
+      const entry: { item: { id: string }; cost?: number; vaPercent?: number } = { item: target };
+
+      if (field === "cost") {
+        const parts = line.split("\t").map((p) => p.trim());
+        const costRaw = parts[0] || "";
+        const vaRaw = parts.length > 1 ? parts[1] : "";
+        if (costRaw) {
+          const c = parseFloat(costRaw.replace(/,/g, ""));
+          if (isNaN(c)) {
+            invalid = true;
+            return;
+          }
+          entry.cost = c;
+        }
+        if (vaRaw) {
+          const v = parseFloat(vaRaw.replace(/%/g, ""));
+          if (isNaN(v)) {
+            invalid = true;
+            return;
+          }
+          entry.vaPercent = v;
+        }
+      } else {
+        const v = parseFloat(line.replace(/%/g, ""));
+        if (isNaN(v)) {
+          invalid = true;
+          return;
+        }
+        entry.vaPercent = v;
+      }
+
+      updates.push(entry);
+    });
+
+    if (invalid) {
+      toast.error("Pasted values must be valid numbers.");
+      return;
+    }
+    if (updates.length === 0) return;
+
+    const toastId = toast.loading(`Updating ${updates.length} item(s)...`);
+    try {
+      await Promise.all(
+        updates.map(({ item, cost, vaPercent }) => {
+          const calls: Promise<unknown>[] = [];
+          if (cost !== undefined) {
+            calls.push(dispatch(updateItemField({ itemId: item.id, field: "cost", value: cost.toString() })).unwrap());
+          }
+          if (vaPercent !== undefined) {
+            calls.push(dispatch(updateItemField({ itemId: item.id, field: "vaPercent", value: vaPercent.toString() })).unwrap());
+          }
+          return Promise.all(calls);
+        })
+      );
+      toast.success(`Updated ${updates.length} item(s).`, { id: toastId });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update items.", { id: toastId });
     }
   };
 
@@ -2439,6 +2571,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               handleItemFieldChange(firstItem.id, "cost", e.target.value);
                             }
                           }}
+                          onPaste={(e) => handleBulkFieldPaste(enquiry, "cost", e, 0)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
@@ -2501,6 +2634,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               handleItemFieldChange(firstItem.id, "vaPercent", val);
                             }
                           }}
+                          onPaste={(e) => handleBulkFieldPaste(enquiry, "vaPercent", e, 0)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
@@ -2620,10 +2754,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     </td>
 
                     {/* Attachment */}
-                    <td className="py-3.5 px-4 text-xs border-r border-b border-border last:border-r-0 truncate">
-                      {enquiry.attachments && enquiry.attachments.length > 0 ? (
-                        <div className="flex flex-col gap-1 max-w-[150px]">
-                          {enquiry.attachments.map((att) => (
+                    <td className="py-3.5 px-4 text-xs border-r border-b border-border last:border-r-0 truncate align-top">
+                      <div className="flex flex-col gap-1 max-w-[150px]">
+                        {enquiry.attachments && enquiry.attachments.length > 0 ? (
+                          enquiry.attachments.map((att) => (
                             <a
                               key={att.id}
                               href={att.url || "#"}
@@ -2634,11 +2768,28 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               <FileText className="h-3.5 w-3.5 text-[#0f62fe] dark:text-blue-400 stroke-[2] shrink-0" />
                               <span className="truncate">{att.name}</span>
                             </a>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
+                          ))
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => attachInputRefs.current[enquiry.id]?.click()}
+                          className="inline-flex items-center gap-0.5 self-start text-[10px] font-semibold text-[#0f62fe] dark:text-blue-400 hover:underline cursor-pointer"
+                        >
+                          <Plus className="h-3 w-3 stroke-[2.5]" />
+                          Add
+                        </button>
+                        <input
+                          ref={(el) => {
+                            if (el) attachInputRefs.current[enquiry.id] = el;
+                          }}
+                          type="file"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => handleAddAttachments(e, enquiry.id)}
+                        />
+                      </div>
                     </td>
 
                     {/* Delivery Schedule */}
@@ -2697,7 +2848,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                   {/* Additional Items Sub-Rows */}
                   {isExpanded &&
                     hasMultiple &&
-                    displayItems.slice(1).map((item: any) => (
+                    displayItems.slice(1).map((item: any, idx: number) => (
                       <tr
                         key={item.id}
                         className={`transition-colors ${invalidVaItemIds.has(item.id) ? "bg-red-100 dark:bg-red-950/40" : "bg-muted/10 hover:bg-muted/20"}`}
@@ -2917,6 +3068,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               handleItemFieldChange(item.id, "cost", e.target.value);
                             }
                           }}
+                          onPaste={(e) => handleBulkFieldPaste(enquiry, "cost", e, idx + 1)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
@@ -2973,6 +3125,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               handleItemFieldChange(item.id, "vaPercent", val);
                             }
                           }}
+                          onPaste={(e) => handleBulkFieldPaste(enquiry, "vaPercent", e, idx + 1)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
