@@ -16,7 +16,7 @@ export function sheetRowToDbItem(row: unknown[], syncedAt: Date) {
     pcsWgt:         String(row[13] ?? ""),
     aum:            String(row[14] ?? ""),
     cost:           String(row[15] ?? ""),
-    usdRateOption:  String(row[16] ?? ""),
+    usdRateOption:  (() => { const v = String(row[16] ?? "").trim(); return (!v || v === "0") ? null : v; })(),
     hsnCode:        String(row[17] ?? ""),
     hsnCodeValidation: String(row[18] ?? ""),
     conv2:          String(row[19] ?? ""),

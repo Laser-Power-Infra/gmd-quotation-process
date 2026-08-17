@@ -28,7 +28,7 @@ export const CANONICAL_COLUMNS = [
 ];
 
 export const STATUS_COLUMNS = new Set(["NEW ITEM STATUS", "CURRENT STATUS", "RM TYPE","INDIAN/IMPORTED" ]);
-export const NUMERIC_COLUMNS = new Set(["Available Stock", "cost", "1 pcs wgt"]);
+export const NUMERIC_COLUMNS = new Set(["Available Stock", "cost", "1 pcs wgt", "USD cost"]);
 
 export const COL_INDEX_TO_DB_FIELD: Record<number, string> = {
   0: "erpItemCode",

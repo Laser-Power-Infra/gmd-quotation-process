@@ -5,16 +5,16 @@ export const CONTRACT_REVIEW_HEADERS = [
   "ITEM_NAME",
   "PARTY ITEM NAME",
   "RATE",
-  "CV",
-  "VA %",
+  // "CV",
+  // "VA %",
   "ORDER QTY",
   "FREE STOCK",
   "FINAL REQ",
   "MC QTY",
   "Balance mc",
-  "PROD ORD QTY",
-  "BALANCE TO PROD ORD",
-  "BALANCE TO PROD ENT",
+  // "PROD ORD QTY",
+  // "BALANCE TO PROD ORD",
+  // "BALANCE TO PROD ENT",
   "DI QTY",
   "BILLED QTY",
   "BAL BILL AG MC",
@@ -195,16 +195,16 @@ export function dbContractReviewToRow(item: {
   itemName: string | null;
   partyItemName: string | null;
   rate: string | null;
-  cv: string | null;
-  vaPercent: string | null;
+  // cv: string | null;
+  // vaPercent: string | null;
   orderQty: string | null;
   freeStock: string | null;
   finalReq: string | null;
   mcQty: string | null;
   balanceMc: string | null;
-  prodOrdQty: string | null;
-  balanceToProdOrd: string | null;
-  balanceToProdEnt: string | null;
+  // prodOrdQty: string | null;
+  // balanceToProdOrd: string | null;
+  // balanceToProdEnt: string | null;
   diQty: string | null;
   billedQty: string | null;
   balBillAgMc: string | null;
@@ -240,10 +240,12 @@ export function dbContractReviewToRow(item: {
   return [
     item.contractNo, item.itemCode, item.mcNo,
     item.itemName, item.partyItemName, item.rate,
-    item.cv, item.vaPercent, item.orderQty,
+    // item.cv, item.vaPercent, 
+    item.orderQty,
     item.freeStock, item.finalReq, item.mcQty,
-    item.balanceMc, item.prodOrdQty, item.balanceToProdOrd,
-    item.balanceToProdEnt, item.diQty, item.billedQty,
+    item.balanceMc,
+    //  item.prodOrdQty, item.balanceToProdOrd, item.balanceToProdEnt, 
+     item.diQty, item.billedQty,
     item.balBillAgMc, item.balBillAgCont, item.item,
     item.value, item.size, item.pnRating,
     item.dateOfContract, item.clearanceStatus, item.actuator,

@@ -234,6 +234,7 @@ export default function GMDUpdateTable({
   >({});
   const [localDateFrom, setLocalDateFrom] = useState("");
   const [localDateTo, setLocalDateTo] = useState("");
+  const [editingCells, setEditingCells] = useState<Set<string>>(new Set());
 
   const currentPage = isControlled
     ? filterState!.currentPage
@@ -534,9 +535,14 @@ export default function GMDUpdateTable({
     const field = COL_INDEX_TO_DB_FIELD[colIndex];
     if (!field) return;
 
+    let savedValue = value || null;
+    if (field === "usdRateOption") {
+      savedValue = (!value || value.trim() === "" || value.trim() === "0") ? null : value.trim();
+    }
+
     toast.promise(
       dispatch(
-        updateGMDUpdateField({ id, field, value: value || null }),
+        updateGMDUpdateField({ id, field, value: savedValue }),
       ).unwrap(),
       {
         loading: `Updating ${header}...`,
@@ -592,7 +598,7 @@ export default function GMDUpdateTable({
                   else setLocalGlobalSearch("");
                   setCurrentPage(1);
                 }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 flex-shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
+                className="absolute right-2 top-1/2 -translate-y-1/2 shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
                 title="Clear search"
               >
                 <X size={12} />
@@ -643,7 +649,7 @@ export default function GMDUpdateTable({
                 return (
                   <th
                     key={idx}
-                    className={`relative bg-[#f4f6f8] text-[#0a2540] text-xs font-bold uppercase tracking-wider px-3 py-2 text-left border-b-2 border-[#e1e6eb] border-r border-[#e1e6eb] last:border-r-0 select-none align-top${
+                    className={`relative bg-[#f4f6f8] text-[#0a2540] text-xs font-bold uppercase tracking-wider px-3 py-2 text-left border-b-2 border-[#e1e6eb] border-r  last:border-r-0 select-none align-top${
                       idx < 2 ? " sticky z-20" : ""
                     }${
                       editable &&
@@ -665,7 +671,7 @@ export default function GMDUpdateTable({
                     >
                       <span className="truncate">{header}</span>
                       {isSorted && (
-                        <span className="flex-shrink-0 text-[10px] text-[#0a2540]">
+                        <span className="shrink-0 text-[10px] text-[#0a2540]">
                           {sortDirection === "asc" ? (
                             <ChevronUp size={10} />
                           ) : (
@@ -721,7 +727,7 @@ export default function GMDUpdateTable({
                                   if (isControlled) filterActions!.onDateTo("");
                                   else setLocalDateTo("");
                                 }}
-                                className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
+                                className="shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
                                 title="Clear filter"
                               >
                                 <X size={10} />
@@ -750,7 +756,7 @@ export default function GMDUpdateTable({
                                   e.stopPropagation();
                                   handleColumnFilter(header, "");
                                 }}
-                                className="flex-shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
+                                className="shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
                                 title="Clear filter"
                               >
                                 <X size={10} />
@@ -770,11 +776,11 @@ export default function GMDUpdateTable({
                     {/* Resize handle */}
                     <div
                       onMouseDown={(e) => handleResizeStart(idx, e)}
-                      className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                      className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize z-20 group"
                       style={{ marginRight: "-3px" }}
                     >
-                      <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                      <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0070f3] group-active:bg-[#0070f3] transition-colors" />
+                      <div className="absolute top-0 -left-1 w-3.5 h-full" />
+                      <div className="absolute right-0.5 top-0 w-0.5 h-full bg-transparent group-hover:bg-[#0070f3] group-active:bg-[#0070f3] transition-colors" />
                     </div>
                   </th>
                 );
@@ -809,7 +815,94 @@ export default function GMDUpdateTable({
                       editable &&
                       (!editableColumns || editableColumns.includes(header));
                     if (isCellEditable) {
-                      if (
+                      if (header === "USD cost") {
+                        const rawCost = parseFloat(String(row[15] ?? ""));
+                        const rateStr = String(row[16] ?? "").trim();
+                        const rate = parseFloat(rateStr);
+                        const cellKey = `${idx}-${cellIdx}`;
+                        if (editingCells.has(cellKey)) {
+                          cellContent = (
+                            <input
+                              key={cellKey}
+                              type="text"
+                              defaultValue={rateStr || ""}
+                              autoFocus
+                              onBlur={(e) => {
+                                const newVal = e.target.value;
+                                if (newVal !== rateStr) {
+                                  handleCellUpdate(idx, cellIdx, newVal);
+                                }
+                                setEditingCells((prev) => {
+                                  const next = new Set(prev);
+                                  next.delete(cellKey);
+                                  return next;
+                                });
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter")
+                                  (e.target as HTMLInputElement).blur();
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full text-xs bg-transparent border-none outline-none font-mono-md"
+                            />
+                          );
+                        } else if (rate && rate !== 0 && !isNaN(rawCost) && !isNaN(rate)) {
+                          cellContent = (
+                            <div
+                              className="flex items-center gap-1 cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCells((prev) => new Set(prev).add(cellKey));
+                              }}
+                              title="Click to edit rate"
+                            >
+                              <span className="text-xs text-black-400 font-mono-md">
+                                {rateStr}
+                              </span>
+                              <span className="text-black-300">|</span>
+                              <span className="font-mono-md text-xs font-semibold text-green-700">
+                                $ {(rawCost / rate).toFixed(2)}
+                              </span>
+                            </div>
+                          );
+                        } else {
+                          cellContent = (
+                            <input
+                              key={cellKey}
+                              type="text"
+                              defaultValue={display}
+                              onBlur={(e) => {
+                                if (e.target.value !== display) {
+                                  handleCellUpdate(idx, cellIdx, e.target.value);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter")
+                                  (e.target as HTMLInputElement).blur();
+                              }}
+                              className="w-full text-xs bg-transparent border-none outline-none"
+                            />
+                          );
+                        }
+                      } else if (header === "cost") {
+                        cellContent = (
+                          <input
+                            key={display + "-" + idx + "-" + cellIdx}
+                            type="text"
+                            defaultValue={display}
+                            onBlur={(e) => {
+                              if (e.target.value !== display) {
+                                handleCellUpdate(idx, cellIdx, e.target.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter")
+                                (e.target as HTMLInputElement).blur();
+                            }}
+                            className="w-full text-xs bg-transparent border-none outline-none"
+                          />
+                        );
+                      } else if (
                         STATUS_COLUMNS.has(header) ||
                         categoryOptions?.[header]
                       ) {
@@ -887,7 +980,7 @@ export default function GMDUpdateTable({
                     return (
                       <td
                         key={cellIdx}
-                        className={`px-3 py-2 text-xs border-b border-[#e1e6eb] border-r border-[#e1e6eb] last:border-r-0${
+                        className={`px-3 py-2 text-xs border-b border-[#e1e6eb] border-r  last:border-r-0${
                           cellIdx < 2 ? " sticky z-10 bg-white" : ""
                         }${isCellEditable ? " bg-amber-50" : ""}`}
                         style={
