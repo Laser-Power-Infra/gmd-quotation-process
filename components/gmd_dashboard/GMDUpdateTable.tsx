@@ -72,13 +72,22 @@ function MultiSelect({
           className="absolute top-full left-0 z-50 mt-1 w-48 bg-white border border-[#e1e6eb] rounded shadow-lg"
           onClick={(e) => e.stopPropagation()}
         >
-          <button
-            type="button"
-            onClick={() => onChange([])}
-            className="w-full text-[10px] text-left px-2 py-1.5 hover:bg-gray-100 text-red-600 font-semibold border-b border-[#e1e6eb]"
-          >
-            Clear
-          </button>
+          <div className="flex justify-between items-center px-1 py-1.5 text-[10px] border-b border-[#e1e6eb]">
+            <button
+              type="button"
+              onClick={() => onChange([...options])}
+              className="text-blue-600 font-bold hover:underline cursor-pointer"
+            >
+              Select All
+            </button>
+            <button
+              type="button"
+              onClick={() => onChange([])}
+              className="text-red-600 font-semibold hover:underline cursor-pointer"
+            >
+              Clear
+            </button>
+          </div>
           <div className="max-h-48 overflow-y-auto">
             <label className="flex items-center gap-1.5 px-2 py-1 hover:bg-gray-50 cursor-pointer text-[10px]">
               <input
@@ -752,7 +761,7 @@ export default function GMDUpdateTable({
                       ))}
                     {header === "PBG AMOUNT" && pbgAmountSum !== null && (
                       <div className="mt-1 text-[11px] font-semibold text-blue-700">
-                        Total: ₹
+                        Total :  {"  "}
                         {pbgAmountSum.toLocaleString("en-IN", {
                           maximumFractionDigits: 1,
                         })}
