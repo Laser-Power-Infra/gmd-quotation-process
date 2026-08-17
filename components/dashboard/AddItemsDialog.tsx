@@ -37,8 +37,8 @@ export default function AddItemsDialog({
   const dispatch = useAppDispatch();
   const open = useAppSelector((state) => state.dialogs.isAddItemsOpen);
   const [enquiryId, setEnquiryId] = useState("");
-  const [items, setItems] = useState<{ itemName: string; quantity: string }[]>([
-    { itemName: "", quantity: "" },
+  const [items, setItems] = useState<{ itemName: string; quantity: string; cost: string; vaPercent: string }[]>([
+    { itemName: "", quantity: "", cost: "", vaPercent: "" },
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -46,7 +46,7 @@ export default function AddItemsDialog({
   const [isOpen, setIsOpen] = useState(false);
 
   const handleAddItemRow = () => {
-    setItems([...items, { itemName: "", quantity: "" }]);
+    setItems([...items, { itemName: "", quantity: "", cost: "", vaPercent: "" }]);
   };
 
   const handleRemoveItemRow = (index: number) => {
@@ -57,7 +57,7 @@ export default function AddItemsDialog({
 
   const handleItemChange = (
     index: number,
-    field: "itemName" | "quantity",
+    field: "itemName" | "quantity" | "cost" | "vaPercent",
     value: string
   ) => {
     const newItems = [...items];
@@ -80,16 +80,16 @@ export default function AddItemsDialog({
     let currentIdx = index;
 
     parsed.forEach((parsedItem) => {
+      const row = {
+        itemName: parsedItem.itemName,
+        quantity: parsedItem.quantity.toString(),
+        cost: parsedItem.cost !== undefined ? parsedItem.cost.toString() : "",
+        vaPercent: parsedItem.vaPercent !== undefined ? parsedItem.vaPercent.toString() : "",
+      };
       if (currentIdx < newItems.length) {
-        newItems[currentIdx] = {
-          itemName: parsedItem.itemName,
-          quantity: parsedItem.quantity.toString(),
-        };
+        newItems[currentIdx] = row;
       } else {
-        newItems.push({
-          itemName: parsedItem.itemName,
-          quantity: parsedItem.quantity.toString(),
-        });
+        newItems.push(row);
       }
       currentIdx++;
     });
@@ -116,6 +116,14 @@ export default function AddItemsDialog({
         toast.error("Quantity must be a valid number greater than 0.");
         return;
       }
+      if (item.cost.trim() !== "" && isNaN(parseFloat(item.cost.replace(/,/g, "")))) {
+        toast.error(`Cost must be a valid number for "${item.itemName.trim()}".`);
+        return;
+      }
+      if (item.vaPercent.trim() !== "" && isNaN(parseFloat(item.vaPercent.replace(/%/g, "")))) {
+        toast.error(`VA% must be a valid number for "${item.itemName.trim()}".`);
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -123,17 +131,35 @@ export default function AddItemsDialog({
 
     toast.promise(
       (async () => {
-        const formattedItems = items.map((item) => ({
-          itemName: item.itemName.trim(),
-          quantity: parseFloat(item.quantity),
-        }));
+        const formattedItems = items.map((item) => {
+          const parsed: {
+            itemName: string;
+            quantity: number;
+            cost?: number;
+            vaPercent?: number;
+          } = {
+            itemName: item.itemName.trim(),
+            quantity: parseFloat(item.quantity),
+          };
+          const costStr = item.cost.trim();
+          if (costStr !== "") {
+            const costNum = parseFloat(costStr.replace(/,/g, ""));
+            if (!isNaN(costNum)) parsed.cost = costNum;
+          }
+          const vaStr = item.vaPercent.trim();
+          if (vaStr !== "") {
+            const vaNum = parseFloat(vaStr.replace(/%/g, ""));
+            if (!isNaN(vaNum)) parsed.vaPercent = vaNum;
+          }
+          return parsed;
+        });
 
         await dispatch(addItems({ enquiryId, items: formattedItems })).unwrap();
 
         setEnquiryId("");
         setSearchQuery("");
         setIsOpen(false);
-        setItems([{ itemName: "", quantity: "" }]);
+        setItems([{ itemName: "", quantity: "", cost: "", vaPercent: "" }]);
       })(),
       {
         loading: "Adding items to enquiry...",
@@ -146,7 +172,7 @@ export default function AddItemsDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) dispatch(closeAddItemsDialog()); }}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-lg font-bold text-foreground">
             Add Items to Docket
@@ -273,7 +299,7 @@ export default function AddItemsDialog({
                     />
                   </div>
 
-                  <div className="w-28 space-y-1">
+                  <div className="w-24 space-y-1">
                     <Label className="text-xs text-muted-foreground">Quantity</Label>
                     <Input
                       type="number"
@@ -282,6 +308,31 @@ export default function AddItemsDialog({
                       value={item.quantity}
                       onChange={(e) =>
                         handleItemChange(index, "quantity", e.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div className="w-24 space-y-1">
+                    <Label className="text-xs text-muted-foreground">Cost</Label>
+                    <Input
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 120.5"
+                      value={item.cost}
+                      onChange={(e) =>
+                        handleItemChange(index, "cost", e.target.value)
+                      }
+                    />
+                  </div>
+
+                  <div className="w-20 space-y-1">
+                    <Label className="text-xs text-muted-foreground">VA%</Label>
+                    <Input
+                      type="text"
+                      placeholder="e.g. 18"
+                      value={item.vaPercent}
+                      onChange={(e) =>
+                        handleItemChange(index, "vaPercent", e.target.value)
                       }
                     />
                   </div>

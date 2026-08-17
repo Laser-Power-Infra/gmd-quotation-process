@@ -6,26 +6,26 @@ const initialState: FiltersState = {
   enquiryDateTo: "",
   docketNumber: "",
   partyNames: [],
-  enquiryType: "All",
-  state: "All",
-  paymentTerms: "All",
-  inspection: "All",
-  pbg: "All",
-  utility: "All",
+  enquiryType: [],
+  state: [],
+  paymentTerms: [],
+  inspection: [],
+  pbg: [],
+  utility: [],
   vaPercent: "",
-  orderStatus: "All",
+  orderStatus: [],
   closureStatus: "",
   itemName: "",
   quantity: "",
-  itemType: "All",
+  itemType: [],
   itemTypeSearch: "",
-  moc: "All",
+  moc: [],
   mocSearch: "",
-  size: "All",
-  pnRating: "All",
-  operationType: "All",
-  extension: "All",
-  bypass: "All",
+  size: [],
+  pnRating: [],
+  operationType: [],
+  extension: [],
+  bypass: [],
   productCost: "",
   costRefCode: "",
   cost: "",
@@ -36,7 +36,7 @@ const initialState: FiltersState = {
   itemNameMerge: "",
   totalValue: "",
   itemWiseTotalValue: "",
-  validation: "",
+  validation: [],
   attachment: "",
 };
 
@@ -48,15 +48,12 @@ const filtersSlice = createSlice({
       const { field, value } = action.payload;
       (state as any)[field] = value;
     },
-    setPartyNamesFilter(state, action: PayloadAction<string[]>) {
-      state.partyNames = action.payload;
-    },
     resetFilters() {
       return initialState;
     },
   },
 });
 
-export const { setFilter, setPartyNamesFilter, resetFilters } = filtersSlice.actions;
+export const { setFilter, resetFilters } = filtersSlice.actions;
 
 export default filtersSlice.reducer;

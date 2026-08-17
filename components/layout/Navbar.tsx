@@ -45,6 +45,18 @@ export default function Navbar() {
           >
             BOM
           </Link>
+          <Link
+            href="http://192.168.1.199:5173"
+            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
+          >
+            GEM BID & RA
+          </Link>
+          <Link
+            href="/admin/lookup-options"
+            className="inline-flex h-9 items-center gap-1.5 bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-800 rounded-md"
+          >
+            Admin
+          </Link>
         </div>
 
         <div className="flex items-center gap-6">

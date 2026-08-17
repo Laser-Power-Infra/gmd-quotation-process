@@ -2,9 +2,7 @@ import { PrismaClient } from "../app/generated/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import "dotenv/config";
-import { PARTY_NAMES } from "../lib/partyNames";
 import { resolveItemCategory } from "../lib/itemCategoryResolver";
-import { extractSizeFromItemName } from "../lib/sizeExtractor";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -56,11 +54,11 @@ function parseCSV(csvText: string): string[][] {
   return lines;
 }
 
-// Clean and match raw party names from the sheet with the 143 list
-function getMatchedPartyName(rawName: string): string {
+// Clean and match raw party names from the sheet with the lookup table list
+function getMatchedPartyName(rawName: string, partyNames: string[]): string {
   const cleanRaw = rawName.trim().toLowerCase();
   
-  const exactMatch = PARTY_NAMES.find((name) => name.toLowerCase() === cleanRaw);
+  const exactMatch = partyNames.find((name) => name.toLowerCase() === cleanRaw);
   if (exactMatch) return exactMatch;
 
   const cleanString = (s: string) =>
@@ -76,7 +74,7 @@ function getMatchedPartyName(rawName: string): string {
   const rawCore = cleanString(rawName);
   if (!rawCore) return rawName;
 
-  const substringMatch = PARTY_NAMES.find((name) => {
+  const substringMatch = partyNames.find((name) => {
     const listCore = cleanString(name);
     return listCore === rawCore || listCore.includes(rawCore) || rawCore.includes(listCore);
   });
@@ -121,6 +119,14 @@ interface TempEnquiry {
 }
 
 async function main() {
+  console.log("Fetching party names from LookupOption table...");
+  const partyRows = await prisma.lookupOption.findMany({
+    where: { type: "PARTY", isActive: true },
+    orderBy: { sortOrder: "asc" },
+  });
+  const partyNames = partyRows.map((r) => r.value);
+  console.log(`Loaded ${partyNames.length} party names.`);
+
   console.log("Fetching Dockets from 'Form Responses 1' sheet...");
   const docketsRes = await fetch(DOCKETS_URL);
   if (!docketsRes.ok) {
@@ -226,7 +232,7 @@ async function main() {
     const docketNumber = row[docketNoIdx]?.trim();
     if (!docketNumber) continue;
 
-    const partyName = getMatchedPartyName(row[partyIdx]?.trim() || "Unknown");
+    const partyName = getMatchedPartyName(row[partyIdx]?.trim() || "Unknown", partyNames);
     const dateStr = dateIdx !== -1 ? row[dateIdx]?.trim() : "";
     const enquiryDate = dateStr ? new Date(dateStr) : new Date();
 

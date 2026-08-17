@@ -58,6 +58,7 @@ export interface EnquiryData {
 }
 
 export interface DropdownOptions {
+  partyNames: string[];
   enquiryTypes: string[];
   states: string[];
   paymentTerms: string[];
@@ -80,26 +81,26 @@ export interface FiltersState {
   enquiryDateTo: string;
   docketNumber: string;
   partyNames: string[];
-  enquiryType: string;
-  state: string;
-  paymentTerms: string;
-  inspection: string;
-  pbg: string;
-  utility: string;
+  enquiryType: string[];
+  state: string[];
+  paymentTerms: string[];
+  inspection: string[];
+  pbg: string[];
+  utility: string[];
   vaPercent: string;
-  orderStatus: string;
+  orderStatus: string[];
   closureStatus: string;
   itemName: string;
   quantity: string;
-  itemType: string;
+  itemType: string[];
   itemTypeSearch: string;
-  moc: string;
+  moc: string[];
   mocSearch: string;
-  size: string;
-  pnRating: string;
-  operationType: string;
-  extension: string;
-  bypass: string;
+  size: string[];
+  pnRating: string[];
+  operationType: string[];
+  extension: string[];
+  bypass: string[];
   productCost: string;
   costRefCode: string;
   cost: string;
@@ -110,15 +111,13 @@ export interface FiltersState {
   itemNameMerge: string;
   totalValue: string;
   itemWiseTotalValue: string;
-  validation: string;
+  validation: string[];
   attachment: string;
 }
 
 export interface UiState {
   expandedRows: Record<string, boolean>;
   columnWidths: Record<number, number>;
-  isPartyFilterOpen: boolean;
-  partySearch: string;
 }
 
 export interface PaginationState {

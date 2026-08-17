@@ -15,6 +15,7 @@ import {
   deleteEnquiryItemAction,
   importExcelDataAction,
   autoFillBlanksAction,
+  addAttachmentsAction,
 } from "@/app/actions";
 
 export const createEnquiry = createAsyncThunk(
@@ -100,6 +101,20 @@ export const deleteEnquiryItem = createAsyncThunk(
     const result = await deleteEnquiryItemAction(itemId);
     if (!result.success) {
       return rejectWithValue(result.error || "Failed to delete item");
+    }
+    return result.data!;
+  }
+);
+
+export const addAttachments = createAsyncThunk(
+  "enquiries/addAttachments",
+  async (
+    payload: Parameters<typeof addAttachmentsAction>[0],
+    { rejectWithValue }
+  ) => {
+    const result = await addAttachmentsAction(payload);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to add attachments");
     }
     return result.data!;
   }
@@ -251,7 +266,7 @@ const enquiriesSlice = createSlice({
         itemsAdapter.addMany(state.items, items);
         const storedEnquiry = state.enquiries.entities[enquiryId];
         if (storedEnquiry) {
-          storedEnquiry.items = [...(storedEnquiry.items || []), ...items];
+          storedEnquiry.items = items;
         }
         state.addItemsStatus = "succeeded";
       })
@@ -293,6 +308,18 @@ const enquiriesSlice = createSlice({
       .addCase(deleteEnquiryItem.rejected, (state, action) => {
         state.deleteStatus = "failed";
         state.deleteError = (action.payload as string) || "Delete failed";
+      })
+      .addCase(addAttachments.pending, (state) => {
+        state.updateStatus = "loading";
+        state.updateError = null;
+      })
+      .addCase(addAttachments.fulfilled, (state, action) => {
+        enquiriesAdapter.upsertOne(state.enquiries, action.payload);
+        state.updateStatus = "succeeded";
+      })
+      .addCase(addAttachments.rejected, (state, action) => {
+        state.updateStatus = "failed";
+        state.updateError = (action.payload as string) || "Add attachments failed";
       })
       .addCase(importExcelData.pending, (state) => {
         state.importStatus = "loading";
