@@ -356,14 +356,14 @@ export default function GMDUpdateTable({
     dateFrom !== "" ||
     dateTo !== "";
 
-  const sortedRows = useMemo(() => {
-    if (sortColumn === null) return rows;
+  const sortedWithIds = useMemo(() => {
+    if (sortColumn === null) return rows.map((row, i) => ({ row, id: ids[i] }));
     const decorated = rows.map((row, i) => {
       const val = row[sortColumn];
       const isNum = typeof val === "number";
       const num = isNum ? val : NaN;
       const key = isNum ? "" : String(val ?? "").toLowerCase();
-      return { row, i, num, key };
+      return { row, id: ids[i], i, num, key };
     });
     const dir = sortDirection === "asc" ? 1 : -1;
     decorated.sort((a, b) => {
@@ -376,8 +376,8 @@ export default function GMDUpdateTable({
       const c = a.key.localeCompare(b.key, undefined, { numeric: true });
       return c * dir;
     });
-    return decorated.map((d) => d.row);
-  }, [rows, sortColumn, sortDirection]);
+    return decorated.map(({ row, id }) => ({ row, id }));
+  }, [rows, ids, sortColumn, sortDirection]);
 
   const rowSearchCache = useMemo(() => {
     const cache = new Map<unknown[], string>();
@@ -390,13 +390,13 @@ export default function GMDUpdateTable({
     return cache;
   }, [rows, headers]);
 
-  const filteredRows = useMemo(() => {
-    let result = sortedRows;
+  const filteredWithIds = useMemo(() => {
+    let result = sortedWithIds;
 
     const gs = globalSearch;
     if (gs.trim()) {
       const q = gs.toLowerCase();
-      result = result.filter((row) =>
+      result = result.filter(({ row }) =>
         (rowSearchCache.get(row) ?? "").includes(q),
       );
     }
@@ -406,7 +406,7 @@ export default function GMDUpdateTable({
       const colIdx = headers.indexOf(colName);
       if (colIdx === -1) continue;
 
-      result = result.filter((row) => {
+      result = result.filter(({ row }) => {
         const cellVal = String(row[colIdx] ?? "");
         if (filterVal === "(Blank)") return cellVal === "";
         return cellVal.toLowerCase().includes(filterVal.toLowerCase());
@@ -417,7 +417,7 @@ export default function GMDUpdateTable({
       if (!selected.length) continue;
       const colIdx = headers.indexOf(colName);
       if (colIdx === -1) continue;
-      result = result.filter((row) => {
+      result = result.filter(({ row }) => {
         const cellVal = String(row[colIdx] ?? "").trim();
         const matchesBlank = selected.includes("(Blank)") && cellVal === "";
         return matchesBlank || selected.includes(cellVal);
@@ -427,7 +427,7 @@ export default function GMDUpdateTable({
     if (dateColIdx !== -1 && (dateFrom || dateTo)) {
       const fromDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
       const toEnd = dateTo ? new Date(dateTo + "T23:59:59") : null;
-      result = result.filter((row) => {
+      result = result.filter(({ row }) => {
         const dateStr = String(row[dateColIdx] ?? "");
         if (!dateStr) return false;
         const date = parseDate(dateStr);
@@ -440,7 +440,7 @@ export default function GMDUpdateTable({
 
     return result;
   }, [
-    sortedRows,
+    sortedWithIds,
     globalSearch,
     columnFilters,
     multiFilters,
@@ -450,6 +450,11 @@ export default function GMDUpdateTable({
     dateColIdx,
     rowSearchCache,
   ]);
+
+  const filteredRows = useMemo(
+    () => filteredWithIds.map((v) => v.row),
+    [filteredWithIds],
+  );
 
   const pbgAmountSum = useMemo(() => {
     const colIdx = headers.indexOf("PBG AMOUNT");
@@ -474,10 +479,10 @@ export default function GMDUpdateTable({
     return result;
   }, [headers, categoryOptions, rows]);
 
-  const paginatedRows = useMemo(() => {
+  const paginatedWithIds = useMemo(() => {
     const start = (activePage - 1) * pageSize;
-    return filteredRows.slice(start, start + pageSize);
-  }, [filteredRows, activePage, pageSize]);
+    return filteredWithIds.slice(start, start + pageSize);
+  }, [filteredWithIds, activePage, pageSize]);
 
   const handleResizeStart = useCallback(
     (index: number, e: React.MouseEvent) => {
@@ -520,40 +525,13 @@ export default function GMDUpdateTable({
     );
   }
 
-  const uniqueKeyIndices = useMemo(
-    () =>
-      (uniqueKeyColumns ?? [])
-        .map((h) => headers.indexOf(h))
-        .filter((i) => i !== -1),
-    [uniqueKeyColumns, headers],
-  );
-
-  const keyToId = useMemo(() => {
-    const map = new Map<string, string>();
-    if (!uniqueKeyIndices.length) return map;
-    rows.forEach((row, i) => {
-      const key = uniqueKeyIndices
-        .map((c) => String(row[c] ?? ""))
-        .join("|");
-      if (key) map.set(key, ids[i]);
-    });
-    return map;
-  }, [rows, ids, uniqueKeyIndices]);
-
   const handleCellUpdate = async (
     rowIndex: number,
     colIndex: number,
     value: string,
   ) => {
-    const row = paginatedRows[rowIndex];
-    let id: string | undefined;
-    if (uniqueKeyIndices.length && row) {
-      const key = uniqueKeyIndices
-        .map((c) => String(row[c] ?? ""))
-        .join("|");
-      id = keyToId.get(key);
-    }
-    if (!id) id = ids[rowIndex];
+    const entry = paginatedWithIds[rowIndex];
+    const id = entry?.id;
     if (!id) return;
     const header = headers[colIndex];
 
@@ -818,7 +796,7 @@ export default function GMDUpdateTable({
             </tr>
           </thead>
           <tbody>
-            {paginatedRows.length === 0 ? (
+            {paginatedWithIds.length === 0 ? (
               <tr>
                 <td
                   colSpan={headers.length}
@@ -828,9 +806,9 @@ export default function GMDUpdateTable({
                 </td>
               </tr>
             ) : (
-              paginatedRows.map((row, idx) => (
+              paginatedWithIds.map(({ row, id }, idx) => (
                 <tr
-                  key={idx}
+                  key={id ?? idx}
                   className={`transition-colors hover:bg-gray-50 cursor-pointer ${
                     selectedIndex === idx ? "bg-blue-50" : ""
                   }`}
