@@ -26,7 +26,7 @@ const initialState: FiltersState = {
   operationType: [],
   extension: [],
   bypass: [],
-  productCost: "",
+  productCost: [],
   costRefCode: "",
   cost: "",
   stockStatus: "",
@@ -39,15 +39,16 @@ const initialState: FiltersState = {
   validation: [],
   attachment: "",
   erpItemCode: [],
+  erpItemCodeSearch: "",
 };
 
 const filtersSlice = createSlice({
   name: "filters",
   initialState,
   reducers: {
-    setFilter(state, action: PayloadAction<{ field: keyof FiltersState; value: any }>) {
+    setFilter(state, action: PayloadAction<{ field: keyof FiltersState; value: unknown }>) {
       const { field, value } = action.payload;
-      (state as any)[field] = value;
+      (state as unknown as Record<string, unknown>)[field] = value;
     },
     resetFilters() {
       return initialState;

@@ -102,7 +102,7 @@ export interface FiltersState {
   operationType: string[];
   extension: string[];
   bypass: string[];
-  productCost: string;
+  productCost: string[];
   costRefCode: string;
   cost: string;
   stockStatus: string;
@@ -115,6 +115,7 @@ export interface FiltersState {
   validation: string[];
   attachment: string;
   erpItemCode: string[];
+  erpItemCodeSearch: string;
 }
 
 export interface UiState {
@@ -138,12 +139,12 @@ export interface DialogsState {
 export interface UpdateEnquiryFieldPayload {
   enquiryId: string;
   field: string;
-  value: any;
+  value: unknown;
 }
 
 export interface UpdateItemFieldPayload {
   itemId: string;
   field: string;
-  value: any;
-  previousValue: any;
+  value: unknown;
+  previousValue: unknown;
 }

@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
 import ActionsDropdown from "./ActionsDropdown";
 import Pagination from "./Pagination";
 import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
@@ -14,7 +13,7 @@ import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
 import { toggleRow, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
-import type { DropdownOptions, EnquiryData, EnquiryItemData } from "@/lib/types";
+import type { DropdownOptions, EnquiryData, EnquiryItemData, FiltersState } from "@/lib/types";
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { importExcelData, autoFillBlanks, updateVaPercent } from "@/lib/enquiriesSlice";
@@ -51,11 +50,6 @@ function getInitials(name: string) {
   return "EQ";
 }
 
-function formatQuantity(itemName: string, quantity: any) {
-  const qty = Number(quantity);
-  return qty.toLocaleString();
-}
-
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -68,51 +62,54 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-function useFilterInput(reduxValue: string, field: string) {
+function useFilterInput(reduxValue: string, field: keyof FiltersState) {
   const dispatch = useAppDispatch();
   const [local, setLocal] = useState(reduxValue);
+  const [prevReduxValue, setPrevReduxValue] = useState(reduxValue);
+
+  if (reduxValue !== prevReduxValue) {
+    setPrevReduxValue(reduxValue);
+    setLocal(reduxValue);
+  }
+
   const debounced = useDebounce(local, 300);
 
   useEffect(() => {
-    setLocal(reduxValue);
-  }, [reduxValue]);
-
-  useEffect(() => {
-    dispatch(setFilter({ field: field as any, value: debounced }));
+    dispatch(setFilter({ field, value: debounced }));
   }, [debounced, field, dispatch]);
 
   return [local, setLocal] as const;
 }
 
-function isBlankValue(value: any): boolean {
+function isBlankValue(value: unknown): boolean {
   return value === null || value === undefined || value === "" || value === "-";
 }
 
-function isBlankSize(value: any): boolean {
+function isBlankSize(value: unknown): boolean {
   return isBlankValue(value) || value === "Not detectable" || value === "Not mentioned/cant detect size";
 }
 
-function matchesMulti(values: string[], actual: any, blankCheck: (v: any) => boolean = isBlankValue): boolean {
+function matchesMulti(values: string[], actual: unknown, blankCheck: (v: unknown) => boolean = isBlankValue): boolean {
   if (!values || values.length === 0) return true;
   if (values.includes(BLANK) && blankCheck(actual)) return true;
-  return values.includes(actual);
+  return values.includes(actual as string);
 }
 
 // Helper for cascading filter evaluation
-function itemFieldMatches(item: any, field: string, filterValue: string[]): boolean {
+function itemFieldMatches(item: EnquiryItemData, field: string, filterValue: string[]): boolean {
   const blankCheck = field === "size" ? isBlankSize : isBlankValue;
-  const actual = item[field] != null ? String(item[field]) : null;
+  const actual = item[field as keyof EnquiryItemData] != null ? String(item[field as keyof EnquiryItemData]) : null;
   return matchesMulti(filterValue, actual, blankCheck);
 }
 
-function enquiryFieldMatches(enquiry: any, field: string, filterValue: string[]): boolean {
-  return matchesMulti(filterValue, enquiry[field]);
+function enquiryFieldMatches(enquiry: EnquiryData, field: string, filterValue: string[]): boolean {
+  return matchesMulti(filterValue, enquiry[field as keyof EnquiryData]);
 }
 
 const ALL_DROPDOWN_FIELDS = [
   "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass",
-  "validation", "vaPercent", "erpItemCode",
+  "validation", "vaPercent", "erpItemCode", "productCost",
 ] as const;
 
 const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus"]);
@@ -166,7 +163,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterDocketNumber, setFilterDocketNumber] = useFilterInput(filters.docketNumber, "docketNumber");
   const [filterItemName, setFilterItemName] = useFilterInput(filters.itemName, "itemName");
   const [filterQuantity, setFilterQuantity] = useFilterInput(filters.quantity, "quantity");
-  const [filterProductCost, setFilterProductCost] = useFilterInput(filters.productCost, "productCost");
   const [filterCostRefCode, setFilterCostRefCode] = useFilterInput(filters.costRefCode, "costRefCode");
   const [filterCost, setFilterCost] = useFilterInput(filters.cost, "cost");
   const [filterStockStatus, setFilterStockStatus] = useFilterInput(filters.stockStatus, "stockStatus");
@@ -179,6 +175,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterAttachment, setFilterAttachment] = useFilterInput(filters.attachment, "attachment");
   const [filterItemTypeSearch, setFilterItemTypeSearch] = useFilterInput(filters.itemTypeSearch, "itemTypeSearch");
   const [filterMocSearch, setFilterMocSearch] = useFilterInput(filters.mocSearch, "mocSearch");
+  const [filterErpItemCodeSearch, setFilterErpItemCodeSearch] = useFilterInput(filters.erpItemCodeSearch, "erpItemCodeSearch");
   const [editingItemNameId, setEditingItemNameId] = useState<string | null>(null);
   const [autoFillStatus, setAutoFillStatus] = useState<"idle" | "running">("idle");
   const [vaStatus, setVaStatus] = useState<"idle" | "running">("idle");
@@ -192,25 +189,25 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const cascadedOptions = useMemo(() => {
     const result: Record<string, string[]> = {};
 
-    const enquiryPasses = (enquiry: any, excludeField: string | null): boolean => {
+    const enquiryPasses = (enquiry: EnquiryData, excludeField: string | null): boolean => {
       if (excludeField !== "partyNames" && filters.partyNames.length > 0) {
         if (!filters.partyNames.includes(enquiry.partyName)) return false;
       }
       for (const other of ALL_DROPDOWN_FIELDS) {
         if (other === excludeField) continue;
         if (ENQUIRY_DROPDOWN_SET.has(other)) {
-          const val = (filters as any)[other];
+          const val = filters[other];
           if (val.length > 0 && !enquiryFieldMatches(enquiry, other, val)) return false;
         }
       }
       return true;
     };
 
-    const itemPasses = (item: any, excludeField: string | null): boolean => {
+    const itemPasses = (item: EnquiryItemData, excludeField: string | null): boolean => {
       for (const other of ALL_DROPDOWN_FIELDS) {
         if (other === excludeField) continue;
         if (!ENQUIRY_DROPDOWN_SET.has(other)) {
-          const val = (filters as any)[other];
+          const val = filters[other];
           if (val.length > 0 && !itemFieldMatches(item, other, val)) return false;
         }
       }
@@ -222,12 +219,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         const available = enquiries
           .filter((enquiry) => {
             if (!enquiryPasses(enquiry, field)) return false;
-            return enquiry.items.some((item: any) => itemPasses(item, field));
+            return enquiry.items.some((item) => itemPasses(item, field));
           })
-          .map((enquiry) => (enquiry as any)[field])
-          .filter((v: any) => v !== null && v !== undefined && v !== "")
-          .filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i)
-          .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
+          .map((enquiry) => {
+            const val = (enquiry as unknown as Record<string, unknown>)[field];
+            return val != null ? String(val) : "";
+          })
+          .filter((v) => v !== "")
+          .filter((v, i, arr) => arr.indexOf(v) === i)
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
         result[field] = available;
       } else {
         const matchingEnquiryIds = new Set(
@@ -236,12 +236,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             .map((e) => e.id)
         );
         const available = allItems
-          .filter((item: any) => matchingEnquiryIds.has(item.enquiryId))
-          .filter((item: any) => itemPasses(item, field))
-          .map((item: any) => item[field] != null ? String(item[field]) : "")
-          .filter((v: any) => v !== undefined && v !== "" && v !== "undefined" && v !== "null")
-          .filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i)
-          .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
+          .filter((item) => matchingEnquiryIds.has(item.enquiryId))
+          .filter((item) => itemPasses(item, field))
+          .map((item) => {
+            const val = (item as unknown as Record<string, unknown>)[field];
+            return val != null ? String(val) : "";
+          })
+          .filter((v) => v !== "" && v !== "undefined" && v !== "null")
+          .filter((v, i, arr) => arr.indexOf(v) === i)
+          .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
         result[field] = available;
       }
     }
@@ -250,15 +253,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       .filter((enquiry) => {
         for (const other of ALL_DROPDOWN_FIELDS) {
           if (ENQUIRY_DROPDOWN_SET.has(other)) {
-            const val = (filters as any)[other];
-            if (val !== "All" && val !== "" && !enquiryFieldMatches(enquiry, other, val)) return false;
+            const val = filters[other];
+            if (!enquiryFieldMatches(enquiry, other, val)) return false;
           }
         }
-        return enquiry.items.some((item: any) => itemPasses(item, null));
+        return enquiry.items.some((item) => itemPasses(item, null));
       })
       .map((enquiry) => enquiry.partyName)
-      .filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i)
-      .sort((a: string, b: string) => a.localeCompare(b, undefined, { numeric: true }));
+      .filter((v, i, arr) => arr.indexOf(v) === i)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     result.partyNames = availableParties;
 
     return result;
@@ -299,9 +302,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     toast.success("All filters reset successfully.");
   };
 
-  const getFilteredItems = (enquiry: any) => {
+  const getFilteredItems = (enquiry: EnquiryData) => {
     if (!enquiry.items) return [];
-    return enquiry.items.filter((item: any) => {
+    return enquiry.items.filter((item: EnquiryItemData) => {
       if (
         filters.itemName &&
         !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())
@@ -351,8 +354,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.productCost &&
-        !(item.productCost?.toString() || "").includes(filters.productCost)
+        filters.erpItemCodeSearch &&
+        !(item.erpItemCode || "").toLowerCase().includes(filters.erpItemCodeSearch.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.productCost.length > 0 &&
+        !matchesMulti(filters.productCost, item.productCost != null ? String(item.productCost) : null)
       ) {
         return false;
       }
@@ -500,7 +509,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     );
   };
 
-  const getItemNameMerge = (item: any) => {
+  const getItemNameMerge = (item: EnquiryItemData) => {
     const orderedFields = [
       item.itemType,
       item.moc,
@@ -529,8 +538,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (field === "itemName" && result && !result.size) {
         toast.info("Size not mentioned in item name — please add manually.", { id: undefined, duration: 5000 });
       }
-    } catch (err: any) {
-      toast.error(err?.message || err || `Failed to save.`, { id: toastId });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : err ? String(err) : `Failed to save.`, { id: toastId });
     }
   };
 
@@ -739,8 +748,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.productCost &&
-        !(item.productCost?.toString() || "").includes(filters.productCost)
+        filters.erpItemCodeSearch &&
+        !(item.erpItemCode || "").toLowerCase().includes(filters.erpItemCodeSearch.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.productCost.length > 0 &&
+        !matchesMulti(filters.productCost, item.productCost != null ? String(item.productCost) : null)
       ) {
         return false;
       }
@@ -826,14 +841,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     return true;
   });
 
-  const getSortValue = (enquiry: any, field: string) => {
+  const getSortValue = (enquiry: EnquiryData, field: string): string | number | Date | null | undefined => {
     const enquiryFields = [
       "enquiryDate", "docketNumber", "partyName", "enquiryType", "state", 
       "paymentTerms", "inspection", "pbg", "utility", "orderStatus"
     ];
     
     if (enquiryFields.includes(field)) {
-      return enquiry[field];
+      return (enquiry as unknown as Record<string, unknown>)[field] as string | number | Date | null | undefined;
     }
     
     if (field === "attachment") {
@@ -843,7 +858,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     const firstItem = enquiry.items && enquiry.items[0];
     if (!firstItem) return null;
     
-    return firstItem[field];
+    return (firstItem as unknown as Record<string, unknown>)[field] as string | number | Date | null | undefined;
   };
 
   const sortedEnquiries = [...filteredEnquiries].sort((a, b) => {
@@ -903,7 +918,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         const workbook = XLSX.read(data, { type: "binary" });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json<any>(sheet);
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
 
         if (rows.length === 0) {
           toast.error("No data rows found in the sheet.", { id: toastId });
@@ -948,8 +963,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
         await dispatch(importExcelData(mappedRows)).unwrap();
         toast.success(`Imported successfully.`, { id: toastId });
-      } catch (err: any) {
-        toast.error(err.message || "An error occurred during parsing.", { id: toastId });
+      } catch (err: unknown) {
+        toast.error(err instanceof Error ? err.message : "An error occurred during parsing.", { id: toastId });
       } finally {
         e.target.value = "";
       }
@@ -961,7 +976,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const handleExportToExcel = () => {
     const toastId = toast.loading("Preparing Excel file...");
     try {
-      const rows: any[] = [];
+      const rows: Record<string, string | number>[] = [];
 
       sortedEnquiries.forEach((enquiry) => {
         if (!enquiry.items || enquiry.items.length === 0) {
@@ -1050,7 +1065,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       const dateStr = new Date().toISOString().split("T")[0];
       XLSX.writeFile(workbook, `GMD_Quotation_Export_${dateStr}.xlsx`);
       toast.success("Excel file downloaded successfully!", { id: toastId });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Export to Excel failed:", err);
       toast.error("Failed to export Excel file.", { id: toastId });
     }
@@ -1058,7 +1073,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
   const handleAutoFillBlanks = async () => {
     // Collect items that pass all active filters (same logic as filteredEnquiries)
-    const matchedItems: any[] = []
+    const matchedItems: EnquiryItemData[] = []
     for (const enquiry of paginatedEnquiries) {
       for (const item of enquiry.items) {
         let pass = true
@@ -1074,7 +1089,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
 
     const blankItems = matchedItems.filter(
-      (i: any) =>
+      (i: EnquiryItemData) =>
         !i.itemType ||
         !i.moc ||
         !i.size ||
@@ -1094,7 +1109,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     if (!confirm(`Auto-fill ${blankItems.length} items (itemType, MOC, Size, Operation Type, Extension, Bypass)? This uses AI tokens for complex cases.`)) return
 
     setAutoFillStatus("running")
-    await dispatch(autoFillBlanks(blankItems.map((i: any) => i.id))).unwrap()
+    await dispatch(autoFillBlanks(blankItems.map((i: EnquiryItemData) => i.id))).unwrap()
     setAutoFillStatus("idle")
     toast.success(`Auto-fill complete.`)
   }
@@ -1138,7 +1153,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   }
 
   const handleAutoFillVa = async () => {
-    const matchedItems: any[] = []
+    const matchedItems: EnquiryItemData[] = []
     for (const enquiry of paginatedEnquiries) {
       for (const item of enquiry.items) {
         let pass = true
@@ -1153,9 +1168,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       }
     }
 
-    const blankVaItems = matchedItems.filter((i: any) => !i.vaPercent)
+    const blankVaItems = matchedItems.filter((i: EnquiryItemData) => !i.vaPercent)
     console.log(`[Client] autoFillVa: ${blankVaItems.length} items with blank VA% out of ${matchedItems.length} matched`)
-    blankVaItems.forEach((i: any) => console.log(`  → ${i.itemName} (type: ${i.itemType || "?"}, size: ${i.size || "?"})`))
+    blankVaItems.forEach((i: EnquiryItemData) => console.log(`  → ${i.itemName} (type: ${i.itemType || "?"}, size: ${i.size || "?"})`))
     if (blankVaItems.length === 0) {
       toast.info("No blank VA% fields to fill.")
       return
@@ -1164,7 +1179,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
     setVaStatus("running")
     try {
-      const result = await dispatch(updateVaPercent(blankVaItems.map((i: any) => i.id))).unwrap()
+      const result = await dispatch(updateVaPercent(blankVaItems.map((i: EnquiryItemData) => i.id))).unwrap()
       console.log(`[Client] VA% auto-fill result:`, result)
       toast.success(`VA% auto-fill complete.`)
     } catch (err) {
@@ -1775,6 +1790,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                   searchPlaceholder="Search item codes..."
                 />
               </div>
+              <input
+                type="text"
+                placeholder="Search item code..."
+                value={filterErpItemCodeSearch}
+                onChange={(e) => setFilterErpItemCodeSearch(e.target.value)}
+                className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
+              />
               <div
                 onMouseDown={(e) => handleMouseDown(17, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -1872,13 +1894,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <span>Product Cost</span>
                 {renderSortArrow("productCost")}
               </div>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={filterProductCost}
-                onChange={(e) => setFilterProductCost(e.target.value)}
-                className={inputClass}
-              />
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Product Cost"
+                  allLabel="All Costs"
+                  options={cascadedOptions.productCost}
+                  cascadedOptions={cascadedOptions.productCost}
+                  selected={filters.productCost}
+                  onChange={(v) => dispatch(setFilter({ field: "productCost", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(21, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -2999,7 +3025,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                   {/* Additional Items Sub-Rows */}
                   {isExpanded &&
                     hasMultiple &&
-                    displayItems.slice(1).map((item: any, idx: number) => (
+                    displayItems.slice(1).map((item: EnquiryItemData, idx: number) => (
                       <tr
                         key={item.id}
                         className={`transition-colors ${invalidVaItemIds.has(item.id) ? "bg-red-100 dark:bg-red-950/40" : "bg-muted/10 hover:bg-muted/20"}`}
@@ -3483,11 +3509,11 @@ function triggerDownload(base64: string, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-function OfferPdfCell({ enquiry }: { enquiry: any }) {
+function OfferPdfCell({ enquiry }: { enquiry: EnquiryData }) {
   const [status, setStatus] = useState<"idle" | "generating" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const storeItems = useAppSelector(selectAllItems);
-  const items = storeItems.filter((item: any) => item.enquiryId === enquiry.id);
+  const items = storeItems.filter((item: EnquiryItemData) => item.enquiryId === enquiry.id);
 
   const handleGenerate = async () => {
     setStatus("generating");
@@ -3514,7 +3540,7 @@ function OfferPdfCell({ enquiry }: { enquiry: any }) {
         })(),
         approval: "It shall be in our scope",
         deliveryDestination: enquiry.state || "",
-        items: items.map((item: any) => ({
+        items: items.map((item: EnquiryItemData) => ({
           itemName: item.itemName,
           partyItemName: item.itemNameMerge || "",
           quantity: item.quantity ? Number(item.quantity) : 0,
@@ -3524,7 +3550,7 @@ function OfferPdfCell({ enquiry }: { enquiry: any }) {
           unit: "Nos.",
           deliverySchedule: item.deliverySchedule || "2-3 weeks",
         })),
-        totalItemwiseValue: items.reduce((sum: number, item: any) => {
+        totalItemwiseValue: items.reduce((sum: number, item: EnquiryItemData) => {
           const qty = item.quantity ? Number(item.quantity) : 0;
           const rate = item.quotedRate ? parseFloat(item.quotedRate) : 0;
           return sum + qty * rate;
@@ -3539,8 +3565,8 @@ function OfferPdfCell({ enquiry }: { enquiry: any }) {
         setErrorMessage(res.error || "Generation failed");
         setStatus("error");
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || "An error occurred");
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : "An error occurred");
       setStatus("error");
     }
   };
