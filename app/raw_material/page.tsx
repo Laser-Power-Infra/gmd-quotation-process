@@ -189,7 +189,8 @@ export default function Home() {
             hiddenFilters={["NEW ITEM STATUS"]}
             categoryOptions={enhancedCategoryOptions}
             editable
-            editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD cost"]}
+            editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD cost","HSN CODE","HSN Code Validation", "MAJOR MARKING"]}
+            uniqueKeyColumns={["ERP ITEM CODE"]}
           />
           <GMDUpdateTable
             headers={headers}
@@ -200,6 +201,7 @@ export default function Home() {
             title="Filtered Items"
             editable
             categoryOptions={enhancedCategoryOptions}
+            uniqueKeyColumns={["ERP ITEM CODE"]}
           />
         </div>
       </div>

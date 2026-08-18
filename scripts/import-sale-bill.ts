@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "../app/generated/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { google } from "googleapis";
+import { getOAuthClient } from "../lib/googleAuth";
 
 const SPREADSHEET_ID = process.env.SALE_BILL_SPREADSHEET_ID;
 const TAB_GID = 0;
@@ -32,16 +33,7 @@ const adapter = new PrismaPg({
 const prisma = new PrismaClient({ adapter });
 
 function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_PRIVATE_KEY;
-  if (!email || !key) {
-    throw new Error("Google service account credentials not configured");
-  }
-  return new google.auth.JWT({
-    email,
-    key: key.replace(/\\n/g, "\n"),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
+  return getOAuthClient();
 }
 
 function normalizeHeader(h: string): string {

@@ -6,7 +6,8 @@ import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnqui
 import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { extractSizeFromItemName } from "@/lib/sizeExtractor";
 import { roundToNearest10 } from "@/lib/rounding";
-import { validateVaPercent } from "@/lib/vaValidation";
+import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
+import { lookupAndSetItemCode } from "@/lib/gmdItemCodeLookup";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -89,6 +90,7 @@ export async function createNewEnquiryAction(formData: {
         return {
           ...item,
           resolved,
+          erpItemCode: null,
         };
       })
     );
@@ -111,7 +113,13 @@ export async function createNewEnquiryAction(formData: {
         items: {
           create: resolvedItems.map((item, index) => {
             const itemCost = item.cost || null;
-            const itemVa = item.vaPercent || null;
+            let itemVa = item.vaPercent || null;
+            if (itemVa === null) {
+              const defaultVa = getDefaultVaPercent(item.resolved.itemType, item.resolved.size);
+              if (defaultVa !== null) {
+                itemVa = defaultVa;
+              }
+            }
             let itemQR: string | null = null;
             if (itemCost !== null && itemCost > 0 && itemVa !== null) {
               itemQR = (itemCost * (1 + (itemVa / 100))).toFixed(2);
@@ -136,6 +144,7 @@ export async function createNewEnquiryAction(formData: {
               discount: item.discount || null,
               vaPercent: itemVa !== null ? String(itemVa) : null,
               quotedRate: itemQR,
+              erpItemCode: null,
             };
           }),
         },
@@ -207,6 +216,7 @@ export async function addItemsAction(formData: {
         return {
           ...item,
           resolved,
+          erpItemCode: null,
         };
       })
     );
@@ -221,7 +231,13 @@ export async function addItemsAction(formData: {
     await prisma.enquiryItem.createMany({
       data: resolvedItems.map((item, index) => {
         const itemCost = item.cost || null;
-        const itemVa = item.vaPercent || null;
+        let itemVa = item.vaPercent || null;
+        if (itemVa === null) {
+          const defaultVa = getDefaultVaPercent(item.resolved.itemType, item.resolved.size);
+          if (defaultVa !== null) {
+            itemVa = defaultVa;
+          }
+        }
         let itemQR: string | null = null;
         if (itemCost !== null && itemCost > 0 && itemVa !== null) {
           itemQR = (itemCost * (1 + (itemVa / 100))).toFixed(2);
@@ -247,6 +263,7 @@ export async function addItemsAction(formData: {
           discount: item.discount || null,
           vaPercent: itemVa !== null ? String(itemVa) : null,
           quotedRate: itemQR,
+          erpItemCode: null,
         };
       }),
     });
@@ -394,6 +411,9 @@ export async function updateEnquiryItemAction(formData: {
       sheetPnRating: formData.pnRating,
     });
 
+    const finalOperationType = formData.operationType || null;
+    const erpItemCode = item.erpItemCode;
+
     // Update item
     await prisma.enquiryItem.update({
       where: { id: formData.itemId },
@@ -406,7 +426,7 @@ export async function updateEnquiryItemAction(formData: {
         mocSource: resolved.mocSource,
         size: resolved.size,
         pnRating: resolved.pnRating || formData.pnRating || null,
-        operationType: formData.operationType || null,
+        operationType: finalOperationType,
         extension: formData.extension || null,
         bypass: formData.bypass || null,
         productCost: formData.productCost || null,
@@ -419,6 +439,7 @@ export async function updateEnquiryItemAction(formData: {
         quotedRateGst: finalQuotedRateGst,
         itemWiseTotalValue: updatedItemWise,
         totalValue: updatedTotalVal,
+        erpItemCode,
       },
     });
 
@@ -711,6 +732,13 @@ export async function updateItemFieldAction(
         data: updateData,
       });
       updatedItem = serializeItem(dbItem);
+
+      if (updatedItem && !updatedItem.vaPercent && (updatedItem.itemType || updatedItem.size)) {
+        const defaultVa = getDefaultVaPercent(updatedItem.itemType, updatedItem.size);
+        if (defaultVa !== null) {
+          updatedItem = await recalculateItem(itemId, { vaPercent: defaultVa });
+        }
+      }
     }
 
     if (["vaPercent", "quotedRate", "productCost", "extension", "bypass"].includes(field) && updatedItem) {
@@ -743,6 +771,35 @@ export async function updateItemFieldAction(
     console.error(`Error updating item ${field}:`, error);
     return { success: false, error: error.message || `Failed to update ${itemId}.` };
   }
+}
+
+// Fetch/refresh ERP item codes for multiple enquiry items (triggered via UI button)
+export async function fetchErpItemCodesAction(itemIds: string[]) {
+  const updatedItems: ReturnType<typeof serializeItem>[] = [];
+  let fetched = 0;
+  let lastError: string | null = null;
+
+  for (const itemId of itemIds) {
+    try {
+      await lookupAndSetItemCode(itemId);
+      const item = await prisma.enquiryItem.findUnique({
+        where: { id: itemId },
+      });
+      if (item) {
+        updatedItems.push(serializeItem(item));
+        fetched++;
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Failed to fetch ERP item code.";
+      lastError = message;
+      console.error(`Error fetching ERP item code for item ${itemId}:`, error);
+    }
+  }
+
+  if (fetched === 0) {
+    return { success: false, error: lastError || "No item codes fetched." };
+  }
+  return { success: true, data: { items: updatedItems, fetched } };
 }
 
 export async function importExcelDataAction(rows: any[]) {
@@ -799,7 +856,7 @@ export async function autoFillBlanksAction(itemIds: string[]) {
   try {
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
-      select: { id: true, itemName: true, itemType: true, moc: true, size: true, pnRating: true, operationType: true, extension: true, bypass: true, itemTypeSource: true, mocSource: true },
+      select: { id: true, itemName: true, itemType: true, moc: true, size: true, pnRating: true, operationType: true, extension: true, bypass: true, itemTypeSource: true, mocSource: true, vaPercent: true, cost: true },
     })
 
     console.log(`\n=== [Server] AUTO-FILL BLANKS START ===`)
@@ -847,6 +904,18 @@ export async function autoFillBlanksAction(itemIds: string[]) {
         if (updates.extension) console.log(`    extension: "${item.extension || ""}" → "${updates.extension}"`)
         if (updates.bypass) console.log(`    bypass:    "${item.bypass || ""}" → "${updates.bypass}"`)
       }
+
+      const effectiveItemType = updates.itemType || item.itemType
+      const effectiveSize = updates.size || item.size
+      if (!item.vaPercent && effectiveItemType) {
+        const defaultVa = getDefaultVaPercent(effectiveItemType, effectiveSize)
+        if (defaultVa !== null) {
+          await recalculateItem(item.id, { vaPercent: defaultVa })
+          updated++
+          console.log(`\n  ✓ ${item.itemName.substring(0, 50)}`)
+          console.log(`    vaPercent: "" → "${defaultVa}" (auto from ${effectiveItemType} / ${effectiveSize || "any"})`)
+        }
+      }
     }
 
     console.log(`\n\n=== [Server] AUTO-FILL BLANKS DONE ===`)
@@ -863,6 +932,52 @@ export async function autoFillBlanksAction(itemIds: string[]) {
   }
 }
 
+// Fill blank VA% values from the default VA% table (type + size based) using keyword item-type detection only
+export async function updateVaPercentAction(itemIds: string[]) {
+  try {
+    const items = await prisma.enquiryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true, itemName: true, itemType: true, size: true, vaPercent: true },
+    });
+
+    console.log(`\n=== [Server] AUTO-FILL VA% START ===`)
+    console.log(`[Server] Total items to process: ${items.length}`)
+
+    let updated = 0;
+    for (const item of items) {
+      if (item.vaPercent) {
+        console.log(`  - SKIP ${item.itemName.substring(0, 50)}: VA% already set to ${item.vaPercent}`)
+        continue;
+      }
+      const type = item.itemType || autoDetectItemType(item.itemName);
+      if (!type) {
+        console.log(`  - SKIP ${item.itemName.substring(0, 50)}: no itemType and auto-detect failed`)
+        continue;
+      }
+      const defaultVa = getDefaultVaPercent(type, item.size);
+      if (defaultVa === null) {
+        console.log(`  - SKIP ${item.itemName.substring(0, 50)}: no default VA% for type "${type}" / size "${item.size || "any"}"`)
+        continue;
+      }
+      console.log(`  ✓ ${item.itemName.substring(0, 50)}: VA% "" → "${defaultVa}" (from ${type} / ${item.size || "any"})`)
+      await recalculateItem(item.id, { vaPercent: defaultVa });
+      updated++;
+    }
+
+    console.log(`\n=== [Server] AUTO-FILL VA% DONE ===`)
+    console.log(`[Server] Updated: ${updated} of ${items.length} items\n`)
+
+    const refreshedItems = await prisma.enquiryItem.findMany({
+      where: { id: { in: itemIds } },
+    });
+
+    return { success: true, updated, data: { items: refreshedItems.map(serializeItem) } };
+  } catch (error: any) {
+    console.error("Error updating VA%:", error);
+    return { success: false, error: error.message || "Failed to update VA%." };
+  }
+}
+
 export async function updateGMDUpdateFieldAction(
   id: string,
   field: string,
@@ -873,6 +988,8 @@ export async function updateGMDUpdateFieldAction(
     where: { id },
     data: { [field]: value },
   });
+  console.log(`Updated GMDUpdateItem: ${id}, Field: ${field}, Value: ${value}, ${updated}`);
+  console.dir(updated, { depth: Infinity });
   return { id, field, value };
 }
 

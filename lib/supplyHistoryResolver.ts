@@ -46,7 +46,7 @@ const SUPPLY_ITEM_TYPE_PATTERNS = [
   { category: "ALTITUDE CONTROL VALVE", patterns: [/altitude\s*control/i, /control\s*valve/i, /\bdiaphragm\b/i] },
   { category: "PRESSURE REDUCING VALVE", patterns: [/pressure\s*reducing\s*valve/i, /\bprds\b/i] },
   { category: "PRESSURE RELIEF VALVE", patterns: [/pressure\s*relief\s*valve/i, /\bprv\b/i, /\barv\b/i] },
-  { category: "KNIFE GATE VALVE", patterns: [/knife\s*gate\s*valve/i, /knife\s*gate/i] },
+  { category: "KNIFE GATE VALVE", patterns: [/knife\s*gate\s*valve/i, /knife\s*gate/i, /knee\s*gate\s*valve/i, /knee\s*gate/i] },
   { category: "SLUICE GATE",      patterns: [/sluice\s*gate/i] },
   { category: "EXPANSION BELOWS", patterns: [/bellow[s]?/i, /expansion\s*bellow[s]?/i] },
   { category: "BOLTS OR NUTS",    patterns: [/bolts?\s*(and|&|or\s*)?\s*nuts?/i, /screw[s]?\b/i] },

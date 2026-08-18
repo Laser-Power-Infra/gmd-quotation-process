@@ -28,6 +28,7 @@ export interface EnquiryItemData {
   itemTypeSource?: string | null;
   mocSource?: string | null;
   validation?: string | null;
+  erpItemCode?: string | null;
 }
 
 export interface AttachmentData {
@@ -87,9 +88,9 @@ export interface FiltersState {
   inspection: string[];
   pbg: string[];
   utility: string[];
-  vaPercent: string;
+  vaPercent: string[];
   orderStatus: string[];
-  closureStatus: string;
+  closureStatus: string[];
   itemName: string;
   quantity: string;
   itemType: string[];
@@ -113,6 +114,7 @@ export interface FiltersState {
   itemWiseTotalValue: string;
   validation: string[];
   attachment: string;
+  erpItemCode: string[];
 }
 
 export interface UiState {

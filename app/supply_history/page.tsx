@@ -176,6 +176,7 @@ export default function SupplyHistoryPage() {
             editableColumns={["Party Mail Address"]}
             onCellUpdate={handleCellUpdate}
             categoryOptions={categoryOptions}
+            uniqueKeyColumns={["INVOICE NO", "item name"]}
             filterState={filterState}
             filterActions={filterActions}
           />

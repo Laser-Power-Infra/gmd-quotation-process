@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
+import { getOAuthClient } from "@/lib/googleAuth";
 import {
   buildContractsColumnMap,
   buildDumpColumnMap,
@@ -12,16 +13,7 @@ const DUMP_GID = 0;
 const CONTRACTS_GID = 451626558;
 
 function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_PRIVATE_KEY;
-  if (!email || !key) {
-    throw new Error("Google service account credentials not configured");
-  }
-  return new google.auth.JWT({
-    email,
-    key: key.replace(/\\n/g, "\n"),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
+  return getOAuthClient();
 }
 
 function normalizeKey(value: string): string {

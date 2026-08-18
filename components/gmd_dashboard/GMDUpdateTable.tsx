@@ -182,6 +182,7 @@ interface GMDUpdateTableProps {
   editableColumns?: string[];
   hiddenFilters?: string[];
   categoryOptions?: Record<string, string[]>;
+  uniqueKeyColumns?: string[];
   onCellUpdate?: (id: string, colIndex: number, value: string) => Promise<void>;
   filterState?: {
     columnFilters: Record<string, string>;
@@ -215,6 +216,7 @@ export default function GMDUpdateTable({
   editableColumns,
   hiddenFilters,
   categoryOptions,
+  uniqueKeyColumns,
   onCellUpdate,
   filterState,
   filterActions,
@@ -518,12 +520,40 @@ export default function GMDUpdateTable({
     );
   }
 
+  const uniqueKeyIndices = useMemo(
+    () =>
+      (uniqueKeyColumns ?? [])
+        .map((h) => headers.indexOf(h))
+        .filter((i) => i !== -1),
+    [uniqueKeyColumns, headers],
+  );
+
+  const keyToId = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!uniqueKeyIndices.length) return map;
+    rows.forEach((row, i) => {
+      const key = uniqueKeyIndices
+        .map((c) => String(row[c] ?? ""))
+        .join("|");
+      if (key) map.set(key, ids[i]);
+    });
+    return map;
+  }, [rows, ids, uniqueKeyIndices]);
+
   const handleCellUpdate = async (
     rowIndex: number,
     colIndex: number,
     value: string,
   ) => {
-    const id = ids[rowIndex];
+    const row = paginatedRows[rowIndex];
+    let id: string | undefined;
+    if (uniqueKeyIndices.length && row) {
+      const key = uniqueKeyIndices
+        .map((c) => String(row[c] ?? ""))
+        .join("|");
+      id = keyToId.get(key);
+    }
+    if (!id) id = ids[rowIndex];
     if (!id) return;
     const header = headers[colIndex];
 

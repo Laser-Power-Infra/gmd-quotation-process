@@ -15,7 +15,9 @@ import {
   deleteEnquiryItemAction,
   importExcelDataAction,
   autoFillBlanksAction,
+  updateVaPercentAction,
   addAttachmentsAction,
+  fetchErpItemCodesAction,
 } from "@/app/actions";
 
 export const createEnquiry = createAsyncThunk(
@@ -59,6 +61,20 @@ export const updateItemField = createAsyncThunk(
     const result = await updateItemFieldAction(payload.itemId, payload.field, payload.value);
     if (!result.success) {
       return rejectWithValue(result.error || "Failed to update item field");
+    }
+    return result.data!;
+  }
+);
+
+export const fetchItemCodes = createAsyncThunk(
+  "enquiries/fetchItemCodes",
+  async (
+    itemIds: string[],
+    { rejectWithValue }
+  ) => {
+    const result = await fetchErpItemCodesAction(itemIds);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to fetch item codes");
     }
     return result.data!;
   }
@@ -148,6 +164,20 @@ export const autoFillBlanks = createAsyncThunk(
   }
 );
 
+export const updateVaPercent = createAsyncThunk(
+  "enquiries/updateVaPercent",
+  async (
+    payload: Parameters<typeof updateVaPercentAction>[0],
+    { rejectWithValue }
+  ) => {
+    const result = await updateVaPercentAction(payload);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to update VA%");
+    }
+    return { ...result.data, updated: result.updated };
+  }
+);
+
 const enquiriesAdapter = createEntityAdapter<EnquiryData>({
   sortComparer: (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
 });
@@ -163,6 +193,8 @@ interface EnquiriesState {
   error: string | null;
   updateStatus: "idle" | "loading" | "succeeded" | "failed";
   updateError: string | null;
+  fetchStatus: "idle" | "loading" | "succeeded" | "failed";
+  fetchError: string | null;
   createStatus: "idle" | "loading" | "succeeded" | "failed";
   createError: string | null;
   addItemsStatus: "idle" | "loading" | "succeeded" | "failed";
@@ -182,6 +214,8 @@ const initialState: EnquiriesState = {
   error: null,
   updateStatus: "idle",
   updateError: null,
+  fetchStatus: "idle",
+  fetchError: null,
   createStatus: "idle",
   createError: null,
   addItemsStatus: "idle",
@@ -256,6 +290,38 @@ const enquiriesSlice = createSlice({
       .addCase(updateItemField.rejected, (state, action) => {
         state.updateStatus = "failed";
         state.updateError = (action.payload as string) || "Update failed";
+      })
+      .addCase(fetchItemCodes.pending, (state) => {
+        state.fetchStatus = "loading";
+        state.fetchError = null;
+      })
+      .addCase(fetchItemCodes.fulfilled, (state, action) => {
+        const { items } = action.payload;
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, any[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
+        state.fetchStatus = "succeeded";
+      })
+      .addCase(fetchItemCodes.rejected, (state, action) => {
+        state.fetchStatus = "failed";
+        state.fetchError = (action.payload as string) || "Fetch item codes failed";
       })
       .addCase(addItems.pending, (state) => {
         state.addItemsStatus = "loading";
@@ -384,6 +450,38 @@ const enquiriesSlice = createSlice({
       .addCase(autoFillBlanks.rejected, (state, action) => {
         state.autoFillStatus = "failed";
         state.autoFillError = (action.payload as string) || "Auto-fill failed";
+      })
+      .addCase(updateVaPercent.pending, (state) => {
+        state.autoFillStatus = "loading";
+        state.autoFillError = null;
+      })
+      .addCase(updateVaPercent.fulfilled, (state, action) => {
+        const { items } = action.payload;
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, any[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
+        state.autoFillStatus = "succeeded";
+      })
+      .addCase(updateVaPercent.rejected, (state, action) => {
+        state.autoFillStatus = "failed";
+        state.autoFillError = (action.payload as string) || "Update VA% failed";
       });
   },
 });
@@ -419,6 +517,8 @@ export const selectEnquiriesLoading = (state: RootState) => state.enquiries.load
 export const selectEnquiriesError = (state: RootState) => state.enquiries.error;
 export const selectUpdateStatus = (state: RootState) => state.enquiries.updateStatus;
 export const selectUpdateError = (state: RootState) => state.enquiries.updateError;
+export const selectFetchStatus = (state: RootState) => state.enquiries.fetchStatus;
+export const selectFetchError = (state: RootState) => state.enquiries.fetchError;
 export const selectCreateStatus = (state: RootState) => state.enquiries.createStatus;
 export const selectCreateError = (state: RootState) => state.enquiries.createError;
 export const selectAddItemsStatus = (state: RootState) => state.enquiries.addItemsStatus;

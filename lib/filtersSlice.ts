@@ -12,9 +12,9 @@ const initialState: FiltersState = {
   inspection: [],
   pbg: [],
   utility: [],
-  vaPercent: "",
+  vaPercent: [],
   orderStatus: [],
-  closureStatus: "",
+  closureStatus: [],
   itemName: "",
   quantity: "",
   itemType: [],
@@ -38,6 +38,7 @@ const initialState: FiltersState = {
   itemWiseTotalValue: "",
   validation: [],
   attachment: "",
+  erpItemCode: [],
 };
 
 const filtersSlice = createSlice({

@@ -1,4 +1,5 @@
 import { google } from "googleapis";
+import { getOAuthClient } from "../googleAuth";
 import { CANONICAL_COLUMNS } from "./sheet-columns";
 
 export interface SheetResult {
@@ -33,16 +34,7 @@ function getSpreadsheetId(): string {
 }
 
 function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_PRIVATE_KEY;
-  if (!email || !key) {
-    throw new Error("Google service account credentials not configured");
-  }
-  return new google.auth.JWT({
-    email,
-    key: key.replace(/\\n/g, "\n"),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
+  return getOAuthClient();
 }
 
 function getClient() {

@@ -30,7 +30,7 @@ export async function POST() {
     const dbItems = mergedRows.map((row) => sheetRowToDbItem(row, syncedAt));
 
     await prisma.$transaction([
-      prisma.gMDUpdateItem.deleteMany(),
+      // prisma.gMDUpdateItem.deleteMany(),
       prisma.gMDUpdateItem.createMany({ data: dbItems }),
     ]);
 

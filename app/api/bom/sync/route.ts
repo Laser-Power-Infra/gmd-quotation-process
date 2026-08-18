@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
+import { getOAuthClient } from "@/lib/googleAuth";
 import {
   buildVerifyBomColumnMap,
   mapVerifyBomRow,
@@ -10,16 +11,7 @@ const SPREADSHEET_ID = process.env.CONTRACT_SHEET_SPREADSHEET_ID;
 const SHEET_NAME = "VERIFY BOM";
 
 function getAuth() {
-  const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
-  const key = process.env.GOOGLE_PRIVATE_KEY;
-  if (!email || !key) {
-    throw new Error("Google service account credentials not configured");
-  }
-  return new google.auth.JWT({
-    email,
-    key: key.replace(/\\n/g, "\n"),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets.readonly"],
-  });
+  return getOAuthClient();
 }
 
 export async function POST() {

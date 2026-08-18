@@ -15,4 +15,6 @@ if (process.env.NODE_ENV === "production") {
   prismaInstance = globalForPrisma.prisma;
 }
 
+
+// console.log("db url:", process.env.DATABASE_URL); 
 export const prisma = prismaInstance;
