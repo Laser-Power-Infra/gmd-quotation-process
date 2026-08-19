@@ -89,6 +89,20 @@ function isBlankSize(value: unknown): boolean {
   return isBlankValue(value) || value === "Not detectable" || value === "Not mentioned/cant detect size";
 }
 
+export function getPdCostValidation(item: EnquiryItemData): string | null {
+  if (item.contractReviewRate && item.productCost != null) {
+    const cr = parseFloat(String(item.contractReviewRate).replace(/,/g, ""));
+    const pc = Number(item.productCost);
+    if (!isNaN(cr) && !isNaN(pc) && pc !== 0) {
+      const val = ((cr - pc) / pc) * 100;
+      return `${val.toFixed(2)}%`;
+    }
+  }
+
+  const pdCostValidation = (item as unknown as Record<string, unknown>)?.pdcostValidation;
+  return typeof pdCostValidation === "string" ? pdCostValidation : null;
+}
+
 function matchesMulti(values: string[], actual: unknown, blankCheck: (v: unknown) => boolean = isBlankValue): boolean {
   if (!values || values.length === 0) return true;
   if (values.includes(BLANK) && blankCheck(actual)) return true;
@@ -185,10 +199,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterItemTypeSearch, setFilterItemTypeSearch] = useFilterInput(filters.itemTypeSearch, "itemTypeSearch");
   const [filterMocSearch, setFilterMocSearch] = useFilterInput(filters.mocSearch, "mocSearch");
   const [filterErpItemCodeSearch, setFilterErpItemCodeSearch] = useFilterInput(filters.erpItemCodeSearch, "erpItemCodeSearch");
-  const [filterContractReviewRateSearch, setFilterContractReviewRateSearch] = useFilterInput(
-    (filters as any).contractReviewRateSearch ?? "",
-    "contractReviewRateSearch" as keyof FiltersState
-  );
+  const [filterContractReviewRateSearch, setFilterContractReviewRateSearch] = useFilterInput(filters.contractReviewRateSearch || "", "contractReviewRateSearch");
+  const [filterPdcostValidationSearch, setFilterPdcostValidationSearch] = useFilterInput(filters.pdcostValidationSearch || "", "pdcostValidationSearch");
   const [filterProjectReference, setFilterProjectReference] = useState("");
   const [editingItemNameId, setEditingItemNameId] = useState<string | null>(null);
   const [autoFillStatus, setAutoFillStatus] = useState<"idle" | "running">("idle");
@@ -381,6 +393,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (
         filters.contractReviewRateSearch &&
         !(item.contractReviewRate || "").toLowerCase().includes(filters.contractReviewRateSearch.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.pdcostValidationSearch &&
+        !(getPdCostValidation(item) || "").toLowerCase().includes(filters.pdcostValidationSearch.toLowerCase())
       ) {
         return false;
       }
@@ -796,6 +814,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
+        filters.pdcostValidationSearch &&
+        !(getPdCostValidation(item) || "").toLowerCase().includes(filters.pdcostValidationSearch.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
         filters.productCost.length > 0 &&
         !matchesMulti(filters.productCost, item.productCost != null ? String(item.productCost) : null)
       ) {
@@ -900,6 +924,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     const firstItem = enquiry.items && enquiry.items[0];
     if (!firstItem) return null;
     
+    if (field === "pdcostValidation") {
+      const val = getPdCostValidation(firstItem);
+      return val ? parseFloat(val.replace("%", "")) : null;
+    }
+
     return (firstItem as unknown as Record<string, unknown>)[field] as string | number | Date | null | undefined;
   };
 
@@ -1052,6 +1081,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             "Discount": "",
             "Quotation Rate": "",
             "CR Rate": "",
+            "PD Cost Validation": "",
             "Item Name Merge": "",
             "Total Value": "",
             "Itemwise Total Value": "",
@@ -1092,6 +1122,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               "Discount": item.discount ? `${Number(item.discount)}%` : "",
               "Quotation Rate": item.quotedRate || "",
               "CR Rate": item.contractReviewRate || "",
+              "PD Cost Validation": getPdCostValidation(item) || "",
               "Item Name Merge": item.itemNameMerge || "",
               "Total Value": item.totalValue || "",
               "Itemwise Total Value": item.itemWiseTotalValue || "",
@@ -2246,7 +2277,30 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 30. QR incl. GST */}
+            {/* 30. PD Cost Validation (read-only) */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>PD Cost Val</span>
+                {renderSortArrow("pdcostValidation")}
+              </div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filterPdcostValidationSearch}
+                onChange={(e) => setFilterPdcostValidationSearch(e.target.value)}
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(30, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 31. QR incl. GST */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>QR incl. GST</span>
@@ -2260,7 +2314,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(30, e)}
+                onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2269,7 +2323,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 29. Item Name (Merge) */}
+            {/* 32. Item Name (Merge) */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Item Name (Merge)</span>
@@ -2283,7 +2337,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(31, e)}
+                onMouseDown={(e) => handleMouseDown(32, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2292,7 +2346,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 30. Total Value */}
+            {/* 33. Total Value */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Total Value incl. GST</span>
@@ -2306,7 +2360,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(32, e)}
+                onMouseDown={(e) => handleMouseDown(33, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2315,7 +2369,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 31. Itemwise Total Value */}
+            {/* 34. Itemwise Total Value */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Itemwise Total Value</span>
@@ -2329,7 +2383,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(33, e)}
+                onMouseDown={(e) => handleMouseDown(34, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2338,7 +2392,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 32. Validation */}
+            {/* 35. Validation */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Validation</span>
@@ -2356,7 +2410,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(34, e)}
+                onMouseDown={(e) => handleMouseDown(35, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2365,7 +2419,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 33. Attachment */}
+            {/* 36. Attachment */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Attachment</span>
@@ -2379,22 +2433,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(35, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 34. Delivery Schedule */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Delivery Schedule</span>
-              </div>
-              <div className="h-7 mt-1.5" />
-              <div
                 onMouseDown={(e) => handleMouseDown(36, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
@@ -2404,14 +2442,30 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 35. Offer PDF */}
+            {/* 37. Delivery Schedule */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Delivery Schedule</span>
+              </div>
+              <div className="h-7 mt-1.5" />
+              <div
+                onMouseDown={(e) => handleMouseDown(37, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 38. Offer PDF */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Offer PDF</span>
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(37, e)}
+                onMouseDown={(e) => handleMouseDown(38, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2430,7 +2484,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         <tbody className="bg-background">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={38} className="py-20 px-4 text-center border-b border-border">
+              <td colSpan={39} className="py-20 px-4 text-center border-b border-border">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground mb-4 border border-border">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -3059,6 +3113,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       </span>
                     </td>
 
+                    {/* First Item PD Cost Validation (read-only) */}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                      <span className="block text-xs text-blue-700 dark:text-blue-400 p-1 font-medium text-right">
+                        {firstItem ? getPdCostValidation(firstItem) || "-" : "-"}
+                      </span>
+                    </td>
+
                     {/* First Item QR incl. GST */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
@@ -3560,6 +3621,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                           <span className="block text-xs text-violet-700 dark:text-violet-400 p-1 font-medium text-right">
                             {item.contractReviewRate || "-"}
+                          </span>
+                        </td>
+
+                      {/* PD Cost Validation (read-only) */}
+                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                          <span className="block text-xs text-blue-700 dark:text-blue-400 p-1 font-medium text-right">
+                            {getPdCostValidation(item) || "-"}
                           </span>
                         </td>
 

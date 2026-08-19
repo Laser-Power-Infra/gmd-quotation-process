@@ -30,6 +30,7 @@ export interface EnquiryItemData {
   validation?: string | null;
   erpItemCode?: string | null;
   contractReviewRate?: string | null;
+  pdcostValidation?: string | null;
 }
 
 export interface AttachmentData {
@@ -120,6 +121,7 @@ export interface FiltersState {
   erpItemCodeSearch: string;
   contractReviewRate: string[];
   contractReviewRateSearch: string;
+  pdcostValidationSearch: string;
 }
 
 export interface UiState {

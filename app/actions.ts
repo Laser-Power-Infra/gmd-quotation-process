@@ -1082,7 +1082,7 @@ export async function fetchContractReviewRatesAction(itemIds: string[]) {
     // 1. Fetch the items we care about
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
-      select: { id: true, erpItemCode: true },
+      select: { id: true, erpItemCode: true, productCost: true },
     });
 
     // 2. Collect unique non-null erpItemCodes
@@ -1131,9 +1131,18 @@ export async function fetchContractReviewRatesAction(itemIds: string[]) {
       const rate = bestRateMap.get(item.erpItemCode);
       if (rate === undefined) continue; // no contract row for this code
 
+      let pdVal: string | null = null;
+      if (rate && item.productCost != null) {
+        const cr = parseFloat(String(rate).replace(/,/g, ""));
+        const pc = Number(item.productCost);
+        if (!isNaN(cr) && !isNaN(pc) && pc !== 0) {
+          pdVal = `${(((cr - pc) / pc) * 100).toFixed(2)}%`;
+        }
+      }
+
       await prisma.enquiryItem.update({
         where: { id: item.id },
-        data: { contractReviewRate: rate },
+        data: { contractReviewRate: rate, pdcostValidation: pdVal },
       });
 
       const refreshed = await prisma.enquiryItem.findUnique({ where: { id: item.id } });
