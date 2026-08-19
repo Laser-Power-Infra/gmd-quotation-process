@@ -23,6 +23,7 @@ model Enquiry {
   vaPercent        Float?
   orderStatus      String?
   closureStatus    String?
+  projectReference String?
 
   attachments      Attachment[]
   items            EnquiryItem[]
@@ -72,6 +73,8 @@ model EnquiryItem {
   bomId         String?
   bomType       String? //(stores "DIRECT M2M")
   rmItemCode    String? //(the CONSUMPTION-1 rm code, for traceability)
+  contractReviewRate String?
+  pdcostValidation  String?
   quotedRateGst String?
   itemNameMerge String?
   totalValue   String?

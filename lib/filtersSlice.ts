@@ -40,6 +40,8 @@ const initialState: FiltersState = {
   attachment: "",
   erpItemCode: [],
   erpItemCodeSearch: "",
+  contractReviewRate: [],
+  contractReviewRateSearch: "",
 };
 
 const filtersSlice = createSlice({

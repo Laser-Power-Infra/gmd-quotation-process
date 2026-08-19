@@ -29,6 +29,7 @@ export interface EnquiryItemData {
   mocSource?: string | null;
   validation?: string | null;
   erpItemCode?: string | null;
+  contractReviewRate?: string | null;
 }
 
 export interface AttachmentData {
@@ -54,6 +55,7 @@ export interface EnquiryData {
   utility: string | null;
   orderStatus: string | null;
   closureStatus: string | null;
+  projectReference: string | null;
   attachments: AttachmentData[];
   items: EnquiryItemData[];
 }
@@ -116,6 +118,8 @@ export interface FiltersState {
   attachment: string;
   erpItemCode: string[];
   erpItemCodeSearch: string;
+  contractReviewRate: string[];
+  contractReviewRateSearch: string;
 }
 
 export interface UiState {

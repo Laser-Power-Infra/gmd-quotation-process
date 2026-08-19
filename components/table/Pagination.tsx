@@ -89,6 +89,8 @@ export default function Pagination({
               <option value={20}>20 rows</option>
               <option value={50}>50 rows</option>
               <option value={100}>100 rows</option>
+              <option value={200}>200 rows</option>
+              <option value={300}>300 rows</option>
               <option value={500}>500 rows</option>
             </select>
           </div>

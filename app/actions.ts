@@ -8,6 +8,7 @@ import { extractSizeFromItemName } from "@/lib/sizeExtractor";
 import { roundToNearest10 } from "@/lib/rounding";
 import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode } from "@/lib/gmdItemCodeLookup";
+import { fetchBomRows, buildRmCostMap, DIRECT_M2M } from "@/lib/gmdBomCostLookup";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -802,6 +803,72 @@ export async function fetchErpItemCodesAction(itemIds: string[]) {
   return { success: true, data: { items: updatedItems, fetched } };
 }
 
+// Fill blank productCost from raw material (BOM DIRECT M2M) costs, triggered via UI button
+export async function updateProductCostFromBomAction(itemIds: string[]) {
+  try {
+    const bomRows = await fetchBomRows();
+    const bomMap = new Map<string, { bomId: string | null; rmItemCode: string }>();
+    for (const r of bomRows) {
+      bomMap.set(r.itemCode, { bomId: r.bomId, rmItemCode: r.rmItemCode });
+    }
+
+    const rmCodes = [...new Set(bomRows.map((r) => r.rmItemCode))];
+    const costMap = await buildRmCostMap(rmCodes);
+
+    const items = await prisma.enquiryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true, erpItemCode: true, productCost: true },
+    });
+
+    const updatedItems: ReturnType<typeof serializeItem>[] = [];
+    let updated = 0;
+    let lastError: string | null = null;
+
+    for (const item of items) {
+      if (item.productCost !== null) continue;
+      if (!item.erpItemCode) continue;
+      const bom = bomMap.get(item.erpItemCode);
+      if (!bom) continue;
+
+      const cost = costMap.get(bom.rmItemCode);
+      try {
+        if (cost !== undefined && cost !== null) {
+          await recalculateItem(item.id, { productCost: cost });
+        }
+
+        await prisma.enquiryItem.update({
+          where: { id: item.id },
+          data: {
+            bomId: bom.bomId,
+            bomType: DIRECT_M2M,
+            rmItemCode: bom.rmItemCode,
+          },
+        });
+
+        const refreshed = await prisma.enquiryItem.findUnique({
+          where: { id: item.id },
+        });
+        if (refreshed) {
+          updatedItems.push(serializeItem(refreshed));
+          updated++;
+        }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Failed to update product cost.";
+        lastError = message;
+        console.error(`Error updating product cost for item ${item.id}:`, error);
+      }
+    }
+
+    if (updated === 0) {
+      return { success: false, error: lastError || "No items updated." };
+    }
+    return { success: true, data: { items: updatedItems, updated } };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to update product cost.";
+    return { success: false, error: message };
+  }
+}
+
 export async function importExcelDataAction(rows: any[]) {
   try {
     let matchedCount = 0;
@@ -999,10 +1066,89 @@ export async function updateSupplyHistoryFieldAction(
   value: string | null,
 ) {
   "use server";
-  const updated = await prisma.supplyHistoryItem.update({
-    where: { id },
-    data: { [field]: value },
-  });
+  const updated = await prisma.supplyHistoryItem.update(
+    {
+      where: { id },
+      data: { [field]: value },
+    }
+  );
   return { id, field, value };
 }
 
+// Match each EnquiryItem's erpItemCode against ContractReview.itemCode and
+// populate contractReviewRate with the rate from the most-recent contract row.
+export async function fetchContractReviewRatesAction(itemIds: string[]) {
+  try {
+    // 1. Fetch the items we care about
+    const items = await prisma.enquiryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true, erpItemCode: true },
+    });
+
+    // 2. Collect unique non-null erpItemCodes
+    const codes = [...new Set(items.map((i) => i.erpItemCode).filter(Boolean))] as string[];
+    if (codes.length === 0) {
+      return { success: false, error: "No ERP item codes found on selected items." };
+    }
+
+    // 3. For each distinct code, find the ContractReview row with the most-recent dateOfContract.
+    //    We fetch all matching rows and pick the best one in JS so we avoid complex raw SQL.
+    const contractRows = await prisma.contractReview.findMany({
+      where: { itemCode: { in: codes } },
+      select: { itemCode: true, rate: true, dateOfContract: true, createdAt: true },
+    });
+
+    // Build a map: itemCode → best rate (most recent dateOfContract, then createdAt)
+    const bestRateMap = new Map<string, string>();
+    for (const row of contractRows) {
+      if (!row.rate) continue;
+      const prev = bestRateMap.get(row.itemCode);
+      if (!prev) {
+        bestRateMap.set(row.itemCode, row.rate);
+      } else {
+        // Replace if this row is more recent
+        const existing = contractRows.find(
+          (r) => r.itemCode === row.itemCode && r.rate === prev
+        );
+        const existingDate = existing?.dateOfContract
+          ? new Date(existing.dateOfContract).getTime()
+          : existing?.createdAt.getTime() ?? 0;
+        const rowDate = row.dateOfContract
+          ? new Date(row.dateOfContract).getTime()
+          : row.createdAt.getTime();
+        if (rowDate > existingDate) {
+          bestRateMap.set(row.itemCode, row.rate);
+        }
+      }
+    }
+
+    // 4. Update each matching item
+    const updatedItems: ReturnType<typeof serializeItem>[] = [];
+    let updated = 0;
+
+    for (const item of items) {
+      if (!item.erpItemCode) continue;
+      const rate = bestRateMap.get(item.erpItemCode);
+      if (rate === undefined) continue; // no contract row for this code
+
+      await prisma.enquiryItem.update({
+        where: { id: item.id },
+        data: { contractReviewRate: rate },
+      });
+
+      const refreshed = await prisma.enquiryItem.findUnique({ where: { id: item.id } });
+      if (refreshed) {
+        updatedItems.push(serializeItem(refreshed));
+        updated++;
+      }
+    }
+
+    if (updated === 0) {
+      return { success: false, error: "No matching contract review rows found for the selected items." };
+    }
+    return { success: true, data: { items: updatedItems, updated } };
+  } catch (error: any) {
+    console.error("Error fetching contract review rates:", error);
+    return { success: false, error: error.message || "Failed to fetch contract review rates." };
+  }
+}
