@@ -193,9 +193,47 @@ const tryParseTrailingCostVa = (
   return item;
 };
 
+export function preprocessQuotedNewlines(text: string): string {
+  const chars: string[] = [];
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    if (char === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        chars.push('"');
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+        chars.push(char);
+      }
+    } else if ((char === "\r" || char === "\n") && inQuotes) {
+      if (char === "\r" && text[i + 1] === "\n") {
+        i++;
+      }
+      chars.push(" ");
+    } else {
+      chars.push(char);
+    }
+  }
+  return chars.join("");
+}
+
+const HEADER_UNIT_PATTERNS = [
+  /^(qty|quantity|nos|nos\.|nos:|nos\.:|qty\.|qty:|\(nos\.\)|\(nos\)|pcs|units?|s\.?no\.?|sl\.?no\.?|sr\.?no\.?|description|item description|particulars?)$/i,
+  /^qty\.:\s*\(nos\.\)$/i,
+];
+
+export function isHeaderOrUnitText(desc: string): boolean {
+  const norm = desc.trim().toLowerCase();
+  if (!norm) return true;
+  return HEADER_UNIT_PATTERNS.some((pat) => pat.test(norm));
+}
+
 export function parseClipboardText(text: string): ParsedItem[] {
+  const cleanText = preprocessQuotedNewlines(text);
+
   // Header-based parsing for tab-separated spreadsheet data
-  const headerResult = tryParseHeaderCsv(text);
+  const headerResult = tryParseHeaderCsv(cleanText);
   if (headerResult) return headerResult;
 
   const result: ParsedItem[] = [];
@@ -204,7 +242,7 @@ export function parseClipboardText(text: string): ParsedItem[] {
   const flushAccumulator = (qty: number) => {
     if (accumulatedDesc.length > 0) {
       const mergedName = cleanDescription(accumulatedDesc.join(" "));
-      if (mergedName && !isNaN(qty) && qty > 0) {
+      if (mergedName && !isHeaderOrUnitText(mergedName) && !isNaN(qty) && qty > 0) {
         result.push({ itemName: mergedName, quantity: qty });
       }
       accumulatedDesc = [];
@@ -212,7 +250,7 @@ export function parseClipboardText(text: string): ParsedItem[] {
   };
 
   // Split text into lines
-  const lines = text.split(/\r?\n/);
+  const lines = cleanText.split(/\r?\n/);
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];
@@ -235,7 +273,9 @@ export function parseClipboardText(text: string): ParsedItem[] {
           };
           if (trailing.cost !== undefined) item.cost = trailing.cost;
           if (trailing.vaPercent !== undefined) item.vaPercent = trailing.vaPercent;
-          result.push(item);
+          if (!isHeaderOrUnitText(trailing.name)) {
+            result.push(item);
+          }
           continue;
         }
 
@@ -260,7 +300,7 @@ export function parseClipboardText(text: string): ParsedItem[] {
           // The other cells form the item name
           const nameCells = cells.filter((_, idx) => idx !== qtyIdx);
           const name = cleanDescription(nameCells.join(" "));
-          if (name && qtyVal > 0) {
+          if (name && !isHeaderOrUnitText(name) && qtyVal > 0) {
             result.push({ itemName: name, quantity: qtyVal });
           }
         } else {
