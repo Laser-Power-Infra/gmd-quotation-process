@@ -184,6 +184,7 @@ interface GMDUpdateTableProps {
   categoryOptions?: Record<string, string[]>;
   uniqueKeyColumns?: string[];
   onCellUpdate?: (id: string, colIndex: number, value: string) => Promise<void>;
+  onFilteredRowsChange?: (rows: unknown[][]) => void;
   filterState?: {
     columnFilters: Record<string, string>;
     multiFilters: Record<string, string[]>;
@@ -218,6 +219,7 @@ export default function GMDUpdateTable({
   categoryOptions,
   uniqueKeyColumns,
   onCellUpdate,
+  onFilteredRowsChange,
   filterState,
   filterActions,
 }: GMDUpdateTableProps) {
@@ -455,6 +457,10 @@ export default function GMDUpdateTable({
     () => filteredWithIds.map((v) => v.row),
     [filteredWithIds],
   );
+
+  useEffect(() => {
+    onFilteredRowsChange?.(filteredRows);
+  }, [filteredRows, onFilteredRowsChange]);
 
   const pbgAmountSum = useMemo(() => {
     const colIdx = headers.indexOf("PBG AMOUNT");
@@ -909,6 +915,41 @@ export default function GMDUpdateTable({
                             }}
                             className="w-full text-xs bg-transparent border-none outline-none"
                           />
+                        );
+                      } else if (header === "MAJOR MARKING") {
+                        const isYes = display === "true";
+                        const isNo = display === "false";
+                        cellContent = (
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCellUpdate(idx, cellIdx, isYes ? "" : "true");
+                              }}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                                isYes
+                                  ? "bg-emerald-500 text-white "
+                                  : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950/50"
+                              }`}
+                            >
+                              Yes
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleCellUpdate(idx, cellIdx, isNo ? "" : "false");
+                              }}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                                isNo
+                                  ? "bg-rose-500 text-white "
+                                  : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
+                              }`}
+                            >
+                              No
+                            </button>
+                          </div>
                         );
                       } else if (
                         STATUS_COLUMNS.has(header) ||
