@@ -41,6 +41,42 @@ export interface BomSheetRow {
   rmItemCode: string;
 }
 
+// Cache for DIRECT_M2M itemCode set to avoid repeated sheet fetches per request
+let cachedBomRows: BomSheetRow[] | null = null;
+let cachedBomRowsAt = 0;
+const BOM_CACHE_TTL_MS = 60_000; // 1 minute
+
+export function clearBomCache() {
+  cachedBomRows = null;
+  cachedBomRowsAt = 0;
+}
+
+export async function getCachedBomRows(): Promise<BomSheetRow[]> {
+  const now = Date.now();
+  if (cachedBomRows && now - cachedBomRowsAt < BOM_CACHE_TTL_MS) {
+    return cachedBomRows;
+  }
+  const rows = await fetchBomRows();
+  cachedBomRows = rows;
+  cachedBomRowsAt = now;
+  return rows;
+}
+
+export async function getDirectM2MSet(): Promise<Set<string>> {
+  const rows = await getCachedBomRows();
+  return new Set(rows.map((r) => r.itemCode));
+}
+
+export async function hasDirectM2M(itemCode: string): Promise<boolean> {
+  const set = await getDirectM2MSet();
+  return set.has(itemCode);
+}
+
+export async function getBomEntry(itemCode: string): Promise<BomSheetRow | null> {
+  const rows = await getCachedBomRows();
+  return rows.find((r) => r.itemCode === itemCode) ?? null;
+}
+
 /**
  * Fetches the "GMD Item Creation Form" tab and returns the DIRECT M2M rows
  * that have a CONSUMPTION-1 (rm) code, keyed by "Code for The Item".

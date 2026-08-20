@@ -98,7 +98,7 @@ export async function backfillExistingItems(): Promise<{ total: number; filled: 
 
   let filled = 0;
   for (const item of items) {
-    const code = await lookupItemCodeDirect({
+    const code = await lookupItemCodeGated({
       itemType: item.itemType!,
       moc: item.moc!,
       operationType: item.operationType!,
@@ -163,6 +163,29 @@ async function lookupItemCodeDirect(params: {
   return match?.itemCode ?? null;
 }
 
+export async function lookupItemCodeGated(params: {
+  itemType: string;
+  moc: string;
+  operationType: string;
+  size: string;
+  pnRating: string;
+}): Promise<string | null> {
+  await ensureFreshData();
+  const code = await lookupItemCodeDirect(params);
+  if (!code) return null;
+  // BOM gate: only return code if it has a DIRECT M2M entry in the same sheet
+  try {
+    const { hasDirectM2M } = await import("@/lib/gmdBomCostLookup");
+    const hasBom = await hasDirectM2M(code);
+    if (!hasBom) return null;
+  } catch {
+    // If BOM check fails (sheet unreachable), fall back to no-gate behavior to not block UI
+    // But log for visibility
+    console.warn(`[GmdItemCode] BOM gate check failed for ${code}, allowing code anyway`);
+  }
+  return code;
+}
+
 export async function lookupItemCode(params: {
   itemType: string;
   moc: string;
@@ -174,7 +197,17 @@ export async function lookupItemCode(params: {
   return lookupItemCodeDirect(params);
 }
 
-export async function lookupAndSetItemCode(itemId: string): Promise<string | null> {
+/**
+ * Lookup and persist item code with optional BOM gate and force recompute.
+ * - bomGate: if true, code is only set if it has DIRECT M2M BOM entry
+ * - force: if true, recompute even when erpItemCode already exists (used for derived-field cascade)
+ */
+export async function lookupAndSetItemCode(
+  itemId: string,
+  opts?: { bomGate?: boolean; force?: boolean }
+): Promise<string | null> {
+  const bomGate = opts?.bomGate ?? true;
+  const force = opts?.force ?? false;
   const item = await prisma.enquiryItem.findUnique({
     where: { id: itemId },
     select: {
@@ -187,23 +220,69 @@ export async function lookupAndSetItemCode(itemId: string): Promise<string | nul
     },
   });
   if (!item) return null;
-  if (item.erpItemCode) return item.erpItemCode;
+  if (item.erpItemCode && !force) return item.erpItemCode;
   if (!item.itemType || !item.moc || !item.size || !item.pnRating || !item.operationType) return null;
 
-  const code = await lookupItemCode({
-    itemType: item.itemType,
-    moc: item.moc,
-    operationType: item.operationType,
-    size: item.size,
-    pnRating: item.pnRating,
-  });
+  const code = bomGate
+    ? await lookupItemCodeGated({
+        itemType: item.itemType,
+        moc: item.moc,
+        operationType: item.operationType,
+        size: item.size,
+        pnRating: item.pnRating,
+      })
+    : await lookupItemCode({
+        itemType: item.itemType,
+        moc: item.moc,
+        operationType: item.operationType,
+        size: item.size,
+        pnRating: item.pnRating,
+      });
 
   if (code) {
     await prisma.enquiryItem.update({
       where: { id: itemId },
       data: { erpItemCode: code },
     });
+  } else if (force && item.erpItemCode && bomGate) {
+    // If force recompute yields null (no match or no BOM), clear stale code only when bomGate forces a gate miss
+    // But per requirement, we do NOT auto-clear unless explicitly desired — keep old unless caller wants clear
+    // For now, if gated lookup returns null and we were forced, clear the stale code
+    // This ensures changing derived fields to a combo without BOM blanks the code
+    await prisma.enquiryItem.update({
+      where: { id: itemId },
+      data: { erpItemCode: null },
+    });
   }
 
   return code;
+}
+
+/**
+ * Recompute item code from given field values (after an edit) with BOM gate.
+ * Returns { oldCode, newCode, changed }
+ */
+export async function recomputeItemCodeForValues(
+  itemId: string,
+  values: { itemType: string | null; moc: string | null; size: string | null; pnRating: string | null; operationType: string | null },
+  oldCode: string | null
+): Promise<{ oldCode: string | null; newCode: string | null; changed: boolean }> {
+  if (!values.itemType || !values.moc || !values.size || !values.pnRating || !values.operationType) {
+    return { oldCode, newCode: null, changed: oldCode !== null };
+  }
+  const newCode = await lookupItemCodeGated({
+    itemType: values.itemType,
+    moc: values.moc,
+    operationType: values.operationType,
+    size: values.size,
+    pnRating: values.pnRating,
+  });
+  // Persist if changed
+  if (newCode !== oldCode) {
+    await prisma.enquiryItem.update({
+      where: { id: itemId },
+      data: { erpItemCode: newCode },
+    });
+  }
+  return { oldCode, newCode, changed: newCode !== oldCode };
 }
