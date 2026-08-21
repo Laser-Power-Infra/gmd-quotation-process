@@ -13,6 +13,8 @@ import {
   addItemsAction,
   updateEnquiryItemAction,
   deleteEnquiryItemAction,
+  deleteEnquiryItemsAction,
+  bulkUpdateValidationAction,
   importExcelDataAction,
   autoFillBlanksAction,
   updateVaPercentAction,
@@ -152,6 +154,20 @@ export const deleteEnquiryItem = createAsyncThunk(
   }
 );
 
+export const deleteEnquiryItems = createAsyncThunk(
+  "enquiries/deleteEnquiryItems",
+  async (
+    itemIds: string[],
+    { rejectWithValue }
+  ) => {
+    const result = await deleteEnquiryItemsAction(itemIds);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to delete items");
+    }
+    return result.data!;
+  }
+);
+
 export const addAttachments = createAsyncThunk(
   "enquiries/addAttachments",
   async (
@@ -205,6 +221,20 @@ export const updateVaPercent = createAsyncThunk(
       return rejectWithValue(result.error || "Failed to update VA%");
     }
     return { ...result.data, updated: result.updated };
+  }
+);
+
+export const bulkUpdateValidation = createAsyncThunk(
+  "enquiries/bulkUpdateValidation",
+  async (
+    payload: { itemIds: string[]; validation: string | null },
+    { rejectWithValue }
+  ) => {
+    const result = await bulkUpdateValidationAction(payload.itemIds, payload.validation);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to update validation");
+    }
+    return result.data!;
   }
 );
 
@@ -445,6 +475,32 @@ const enquiriesSlice = createSlice({
         state.deleteStatus = "failed";
         state.deleteError = (action.payload as string) || "Delete failed";
       })
+      .addCase(deleteEnquiryItems.pending, (state) => {
+        state.deleteStatus = "loading";
+        state.deleteError = null;
+      })
+      .addCase(deleteEnquiryItems.fulfilled, (state, action) => {
+        const { deletedIds, enquiryId, enquiryDeleted } = action.payload as {
+          deletedIds: string[];
+          enquiryId: string;
+          enquiryDeleted: boolean;
+        };
+        const idSet = new Set(deletedIds);
+        itemsAdapter.removeMany(state.items, deletedIds);
+        if (enquiryDeleted) {
+          enquiriesAdapter.removeOne(state.enquiries, enquiryId);
+        } else {
+          const storedEnquiry = state.enquiries.entities[enquiryId];
+          if (storedEnquiry) {
+            storedEnquiry.items = storedEnquiry.items.filter((i) => !idSet.has(i.id));
+          }
+        }
+        state.deleteStatus = "succeeded";
+      })
+      .addCase(deleteEnquiryItems.rejected, (state, action) => {
+        state.deleteStatus = "failed";
+        state.deleteError = (action.payload as string) || "Bulk delete failed";
+      })
       .addCase(addAttachments.pending, (state) => {
         state.updateStatus = "loading";
         state.updateError = null;
@@ -584,6 +640,38 @@ const enquiriesSlice = createSlice({
       .addCase(fetchContractReviewRates.rejected, (state, action) => {
         state.contractReviewStatus = "failed";
         state.contractReviewError = (action.payload as string) || "Fetch contract review rates failed";
+      })
+      .addCase(bulkUpdateValidation.pending, (state) => {
+        state.updateStatus = "loading";
+        state.updateError = null;
+      })
+      .addCase(bulkUpdateValidation.fulfilled, (state, action) => {
+        const { items } = action.payload as { items: EnquiryItemData[] };
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, EnquiryItemData[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
+        state.updateStatus = "succeeded";
+      })
+      .addCase(bulkUpdateValidation.rejected, (state, action) => {
+        state.updateStatus = "failed";
+        state.updateError = (action.payload as string) || "Bulk validation update failed";
       });
   },
 });

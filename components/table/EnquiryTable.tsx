@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign } from "lucide-react";
+import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
 import Pagination from "./Pagination";
@@ -9,7 +9,7 @@ import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
 import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { useDebounce } from "@/lib/hooks/useDebounce";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, fetchContractReviewRates } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, fetchContractReviewRates, deleteEnquiryItems, bulkUpdateValidation } from "@/lib/enquiriesSlice";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
 import { toggleRow, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
@@ -18,6 +18,8 @@ import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { importExcelData, autoFillBlanks, updateVaPercent } from "@/lib/enquiriesSlice";
 import { validateVaPercent } from "@/lib/vaValidation";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
@@ -208,11 +210,128 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [fetchCodesStatus, setFetchCodesStatus] = useState<"idle" | "running">("idle");
   const [updateCostStatus, setUpdateCostStatus] = useState<"idle" | "running">("idle");
   const [crRateStatus, setCrRateStatus] = useState<"idle" | "running">("idle");
+  // Bulk delete selection: per enquiry constraint, filtered scope, persisted across pagination
+  const [selectedEnquiryId, setSelectedEnquiryId] = useState<string | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   // Reset pagination to first page when filters change
   useEffect(() => {
     dispatch(resetPage());
   }, [filters, dispatch]);
+
+  // Prune selected ids that no longer exist (after delete) — persist otherwise
+  useEffect(() => {
+    if (selectedItemIds.size === 0) return;
+    const existingIds = new Set(allItems.map((i) => i.id));
+    let changed = false;
+    const next = new Set<string>();
+    for (const id of selectedItemIds) {
+      if (existingIds.has(id)) next.add(id);
+      else changed = true;
+    }
+    if (changed) {
+      if (next.size === 0) setSelectedEnquiryId(null);
+      setSelectedItemIds(next);
+    }
+    // If selected enquiry itself was deleted, clear
+    if (selectedEnquiryId && !enquiries.some((e) => e.id === selectedEnquiryId)) {
+      setSelectedEnquiryId(null);
+      setSelectedItemIds(new Set());
+    }
+  }, [allItems, enquiries, selectedItemIds, selectedEnquiryId]);
+
+  const isItemSelected = (itemId: string) => selectedItemIds.has(itemId);
+
+  const toggleItemSelection = (enquiryId: string, itemId: string) => {
+    if (selectedEnquiryId && selectedEnquiryId !== enquiryId) {
+      const prevDocket = enquiries.find((e) => e.id === selectedEnquiryId)?.docketNumber || selectedEnquiryId;
+      const nextDocket = enquiries.find((e) => e.id === enquiryId)?.docketNumber || enquiryId;
+      if (!confirm(`Selection is currently for docket "${prevDocket}". Clear selection and select items from "${nextDocket}" instead?`)) return;
+      setSelectedEnquiryId(enquiryId);
+      setSelectedItemIds(new Set([itemId]));
+      return;
+    }
+    const next = new Set(selectedItemIds);
+    if (next.has(itemId)) {
+      next.delete(itemId);
+      if (next.size === 0) setSelectedEnquiryId(null);
+    } else {
+      next.add(itemId);
+      setSelectedEnquiryId(enquiryId);
+    }
+    setSelectedItemIds(next);
+  };
+
+  const toggleSelectAllForEnquiry = (enquiry: EnquiryData, filteredItems: EnquiryItemData[]) => {
+    const ids = filteredItems.map((i) => i.id);
+    if (ids.length === 0) return;
+    if (selectedEnquiryId && selectedEnquiryId !== enquiry.id) {
+      const prevDocket = enquiries.find((e) => e.id === selectedEnquiryId)?.docketNumber || selectedEnquiryId;
+      if (!confirm(`Selection is currently for docket "${prevDocket}". Clear and select all ${ids.length} items from "${enquiry.docketNumber}"?`)) return;
+      setSelectedEnquiryId(enquiry.id);
+      setSelectedItemIds(new Set(ids));
+      return;
+    }
+    const allSelected = ids.every((id) => selectedItemIds.has(id));
+    if (allSelected) {
+      const next = new Set(selectedItemIds);
+      ids.forEach((id) => next.delete(id));
+      setSelectedItemIds(next);
+      if (next.size === 0) setSelectedEnquiryId(null);
+    } else {
+      setSelectedEnquiryId(enquiry.id);
+      const next = new Set(selectedItemIds);
+      ids.forEach((id) => next.add(id));
+      setSelectedItemIds(next);
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedEnquiryId(null);
+    setSelectedItemIds(new Set());
+  };
+
+  const handleBulkDeleteConfirm = async () => {
+    if (selectedItemIds.size === 0 || !selectedEnquiryId) return;
+    const ids = Array.from(selectedItemIds);
+    setBulkDeleting(true);
+    try {
+      const result: any = await dispatch(deleteEnquiryItems(ids)).unwrap();
+      toast.success(result.enquiryDeleted ? `Deleted ${ids.length} item(s) and enquiry was removed (no items left).` : `Deleted ${ids.length} item(s) successfully.`);
+      clearSelection();
+      setBulkConfirmOpen(false);
+    } catch (err: any) {
+      const msg = typeof err === "string" ? err : err?.message || "Failed to delete selected items.";
+      toast.error(msg);
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const [bulkValidationRunning, setBulkValidationRunning] = useState<"Yes" | "No" | "Clear" | null>(null);
+  const handleBulkValidation = async (val: "Yes" | "No" | "") => {
+    const allFiltered = filteredEnquiries.flatMap((e) => getFilteredItems(e));
+    if (allFiltered.length === 0) {
+      toast.info("No items match current filters.");
+      return;
+    }
+    const label = val === "" ? "Blank" : val;
+    const differing = allFiltered.filter((i) => (i.validation || "") !== (val || "")).length;
+    if (!confirm(`Set validation to "${label}" for ${allFiltered.length} filtered item(s) across all pages?${differing > 0 ? ` This will overwrite ${differing} differing value(s).` : ""}`)) return;
+    const runKey = val === "" ? "Clear" : val;
+    setBulkValidationRunning(runKey as any);
+    try {
+      const result: any = await dispatch(bulkUpdateValidation({ itemIds: allFiltered.map((i) => i.id), validation: val === "" ? null : val })).unwrap();
+      toast.success(`Validation set to "${label}" for ${result.updated} item(s).`);
+    } catch (err: any) {
+      const msg = typeof err === "string" ? err : err?.message || "Failed to update validation.";
+      toast.error(msg);
+    } finally {
+      setBulkValidationRunning(null);
+    }
+  };
 
   const cascadedOptions = useMemo(() => {
     const result: Record<string, string[]> = {};
@@ -1331,7 +1450,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   }
 
-  const totalTableWidth = Object.values(columnWidths).reduce((a, b) => a + b, 0);
+  const SELECT_COL_WIDTH = 44;
+  const totalTableWidth = Object.values(columnWidths).reduce((a, b) => a + b, 0) + SELECT_COL_WIDTH;
 
   const inputClass =
     "mt-1.5 w-full h-7 rounded border border-input bg-background px-2 py-0.5 text-[10px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 normal-case";
@@ -1461,12 +1581,28 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         style={{ tableLayout: "fixed", width: totalTableWidth }}
       >
         <colgroup>
+          <col style={{ width: SELECT_COL_WIDTH }} />
           {Object.keys(columnWidths).map((_, idx) => (
             <col key={idx} style={{ width: columnWidths[idx] }} />
           ))}
         </colgroup>
         <thead>
           <tr className="bg-muted/80 select-none">
+            {/* Select checkbox column */}
+            <th className="py-2.5 px-2 sticky top-0 z-30 bg-muted/90 border-r border-b border-border text-center">
+              {selectedItemIds.size > 0 && selectedEnquiryId ? (
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  title="Clear selection"
+                  className="inline-flex items-center justify-center p-1 rounded hover:bg-muted text-muted-foreground cursor-pointer"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                <span className="text-[9px] font-bold tracking-wider text-muted-foreground uppercase">Sel</span>
+              )}
+            </th>
             {/* 0. Enquiry Date */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
@@ -2409,6 +2545,35 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                   includeBlank
                 />
               </div>
+              <div className="mt-1.5 grid grid-cols-3 gap-1 normal-case">
+                <button
+                  type="button"
+                  onClick={() => handleBulkValidation("Yes")}
+                  disabled={bulkValidationRunning !== null}
+                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer"
+                  title="Set all filtered items (all pages) to Yes"
+                >
+                  {bulkValidationRunning === "Yes" ? "..." : "All Yes"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkValidation("No")}
+                  disabled={bulkValidationRunning !== null}
+                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50 cursor-pointer"
+                  title="Set all filtered items (all pages) to No"
+                >
+                  {bulkValidationRunning === "No" ? "..." : "All No"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkValidation("")}
+                  disabled={bulkValidationRunning !== null}
+                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-border bg-background text-muted-foreground hover:bg-muted disabled:opacity-50 cursor-pointer"
+                  title="Clear validation for all filtered items (all pages)"
+                >
+                  {bulkValidationRunning === "Clear" ? "..." : "Clear"}
+                </button>
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(35, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -2484,7 +2649,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         <tbody className="bg-background">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={39} className="py-20 px-4 text-center border-b border-border">
+              <td colSpan={40} className="py-20 px-4 text-center border-b border-border">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground mb-4 border border-border">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -2508,6 +2673,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 ? expandedRows[enquiry.id]
                 : hasActiveFilters;
               const firstItem = displayItems[0];
+              const selectedCount = displayItems.filter((i) => selectedItemIds.has(i.id)).length;
+              const isAllSelected = displayItems.length > 0 && selectedCount === displayItems.length;
+              const isSomeSelected = selectedCount > 0 && selectedCount < displayItems.length;
+              const isThisEnquiryActive = selectedEnquiryId === enquiry.id;
 
               // Setup custom brand avatar styles
               let badgeBg = "bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800";
@@ -2521,11 +2690,23 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 badgeBg = "bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800";
               }
 
-              return (
+               return (
                 <React.Fragment key={enquiry.id}>
                   {/* Main Docket / First Item Row */}
                   <tr
                     className={`transition-colors ${firstItem && invalidVaItemIds.has(firstItem.id) ? "bg-red-100 dark:bg-red-950/40" : "hover:bg-muted/20"}`}>
+                    {/* Select checkbox for first item */}
+                    <td className="py-3.5 px-2 text-center border-r border-b border-border">
+                      {firstItem ? (
+                        <input
+                          type="checkbox"
+                          checked={isItemSelected(firstItem.id)}
+                          onChange={() => toggleItemSelection(enquiry.id, firstItem.id)}
+                          className="h-3.5 w-3.5 rounded border-border text-[#0f62fe] focus:ring-blue-500 cursor-pointer"
+                          title={isItemSelected(firstItem.id) ? "Deselect item" : "Select item"}
+                        />
+                      ) : null}
+                    </td>
                     {/* Enquiry Date */}
                     <td className="py-3.5 px-4 text-xs text-muted-foreground border-r border-b border-border last:border-r-0 truncate">
                       {new Date(enquiry.enquiryDate).toLocaleDateString("en-US", {
@@ -2536,13 +2717,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     </td>
 
                     {/* Docket No with expand arrow if applicable */}
-                    <td className="py-3.5 px-4 text-xs font-semibold text-[#0f62fe] dark:text-blue-400 border-r border-b border-border last:border-r-0 truncate">
-                      <div className="flex items-center">
+                    <td className="py-3.5 px-4 text-xs font-semibold text-[#0f62fe] dark:text-blue-400 border-r border-b border-border last:border-r-0">
+                      <div className="flex items-center flex-wrap gap-1">
                         {hasMultiple && (
                           <button
                             type="button"
                             onClick={() => toggleExpand(enquiry.id)}
-                            className="mr-1.5 inline-flex items-center justify-center p-0.5 hover:bg-muted rounded text-muted-foreground cursor-pointer focus:outline-none shrink-0"
+                            className="mr-1 inline-flex items-center justify-center p-0.5 hover:bg-muted rounded text-muted-foreground cursor-pointer focus:outline-none shrink-0"
                           >
                             {isExpanded ? (
                               <ChevronDown className="h-3.5 w-3.5" />
@@ -2555,8 +2736,46 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           {enquiry.docketNumber}
                         </span>
                         {hasMultiple && !isExpanded && (
-                          <span className="ml-1.5 px-1.5 py-0.5 text-[9px] font-medium bg-blue-50 text-blue-600 rounded-full border border-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800 shrink-0">
+                          <span className="ml-1 px-1.5 py-0.5 text-[9px] font-medium bg-blue-50 text-blue-600 rounded-full border border-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800 shrink-0">
                             +{displayItems.length - 1} more items
+                          </span>
+                        )}
+                      </div>
+                      {/* Per-enquiry bulk delete bar: filtered scope, persisted across pagination */}
+                      <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        {displayItems.length > 1 && (
+                          <label className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              checked={isAllSelected}
+                              ref={(el) => { if (el) el.indeterminate = isSomeSelected; }}
+                              onChange={() => toggleSelectAllForEnquiry(enquiry, displayItems)}
+                              className="h-3 w-3 rounded border-border cursor-pointer"
+                              title={isAllSelected ? "Deselect all filtered items" : "Select all filtered items"}
+                            />
+                            {isAllSelected ? "All" : "Select all"}
+                            <span className="text-[9px] text-muted-foreground/70">({displayItems.length} filtered)</span>
+                          </label>
+                        )}
+                        {isThisEnquiryActive && selectedCount > 0 && (
+                          <span className="inline-flex items-center gap-1">
+                            <span className="text-[10px] font-semibold text-blue-700 dark:text-blue-400">{selectedCount} selected</span>
+                            <button
+                              type="button"
+                              onClick={() => setBulkConfirmOpen(true)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400 cursor-pointer"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              Delete ({selectedCount})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={clearSelection}
+                              className="inline-flex items-center p-0.5 rounded hover:bg-muted text-muted-foreground cursor-pointer"
+                              title="Clear selection"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
                           </span>
                         )}
                       </div>
@@ -3308,7 +3527,16 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         key={item.id}
                         className={`transition-colors ${invalidVaItemIds.has(item.id) ? "bg-red-100 dark:bg-red-950/40" : "bg-muted/10 hover:bg-muted/20"}`}
                       >
-                        {/* Empty cells for docket information to align items (cols 0-11: date, docket, party, enquiry type, state, payment terms, inspection, pbg, utility, order status, closure status, project reference) */}
+                        {/* Select checkbox for this item + empty cells for docket info alignment */}
+                        <td className="py-3 px-2 text-center border-r border-b border-border">
+                          <input
+                            type="checkbox"
+                            checked={isItemSelected(item.id)}
+                            onChange={() => toggleItemSelection(enquiry.id, item.id)}
+                            className="h-3.5 w-3.5 rounded border-border text-[#0f62fe] focus:ring-blue-500 cursor-pointer"
+                            title={isItemSelected(item.id) ? "Deselect item" : "Select item"}
+                          />
+                        </td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
@@ -3779,6 +4007,70 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         }}
       />
     )}
+
+    {/* Bulk Delete Confirm Dialog — per enquiry, filtered scope, persisted */}
+    <Dialog open={bulkConfirmOpen} onOpenChange={(v) => { if (!v) setBulkConfirmOpen(false); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-bold text-foreground">
+            Confirm Bulk Delete
+          </DialogTitle>
+        </DialogHeader>
+        {(() => {
+          const selEnquiry = enquiries.find((e) => e.id === selectedEnquiryId);
+          const selItems = selEnquiry ? selEnquiry.items.filter((it) => selectedItemIds.has(it.id)) : [];
+          const allFilteredForEnquiry = selEnquiry ? getFilteredItems(selEnquiry) : [];
+          const willDeleteEnquiry = selEnquiry ? selectedItemIds.size >= (selEnquiry.items.length) : false;
+          // If filtering hides some items, deleting all filtered != deleting enquiry unless they are all actual items
+          const willDeleteEnquiryAccurate = selEnquiry ? selItems.length === selEnquiry.items.length : false;
+          return (
+            <div className="py-3 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                {selEnquiry ? (
+                  <>Delete <span className="font-bold text-foreground">{selectedItemIds.size}</span> selected item(s) from docket <span className="font-bold text-foreground">"{selEnquiry.docketNumber}"</span>?</>
+                ) : (
+                  <>No enquiry selected.</>
+                )}
+              </p>
+              {selItems.length > 0 && (
+                <div className="max-h-40 overflow-y-auto rounded border border-border bg-muted/30 p-2 space-y-1">
+                  {selItems.map((it) => (
+                    <div key={it.id} className="text-xs text-foreground truncate flex items-start gap-1.5">
+                      <span className="text-muted-foreground shrink-0">•</span>
+                      <span className="truncate">{it.itemName}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {willDeleteEnquiryAccurate ? (
+                <p className="text-xs text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded p-2">
+                  Warning: This will delete all items in this enquiry — the entire enquiry "{selEnquiry?.docketNumber}" will be removed. This cannot be undone.
+                </p>
+              ) : (
+                <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+                  {allFilteredForEnquiry.length !== selItems.length ? `Note: ${allFilteredForEnquiry.length} filtered items in this enquiry, ${selItems.length} selected.` : null}
+                  {" "}This action cannot be undone.
+                </p>
+              )}
+            </div>
+          );
+        })()}
+        <DialogFooter className="pt-2 border-t border-border flex justify-end gap-2">
+          <DialogClose render={<Button type="button" variant="outline" size="sm" disabled={bulkDeleting} />}>
+            Cancel
+          </DialogClose>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={bulkDeleting || selectedItemIds.size === 0}
+            onClick={handleBulkDeleteConfirm}
+          >
+            {bulkDeleting ? "Deleting..." : `Delete ${selectedItemIds.size} Item(s)`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
   );
 }

@@ -673,6 +673,60 @@ export async function deleteEnquiryItemAction(itemId: string) {
   }
 }
 
+// Bulk delete multiple items from a single enquiry. If all items are deleted, the enquiry itself is removed.
+// Single-enquiry constraint is enforced on server.
+export async function deleteEnquiryItemsAction(itemIds: string[]) {
+  try {
+    if (!itemIds || itemIds.length === 0) {
+      return { success: false, error: "No items selected." };
+    }
+
+    const uniqueIds = [...new Set(itemIds)];
+
+    const items = await prisma.enquiryItem.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true, enquiryId: true, itemName: true },
+    });
+
+    if (items.length === 0) {
+      return { success: false, error: "Items not found." };
+    }
+    if (items.length !== uniqueIds.length) {
+      return { success: false, error: "Some items not found. Please refresh and try again." };
+    }
+
+    const enquiryIds = [...new Set(items.map((i) => i.enquiryId))];
+    if (enquiryIds.length !== 1) {
+      return { success: false, error: "Bulk delete is allowed for a single enquiry only. Select items from one docket at a time." };
+    }
+    const enquiryId = enquiryIds[0];
+
+    const remainingCount = await prisma.enquiryItem.count({
+      where: { enquiryId },
+    });
+
+    console.log(`[Server] bulkDelete enquiry=${enquiryId} requested=${uniqueIds.length} remainingBefore=${remainingCount}`);
+
+    await prisma.enquiryItem.deleteMany({
+      where: { id: { in: uniqueIds } },
+    });
+
+    let enquiryDeleted = false;
+    if (remainingCount - uniqueIds.length <= 0) {
+      await prisma.enquiry.delete({
+        where: { id: enquiryId },
+      });
+      enquiryDeleted = true;
+      console.log(`[Server] Enquiry ${enquiryId} also deleted (all items removed via bulk delete)`);
+    }
+
+    return { success: true, data: { deletedIds: uniqueIds, enquiryId, enquiryDeleted, remaining: Math.max(0, remainingCount - uniqueIds.length) } };
+  } catch (error: any) {
+    console.error("Error bulk deleting items:", error);
+    return { success: false, error: error.message || "Failed to delete items." };
+  }
+}
+
 // Update a specific field of an enquiry directly (for inline cell editing)
 export async function updateEnquiryFieldAction(
   enquiryId: string,
@@ -1297,5 +1351,43 @@ export async function fetchContractReviewRatesAction(itemIds: string[]) {
   } catch (error: any) {
     console.error("Error fetching contract review rates:", error);
     return { success: false, error: error.message || "Failed to fetch contract review rates." };
+  }
+}
+
+// Bulk update validation for many items (all pages, filtered scope). Allowed values: "Yes", "No", null/"" for clear.
+export async function bulkUpdateValidationAction(itemIds: string[], validation: string | null) {
+  try {
+    if (!itemIds || itemIds.length === 0) {
+      return { success: false, error: "No items selected." };
+    }
+    const uniqueIds = [...new Set(itemIds)];
+    const normalized = validation === "" ? null : validation;
+    if (normalized !== null && normalized !== "Yes" && normalized !== "No") {
+      return { success: false, error: "Validation must be Yes, No, or blank." };
+    }
+
+    const existing = await prisma.enquiryItem.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true },
+    });
+    if (existing.length !== uniqueIds.length) {
+      return { success: false, error: "Some items not found. Please refresh and try again." };
+    }
+
+    console.log(`[Server] bulkValidation ids=${uniqueIds.length} set="${normalized ?? ""}"`);
+
+    await prisma.enquiryItem.updateMany({
+      where: { id: { in: uniqueIds } },
+      data: { validation: normalized },
+    });
+
+    const updatedItems = await prisma.enquiryItem.findMany({
+      where: { id: { in: uniqueIds } },
+    });
+
+    return { success: true, data: { items: updatedItems.map(serializeItem), updated: updatedItems.length, validation: normalized } };
+  } catch (error: any) {
+    console.error("Error bulk updating validation:", error);
+    return { success: false, error: error.message || "Failed to update validation." };
   }
 }
