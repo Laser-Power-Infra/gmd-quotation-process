@@ -9,6 +9,7 @@ import { roundUp } from "@/lib/rounding";
 import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
+import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -1250,6 +1251,55 @@ export async function updateGMDUpdateFieldAction(
   console.log(`Updated GMDUpdateItem: ${id}, Field: ${field}, Value: ${value}, ${updated}`);
   console.dir(updated, { depth: Infinity });
   return { id, field, value };
+}
+
+export async function getUsdInrRateAction(refresh = false) {
+  "use server";
+  try {
+    const { rate, fetchedAt } = await getUsdInrRate(refresh);
+    return { success: true, data: { rate, fetchedAt } };
+  } catch (error: any) {
+    console.error("Error fetching USD/INR rate:", error);
+    return { success: false, error: error.message || "Failed to fetch USD/INR rate." };
+  }
+}
+
+export async function updateGMDUsdCostAction(id: string, usdCost: string | null) {
+  "use server";
+  try {
+    const trimmed = usdCost?.trim() ?? "";
+    if (!trimmed) {
+      const existing = await prisma.gMDUpdateItem.findUnique({
+        where: { id },
+        select: { cost: true },
+      });
+      await prisma.gMDUpdateItem.update({
+        where: { id },
+        data: { usdRateOption: null },
+      });
+      return {
+        success: true,
+        data: { id, usdCost: null, cost: existing?.cost ?? null, rate: null, fetchedAt: new Date().toISOString() },
+      };
+    }
+    const usd = parseFloat(trimmed.replace(/,/g, ""));
+    if (isNaN(usd) || usd < 0) {
+      return { success: false, error: "Invalid USD cost value." };
+    }
+
+    const { rate, fetchedAt } = await getUsdInrRate();
+    const cost = (usd * rate).toFixed(2);
+
+    await prisma.gMDUpdateItem.update({
+      where: { id },
+      data: { usdRateOption: String(usd), cost },
+    });
+
+    return { success: true, data: { id, usdCost: String(usd), cost, rate, fetchedAt } };
+  } catch (error: any) {
+    console.error("Error updating GMD USD cost:", error);
+    return { success: false, error: error.message || "Failed to update USD cost." };
+  }
 }
 
 export async function updateSupplyHistoryFieldAction(

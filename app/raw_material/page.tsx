@@ -12,6 +12,7 @@ import {
   type GMDUpdateRow,
 } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
+import { getUsdInrRateAction } from "@/app/actions";
 
 interface SheetData {
   headers: string[];
@@ -62,6 +63,18 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [categoryOptions, setCategoryOptions] = useState<Record<string, string[]>>({});
+  const [usdInrRate, setUsdInrRate] = useState<number | null>(null);
+
+  const refreshRate = useCallback(async () => {
+    const res = await getUsdInrRateAction(true);
+    if (res.success && res.data) setUsdInrRate(res.data.rate);
+  }, []);
+
+  useEffect(() => {
+    getUsdInrRateAction(false).then((res) => {
+      if (res.success && res.data) setUsdInrRate(res.data.rate);
+    });
+  }, []);
 
   const enhancedCategoryOptions = useMemo(
     () => ({
@@ -275,7 +288,7 @@ export default function Home() {
   return (
     <main className="h-screen flex flex-col bg-background">
       <div className="flex-1 flex p-6 min-h-0 gap-4">
-        <aside className="w-60 shrink-0 h-fit bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-3">
+        <aside className="w-60 shrink-0 h-screen bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-3">
           <span className="text-xs font-bold uppercase tracking-wider text-white">
             STOCK VALUE
           </span>
@@ -370,6 +383,8 @@ export default function Home() {
               editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD cost","HSN CODE","HSN Code Validation", "MAJOR MARKING", "RM TYPE"]}
               uniqueKeyColumns={["ERP ITEM CODE"]}
               onFilteredRowsChange={setFirstFilteredRows}
+              usdInrRate={usdInrRate}
+              onRefreshRate={refreshRate}
             />
             <GMDUpdateTable
               headers={headers}
@@ -381,6 +396,8 @@ export default function Home() {
               editable
               categoryOptions={enhancedCategoryOptions}
               uniqueKeyColumns={["ERP ITEM CODE"]}
+              usdInrRate={usdInrRate}
+              onRefreshRate={refreshRate}
             />
           </div>
         </div>
