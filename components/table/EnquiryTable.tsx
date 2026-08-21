@@ -691,10 +691,30 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     const dbVal = val === "" ? null : val;
     console.log(`[Client] updateItemField item=${itemId} field=${field} val="${dbVal}"`);
     const toastId = toast.loading(`Saving ${field}...`);
+    const prevItem = allItems.find((i) => i.id === itemId) || null;
+    const prevQr = prevItem?.quotedRate ? parseFloat(String(prevItem.quotedRate)) : null;
 
     try {
       const result = await dispatch(updateItemField({ itemId, field, value: dbVal })).unwrap();
       toast.success(`Saved successfully.`, { id: toastId });
+
+      // Toast when QR is rounded up after manual entry
+      const newQr = result?.quotedRate ? parseFloat(String(result.quotedRate)) : null;
+      if (newQr !== null && !isNaN(newQr)) {
+        if (field === "quotedRate" && dbVal !== null) {
+          const inNum = parseFloat(String(dbVal).replace(/,/g, ""));
+          if (!isNaN(inNum) && inNum !== newQr) {
+            toast.info(`Quoted Rate rounded up: ${inNum.toFixed(2)} → ${newQr.toFixed(2)}`, { duration: 4000 });
+          }
+        } else if (["vaPercent", "cost", "productCost", "extension", "bypass", "quantity"].includes(field)) {
+          // For vaPercent/cost etc., QR is derived — toast when the QR value changes
+          if (prevQr !== null && prevQr !== newQr) {
+            toast.info(`Quoted Rate rounded up: ${newQr.toFixed(2)}`, { duration: 4000 });
+          } else if (prevQr === null && newQr !== null) {
+            toast.info(`Quoted Rate rounded up: ${newQr.toFixed(2)}`, { duration: 3000 });
+          }
+        }
+      }
 
       // When updating item name, warn if size wasn't detected
       if (field === "itemName" && result && !result.size) {
@@ -780,22 +800,43 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
     const toastId = toast.loading(`Updating ${updates.length} item(s)...`);
     try {
-      await Promise.all(
-        updates.map(({ item, cost, vaPercent, quotedRate }) => {
-          const calls: Promise<unknown>[] = [];
+      const allResults = await Promise.all(
+        updates.map(async ({ item, cost, vaPercent, quotedRate }) => {
+          const resItems: any[] = [];
           if (cost !== undefined) {
-            calls.push(dispatch(updateItemField({ itemId: item.id, field: "cost", value: cost.toString() })).unwrap());
+            const r = await dispatch(updateItemField({ itemId: item.id, field: "cost", value: cost.toString() })).unwrap();
+            resItems.push(r);
           }
           if (vaPercent !== undefined) {
-            calls.push(dispatch(updateItemField({ itemId: item.id, field: "vaPercent", value: vaPercent.toString() })).unwrap());
+            const r = await dispatch(updateItemField({ itemId: item.id, field: "vaPercent", value: vaPercent.toString() })).unwrap();
+            resItems.push(r);
           }
           if (quotedRate !== undefined) {
-            calls.push(dispatch(updateItemField({ itemId: item.id, field: "quotedRate", value: quotedRate.toString() })).unwrap());
+            const r = await dispatch(updateItemField({ itemId: item.id, field: "quotedRate", value: quotedRate.toString() })).unwrap();
+            resItems.push(r);
           }
-          return Promise.all(calls);
+          return resItems;
         })
       );
+      const flatResults = (allResults.flat() as any[]) as EnquiryItemData[];
+      // Deduplicate to last result per item id (for cost+va case, last holds final QR)
+      const lastById = new Map<string, EnquiryItemData>();
+      for (const r of flatResults) lastById.set(r.id, r);
       toast.success(`Updated ${updates.length} item(s).`, { id: toastId });
+      // One aggregated toast for rounding
+      if (field === "quotedRate") {
+        let roundedCount = 0;
+        updates.forEach(({ item, quotedRate }) => {
+          if (quotedRate !== undefined) {
+            const res = lastById.get(item.id);
+            const outQr = res?.quotedRate ? parseFloat(String(res.quotedRate)) : null;
+            if (outQr !== null && !isNaN(outQr) && outQr !== quotedRate) roundedCount++;
+          }
+        });
+        if (roundedCount > 0) {
+          toast.info(`${roundedCount} rate(s) rounded up`, { duration: 4000 });
+        }
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update items.", { id: toastId });
     }

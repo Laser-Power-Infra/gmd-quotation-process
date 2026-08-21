@@ -5,7 +5,7 @@ import { uploadFileToDrive } from "@/lib/gdrive";
 import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry, autoDetectItemType, autoDetectMoc } from "@/lib/costCalculator";
 import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { extractSizeFromItemName } from "@/lib/sizeExtractor";
-import { roundToNearest10 } from "@/lib/rounding";
+import { roundUp } from "@/lib/rounding";
 import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
@@ -123,7 +123,7 @@ export async function createNewEnquiryAction(formData: {
             }
             let itemQR: string | null = null;
             if (itemCost !== null && itemCost > 0 && itemVa !== null) {
-              itemQR = (itemCost * (1 + (itemVa / 100))).toFixed(2);
+              itemQR = roundUp(itemCost * (1 + (itemVa / 100))).toFixed(2);
             }
             return {
               position: index,
@@ -241,7 +241,7 @@ export async function addItemsAction(formData: {
         }
         let itemQR: string | null = null;
         if (itemCost !== null && itemCost > 0 && itemVa !== null) {
-          itemQR = (itemCost * (1 + (itemVa / 100))).toFixed(2);
+          itemQR = roundUp(itemCost * (1 + (itemVa / 100))).toFixed(2);
         }
         return {
           position: startPos + index,
@@ -372,14 +372,14 @@ export async function updateEnquiryItemAction(formData: {
         const qrNum = parseFloat(finalQuotedRate);
         if (!isNaN(qrNum) && qrNum > 0) {
           finalVa = parseFloat(((qrNum / updatedCost - 1) * 100).toFixed(2));
-          finalQuotedRate = roundToNearest10(qrNum).toFixed(2);
+          finalQuotedRate = roundUp(qrNum).toFixed(2);
         }
       }
     } else {
       // Forward: QR not provided — calculate from Cost+VA% if both exist
       if (updatedCost !== null && updatedCost > 0 && finalVa !== null) {
         const qr = updatedCost * (1 + (finalVa / 100));
-        finalQuotedRate = roundToNearest10(qr).toFixed(2);
+        finalQuotedRate = roundUp(qr).toFixed(2);
       } else {
         finalQuotedRate = item.quotedRate || null;
       }

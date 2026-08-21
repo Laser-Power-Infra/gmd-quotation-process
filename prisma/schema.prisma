@@ -80,6 +80,7 @@ model EnquiryItem {
   totalValue   String?
   deliverySchedule String?
   itemWiseTotalValue String?
+  itemStatus     String?
   position  Int      @default(0)
   validation String?
 

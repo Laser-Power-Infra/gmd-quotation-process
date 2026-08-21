@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { matchItemType, matchMoc } from "./itemTypePatterns";
-import { roundToNearest10 } from "./rounding";
+import { roundUp } from "./rounding";
 
 export function serializeItem(item: any) {
   return {
@@ -149,7 +149,7 @@ export async function recalculateItem(
 
   let quotedRate: number | null;
   if (updates && updates.quotedRate !== undefined) {
-    quotedRate = updates.quotedRate !== null ? roundToNearest10(updates.quotedRate) : null;
+    quotedRate = updates.quotedRate !== null ? roundUp(updates.quotedRate) : null;
   } else {
     quotedRate = existingQuotedRate;
   }
@@ -166,7 +166,7 @@ export async function recalculateItem(
 
   // 4b. User explicitly updated vaPercent → recalculate quotedRate
   if (updates && updates.vaPercent !== undefined && !userClearedQR && cost !== null && cost > 0 && vaPercent !== null) {
-    quotedRate = roundToNearest10(cost * (1 + vaPercent / 100));
+    quotedRate = roundUp(cost * (1 + vaPercent / 100));
   }
 
   // 4c. Cost was recalculated and neither was explicitly updated:
@@ -177,7 +177,7 @@ export async function recalculateItem(
     if (quotedRate !== null && quotedRate > 0) {
       vaPercent = parseFloat((((quotedRate / cost) - 1) * 100).toFixed(2));
     } else if (vaPercent !== null) {
-      quotedRate = roundToNearest10(cost * (1 + vaPercent / 100));
+      quotedRate = roundUp(cost * (1 + vaPercent / 100));
     }
   }
 
@@ -186,7 +186,7 @@ export async function recalculateItem(
     vaPercent = parseFloat((((quotedRate / cost) - 1) * 100).toFixed(2));
   }
   if (!userClearedQR && quotedRate === null && cost !== null && cost > 0 && vaPercent !== null) {
-    quotedRate = roundToNearest10(cost * (1 + vaPercent / 100));
+    quotedRate = roundUp(cost * (1 + vaPercent / 100));
   }
 
   // 5. Calculate QR incl. GST

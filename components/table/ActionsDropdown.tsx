@@ -270,61 +270,63 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
     setIsSubmitting(true);
     dispatch(closeEditDialog());
 
-    toast.promise(
-      (async () => {
-        const attachmentsPayload = selectedEditFiles.length > 0
-          ? await Promise.all(
-              selectedEditFiles.map(async (file) => {
-                const content = await fileToBase64(file);
-                return {
-                  name: file.name,
-                  size: file.size,
-                  type: file.type || file.name.split(".").pop() || "",
-                  content,
-                };
-              })
-            )
-          : undefined;
+    const loadingId = toast.loading("Uploading attachments and updating enquiry...");
+    try {
+      const attachmentsPayload = selectedEditFiles.length > 0
+        ? await Promise.all(
+            selectedEditFiles.map(async (file) => {
+              const content = await fileToBase64(file);
+              return {
+                name: file.name,
+                size: file.size,
+                type: file.type || file.name.split(".").pop() || "",
+                content,
+              };
+            })
+          )
+        : undefined;
 
-        console.log(`[Client] updateFullItem item=${item.id} itemName="${itemName.trim()}" type="${itemType.trim()}" moc="${moc.trim()}" size="${size.trim()}" opType="${operationType.trim()}" ext="${extension.trim()}" bypass="${bypass.trim()}"`);
+      console.log(`[Client] updateFullItem item=${item.id} itemName="${itemName.trim()}" type="${itemType.trim()}" moc="${moc.trim()}" size="${size.trim()}" opType="${operationType.trim()}" ext="${extension.trim()}" bypass="${bypass.trim()}"`);
 
-        await dispatch(updateEnquiryItem({
-          itemId: item.id,
-          itemName: itemName.trim(),
-          quantity: parseFloat(quantity),
-          docketNumber: docketNumber.trim(),
-          partyName,
-          enquiryDate,
-          enquiryType,
-          state,
-          paymentTerms,
-          inspection,
-          pbg,
-          utility,
-          vaPercent: parseFloat(vaPercent.replace(/%/g, "")),
-          quotedRate: quotedRate || undefined,
-          orderStatus,
-          itemType: itemType.trim(),
-          moc: moc.trim(),
-          size: size.trim(),
-          pnRating: pnRating.trim(),
-          operationType: operationType.trim(),
-          extension: extension.trim(),
-          bypass: bypass.trim(),
-          productCost: parseFloat(productCost),
-          costRefCode: costRefCode.trim(),
-          cost: parseFloat(cost),
-          stockStatus: stockStatus.trim(),
-          discount: parseFloat(discount),
-          attachments: attachmentsPayload,
-        })).unwrap();
-      })(),
-      {
-        loading: "Uploading attachments and updating enquiry...",
-        success: "Enquiry updated successfully.",
-        error: (err) => err.message,
+      const result: any = await dispatch(updateEnquiryItem({
+        itemId: item.id,
+        itemName: itemName.trim(),
+        quantity: parseFloat(quantity),
+        docketNumber: docketNumber.trim(),
+        partyName,
+        enquiryDate,
+        enquiryType,
+        state,
+        paymentTerms,
+        inspection,
+        pbg,
+        utility,
+        vaPercent: parseFloat(vaPercent.replace(/%/g, "")),
+        quotedRate: quotedRate || undefined,
+        orderStatus,
+        itemType: itemType.trim(),
+        moc: moc.trim(),
+        size: size.trim(),
+        pnRating: pnRating.trim(),
+        operationType: operationType.trim(),
+        extension: extension.trim(),
+        bypass: bypass.trim(),
+        productCost: parseFloat(productCost),
+        costRefCode: costRefCode.trim(),
+        cost: parseFloat(cost),
+        stockStatus: stockStatus.trim(),
+        discount: parseFloat(discount),
+        attachments: attachmentsPayload,
+      })).unwrap();
+      toast.success("Enquiry updated successfully.", { id: loadingId });
+      const inNum = quotedRate ? parseFloat(quotedRate.replace(/,/g, "")) : null;
+      const outNum = result?.item?.quotedRate ? parseFloat(String(result.item.quotedRate)) : null;
+      if (inNum !== null && outNum !== null && !isNaN(inNum) && !isNaN(outNum) && inNum !== outNum) {
+        toast.info(`Quoted Rate rounded up: ${inNum.toFixed(2)} → ${outNum.toFixed(2)}`, { duration: 4000 });
       }
-    );
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update enquiry.", { id: loadingId });
+    }
     setIsSubmitting(false);
   };
 

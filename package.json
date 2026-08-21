@@ -9,7 +9,9 @@
     "start": "next start --port 4560",
     "lint": "eslint",
     "seed:lookups": "tsx scripts/seed-lookup-options.ts",
-    "bom:cost": "tsx scripts/update-product-cost-from-bom.ts"
+    "bom:cost": "tsx scripts/update-product-cost-from-bom.ts",
+    "round:qr": "tsx scripts/round-qr.ts",
+    "round:qr:apply": "tsx scripts/round-qr.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",
