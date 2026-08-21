@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { roundUp } from "@/lib/rounding";
 
 /**
- * One-time retroactive fix: rounds fractional EnquiryItem.quotedRate up to the next integer
- * (whole numbers are left as-is). Keeps vaPercent as-is, recomputes GST + totals on rounded QR.
+ * One-time retroactive fix: rounds EnquiryItem.quotedRate to nearest 10
+ * (e.g. 14575.80→14580, 14575→14580, 14574→14570). Recomputes vaPercent from
+ * cost (if cost >0), GST and totals derived from rounded QR.
  * Usage:
  *   npx tsx scripts/round-qr.ts           // dry-run (no writes)
  *   npx tsx scripts/round-qr.ts --apply   // writes
@@ -12,7 +13,7 @@ import { roundUp } from "@/lib/rounding";
 
 async function main() {
   const apply = process.argv.includes("--apply");
-  console.log(`\n=== Round QR up (fractional → next integer) — ${apply ? "APPLY (writes DB)" : "DRY-RUN (no writes)"} ===\n`);
+  console.log(`\n=== Round QR to nearest 10 (recompute VA%) — ${apply ? "APPLY (writes DB)" : "DRY-RUN (no writes)"} ===\n`);
 
   const items = await prisma.enquiryItem.findMany({
     where: { quotedRate: { not: null } },
@@ -38,6 +39,9 @@ async function main() {
     itemWise: string | null;
     total: string | null;
     itemName: string;
+    vaPrev: string | null;
+    vaNew: string | null;
+    cost: string | null;
   };
 
   const toUpdate: ToUpdate[] = [];
@@ -46,7 +50,7 @@ async function main() {
     const curNum = parseFloat(String(it.quotedRate));
     if (isNaN(curNum)) continue;
     const roundedNum = roundUp(curNum);
-    // Keep 2 decimals string compare; skip if already a whole number
+    // Skip if already a multiple of 10 (nearest-10 idempotent)
     const curStr = curNum.toFixed(2);
     const roundedStr = roundedNum.toFixed(2);
     if (curStr === roundedStr) continue;
@@ -56,6 +60,13 @@ async function main() {
     const itemWise = qty > 0 ? (qty * roundedNum).toFixed(2) : null;
     const total = qty > 0 ? (qty * roundedNum * 1.18).toFixed(2) : null;
 
+    const costNum = it.cost ? parseFloat(String(it.cost)) : null;
+    const vaPrev = it.vaPercent ?? null;
+    let vaNew: string | null = vaPrev;
+    if (costNum !== null && !isNaN(costNum) && costNum > 0 && roundedNum > 0) {
+      vaNew = (((roundedNum / costNum) - 1) * 100).toFixed(2);
+    }
+
     toUpdate.push({
       id: it.id,
       cur: curStr,
@@ -64,10 +75,13 @@ async function main() {
       itemWise,
       total,
       itemName: it.itemName.substring(0, 60),
+      vaPrev,
+      vaNew,
+      cost: costNum !== null && !isNaN(costNum) ? costNum.toFixed(2) : null,
     });
   }
 
-  console.log(`To round: ${toUpdate.length} items (skipped ${items.length - toUpdate.length} already whole numbers)\n`);
+  console.log(`To round: ${toUpdate.length} items (skipped ${items.length - toUpdate.length} already multiples of 10)\n`);
 
   if (toUpdate.length === 0) {
     console.log("No items to update. Exiting.");
@@ -81,6 +95,8 @@ async function main() {
       id: u.id.substring(0, 8) + "...",
       itemName: u.itemName,
       "cur → rounded": `${u.cur} → ${u.rounded}`,
+      cost: u.cost ?? "-",
+      "vaPrev → vaNew": `${u.vaPrev ?? "-"} → ${u.vaNew ?? "-"}`,
       gst: u.gst,
     }))
   );
@@ -104,7 +120,7 @@ async function main() {
         quotedRateGst: u.gst,
         itemWiseTotalValue: u.itemWise,
         totalValue: u.total,
-        // vaPercent intentionally not touched — keep as-is per spec
+        vaPercent: u.vaNew,
       },
     });
     updated++;
@@ -113,7 +129,7 @@ async function main() {
     }
   }
   console.log(`\n\nDone. Updated ${updated} items.\n`);
-  console.log(`Verify: SELECT COUNT(*) FROM "EnquiryItem" WHERE quotedRate::numeric - floor(quotedRate::numeric) != 0; -- should be 0\n`);
+  console.log(`Verify: SELECT COUNT(*) FROM "EnquiryItem" WHERE quotedRate::numeric % 10 != 0; -- should be 0 (multiples of 10)\n`);
 }
 
 main()

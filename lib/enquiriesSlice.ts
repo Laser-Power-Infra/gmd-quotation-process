@@ -15,6 +15,7 @@ import {
   deleteEnquiryItemAction,
   deleteEnquiryItemsAction,
   bulkUpdateValidationAction,
+  clearQuotedRatesAction,
   importExcelDataAction,
   autoFillBlanksAction,
   updateVaPercentAction,
@@ -233,6 +234,17 @@ export const bulkUpdateValidation = createAsyncThunk(
     const result = await bulkUpdateValidationAction(payload.itemIds, payload.validation);
     if (!result.success) {
       return rejectWithValue(result.error || "Failed to update validation");
+    }
+    return result.data!;
+  }
+);
+
+export const clearQuotedRates = createAsyncThunk(
+  "enquiries/clearQuotedRates",
+  async (itemIds: string[], { rejectWithValue }) => {
+    const result = await clearQuotedRatesAction(itemIds);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to clear quoted rates");
     }
     return result.data!;
   }
@@ -672,6 +684,38 @@ const enquiriesSlice = createSlice({
       .addCase(bulkUpdateValidation.rejected, (state, action) => {
         state.updateStatus = "failed";
         state.updateError = (action.payload as string) || "Bulk validation update failed";
+      })
+      .addCase(clearQuotedRates.pending, (state) => {
+        state.updateStatus = "loading";
+        state.updateError = null;
+      })
+      .addCase(clearQuotedRates.fulfilled, (state, action) => {
+        const { items } = action.payload as { items: EnquiryItemData[]; cleared: number };
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, EnquiryItemData[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
+        state.updateStatus = "succeeded";
+      })
+      .addCase(clearQuotedRates.rejected, (state, action) => {
+        state.updateStatus = "failed";
+        state.updateError = (action.payload as string) || "Clear quoted rates failed";
       });
   },
 });

@@ -1404,6 +1404,45 @@ export async function fetchContractReviewRatesAction(itemIds: string[]) {
   }
 }
 
+// Clear Quoted Rate (and derived columns: GST, totalValue, itemWiseTotalValue) for filtered items. VA% is preserved.
+export async function clearQuotedRatesAction(itemIds: string[]) {
+  try {
+    if (!itemIds || itemIds.length === 0) {
+      return { success: false, error: "No items selected." };
+    }
+    const uniqueIds = [...new Set(itemIds)];
+
+    const existing = await prisma.enquiryItem.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true },
+    });
+    if (existing.length !== uniqueIds.length) {
+      return { success: false, error: "Some items not found. Please refresh and try again." };
+    }
+
+    console.log(`[Server] clearQuotedRates ids=${uniqueIds.length}`);
+
+    await prisma.enquiryItem.updateMany({
+      where: { id: { in: uniqueIds } },
+      data: {
+        quotedRate: null,
+        quotedRateGst: null,
+        itemWiseTotalValue: null,
+        totalValue: null,
+      },
+    });
+
+    const updatedItems = await prisma.enquiryItem.findMany({
+      where: { id: { in: uniqueIds } },
+    });
+
+    return { success: true, data: { items: updatedItems.map(serializeItem), cleared: updatedItems.length } };
+  } catch (error: any) {
+    console.error("Error clearing quoted rates:", error);
+    return { success: false, error: error.message || "Failed to clear quoted rates." };
+  }
+}
+
 // Bulk update validation for many items (all pages, filtered scope). Allowed values: "Yes", "No", null/"" for clear.
 export async function bulkUpdateValidationAction(itemIds: string[], validation: string | null) {
   try {

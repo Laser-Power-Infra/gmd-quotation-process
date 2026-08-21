@@ -9,7 +9,7 @@ import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
 import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { useDebounce } from "@/lib/hooks/useDebounce";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, fetchContractReviewRates, deleteEnquiryItems, bulkUpdateValidation } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, fetchContractReviewRates, deleteEnquiryItems, bulkUpdateValidation, clearQuotedRates } from "@/lib/enquiriesSlice";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
 import { toggleRow, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
@@ -307,6 +307,39 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       toast.error(msg);
     } finally {
       setBulkDeleting(false);
+    }
+  };
+
+  const [clearQrRunning, setClearQrRunning] = useState(false);
+  const [clearQrConfirmOpen, setClearQrConfirmOpen] = useState(false);
+  const [clearQrPending, setClearQrPending] = useState<{ total: number; withQr: number; ids: string[] } | null>(null);
+  const handleClearQr = () => {
+    const allFiltered = filteredEnquiries.flatMap((e) => getFilteredItems(e));
+    if (allFiltered.length === 0) {
+      toast.info("No items match current filters.");
+      return;
+    }
+    const withQr = allFiltered.filter((i) => i.quotedRate != null && String(i.quotedRate).trim() !== "");
+    if (withQr.length === 0) {
+      toast.info("No Quoted Rates to clear for current filters.");
+      return;
+    }
+    setClearQrPending({ total: allFiltered.length, withQr: withQr.length, ids: withQr.map((i) => i.id) });
+    setClearQrConfirmOpen(true);
+  };
+  const handleClearQrConfirm = async () => {
+    if (!clearQrPending) return;
+    setClearQrRunning(true);
+    try {
+      const result: any = await dispatch(clearQuotedRates(clearQrPending.ids)).unwrap();
+      toast.success(`Cleared ${result.cleared} Quoted Rate(s). VA% preserved.`);
+      setClearQrConfirmOpen(false);
+      setClearQrPending(null);
+    } catch (err: any) {
+      const msg = typeof err === "string" ? err : err?.message || "Failed to clear quoted rates.";
+      toast.error(msg);
+    } finally {
+      setClearQrRunning(false);
     }
   };
 
@@ -2409,6 +2442,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 onChange={(e) => setFilterQuotedRate(e.target.value)}
                 className={inputClass}
               />
+              <div className="mt-1.5 normal-case">
+                <button
+                  type="button"
+                  onClick={handleClearQr}
+                  disabled={clearQrRunning}
+                  className="w-full px-1.5 py-1 text-[9px] font-bold rounded border border-border bg-background text-muted-foreground hover:bg-muted disabled:opacity-50 cursor-pointer"
+                  title="Clear Quoted Rate (and GST/Total) for all filtered items (all pages) — VA% kept"
+                >
+                  {clearQrRunning ? "..." : "Clear"}
+                </button>
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(28, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -4108,6 +4152,57 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             onClick={handleBulkDeleteConfirm}
           >
             {bulkDeleting ? "Deleting..." : `Delete ${selectedItemIds.size} Item(s)`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Clear Quoted Rate Confirm Dialog — filtered scope, VA% preserved */}
+    <Dialog open={clearQrConfirmOpen} onOpenChange={(v) => { if (!v && !clearQrRunning) { setClearQrConfirmOpen(false); setClearQrPending(null); } }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-bold text-foreground">
+            Confirm Clear Quoted Rates
+          </DialogTitle>
+        </DialogHeader>
+        <div className="py-3 space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Clear <span className="font-bold text-foreground">{clearQrPending?.withQr ?? 0}</span> Quoted Rate(s) from <span className="font-bold text-foreground">{clearQrPending?.total ?? 0}</span> filtered item(s) across all pages?
+          </p>
+          <p className="text-xs text-amber-700 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded p-2">
+            This will delete <span className="font-semibold">Quotation Rate, QR incl. GST, Total Value</span> and <span className="font-semibold">Itemwise Total</span> from the database for filtered items only. <span className="font-semibold">VA% will be kept</span>. This cannot be undone without re-entering rates.
+          </p>
+          {(() => {
+            const allFiltered = filteredEnquiries.flatMap((e) => getFilteredItems(e));
+            const withQrItems = allFiltered.filter((i) => i.quotedRate != null && String(i.quotedRate).trim() !== "").slice(0, 8);
+            if (withQrItems.length === 0) return null;
+            return (
+              <div className="max-h-32 overflow-y-auto rounded border border-border bg-muted/30 p-2 space-y-1">
+                {withQrItems.map((it) => (
+                  <div key={it.id} className="text-xs text-foreground truncate flex items-start gap-1.5">
+                    <span className="text-muted-foreground shrink-0">•</span>
+                    <span className="truncate">{it.itemName} — QR: {it.quotedRate}</span>
+                  </div>
+                ))}
+                {clearQrPending && clearQrPending.withQr > 8 && (
+                  <div className="text-[11px] text-muted-foreground font-medium pt-1">+{clearQrPending.withQr - 8} more...</div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+        <DialogFooter className="pt-2 border-t border-border flex justify-end gap-2">
+          <DialogClose render={<Button type="button" variant="outline" size="sm" disabled={clearQrRunning} />}>
+            Cancel
+          </DialogClose>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={clearQrRunning || !clearQrPending}
+            onClick={handleClearQrConfirm}
+          >
+            {clearQrRunning ? "Clearing..." : `Clear ${clearQrPending?.withQr ?? 0} Rate(s)`}
           </Button>
         </DialogFooter>
       </DialogContent>
