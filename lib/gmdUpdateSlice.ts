@@ -4,7 +4,10 @@ import {
   createAsyncThunk,
 } from "@reduxjs/toolkit";
 import type { RootState } from "./store";
-import { updateGMDUpdateFieldAction } from "@/app/actions";
+import {
+  updateGMDUpdateFieldAction,
+  updateGMDUsdCostAction,
+} from "@/app/actions";
 
 export interface GMDUpdateRow {
   id: string;
@@ -52,6 +55,17 @@ export const updateGMDUpdateField = createAsyncThunk(
   },
 );
 
+export const updateGMDUsdCost = createAsyncThunk(
+  "gmdUpdate/updateUsdCost",
+  async ({ id, usdCost }: { id: string; usdCost: string | null }) => {
+    const result = await updateGMDUsdCostAction(id, usdCost);
+    if (!result.success) {
+      throw new Error(result.error || "Failed to update USD cost.");
+    }
+    return result.data!;
+  },
+);
+
 const gmdUpdateSlice = createSlice({
   name: "gmdUpdate",
   initialState: adapter.getInitialState(),
@@ -64,6 +78,13 @@ const gmdUpdateSlice = createSlice({
     builder.addCase(updateGMDUpdateField.fulfilled, (state, action) => {
       const { id, field, value } = action.payload;
       adapter.updateOne(state, { id, changes: { [field]: value } });
+    });
+    builder.addCase(updateGMDUsdCost.fulfilled, (state, action) => {
+      const { id, usdCost, cost } = action.payload;
+      adapter.updateOne(state, {
+        id,
+        changes: { usdRateOption: usdCost, cost },
+      });
     });
   },
 });

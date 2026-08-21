@@ -11,7 +11,7 @@ import {
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import Pagination from "./Pagination";
 import { useAppDispatch } from "@/lib/hooks";
-import { updateGMDUpdateField } from "@/lib/gmdUpdateSlice";
+import { updateGMDUpdateField, updateGMDUsdCost } from "@/lib/gmdUpdateSlice";
 import { toast } from "sonner";
 
 import * as XLSX from "xlsx";
@@ -185,6 +185,8 @@ interface GMDUpdateTableProps {
   uniqueKeyColumns?: string[];
   onCellUpdate?: (id: string, colIndex: number, value: string) => Promise<void>;
   onFilteredRowsChange?: (rows: unknown[][]) => void;
+  usdInrRate?: number | null;
+  onRefreshRate?: () => void;
   filterState?: {
     columnFilters: Record<string, string>;
     multiFilters: Record<string, string[]>;
@@ -220,6 +222,8 @@ export default function GMDUpdateTable({
   uniqueKeyColumns,
   onCellUpdate,
   onFilteredRowsChange,
+  usdInrRate,
+  onRefreshRate,
   filterState,
   filterActions,
 }: GMDUpdateTableProps) {
@@ -238,7 +242,6 @@ export default function GMDUpdateTable({
   >({});
   const [localDateFrom, setLocalDateFrom] = useState("");
   const [localDateTo, setLocalDateTo] = useState("");
-  const [editingCells, setEditingCells] = useState<Set<string>>(new Set());
 
   const currentPage = isControlled
     ? filterState!.currentPage
@@ -392,66 +395,66 @@ export default function GMDUpdateTable({
     return cache;
   }, [rows, headers]);
 
-  const filteredWithIds = useMemo(() => {
-    let result = sortedWithIds;
+  const rowPassesFilters = useCallback(
+    (row: unknown[], opts: { excludeHeader?: string } = {}): boolean => {
+      const gs = globalSearch;
+      if (gs.trim()) {
+        const q = gs.toLowerCase();
+        if (!(rowSearchCache.get(row) ?? "").includes(q)) return false;
+      }
 
-    const gs = globalSearch;
-    if (gs.trim()) {
-      const q = gs.toLowerCase();
-      result = result.filter(({ row }) =>
-        (rowSearchCache.get(row) ?? "").includes(q),
-      );
-    }
-
-    for (const [colName, filterVal] of Object.entries(columnFilters)) {
-      if (!filterVal || filterVal === "All") continue;
-      const colIdx = headers.indexOf(colName);
-      if (colIdx === -1) continue;
-
-      result = result.filter(({ row }) => {
+      for (const [colName, filterVal] of Object.entries(columnFilters)) {
+        if (colName === opts.excludeHeader) continue;
+        if (!filterVal || filterVal === "All") continue;
+        const colIdx = headers.indexOf(colName);
+        if (colIdx === -1) continue;
         const cellVal = String(row[colIdx] ?? "");
-        if (filterVal === "(Blank)") return cellVal === "";
-        return cellVal.toLowerCase().includes(filterVal.toLowerCase());
-      });
-    }
+        if (filterVal === "(Blank)") {
+          if (cellVal !== "") return false;
+        } else if (!cellVal.toLowerCase().includes(filterVal.toLowerCase())) {
+          return false;
+        }
+      }
 
-    for (const [colName, selected] of Object.entries(multiFilters)) {
-      if (!selected.length) continue;
-      const colIdx = headers.indexOf(colName);
-      if (colIdx === -1) continue;
-      result = result.filter(({ row }) => {
+      for (const [colName, selected] of Object.entries(multiFilters)) {
+        if (colName === opts.excludeHeader) continue;
+        if (!selected.length) continue;
+        const colIdx = headers.indexOf(colName);
+        if (colIdx === -1) continue;
         const cellVal = String(row[colIdx] ?? "").trim();
         const matchesBlank = selected.includes("(Blank)") && cellVal === "";
-        return matchesBlank || selected.includes(cellVal);
-      });
-    }
+        if (!(matchesBlank || selected.includes(cellVal))) return false;
+      }
 
-    if (dateColIdx !== -1 && (dateFrom || dateTo)) {
-      const fromDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
-      const toEnd = dateTo ? new Date(dateTo + "T23:59:59") : null;
-      result = result.filter(({ row }) => {
+      if (dateColIdx !== -1 && (dateFrom || dateTo)) {
+        const fromDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
+        const toEnd = dateTo ? new Date(dateTo + "T23:59:59") : null;
         const dateStr = String(row[dateColIdx] ?? "");
         if (!dateStr) return false;
         const date = parseDate(dateStr);
         if (!date) return true;
         if (fromDate && date < fromDate) return false;
         if (toEnd && date > toEnd) return false;
-        return true;
-      });
-    }
+      }
 
-    return result;
-  }, [
-    sortedWithIds,
-    globalSearch,
-    columnFilters,
-    multiFilters,
-    headers,
-    dateFrom,
-    dateTo,
-    dateColIdx,
-    rowSearchCache,
-  ]);
+      return true;
+    },
+    [
+      globalSearch,
+      rowSearchCache,
+      columnFilters,
+      multiFilters,
+      headers,
+      dateColIdx,
+      dateFrom,
+      dateTo,
+    ],
+  );
+
+  const filteredWithIds = useMemo(
+    () => sortedWithIds.filter(({ row }) => rowPassesFilters(row)),
+    [sortedWithIds, rowPassesFilters],
+  );
 
   const filteredRows = useMemo(
     () => filteredWithIds.map((v) => v.row),
@@ -484,6 +487,34 @@ export default function GMDUpdateTable({
     }
     return result;
   }, [headers, categoryOptions, rows]);
+
+  const cascadedFilterOptions = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    if (!hasActiveFilters) {
+      return columnUniqueVals;
+    }
+    for (const h of headers) {
+      const idx = headers.indexOf(h);
+      const vals = new Set<string>();
+      for (const row of rows) {
+        if (!rowPassesFilters(row, { excludeHeader: h })) continue;
+        const v = String(row[idx] ?? "");
+        if (v) vals.add(v);
+      }
+      let list = [...vals].sort((a, b) =>
+        a.localeCompare(b, undefined, { numeric: true }),
+      );
+      if (categoryOptions?.[h]?.length) {
+        const allowed = new Set(categoryOptions[h]);
+        list = list.filter((v) => allowed.has(v));
+      }
+      for (const s of multiFilters[h] ?? []) {
+        if (s !== "(Blank)" && !list.includes(s)) list.push(s);
+      }
+      result[h] = list;
+    }
+    return result;
+  }, [rows, headers, categoryOptions, multiFilters, hasActiveFilters, rowPassesFilters, columnUniqueVals]);
 
   const paginatedWithIds = useMemo(() => {
     const start = (activePage - 1) * pageSize;
@@ -549,10 +580,7 @@ export default function GMDUpdateTable({
     const field = COL_INDEX_TO_DB_FIELD[colIndex];
     if (!field) return;
 
-    let savedValue = value || null;
-    if (field === "usdRateOption") {
-      savedValue = (!value || value.trim() === "" || value.trim() === "0") ? null : value.trim();
-    }
+    const savedValue = value || null;
 
     toast.promise(
       dispatch(
@@ -562,6 +590,20 @@ export default function GMDUpdateTable({
         loading: `Updating ${header}...`,
         success: `${header} updated`,
         error: (err) => err || `Failed to update ${header}`,
+      },
+    );
+  };
+
+  const handleUsdCostUpdate = async (rowIndex: number, value: string) => {
+    const entry = paginatedWithIds[rowIndex];
+    const id = entry?.id;
+    if (!id) return;
+    toast.promise(
+      dispatch(updateGMDUsdCost({ id, usdCost: value })).unwrap(),
+      {
+        loading: "Converting USD cost...",
+        success: "USD cost converted to INR",
+        error: (err) => err || "Failed to update USD cost",
       },
     );
   };
@@ -587,6 +629,23 @@ export default function GMDUpdateTable({
           <span className="text-xs font-semibold text-[#0a2540]/60">
             Showing {filteredRows.length} of {rows.length} records
           </span>
+          {usdInrRate != null && (
+            <span className="flex items-center gap-1 text-xs font-semibold text-green-700 bg-white border border-[#e1e6eb] rounded px-2 py-0.5">
+              1 USD = ₹{usdInrRate.toFixed(2)}
+              {onRefreshRate && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRefreshRate();
+                  }}
+                  className="text-[#0070f3] hover:text-[#0a2540] underline"
+                  title="Refresh rate"
+                >
+                  refresh
+                </button>
+              )}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -659,7 +718,7 @@ export default function GMDUpdateTable({
             <tr className="bg-[#f4f6f8]">
               {headers.map((header, idx) => {
                 const isSorted = sortColumn === idx;
-                const uniqueVals = columnUniqueVals[header] ?? [];
+                const uniqueVals = cascadedFilterOptions[header] ?? [];
                 return (
                   <th
                     key={idx}
@@ -830,74 +889,24 @@ export default function GMDUpdateTable({
                       (!editableColumns || editableColumns.includes(header));
                     if (isCellEditable) {
                       if (header === "USD cost") {
-                        const rawCost = parseFloat(String(row[15] ?? ""));
-                        const rateStr = String(row[16] ?? "").trim();
-                        const rate = parseFloat(rateStr);
-                        const cellKey = `${idx}-${cellIdx}`;
-                        if (editingCells.has(cellKey)) {
-                          cellContent = (
-                            <input
-                              key={cellKey}
-                              type="text"
-                              defaultValue={rateStr || ""}
-                              autoFocus
-                              onBlur={(e) => {
-                                const newVal = e.target.value;
-                                if (newVal !== rateStr) {
-                                  handleCellUpdate(idx, cellIdx, newVal);
-                                }
-                                setEditingCells((prev) => {
-                                  const next = new Set(prev);
-                                  next.delete(cellKey);
-                                  return next;
-                                });
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter")
-                                  (e.target as HTMLInputElement).blur();
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-full text-xs bg-transparent border-none outline-none font-mono-md"
-                            />
-                          );
-                        } else if (rate && rate !== 0 && !isNaN(rawCost) && !isNaN(rate)) {
-                          cellContent = (
-                            <div
-                              className="flex items-center gap-1 cursor-pointer"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setEditingCells((prev) => new Set(prev).add(cellKey));
-                              }}
-                              title="Click to edit rate"
-                            >
-                              <span className="text-xs text-black-400 font-mono-md">
-                                {rateStr}
-                              </span>
-                              <span className="text-black-300">|</span>
-                              <span className="font-mono-md text-xs font-semibold text-green-700">
-                                $ {(rawCost / rate).toFixed(2)}
-                              </span>
-                            </div>
-                          );
-                        } else {
-                          cellContent = (
-                            <input
-                              key={cellKey}
-                              type="text"
-                              defaultValue={display}
-                              onBlur={(e) => {
-                                if (e.target.value !== display) {
-                                  handleCellUpdate(idx, cellIdx, e.target.value);
-                                }
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter")
-                                  (e.target as HTMLInputElement).blur();
-                              }}
-                              className="w-full text-xs bg-transparent border-none outline-none"
-                            />
-                          );
-                        }
+                        cellContent = (
+                          <input
+                            key={display + "-" + idx + "-" + cellIdx}
+                            type="text"
+                            defaultValue={display}
+                            placeholder="$"
+                            onBlur={(e) => {
+                              if (e.target.value !== display) {
+                                handleUsdCostUpdate(idx, e.target.value);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter")
+                                (e.target as HTMLInputElement).blur();
+                            }}
+                            className="w-full text-xs bg-transparent border-none outline-none font-mono-md"
+                          />
+                        );
                       } else if (header === "cost") {
                         cellContent = (
                           <input
