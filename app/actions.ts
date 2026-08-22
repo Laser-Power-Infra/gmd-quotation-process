@@ -634,7 +634,7 @@ export async function updateEnquiryOrderStatusAction(enquiryId: string, orderSta
   }
 }
 
-// Delete an item. If it is the last item, delete the enquiry itself.
+// Delete an item. Enquiry is retained even if it becomes empty.
 export async function deleteEnquiryItemAction(itemId: string) {
   try {
     const item = await prisma.enquiryItem.findUnique({
@@ -645,27 +645,14 @@ export async function deleteEnquiryItemAction(itemId: string) {
       return { success: false, error: "Item not found." };
     }
 
-    // Count remaining items in parent enquiry
-    const remainingItemsCount = await prisma.enquiryItem.count({
-      where: { enquiryId: item.enquiryId },
-    });
+    console.log(`[Server] deleteItem item="${item.id}" name="${item.itemName}" enquiry=${item.enquiryId}`);
 
-    console.log(`[Server] deleteItem item="${item.id}" name="${item.itemName}" enquiry=${item.enquiryId} remaining=${remainingItemsCount - 1}`);
-
-    // Delete item
+    // Delete item - enquiry is kept even when no items remain
     await prisma.enquiryItem.delete({
       where: { id: itemId },
     });
 
-    // If it was the last item, delete the entire enquiry
-    let enquiryDeleted = false;
-    if (remainingItemsCount <= 1) {
-      await prisma.enquiry.delete({
-        where: { id: item.enquiryId },
-      });
-      enquiryDeleted = true;
-      console.log(`[Server] Enquiry ${item.enquiryId} also deleted (last item)`);
-    }
+    const enquiryDeleted = false;
 
     return { success: true, data: { itemId, enquiryId: item.enquiryId, enquiryDeleted } };
   } catch (error: any) {
@@ -674,7 +661,7 @@ export async function deleteEnquiryItemAction(itemId: string) {
   }
 }
 
-// Bulk delete multiple items from a single enquiry. If all items are deleted, the enquiry itself is removed.
+// Bulk delete multiple items from a single enquiry. Enquiry is retained even if all items are deleted.
 // Single-enquiry constraint is enforced on server.
 export async function deleteEnquiryItemsAction(itemIds: string[]) {
   try {
@@ -702,26 +689,19 @@ export async function deleteEnquiryItemsAction(itemIds: string[]) {
     }
     const enquiryId = enquiryIds[0];
 
-    const remainingCount = await prisma.enquiryItem.count({
+    console.log(`[Server] bulkDelete enquiry=${enquiryId} requested=${uniqueIds.length}`);
+
+    await prisma.enquiryItem.deleteMany({
+      where: { id: { in: uniqueIds }, enquiryId },
+    });
+
+    const remaining = await prisma.enquiryItem.count({
       where: { enquiryId },
     });
 
-    console.log(`[Server] bulkDelete enquiry=${enquiryId} requested=${uniqueIds.length} remainingBefore=${remainingCount}`);
+    const enquiryDeleted = false;
 
-    await prisma.enquiryItem.deleteMany({
-      where: { id: { in: uniqueIds } },
-    });
-
-    let enquiryDeleted = false;
-    if (remainingCount - uniqueIds.length <= 0) {
-      await prisma.enquiry.delete({
-        where: { id: enquiryId },
-      });
-      enquiryDeleted = true;
-      console.log(`[Server] Enquiry ${enquiryId} also deleted (all items removed via bulk delete)`);
-    }
-
-    return { success: true, data: { deletedIds: uniqueIds, enquiryId, enquiryDeleted, remaining: Math.max(0, remainingCount - uniqueIds.length) } };
+    return { success: true, data: { deletedIds: uniqueIds, enquiryId, enquiryDeleted, remaining } };
   } catch (error: any) {
     console.error("Error bulk deleting items:", error);
     return { success: false, error: error.message || "Failed to delete items." };

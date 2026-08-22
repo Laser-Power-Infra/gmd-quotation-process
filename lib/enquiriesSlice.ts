@@ -471,15 +471,11 @@ const enquiriesSlice = createSlice({
         state.deleteError = null;
       })
       .addCase(deleteEnquiryItem.fulfilled, (state, action) => {
-        const { itemId, enquiryId, enquiryDeleted } = action.payload;
+        const { itemId, enquiryId } = action.payload;
         itemsAdapter.removeOne(state.items, itemId);
-        if (enquiryDeleted) {
-          enquiriesAdapter.removeOne(state.enquiries, enquiryId);
-        } else {
-          const storedEnquiry = state.enquiries.entities[enquiryId];
-          if (storedEnquiry) {
-            storedEnquiry.items = storedEnquiry.items.filter((i) => i.id !== itemId);
-          }
+        const storedEnquiry = state.enquiries.entities[enquiryId];
+        if (storedEnquiry) {
+          storedEnquiry.items = storedEnquiry.items.filter((i) => i.id !== itemId);
         }
         state.deleteStatus = "succeeded";
       })
@@ -492,20 +488,17 @@ const enquiriesSlice = createSlice({
         state.deleteError = null;
       })
       .addCase(deleteEnquiryItems.fulfilled, (state, action) => {
-        const { deletedIds, enquiryId, enquiryDeleted } = action.payload as {
+        const { deletedIds, enquiryId } = action.payload as {
           deletedIds: string[];
           enquiryId: string;
           enquiryDeleted: boolean;
+          remaining: number;
         };
         const idSet = new Set(deletedIds);
         itemsAdapter.removeMany(state.items, deletedIds);
-        if (enquiryDeleted) {
-          enquiriesAdapter.removeOne(state.enquiries, enquiryId);
-        } else {
-          const storedEnquiry = state.enquiries.entities[enquiryId];
-          if (storedEnquiry) {
-            storedEnquiry.items = storedEnquiry.items.filter((i) => !idSet.has(i.id));
-          }
+        const storedEnquiry = state.enquiries.entities[enquiryId];
+        if (storedEnquiry) {
+          storedEnquiry.items = storedEnquiry.items.filter((i) => !idSet.has(i.id));
         }
         state.deleteStatus = "succeeded";
       })

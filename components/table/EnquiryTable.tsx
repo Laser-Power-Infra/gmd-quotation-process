@@ -298,8 +298,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     const ids = Array.from(selectedItemIds);
     setBulkDeleting(true);
     try {
-      const result: any = await dispatch(deleteEnquiryItems(ids)).unwrap();
-      toast.success(result.enquiryDeleted ? `Deleted ${ids.length} item(s) and enquiry was removed (no items left).` : `Deleted ${ids.length} item(s) successfully.`);
+      await dispatch(deleteEnquiryItems(ids)).unwrap();
+      toast.success(`Deleted ${ids.length} item(s) successfully.`);
       clearSelection();
       setBulkConfirmOpen(false);
     } catch (err: any) {
@@ -4105,9 +4105,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           const selEnquiry = enquiries.find((e) => e.id === selectedEnquiryId);
           const selItems = selEnquiry ? selEnquiry.items.filter((it) => selectedItemIds.has(it.id)) : [];
           const allFilteredForEnquiry = selEnquiry ? getFilteredItems(selEnquiry) : [];
-          const willDeleteEnquiry = selEnquiry ? selectedItemIds.size >= (selEnquiry.items.length) : false;
-          // If filtering hides some items, deleting all filtered != deleting enquiry unless they are all actual items
-          const willDeleteEnquiryAccurate = selEnquiry ? selItems.length === selEnquiry.items.length : false;
+          const willEmptyEnquiry = selEnquiry ? selItems.length === selEnquiry.items.length : false;
           return (
             <div className="py-3 space-y-3">
               <p className="text-sm text-muted-foreground">
@@ -4127,9 +4125,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                   ))}
                 </div>
               )}
-              {willDeleteEnquiryAccurate ? (
-                <p className="text-xs text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded p-2">
-                  Warning: This will delete all items in this enquiry — the entire enquiry "{selEnquiry?.docketNumber}" will be removed. This cannot be undone.
+              {willEmptyEnquiry ? (
+                <p className="text-xs text-amber-700 dark:text-amber-600 font-medium bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded p-2">
+                  Note: This will remove all items from enquiry "{selEnquiry?.docketNumber}". The enquiry will remain with 0 items and you can add items later. This cannot be undone.
                 </p>
               ) : (
                 <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">

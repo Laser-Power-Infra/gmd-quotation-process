@@ -1121,9 +1121,9 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
           </DialogHeader>
 
           <div className="py-3 text-sm text-muted-foreground">
-            Are you sure you want to delete <span className="font-bold text-foreground">"{item.itemName}"</span>? 
-            <p className="mt-2 text-xs text-red-500 font-semibold">
-              Warning: If this is the last item on the docket, the entire enquiry record will be deleted. This action cannot be undone.
+            Are you sure you want to delete <span className="font-bold text-foreground">"{item.itemName}"</span>?
+            <p className="mt-2 text-xs text-amber-700 dark:text-amber-500 font-medium">
+              The enquiry will be kept even if it becomes empty. This action cannot be undone.
             </p>
           </div>
 
