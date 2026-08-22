@@ -6,6 +6,7 @@ import { hydrateFromServer } from "@/lib/enquiriesSlice";
 import type { EnquiryData, EnquiryItemData, DropdownOptions } from "@/lib/types";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import EnquiryTable from "@/components/table/EnquiryTable";
+import QuotationAnalyticsSidebar from "@/components/dashboard/QuotationAnalyticsSidebar";
 
 interface DashboardContainerProps {
   enquiries: EnquiryData[];
@@ -60,17 +61,20 @@ export default function DashboardContainer({
   }, [enquiries, dropdownOptions]);
 
   return (
-    <>
-      <DashboardHeader
-        enquiries={enquiriesList}
-        nextDocketNumber={nextDocketNumber}
-        dropdownOptions={mergedDropdownOptions}
-      />
-      <div className="bg-white rounded-lg border border-slate-100 overflow-hidden shadow-sm flex flex-col flex-1">
-        <EnquiryTable
+    <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0 w-full">
+      <QuotationAnalyticsSidebar />
+      <div className="flex-1 min-w-0 flex flex-col gap-4">
+        <DashboardHeader
+          enquiries={enquiriesList}
+          nextDocketNumber={nextDocketNumber}
           dropdownOptions={mergedDropdownOptions}
         />
+        <div className="bg-white rounded-lg border border-slate-100 overflow-hidden shadow-sm flex flex-col flex-1">
+          <EnquiryTable
+            dropdownOptions={mergedDropdownOptions}
+          />
+        </div>
       </div>
-    </>
+    </div>
   );
 }
