@@ -9,7 +9,7 @@ import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
 import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { useDebounce } from "@/lib/hooks/useDebounce";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, fetchContractReviewRates, populatePdCostValidation, deleteEnquiryItems, bulkUpdateValidation, clearQuotedRates } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiryItems, bulkUpdateValidation, clearQuotedRates } from "@/lib/enquiriesSlice";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
 import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
@@ -1418,8 +1418,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   }
 
-  const handleUpdateProductCost = async () => {
-    // Collect items that pass all active filters
+  const handleUpdateAllBomCosts = async () => {
     const matchedItems: EnquiryItemData[] = []
     for (const enquiry of paginatedEnquiries) {
       for (const item of getFilteredItems(enquiry)) {
@@ -1427,26 +1426,28 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       }
     }
 
-    const costItems = matchedItems.filter((i) => i.erpItemCode && !i.productCost)
-    console.log(`[Client] updateProductCost: ${costItems.length} items with blank product cost out of ${matchedItems.length} matched`)
-    if (costItems.length === 0) {
-      const missingCodeCount = matchedItems.filter((i) => !i.erpItemCode && !i.productCost).length
+    const targetItems = matchedItems.filter(
+      (i) => i.erpItemCode && (!i.productCost || !i.cost || Number(i.cost) === 0)
+    )
+    console.log(`[Client] updateAllBomCosts: ${targetItems.length} target items out of ${matchedItems.length} matched`)
+    if (targetItems.length === 0) {
+      const missingCodeCount = matchedItems.filter((i) => !i.erpItemCode).length
       if (missingCodeCount > 0) {
-        toast.info(`Found ${missingCodeCount} item(s) with blank product cost, but they are missing ERP item codes. Please click 'Fetch Item Codes' first.`)
+        toast.info(`Found ${missingCodeCount} item(s) missing ERP item codes. Please click 'Fetch Item Codes' first.`)
       } else {
-        toast.info("No items with blank product cost found.")
+        toast.info("No items requiring BOM cost updates found.")
       }
       return
     }
-    if (!confirm(`Update product cost for ${costItems.length} items from raw material BOM costs?`)) return
+    if (!confirm(`Update BOM costs (DIRECT M2M & 2:1) for ${targetItems.length} item(s)?`)) return
 
     setUpdateCostStatus("running")
-    const toastId = toast.loading(`Updating product cost for ${costItems.length} items...`)
+    const toastId = toast.loading(`Updating BOM costs for ${targetItems.length} item(s)...`)
     try {
-      const result = await dispatch(updateProductCost(costItems.map((i) => i.id))).unwrap()
-      toast.success(`Product cost updated for ${result.updated} item(s).`, { id: toastId })
+      const result = await dispatch(updateAllBomCosts(targetItems.map((i) => i.id))).unwrap()
+      toast.success(`BOM costs updated for ${result.updated} item(s).`, { id: toastId })
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to update product cost."
+      const message = err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to update BOM costs."
       toast.error(message, { id: toastId })
     } finally {
       setUpdateCostStatus("idle")
@@ -1615,7 +1616,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             type="button"
             onClick={handleAutoFillBlanks}
             disabled={autoFillStatus === "running"}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-400 dark:hover:bg-purple-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
+            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-400 dark:hover:bg-purple-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
           >
             <Sparkles className="h-3.5 w-3.5 text-purple-700 dark:text-purple-400 stroke-[2]" />
             {autoFillStatus === "running" ? "Filling..." : "Auto-Fill Blanks"}
@@ -1625,7 +1626,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             type="button"
             onClick={handleFetchItemCodes}
             disabled={fetchCodesStatus === "running"}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
+            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 text-blue-700 dark:text-blue-400 stroke-[2] ${fetchCodesStatus === "running" ? "animate-spin" : ""}`} />
             {fetchCodesStatus === "running" ? "Fetching..." : "Fetch Item Codes"}
@@ -1633,22 +1634,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
           <button
             type="button"
-            onClick={handleUpdateProductCost}
+            onClick={handleUpdateAllBomCosts}
             disabled={updateCostStatus === "running"}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-400 dark:hover:bg-teal-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
+            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-400 dark:hover:bg-teal-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
           >
             <DollarSign className={`h-3.5 w-3.5 text-teal-700 dark:text-teal-400 stroke-[2] ${updateCostStatus === "running" ? "animate-spin" : ""}`} />
-            {updateCostStatus === "running" ? "Updating..." : "Update Product Cost"}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleAutoFillVa}
-            disabled={vaStatus === "running"}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
-          >
-            <Percent className="h-3.5 w-3.5 text-amber-700 dark:text-amber-400 stroke-[2]" />
-            {vaStatus === "running" ? "Filling VA%..." : "Auto-Fill VA%"}
+            {updateCostStatus === "running" ? "Updating..." : "Update BOM Costs"}
           </button>
 
           <button
@@ -1659,16 +1650,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           >
             <RefreshCw className={`h-3.5 w-3.5 text-violet-700 dark:text-violet-400 stroke-[2] ${crRateStatus === "running" ? "animate-spin" : ""}`} />
             {crRateStatus === "running" ? "Fetching..." : "Fetch CR Rates"}
-          </button>
-
-          <button
-            type="button"
-            onClick={handlePopulatePdCostVal}
-            disabled={pdCostValStatus === "running"}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/30 dark:text-indigo-400 dark:hover:bg-indigo-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
-          >
-            <Percent className={`h-3.5 w-3.5 text-indigo-700 dark:text-indigo-400 stroke-[2] ${pdCostValStatus === "running" ? "animate-spin" : ""}`} />
-            {pdCostValStatus === "running" ? "Populating..." : "Populate PD Cost Val"}
           </button>
         </div>
       </div>

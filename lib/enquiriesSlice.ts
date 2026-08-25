@@ -22,6 +22,8 @@ import {
   addAttachmentsAction,
   fetchErpItemCodesAction,
   updateProductCostFromBomAction,
+  update2to1CostAction,
+  updateAllBomCostsAction,
   fetchContractReviewRatesAction,
   populatePdCostValidationAction,
 } from "@/app/actions";
@@ -109,6 +111,34 @@ export const updateProductCost = createAsyncThunk(
     const result = await updateProductCostFromBomAction(itemIds);
     if (!result.success) {
       return rejectWithValue(result.error || "Failed to update product cost");
+    }
+    return result.data!;
+  }
+);
+
+export const update2to1Cost = createAsyncThunk(
+  "enquiries/update2to1Cost",
+  async (
+    itemIds: string[],
+    { rejectWithValue }
+  ) => {
+    const result = await update2to1CostAction(itemIds);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to update 2:1 cost");
+    }
+    return result.data!;
+  }
+);
+
+export const updateAllBomCosts = createAsyncThunk(
+  "enquiries/updateAllBomCosts",
+  async (
+    itemIds: string[],
+    { rejectWithValue }
+  ) => {
+    const result = await updateAllBomCostsAction(itemIds);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to update BOM costs");
     }
     return result.data!;
   }
@@ -449,6 +479,70 @@ const enquiriesSlice = createSlice({
       .addCase(updateProductCost.rejected, (state, action) => {
         state.updateCostStatus = "failed";
         state.updateCostError = (action.payload as string) || "Update product cost failed";
+      })
+      .addCase(update2to1Cost.pending, (state) => {
+        state.updateCostStatus = "loading";
+        state.updateCostError = null;
+      })
+      .addCase(update2to1Cost.fulfilled, (state, action) => {
+        const { items } = action.payload;
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, EnquiryItemData[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
+        state.updateCostStatus = "succeeded";
+      })
+      .addCase(update2to1Cost.rejected, (state, action) => {
+        state.updateCostStatus = "failed";
+        state.updateCostError = (action.payload as string) || "Update 2:1 cost failed";
+      })
+      .addCase(updateAllBomCosts.pending, (state) => {
+        state.updateCostStatus = "loading";
+        state.updateCostError = null;
+      })
+      .addCase(updateAllBomCosts.fulfilled, (state, action) => {
+        const { items } = action.payload;
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, EnquiryItemData[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
+        state.updateCostStatus = "succeeded";
+      })
+      .addCase(updateAllBomCosts.rejected, (state, action) => {
+        state.updateCostStatus = "failed";
+        state.updateCostError = (action.payload as string) || "Update BOM costs failed";
       })
       .addCase(addItems.pending, (state) => {
         state.addItemsStatus = "loading";

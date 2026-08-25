@@ -9,6 +9,7 @@ import { roundUp } from "@/lib/rounding";
 import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
+import { update2to1CostForItems } from "@/lib/gmd2to1CostLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 
 // Create a new enquiry with initial items and multiple attachments
@@ -1054,6 +1055,73 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     return { success: true, data: { items: updatedItems, updated } };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to update product cost.";
+    return { success: false, error: message };
+  }
+}
+
+// Fill null or "-" cost column from Raw Materials table (2:1 BOM), triggered via UI button or API
+export async function update2to1CostAction(itemIds: string[]) {
+  try {
+    const res = await update2to1CostForItems(itemIds);
+    if (res.updatedCount === 0) {
+      const errMsgs: string[] = [];
+      if (res.noCostItemCodes.length > 0) {
+        errMsgs.push(`No cost found in Raw Materials table for consumption item(s) of: ${res.noCostItemCodes.join(", ")}.`);
+      }
+      if (res.noBomItemCodes.length > 0) {
+        errMsgs.push(`No 2:1 BOM recipe found for Item Code(s): ${res.noBomItemCodes.join(", ")}.`);
+      }
+      return { success: false, error: errMsgs.join(" ") || "No costs updated for 2:1 items." };
+    }
+    return { success: true, data: { items: res.updatedItems, updated: res.updatedCount } };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to update 2:1 cost.";
+    return { success: false, error: message };
+  }
+}
+
+// Unified action to update both DIRECT M2M product costs and 2:1 BOM costs for target items
+export async function updateAllBomCostsAction(itemIds: string[]) {
+  try {
+    const updatedItemsMap = new Map<string, ReturnType<typeof serializeItem>>();
+    let totalUpdated = 0;
+    const errorMessages: string[] = [];
+
+    // 1. Process DIRECT M2M product costs
+    const m2mRes = await updateProductCostFromBomAction(itemIds);
+    if (m2mRes.success && m2mRes.data) {
+      for (const item of m2mRes.data.items) {
+        updatedItemsMap.set(item.id, item);
+      }
+      totalUpdated += m2mRes.data.updated;
+    } else if (m2mRes.error) {
+      errorMessages.push(m2mRes.error);
+    }
+
+    // 2. Process 2:1 BOM costs
+    const twoToOneRes = await update2to1CostAction(itemIds);
+    if (twoToOneRes.success && twoToOneRes.data) {
+      for (const item of twoToOneRes.data.items) {
+        updatedItemsMap.set(item.id, item);
+      }
+      totalUpdated += twoToOneRes.data.updated;
+    } else if (twoToOneRes.error && totalUpdated === 0) {
+      errorMessages.push(twoToOneRes.error);
+    }
+
+    if (totalUpdated === 0) {
+      return { success: false, error: errorMessages.join(" ") || "No BOM costs updated." };
+    }
+
+    return {
+      success: true,
+      data: {
+        items: Array.from(updatedItemsMap.values()),
+        updated: totalUpdated,
+      },
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to update BOM costs.";
     return { success: false, error: message };
   }
 }
