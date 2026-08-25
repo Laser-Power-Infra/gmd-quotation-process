@@ -7,7 +7,7 @@ import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { extractSizeFromItemName } from "@/lib/sizeExtractor";
 import { roundUp } from "@/lib/rounding";
 import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
-import { lookupAndSetItemCode, recomputeItemCodeForValues } from "@/lib/gmdItemCodeLookup";
+import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 
@@ -938,9 +938,9 @@ export async function fetchErpItemCodesAction(itemIds: string[]) {
   const updatedItems: ReturnType<typeof serializeItem>[] = [];
   let fetched = 0;
   let lastError: string | null = null;
-  // Pre-warm BOM cache so gate checks don't fetch per item
+  // Pre-warm BOM & BOM ID cache so gate checks don't fetch per item
   try {
-    await getCachedBomRows();
+    await Promise.all([getCachedBomRows(), fetchBomIdSet()]);
   } catch {}
 
   for (const itemId of itemIds) {
@@ -996,17 +996,24 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     const updatedItems: ReturnType<typeof serializeItem>[] = [];
     let updated = 0;
     let lastError: string | null = null;
+    const noCostRmCodes = new Set<string>();
+    const noBomItemCodes = new Set<string>();
 
     for (const item of items) {
       if (item.productCost !== null) continue;
       if (!item.erpItemCode) continue;
       const bom = bomMap.get(item.erpItemCode);
-      if (!bom) continue;
+      if (!bom) {
+        noBomItemCodes.add(item.erpItemCode);
+        continue;
+      }
 
       const cost = costMap.get(bom.rmItemCode);
       try {
         if (cost !== undefined && cost !== null) {
           await recalculateItem(item.id, { productCost: cost });
+        } else {
+          noCostRmCodes.add(bom.rmItemCode);
         }
 
         await prisma.enquiryItem.update({
@@ -1023,7 +1030,9 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
         });
         if (refreshed) {
           updatedItems.push(serializeItem(refreshed));
-          updated++;
+          if (cost !== undefined && cost !== null) {
+            updated++;
+          }
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Failed to update product cost.";
@@ -1033,7 +1042,14 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     }
 
     if (updated === 0) {
-      return { success: false, error: lastError || "No items updated." };
+      const errMsgs: string[] = [];
+      if (noCostRmCodes.size > 0) {
+        errMsgs.push(`No price found in Supply History for RM Code(s): ${[...noCostRmCodes].join(", ")}.`);
+      }
+      if (noBomItemCodes.size > 0) {
+        errMsgs.push(`No DIRECT M2M BOM recipe found for Item Code(s): ${[...noBomItemCodes].join(", ")}.`);
+      }
+      return { success: false, error: errMsgs.join(" ") || lastError || "No product costs updated." };
     }
     return { success: true, data: { items: updatedItems, updated } };
   } catch (error: unknown) {
@@ -1381,6 +1397,50 @@ export async function fetchContractReviewRatesAction(itemIds: string[]) {
   } catch (error: any) {
     console.error("Error fetching contract review rates:", error);
     return { success: false, error: error.message || "Failed to fetch contract review rates." };
+  }
+}
+
+// Calculate and populate pdcostValidation % for selected items that have contractReviewRate and productCost
+export async function populatePdCostValidationAction(itemIds: string[]) {
+  try {
+    const items = await prisma.enquiryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true, contractReviewRate: true, productCost: true },
+    });
+
+    const updatedItems: ReturnType<typeof serializeItem>[] = [];
+    let updated = 0;
+
+    for (const item of items) {
+      if (!item.contractReviewRate || item.productCost == null) continue;
+      const cr = parseFloat(String(item.contractReviewRate).replace(/,/g, ""));
+      const pc = Number(item.productCost);
+      if (isNaN(cr) || isNaN(pc) || pc === 0) continue;
+
+      const pdVal = `${(((cr - pc) / pc) * 100).toFixed(2)}%`;
+      await prisma.enquiryItem.update({
+        where: { id: item.id },
+        data: { pdcostValidation: pdVal },
+      });
+
+      const refreshed = await prisma.enquiryItem.findUnique({ where: { id: item.id } });
+      if (refreshed) {
+        updatedItems.push(serializeItem(refreshed));
+        updated++;
+      }
+    }
+
+    if (updated === 0) {
+      return {
+        success: false,
+        error: "No items with both Contract Review Rate and Product Cost found to populate PD %.",
+      };
+    }
+
+    return { success: true, data: { items: updatedItems, updated } };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to populate PD Cost Validation.";
+    return { success: false, error: message };
   }
 }
 

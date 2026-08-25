@@ -42,6 +42,7 @@ const initialState: FiltersState = {
   erpItemCodeSearch: "",
   contractReviewRate: [],
   contractReviewRateSearch: "",
+  pdcostValidation: [],
   pdcostValidationSearch: "",
 };
 

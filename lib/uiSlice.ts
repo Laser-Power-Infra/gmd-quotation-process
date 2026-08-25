@@ -52,14 +52,22 @@ const uiSlice = createSlice({
   reducers: {
     toggleRow(state, action: PayloadAction<string>) {
       const id = action.payload;
-      if (state.expandedRows[id]) {
-        delete state.expandedRows[id];
+      if (state.expandedRows[id] === true) {
+        state.expandedRows[id] = false;
+      } else if (state.expandedRows[id] === false) {
+        state.expandedRows[id] = true;
       } else {
         state.expandedRows[id] = true;
       }
     },
+    setRowExpanded(
+      state,
+      action: PayloadAction<{ id: string; expanded: boolean }>
+    ) {
+      state.expandedRows[action.payload.id] = action.payload.expanded;
+    },
     setExpandedRows(state, action: PayloadAction<Record<string, boolean>>) {
-      state.expandedRows = action.payload;
+      state.expandedRows = { ...state.expandedRows, ...action.payload };
     },
     setColumnWidth(
       state,
@@ -72,6 +80,7 @@ const uiSlice = createSlice({
 
 export const {
   toggleRow,
+  setRowExpanded,
   setExpandedRows,
   setColumnWidth,
 } = uiSlice.actions;

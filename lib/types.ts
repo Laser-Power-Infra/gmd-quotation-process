@@ -121,6 +121,7 @@ export interface FiltersState {
   erpItemCodeSearch: string;
   contractReviewRate: string[];
   contractReviewRateSearch: string;
+  pdcostValidation: string[];
   pdcostValidationSearch: string;
 }
 

@@ -23,7 +23,22 @@ import {
   fetchErpItemCodesAction,
   updateProductCostFromBomAction,
   fetchContractReviewRatesAction,
+  populatePdCostValidationAction,
 } from "@/app/actions";
+
+export const populatePdCostValidation = createAsyncThunk(
+  "enquiries/populatePdCostValidation",
+  async (
+    itemIds: string[],
+    { rejectWithValue }
+  ) => {
+    const result = await populatePdCostValidationAction(itemIds);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to populate PD Cost Validation");
+    }
+    return result.data!;
+  }
+);
 
 export const createEnquiry = createAsyncThunk(
   "enquiries/createEnquiry",
@@ -645,6 +660,29 @@ const enquiriesSlice = createSlice({
       .addCase(fetchContractReviewRates.rejected, (state, action) => {
         state.contractReviewStatus = "failed";
         state.contractReviewError = (action.payload as string) || "Fetch contract review rates failed";
+      })
+      .addCase(populatePdCostValidation.fulfilled, (state, action) => {
+        const { items } = action.payload;
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, EnquiryItemData[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
       })
       .addCase(bulkUpdateValidation.pending, (state) => {
         state.updateStatus = "loading";
