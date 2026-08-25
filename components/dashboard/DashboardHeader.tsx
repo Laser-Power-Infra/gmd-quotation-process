@@ -2,10 +2,11 @@
 
 import React, { useState, useTransition, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Search } from "lucide-react";
+import { Search, PanelLeftOpen, PanelLeftClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useAppDispatch } from "@/lib/hooks";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { openAddItemsDialog, openNewEnquiryDialog } from "@/lib/dialogsSlice";
+import { toggleAnalyticsSidebar } from "@/lib/uiSlice";
 import AddItemsDialog from "./AddItemsDialog";
 import NewEnquiryDialog from "./NewEnquiryDialog";
 
@@ -25,6 +26,7 @@ export default function DashboardHeader({
   const [searchVal, setSearchVal] = useState(searchParams.get("search") || "");
   const [isPending, startTransition] = useTransition();
   const dispatch = useAppDispatch();
+  const isCollapsed = useAppSelector((s) => s.ui.isAnalyticsSidebarCollapsed);
 
   // Debounce search update
   useEffect(() => {
@@ -48,9 +50,23 @@ export default function DashboardHeader({
   return (
     <div className="flex flex-col gap-4 py-5 px-6 bg-card sm:flex-row sm:items-center sm:justify-between border-b border-border">
       <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-center">
-        <h1 className="text-xl font-bold text-foreground tracking-tight shrink-0">
-          Recent Enquiries
-        </h1>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => dispatch(toggleAnalyticsSidebar())}
+            title={isCollapsed ? "Expand Analytics Filters" : "Collapse Analytics Filters"}
+            className="p-1.5 rounded-md border border-border bg-background hover:bg-accent text-foreground transition-colors cursor-pointer"
+          >
+            {isCollapsed ? (
+              <PanelLeftOpen className="h-4 w-4 stroke-[1.75]" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4 stroke-[1.75]" />
+            )}
+          </button>
+          <h1 className="text-xl font-bold text-foreground tracking-tight">
+            Recent Enquiries
+          </h1>
+        </div>
 
         <div className="relative w-full max-w-xs">
           <Search className="absolute top-2.5 left-3 h-4 w-4 text-muted-foreground" />

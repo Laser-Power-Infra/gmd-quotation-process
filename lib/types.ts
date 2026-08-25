@@ -107,7 +107,7 @@ export interface FiltersState {
   bypass: string[];
   productCost: string[];
   costRefCode: string;
-  cost: string;
+  cost: string[];
   stockStatus: string;
   discount: string;
   quotedRate: string;
@@ -128,6 +128,7 @@ export interface FiltersState {
 export interface UiState {
   expandedRows: Record<string, boolean>;
   columnWidths: Record<number, number>;
+  isAnalyticsSidebarCollapsed?: boolean;
 }
 
 export interface PaginationState {

@@ -28,7 +28,7 @@ const initialState: FiltersState = {
   bypass: [],
   productCost: [],
   costRefCode: "",
-  cost: "",
+  cost: [],
   stockStatus: "",
   discount: "",
   quotedRate: "",

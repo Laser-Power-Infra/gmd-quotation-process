@@ -3,6 +3,7 @@ import type { UiState } from "./types";
 
 const initialState: UiState = {
   expandedRows: {},
+  isAnalyticsSidebarCollapsed: false,
   columnWidths: {
     0: 260,
     1: 260,
@@ -75,6 +76,12 @@ const uiSlice = createSlice({
     ) {
       state.columnWidths[action.payload.index] = action.payload.width;
     },
+    toggleAnalyticsSidebar(state) {
+      state.isAnalyticsSidebarCollapsed = !state.isAnalyticsSidebarCollapsed;
+    },
+    setAnalyticsSidebarCollapsed(state, action: PayloadAction<boolean>) {
+      state.isAnalyticsSidebarCollapsed = action.payload;
+    },
   },
 });
 
@@ -83,6 +90,8 @@ export const {
   setRowExpanded,
   setExpandedRows,
   setColumnWidth,
+  toggleAnalyticsSidebar,
+  setAnalyticsSidebarCollapsed,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;

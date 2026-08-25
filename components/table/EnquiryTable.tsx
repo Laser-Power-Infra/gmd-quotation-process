@@ -135,7 +135,7 @@ function enquiryFieldMatches(enquiry: EnquiryData, field: string, filterValue: s
 const ALL_DROPDOWN_FIELDS = [
   "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass",
-  "validation", "vaPercent", "erpItemCode", "productCost", "contractReviewRate", "pdcostValidation",
+  "validation", "vaPercent", "erpItemCode", "productCost", "cost", "contractReviewRate", "pdcostValidation",
 ] as const;
 
 const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus"]);
@@ -190,7 +190,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterItemName, setFilterItemName] = useFilterInput(filters.itemName, "itemName");
   const [filterQuantity, setFilterQuantity] = useFilterInput(filters.quantity, "quantity");
   const [filterCostRefCode, setFilterCostRefCode] = useFilterInput(filters.costRefCode, "costRefCode");
-  const [filterCost, setFilterCost] = useFilterInput(filters.cost, "cost");
   const [filterStockStatus, setFilterStockStatus] = useFilterInput(filters.stockStatus, "stockStatus");
   const [filterDiscount, setFilterDiscount] = useFilterInput(filters.discount, "discount");
   const [filterQuotedRate, setFilterQuotedRate] = useFilterInput(filters.quotedRate, "quotedRate");
@@ -576,8 +575,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.cost &&
-        !(item.cost?.toString() || "").includes(filters.cost)
+        filters.cost.length > 0 &&
+        !matchesMulti(filters.cost, item.cost != null ? String(item.cost) : null)
       ) {
         return false;
       }
@@ -1037,8 +1036,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.cost &&
-        !(item.cost?.toString() || "").includes(filters.cost)
+        filters.cost.length > 0 &&
+        !matchesMulti(filters.cost, item.cost != null ? String(item.cost) : null)
       ) {
         return false;
       }
@@ -2344,12 +2343,16 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <span>Cost</span>
                 {renderSortArrow("cost")}
               </div>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={filterCost}
-                onChange={(e) => setFilterCost(e.target.value)}
-                className={inputClass}
+              <MultiSelectFilter
+                label="Cost"
+                allLabel="Cost: All"
+                options={cascadedOptions.cost}
+                cascadedOptions={cascadedOptions.cost}
+                selected={filters.cost}
+                onChange={(v) => dispatch(setFilter({ field: "cost", value: v }))}
+                includeBlank
+                className="mt-1 h-6 w-full rounded border border-input bg-background px-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-ring"
+                panelClassName="w-56 z-[80]"
               />
               <div
                 onMouseDown={(e) => handleMouseDown(24, e)}
