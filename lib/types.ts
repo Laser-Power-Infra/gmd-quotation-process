@@ -29,6 +29,9 @@ export interface EnquiryItemData {
   mocSource?: string | null;
   validation?: string | null;
   erpItemCode?: string | null;
+  bomId?: string | null;
+  bomType?: string | null;
+  rmItemCode?: string | null;
   contractReviewRate?: string | null;
   pdcostValidation?: string | null;
 }
@@ -119,6 +122,8 @@ export interface FiltersState {
   attachment: string;
   erpItemCode: string[];
   erpItemCodeSearch: string;
+  bomId: string[];
+  bomIdSearch: string;
   contractReviewRate: string[];
   contractReviewRateSearch: string;
   pdcostValidation: string[];
