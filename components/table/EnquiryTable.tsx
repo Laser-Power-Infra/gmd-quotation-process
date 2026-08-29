@@ -4368,7 +4368,7 @@ function OfferPdfCell({ enquiry }: { enquiry: EnquiryData }) {
         }, 0),
       };
 
-      const res = await generateOfferPdfAction(rowData);
+      const res = await generateOfferPdfAction(rowData, enquiry.id);
       if (res.success && res.pdfBase64) {
         triggerDownload(res.pdfBase64, res.fileName);
         setStatus("idle");

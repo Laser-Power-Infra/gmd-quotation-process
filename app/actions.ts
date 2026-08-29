@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { uploadFileToDrive } from "@/lib/gdrive";
-import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry, autoDetectItemType, autoDetectMoc } from "@/lib/costCalculator";
+import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry, autoDetectItemType, autoDetectMoc, getItemNameMerge } from "@/lib/costCalculator";
 import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { extractSizeFromItemName } from "@/lib/sizeExtractor";
 import { roundUp } from "@/lib/rounding";
@@ -826,10 +826,20 @@ export async function updateItemFieldAction(
       } else if (field === "moc") {
         updateData.mocSource = "sheet";
       }
-      const dbItem = await prisma.enquiryItem.update({
+      let dbItem = await prisma.enquiryItem.update({
         where: { id: itemId },
         data: updateData,
       });
+
+      const MERGE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "itemName"];
+      if (MERGE_FIELDS.includes(field)) {
+        const merged = getItemNameMerge(dbItem);
+        dbItem = await prisma.enquiryItem.update({
+          where: { id: itemId },
+          data: { itemNameMerge: merged === "" ? null : merged },
+        });
+      }
+
       updatedItem = serializeItem(dbItem);
 
       if (updatedItem && !updatedItem.vaPercent && (updatedItem.itemType || updatedItem.size)) {
