@@ -81,6 +81,7 @@ model EnquiryItem {
   deliverySchedule String?
   itemWiseTotalValue String?
   itemStatus     String?
+  availableBomIds  String[] @default([])
   position  Int      @default(0)
   validation String?
 
@@ -298,6 +299,7 @@ model VerifyBom {
   updatedAt  DateTime @updatedAt
 
   @@unique([bomId, itemCode, rmItemCode])
+  @@index([itemCode])
 }
 model LookupOption {
   id        String   @id @default(cuid())

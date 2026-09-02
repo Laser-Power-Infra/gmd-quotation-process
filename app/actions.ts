@@ -10,6 +10,7 @@ import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
 import { update2to1CostForItems } from "@/lib/gmd2to1CostLookup";
+import { getDistinctBomIds, getBatchDistinctBomIds } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 
 // Create a new enquiry with initial items and multiple attachments
@@ -534,13 +535,16 @@ export async function updateEnquiryItemAction(formData: {
       },
     });
 
-    // If erpItemCode changed and productCost is null, auto-fill productCost from BOM (do not clear existing)
+    // Sync availableBomIds for new code (always) and auto-fill productCost if blank & single BOM
     const codeChangedInDialog = erpItemCode !== oldCodeForDialog;
-    if (codeChangedInDialog && erpItemCode) {
+    if (codeChangedInDialog) {
       try {
-        const cur = await prisma.enquiryItem.findUnique({ where: { id: formData.itemId }, select: { productCost: true } });
-        if (cur && cur.productCost === null) {
-          await maybeUpdateProductCostFromNewCode(formData.itemId, erpItemCode, cur.productCost);
+        await syncAvailableBomIds(formData.itemId, erpItemCode);
+        if (erpItemCode) {
+          const cur = await prisma.enquiryItem.findUnique({ where: { id: formData.itemId }, select: { productCost: true } });
+          if (cur && cur.productCost === null) {
+            await maybeUpdateProductCostFromNewCode(formData.itemId, erpItemCode, cur.productCost);
+          }
         }
       } catch (e) {
         console.warn("[updateEnquiryItemAction] auto productCost cascade failed:", e);
@@ -804,7 +808,7 @@ export async function updateItemFieldAction(
       if (field === "itemName") {
         const currentItem = await prisma.enquiryItem.findUnique({
           where: { id: itemId },
-          select: { itemName: true, itemType: true, moc: true, itemTypeSource: true, mocSource: true, size: true, pnRating: true },
+          select: { itemName: true, itemType: true, moc: true, itemTypeSource: true, mocSource: true, size: true, pnRating: true, bypass: true },
         });
         console.log(`[Server] itemName changed: "${currentItem?.itemName}" → "${parsedVal}"`);
         const resolved = await resolveItemCategory({
@@ -820,7 +824,11 @@ export async function updateItemFieldAction(
         updateData.itemTypeSource = resolved.itemTypeSource;
         updateData.mocSource = resolved.mocSource;
         updateData.size = resolved.size;
-        console.log(`[Server] Re-resolved: itemType="${resolved.itemType}" moc="${resolved.moc}" size="${resolved.size}" pnRating="${resolved.pnRating}"`);
+        // Bypass gating: sync bypass with resolved value ( "-" when no mention )
+        if (resolved.bypass !== currentItem?.bypass) {
+          updateData.bypass = resolved.bypass;
+        }
+        console.log(`[Server] Re-resolved: itemType="${resolved.itemType}" moc="${resolved.moc}" size="${resolved.size}" pnRating="${resolved.pnRating}" bypass="${resolved.bypass}"`);
       } else if (field === "itemType") {
         updateData.itemTypeSource = "sheet";
       } else if (field === "moc") {
@@ -830,6 +838,14 @@ export async function updateItemFieldAction(
         where: { id: itemId },
         data: updateData,
       });
+
+      // If bypass changed via itemName gate, recalculate cost atomically
+      if (updateData.bypass !== undefined) {
+        const recalc = await recalculateItem(itemId, { bypass: updateData.bypass });
+        if (recalc) {
+          dbItem = await prisma.enquiryItem.findUnique({ where: { id: itemId } }) as any;
+        }
+      }
 
       const MERGE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "itemName"];
       if (MERGE_FIELDS.includes(field)) {
@@ -895,15 +911,21 @@ export async function updateItemFieldAction(
             },
             fresh.erpItemCode
           );
-          // If code actually changed (old vs new), maybe update productCost when it is null
+          // If code actually changed, sync availableBomIds (always) and maybe update productCost when null
           if (recomputed.changed) {
-            // Need fresh productCost after code update
             const afterCode = await prisma.enquiryItem.findUnique({
               where: { id: itemId },
-              select: { productCost: true, erpItemCode: true },
+              select: { productCost: true, erpItemCode: true, availableBomIds: true },
             });
-            if (afterCode?.erpItemCode && afterCode.productCost === null) {
-              await maybeUpdateProductCostFromNewCode(itemId, afterCode.erpItemCode, afterCode.productCost);
+            // Sync availableBomIds even if productCost not null
+            if (afterCode?.erpItemCode) {
+              await syncAvailableBomIds(itemId, afterCode.erpItemCode);
+            } else {
+              await syncAvailableBomIds(itemId, null);
+            }
+            const refreshedAfterSync = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { productCost: true, erpItemCode: true } });
+            if (refreshedAfterSync?.erpItemCode && refreshedAfterSync.productCost === null) {
+              await maybeUpdateProductCostFromNewCode(itemId, refreshedAfterSync.erpItemCode, refreshedAfterSync.productCost);
             }
             // Refresh updatedItem to return latest
             const latest = await prisma.enquiryItem.findUnique({ where: { id: itemId } });
@@ -922,11 +944,51 @@ export async function updateItemFieldAction(
   }
 }
 
+// Helper: populate availableBomIds from VerifyBom for a given erpItemCode
+async function syncAvailableBomIds(itemId: string, erpItemCode: string | null) {
+  try {
+    if (!erpItemCode) {
+      await prisma.enquiryItem.update({ where: { id: itemId }, data: { availableBomIds: [] } });
+      return [];
+    }
+    const ids = await getDistinctBomIds(erpItemCode);
+    await prisma.enquiryItem.update({ where: { id: itemId }, data: { availableBomIds: ids } });
+    return ids;
+  } catch (e) {
+    console.warn(`[syncAvailableBomIds] failed for ${itemId} code=${erpItemCode}:`, e);
+    return [];
+  }
+}
+
 // Helper: if itemCode changes and productCost is null, auto-fill productCost from BOM
+// Now respects availableBomIds: if VerifyBom has multiple BOMs, defer until user selects one
 async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string | null, currentProductCost: any) {
   if (!newCode) return;
   if (currentProductCost !== null && currentProductCost !== undefined) return; // only if null per requirement
   try {
+    // Always populate availableBomIds from VerifyBom first
+    const candidateIds = await syncAvailableBomIds(itemId, newCode);
+    // If multiple candidates, defer bom/productCost until user selects via selectBomIdAction
+    if (candidateIds.length > 1) {
+      return;
+    }
+    if (candidateIds.length === 1) {
+      // Single candidate path: try VerifyBom row for cost, fallback to sheet BOM
+      const vbRow = await prisma.verifyBom.findFirst({ where: { itemCode: newCode, bomId: candidateIds[0] }, select: { bomId: true, rmItemCode: true, bomIdType: true } });
+      if (vbRow?.rmItemCode) {
+        const costMap = await buildRmCostMap([vbRow.rmItemCode]);
+        const cost = costMap.get(vbRow.rmItemCode);
+        if (cost !== undefined && cost !== null) {
+          await recalculateItem(itemId, { productCost: cost });
+        }
+        await prisma.enquiryItem.update({
+          where: { id: itemId },
+          data: { bomId: vbRow.bomId, bomType: vbRow.bomIdType || DIRECT_M2M, rmItemCode: vbRow.rmItemCode },
+        });
+        return;
+      }
+    }
+    // Zero or single but VerifyBom miss → fallback to sheet DIRECT_M2M BOM
     const bom = await getBomEntry(newCode);
     if (!bom) return;
     const costMap = await buildRmCostMap([bom.rmItemCode]);
@@ -934,13 +996,50 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
     if (cost !== undefined && cost !== null) {
       await recalculateItem(itemId, { productCost: cost });
     }
-    // Persist bom linkage (even if cost was set via recalculate, ensure bom fields)
     await prisma.enquiryItem.update({
       where: { id: itemId },
       data: { bomId: bom.bomId, bomType: DIRECT_M2M, rmItemCode: bom.rmItemCode },
     });
   } catch (e) {
     console.warn(`[maybeUpdateProductCost] failed for ${itemId} code=${newCode}:`, e);
+  }
+}
+
+// User selects a single bomId from availableBomIds dropdown → persist to bomId/rmItemCode/bomType + optional cost
+export async function selectBomIdAction(itemId: string, bomId: string | null) {
+  try {
+    const item = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { erpItemCode: true, productCost: true, availableBomIds: true } });
+    if (!item) return { success: false, error: "Item not found." };
+    if (!item.erpItemCode) return { success: false, error: "Item has no Item Code." };
+    if (bomId !== null && bomId !== "" && !item.availableBomIds.includes(bomId)) {
+      return { success: false, error: "Selected BOM ID is not in available options." };
+    }
+    if (!bomId) {
+      // Clear selection
+      const cleared = await prisma.enquiryItem.update({ where: { id: itemId }, data: { bomId: null, rmItemCode: null, bomType: null } });
+      return { success: true, data: serializeItem(cleared) };
+    }
+    const vbRow = await prisma.verifyBom.findFirst({ where: { itemCode: item.erpItemCode, bomId }, select: { bomId: true, rmItemCode: true, bomIdType: true } });
+    if (!vbRow) return { success: false, error: "BOM not found for this item code." };
+    // Update bom linkage
+    await prisma.enquiryItem.update({
+      where: { id: itemId },
+      data: { bomId: vbRow.bomId, bomType: vbRow.bomIdType || DIRECT_M2M, rmItemCode: vbRow.rmItemCode },
+    });
+    // Auto-fill productCost if blank
+    if (item.productCost === null && vbRow.rmItemCode) {
+      const costMap = await buildRmCostMap([vbRow.rmItemCode]);
+      const cost = costMap.get(vbRow.rmItemCode);
+      if (cost !== undefined && cost !== null) {
+        const recalc = await recalculateItem(itemId, { productCost: cost });
+        if (recalc) return { success: true, data: recalc };
+      }
+    }
+    const updated = await prisma.enquiryItem.findUnique({ where: { id: itemId } });
+    return { success: true, data: serializeItem(updated) };
+  } catch (e: any) {
+    console.error("[selectBomIdAction] failed:", e);
+    return { success: false, error: e.message || "Failed to select BOM." };
   }
 }
 
@@ -957,22 +1056,26 @@ export async function fetchErpItemCodesAction(itemIds: string[]) {
   for (const itemId of itemIds) {
     try {
       const code = await lookupAndSetItemCode(itemId, { bomGate: true });
-      const item = await prisma.enquiryItem.findUnique({
+      let item = await prisma.enquiryItem.findUnique({
         where: { id: itemId },
       });
       if (item) {
+        // Populate availableBomIds from VerifyBom for every code (even if productCost not null)
+        if (item.erpItemCode) {
+          try { await syncAvailableBomIds(itemId, item.erpItemCode); item = await prisma.enquiryItem.findUnique({ where: { id: itemId } }) as any; } catch {}
+        }
         // Only count as fetched if item now has a code (gate passed)
-        if (item.erpItemCode) fetched++;
-        // If we just fetched a new code and productCost is null, auto-fill cost (do not clear existing)
-        if (code && item.productCost === null) {
-          await maybeUpdateProductCostFromNewCode(itemId, item.erpItemCode, item.productCost);
+        if (item!.erpItemCode) fetched++;
+        // If we just fetched a new code and productCost is null, auto-fill cost (do not clear existing) - respects multi-BOM defer
+        if (code && item!.productCost === null) {
+          await maybeUpdateProductCostFromNewCode(itemId, item!.erpItemCode, item!.productCost);
           const refreshed = await prisma.enquiryItem.findUnique({ where: { id: itemId } });
           if (refreshed) {
             updatedItems.push(serializeItem(refreshed));
             continue;
           }
         }
-        updatedItems.push(serializeItem(item));
+        updatedItems.push(serializeItem(item!));
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to fetch ERP item code.";
