@@ -9,7 +9,8 @@ import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
 import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { useDebounce } from "@/lib/hooks/useDebounce";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiryItems, bulkUpdateValidation, clearQuotedRates } from "@/lib/enquiriesSlice";
+import { useSearchParams } from "next/navigation";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiryItems, bulkUpdateValidation, clearQuotedRates, selectBomId } from "@/lib/enquiriesSlice";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
 import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
@@ -132,6 +133,12 @@ function enquiryFieldMatches(enquiry: EnquiryData, field: string, filterValue: s
   return matchesMulti(filterValue, enquiry[field as keyof EnquiryData]);
 }
 
+function matchesText(filterVal: string, actual: unknown): boolean {
+  if (!filterVal) return true;
+  if (actual == null) return false;
+  return String(actual).toLowerCase().includes(filterVal.toLowerCase());
+}
+
 const ALL_DROPDOWN_FIELDS = [
   "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass",
@@ -147,6 +154,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const filters = useAppSelector((s) => s.filters);
   const { currentPage, pageSize } = useAppSelector((s) => s.pagination);
   const { expandedRows, columnWidths } = useAppSelector((s) => s.ui);
+  const searchParams = useSearchParams();
+  const globalSearch = (searchParams.get("search") || "").trim();
 
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -378,9 +387,35 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       for (const other of ALL_DROPDOWN_FIELDS) {
         if (other === excludeField) continue;
         if (ENQUIRY_DROPDOWN_SET.has(other)) {
-          const val = filters[other];
+          const val = filters[other as keyof FiltersState] as unknown as string[];
           if (val.length > 0 && !enquiryFieldMatches(enquiry, other, val)) return false;
         }
+      }
+      // --- global search (?search) ---
+      if (globalSearch) {
+        const q = globalSearch.toLowerCase();
+        const matches =
+          enquiry.docketNumber.toLowerCase().includes(q) ||
+          enquiry.partyName.toLowerCase().includes(q) ||
+          enquiry.items.some((it) => it.itemName.toLowerCase().includes(q));
+        if (!matches) return false;
+      }
+      // --- text filters at enquiry level ---
+      if (excludeField !== "docketNumber" && filters.docketNumber && !matchesText(filters.docketNumber, enquiry.docketNumber)) return false;
+      if (excludeField !== "enquiryDateFrom" && filters.enquiryDateFrom) {
+        const from = new Date(filters.enquiryDateFrom);
+        if (new Date(enquiry.enquiryDate) < from) return false;
+      }
+      if (excludeField !== "enquiryDateTo" && filters.enquiryDateTo) {
+        const to = new Date(filters.enquiryDateTo);
+        const limit = new Date(to); limit.setDate(limit.getDate()+1);
+        if (new Date(enquiry.enquiryDate) > limit) return false;
+      }
+      if (excludeField !== "projectReference" && filterProjectReference && !matchesText(filterProjectReference, enquiry.projectReference || "")) return false;
+      if (excludeField !== "attachment" && filters.attachment) {
+        if (!enquiry.attachments || enquiry.attachments.length===0) return false;
+        const match = enquiry.attachments.some((a)=> a.name.toLowerCase().includes(filters.attachment.toLowerCase()));
+        if (!match) return false;
       }
       return true;
     };
@@ -389,10 +424,28 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       for (const other of ALL_DROPDOWN_FIELDS) {
         if (other === excludeField) continue;
         if (!ENQUIRY_DROPDOWN_SET.has(other)) {
-          const val = filters[other];
+          const val = filters[other as keyof FiltersState] as unknown as string[];
           if (val.length > 0 && !itemFieldMatches(item, other, val)) return false;
         }
       }
+      // --- item text filters ---
+      if (excludeField !== "itemName" && filters.itemName && !matchesText(filters.itemName, item.itemName)) return false;
+      if (excludeField !== "quantity" && filters.quantity && !matchesText(filters.quantity, String(item.quantity))) return false;
+      if (excludeField !== "itemTypeSearch" && filters.itemTypeSearch && !matchesText(filters.itemTypeSearch, item.itemType || "")) return false;
+      if (excludeField !== "mocSearch" && filters.mocSearch && !matchesText(filters.mocSearch, item.moc || "")) return false;
+      if (excludeField !== "erpItemCodeSearch" && filters.erpItemCodeSearch && !matchesText(filters.erpItemCodeSearch, item.erpItemCode || "")) return false;
+      if (excludeField !== "bomIdSearch" && (filters.bomIdSearch as string) && !matchesText(filters.bomIdSearch, (item as unknown as Record<string,unknown>).bomId as string || "")) return false;
+      if (excludeField !== "contractReviewRateSearch" && (filters.contractReviewRateSearch as string) && !matchesText(filters.contractReviewRateSearch, item.contractReviewRate || "")) return false;
+      if (excludeField !== "pdcostValidationSearch" && (filters.pdcostValidationSearch as string) && !matchesText(filters.pdcostValidationSearch, getPdCostValidation(item) || "")) return false;
+      if (excludeField !== "costRefCode" && filters.costRefCode && !matchesText(filters.costRefCode, item.costRefCode || "")) return false;
+      if (excludeField !== "stockStatus" && filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;
+      if (excludeField !== "discount" && filters.discount && !matchesText(filters.discount, item.discount != null ? String(item.discount) : "")) return false;
+      if (excludeField !== "quotedRate" && filters.quotedRate && !matchesText(filters.quotedRate, item.quotedRate || "")) return false;
+      if (excludeField !== "quotedRateGst" && (filters.quotedRateGst as string) && !matchesText(filters.quotedRateGst, item.quotedRateGst || "")) return false;
+      if (excludeField !== "itemNameMerge" && filters.itemNameMerge && !matchesText(filters.itemNameMerge, item.itemNameMerge || "")) return false;
+      if (excludeField !== "totalValue" && filters.totalValue && !matchesText(filters.totalValue, item.totalValue || "")) return false;
+      if (excludeField !== "itemWiseTotalValue" && filters.itemWiseTotalValue && !matchesText(filters.itemWiseTotalValue, item.itemWiseTotalValue || "")) return false;
+      // note: productCost/cost are dropdowns already handled
       return true;
     };
 
@@ -435,10 +488,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       .filter((enquiry) => {
         for (const other of ALL_DROPDOWN_FIELDS) {
           if (ENQUIRY_DROPDOWN_SET.has(other)) {
-            const val = filters[other];
+            const val = filters[other as keyof FiltersState] as unknown as string[];
             if (!enquiryFieldMatches(enquiry, other, val)) return false;
           }
         }
+        // also respect text/global for parties
+        if (!enquiryPasses(enquiry, "partyNames")) return false;
         return enquiry.items.some((item) => itemPasses(item, null));
       })
       .map((enquiry) => enquiry.partyName)
@@ -447,7 +502,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     result.partyNames = availableParties;
 
     return result;
-  }, [enquiries, allItems, filters]);
+  }, [enquiries, allItems, filters, filterProjectReference, globalSearch]);
 
   // VA% validation: compute set of item IDs where VA% exceeds allowed max
   const invalidVaItemIds = useMemo(() => {
@@ -2478,7 +2533,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <MultiSelectFilter
                   label="VA%"
                   allLabel="All VA%"
-                  options={dropdownOptions.vaPercents}
+                  options={cascadedOptions.vaPercent}
                   cascadedOptions={cascadedOptions.vaPercent}
                   selected={filters.vaPercent}
                   onChange={(v) => dispatch(setFilter({ field: "vaPercent", value: v }))}
@@ -3292,12 +3347,36 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       ) : "-"}
                     </td>
 
-                    {/* 18a. First Item BOM ID (read-only, beside Item Code) */}
+                    {/* 18a. First Item BOM ID (dropdown when multiple, else read-only) */}
                     <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
-                        <span className="block text-[10px] text-muted-foreground p-1 font-mono truncate" title={(firstItem as any).bomId || ""}>
-                          {(firstItem as any).bomId || "-"}
-                        </span>
+                        (() => {
+                          const avail = (firstItem as any).availableBomIds as string[] | undefined;
+                          const hasMulti = Array.isArray(avail) && avail.length > 1;
+                          if (hasMulti) {
+                            return (
+                              <select
+                                value={(firstItem as any).bomId || ""}
+                                onChange={(e) => {
+                                  const v = e.target.value || null;
+                                  toast.promise(dispatch(selectBomId({ itemId: firstItem.id, bomId: v })).unwrap(), {
+                                    loading: "Saving BOM...",
+                                    success: "BOM saved.",
+                                    error: (err) => (typeof err === "string" ? err : err?.message || "Failed to save BOM."),
+                                  });
+                                }}
+                                className="w-full text-[10px] border border-border rounded px-1 py-1 bg-background"
+                                title={(avail || []).join(", ")}
+                              >
+                                <option value="">-- select --</option>
+                                {avail!.map((b) => (
+                                  <option key={b} value={b}>{b}</option>
+                                ))}
+                              </select>
+                            );
+                          }
+                          return <span className="block text-[10px] text-muted-foreground p-1 font-mono truncate" title={(firstItem as any).bomId || ""}>{(firstItem as any).bomId || "-"}</span>;
+                        })()
                       ) : "-"}
                     </td>
 
@@ -3841,11 +3920,35 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           </span>
                         </td>
 
-                        {/* BOM ID (read-only, beside Item Code) */}
+                        {/* BOM ID (dropdown when multiple, else read-only) */}
                         <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                          <span className="block text-[10px] text-muted-foreground p-1 font-mono truncate" title={(item as any).bomId || ""}>
-                            {(item as any).bomId || "-"}
-                          </span>
+                          {(() => {
+                            const avail = (item as any).availableBomIds as string[] | undefined;
+                            const hasMulti = Array.isArray(avail) && avail.length > 1;
+                            if (hasMulti) {
+                              return (
+                                <select
+                                  value={(item as any).bomId || ""}
+                                  onChange={(e) => {
+                                    const v = e.target.value || null;
+                                    toast.promise(dispatch(selectBomId({ itemId: item.id, bomId: v })).unwrap(), {
+                                      loading: "Saving BOM...",
+                                      success: "BOM saved.",
+                                      error: (err) => (typeof err === "string" ? err : err?.message || "Failed to save BOM."),
+                                    });
+                                  }}
+                                  className="w-full text-[10px] border border-border rounded px-1 py-1 bg-background"
+                                  title={(avail || []).join(", ")}
+                                >
+                                  <option value="">-- select --</option>
+                                  {avail!.map((b) => (
+                                    <option key={b} value={b}>{b}</option>
+                                  ))}
+                                </select>
+                              );
+                            }
+                            return <span className="block text-[10px] text-muted-foreground p-1 font-mono truncate" title={(item as any).bomId || ""}>{(item as any).bomId || "-"}</span>;
+                          })()}
                         </td>
 
                         {/* 18. Operation Type Inline Select */}
@@ -4208,11 +4311,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 )}
               </p>
               {selItems.length > 0 && (
-                <div className="max-h-40 overflow-y-auto rounded border border-border bg-muted/30 p-2 space-y-1">
+                <div className="max-h-40 overflow-y-auto overflow-x-hidden rounded border border-border bg-muted/30 p-2 space-y-1 min-w-0">
                   {selItems.map((it) => (
-                    <div key={it.id} className="text-xs text-foreground truncate flex items-start gap-1.5">
+                    <div key={it.id} className="text-xs text-foreground flex items-start gap-1.5 min-w-0 overflow-hidden">
                       <span className="text-muted-foreground shrink-0">•</span>
-                      <span className="truncate">{it.itemName}</span>
+                      <span className="truncate min-w-0 flex-1">{it.itemName}</span>
                     </div>
                   ))}
                 </div>

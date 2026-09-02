@@ -34,6 +34,7 @@ export interface EnquiryItemData {
   rmItemCode?: string | null;
   contractReviewRate?: string | null;
   pdcostValidation?: string | null;
+  availableBomIds?: string[] | null;
 }
 
 export interface AttachmentData {

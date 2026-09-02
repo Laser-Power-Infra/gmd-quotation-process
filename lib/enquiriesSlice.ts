@@ -26,6 +26,7 @@ import {
   updateAllBomCostsAction,
   fetchContractReviewRatesAction,
   populatePdCostValidationAction,
+  selectBomIdAction,
 } from "@/app/actions";
 
 export const populatePdCostValidation = createAsyncThunk(
@@ -290,6 +291,17 @@ export const clearQuotedRates = createAsyncThunk(
     const result = await clearQuotedRatesAction(itemIds);
     if (!result.success) {
       return rejectWithValue(result.error || "Failed to clear quoted rates");
+    }
+    return result.data!;
+  }
+);
+
+export const selectBomId = createAsyncThunk(
+  "enquiries/selectBomId",
+  async (payload: { itemId: string; bomId: string | null }, { rejectWithValue }) => {
+    const result = await selectBomIdAction(payload.itemId, payload.bomId);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to select BOM");
     }
     return result.data!;
   }
@@ -841,6 +853,20 @@ const enquiriesSlice = createSlice({
       .addCase(clearQuotedRates.rejected, (state, action) => {
         state.updateStatus = "failed";
         state.updateError = (action.payload as string) || "Clear quoted rates failed";
+      })
+      .addCase(selectBomId.fulfilled, (state, action) => {
+        const updatedItem = action.payload as EnquiryItemData;
+        itemsAdapter.upsertOne(state.items, updatedItem);
+        const parent = state.enquiries.entities[updatedItem.enquiryId];
+        if (parent) {
+          const idx = parent.items.findIndex((i) => i.id === updatedItem.id);
+          if (idx !== -1) parent.items[idx] = updatedItem;
+        }
+        state.updateStatus = "succeeded";
+      })
+      .addCase(selectBomId.rejected, (state, action) => {
+        state.updateStatus = "failed";
+        state.updateError = (action.payload as string) || "Select BOM failed";
       });
   },
 });

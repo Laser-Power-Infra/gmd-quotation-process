@@ -3,7 +3,6 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import "dotenv/config";
 import { resolveItemCategory } from "../lib/itemCategoryResolver";
-import { detectBypass } from "../lib/bypassDetector";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
