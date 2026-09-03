@@ -172,7 +172,7 @@ export default function QuotationAnalyticsSidebar({
       </div>
 
       {/* Party Name */}
-      <Card size="sm" className="shadow-sm overflow-visible !overflow-visible">
+      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold">Party Name</CardTitle>
           <CardDescription className="text-[11px]">Filter by customer</CardDescription>
@@ -187,13 +187,13 @@ export default function QuotationAnalyticsSidebar({
             onChange={onPartyNamesChange}
             counts={partyCounts}
             searchPlaceholder="Search party..."
-            panelClassName="w-72 z-[80]"
+            panelClassName="w-72 z-80"
           />
         </CardContent>
       </Card>
 
       {/* Utility */}
-      <Card size="sm" className="shadow-sm overflow-visible !overflow-visible">
+      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold">Utility</CardTitle>
           <CardDescription className="text-[11px]">Filter by utility</CardDescription>
@@ -207,13 +207,13 @@ export default function QuotationAnalyticsSidebar({
             selected={selectedUtilities}
             onChange={onUtilitiesChange}
             searchPlaceholder="Search utility..."
-            panelClassName="w-72 z-[80]"
+            panelClassName="w-72 z-80"
           />
         </CardContent>
       </Card>
 
       {/* Enquiry Type */}
-      <Card size="sm" className="shadow-sm overflow-visible !overflow-visible">
+      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold">Enquiry Type</CardTitle>
           <CardDescription className="text-[11px]">Filter by enquiry type</CardDescription>
@@ -227,7 +227,7 @@ export default function QuotationAnalyticsSidebar({
             selected={selectedEnquiryTypes}
             onChange={onEnquiryTypesChange}
             searchPlaceholder="Search enquiry type..."
-            panelClassName="w-72 z-[80]"
+            panelClassName="w-72 z-80"
           />
         </CardContent>
       </Card>

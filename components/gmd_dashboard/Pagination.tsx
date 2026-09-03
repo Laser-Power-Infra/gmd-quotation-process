@@ -87,7 +87,7 @@ export default function Pagination({
               key={page}
               className={`${btnBase} ${
                 page === currentPage
-                  ? "!bg-[#0070f3] !border-[#0070f3] !text-white"
+                  ? "bg-[#0070f3]! border-[#0070f3]! text-white!"
                   : ""
               }`}
               onClick={() => onPageChange(page)}

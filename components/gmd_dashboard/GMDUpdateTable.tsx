@@ -7,6 +7,7 @@ import {
   STATUS_COLUMNS,
   NUMERIC_COLUMNS,
   COL_INDEX_TO_DB_FIELD,
+  FIXED_DROPDOWN_OPTIONS,
 } from "../../lib/gmd_lib/sheet-columns";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import Pagination from "./Pagination";
@@ -187,6 +188,7 @@ interface GMDUpdateTableProps {
   onFilteredRowsChange?: (rows: unknown[][]) => void;
   usdInrRate?: number | null;
   onRefreshRate?: () => void;
+  onReset?: () => void;
   filterState?: {
     columnFilters: Record<string, string>;
     multiFilters: Record<string, string[]>;
@@ -225,6 +227,7 @@ export default function GMDUpdateTable({
   onFilteredRowsChange,
   usdInrRate,
   onRefreshRate,
+  onReset,
   filterState,
   filterActions,
   fullHeight,
@@ -354,6 +357,7 @@ export default function GMDUpdateTable({
       setLocalDateTo("");
     }
     setCurrentPage(1);
+    onReset?.();
   };
 
   const hasActiveFilters =
@@ -485,7 +489,10 @@ export default function GMDUpdateTable({
     const result: Record<string, string[]> = {};
     for (const h of headers) {
       const idx = headers.indexOf(h);
-      result[h] = categoryOptions?.[h] || getUniqueColumnValues(idx);
+      result[h] =
+        FIXED_DROPDOWN_OPTIONS[h] ||
+        categoryOptions?.[h] ||
+        getUniqueColumnValues(idx);
     }
     return result;
   }, [headers, categoryOptions, rows]);
@@ -978,6 +985,7 @@ export default function GMDUpdateTable({
                           >
                             <option value="">-</option>
                             {(
+                              FIXED_DROPDOWN_OPTIONS[header] ||
                               categoryOptions?.[header] ||
                               columnUniqueVals[header] ||
                               []
@@ -1071,3 +1079,6 @@ export default function GMDUpdateTable({
     </div>
   );
 }
+
+
+
