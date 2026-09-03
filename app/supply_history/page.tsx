@@ -8,6 +8,8 @@ import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdat
 import { toast } from "sonner";
 import { updateSupplyHistoryFieldAction } from "@/app/actions";
 import { SUPPLY_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/supply-history-columns";
+import { INDIAN_STATES } from "@/lib/supplyStateResolver";
+import { UTILITIES } from "@/lib/utilities";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import {
   setColumnFilter,
@@ -115,6 +117,10 @@ export default function SupplyHistoryPage() {
       );
       if (vals.length > 0) opts[col] = vals;
     }
+    // Override State to show full India list for manual dropdown (blanks need all options)
+    opts["State"] = [...INDIAN_STATES];
+    // Override UTILITY to show same values as quotation process dashboard (LookupOption UTILITY)
+    opts["UTILITY"] = [...UTILITIES].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return opts;
   }, [data, headers]);
 
@@ -131,10 +137,12 @@ export default function SupplyHistoryPage() {
 
   if (loading) {
     return (
-      <main className="h-screen flex flex-col bg-background">
-        <div className="flex-1 flex flex-col p-6 min-h-0">
+      <main className="flex flex-col bg-background h-[calc(100vh-64px)] overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 p-6 overflow-hidden">
           <GMDUpdateHeader title="SUPPLY HISTORY" totalRows={0} />
-          <GMDUpdateSkeleton />
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden mt-4">
+            <GMDUpdateSkeleton />
+          </div>
         </div>
       </main>
     );
@@ -142,8 +150,8 @@ export default function SupplyHistoryPage() {
 
   if (error && !data) {
     return (
-      <main className="h-screen flex flex-col bg-background">
-        <div className="flex-1 flex flex-col p-6 min-h-0">
+      <main className="flex flex-col bg-background h-[calc(100vh-64px)] overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 p-6 overflow-hidden">
           <GMDUpdateHeader title="SUPPLY HISTORY" totalRows={0} />
           <ErrorState message={error} onRetry={fetchData} />
         </div>
@@ -152,8 +160,8 @@ export default function SupplyHistoryPage() {
   }
 
   return (
-    <main className="h-screen flex flex-col bg-background">
-      <div className="flex-1 flex flex-col p-6 min-h-0">
+    <main className="flex flex-col bg-background h-[calc(100vh-64px)] overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0 p-6 overflow-hidden">
         <GMDUpdateHeader
           title="SUPPLY HISTORY"
           totalRows={data?.totalRows ?? 0}
@@ -162,9 +170,9 @@ export default function SupplyHistoryPage() {
           syncing={syncing}
         />
         {error && (
-          <div className="mt-2 text-sm text-red-600">{error}</div>
+          <div className="mt-2 text-sm text-red-600 shrink-0">{error}</div>
         )}
-        <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4 pr-1 mt-4">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden mt-4">
           <GMDUpdateTable
             headers={headers}
             rows={data?.rows ?? []}
@@ -173,12 +181,13 @@ export default function SupplyHistoryPage() {
             onSelect={setSelectedIndex}
             title={`Supply History`}
             editable
-            editableColumns={["Party Mail Address"]}
+            editableColumns={["Party Mail Address", "State", "UTILITY"]}
             onCellUpdate={handleCellUpdate}
             categoryOptions={categoryOptions}
             uniqueKeyColumns={["INVOICE NO", "item name"]}
             filterState={filterState}
             filterActions={filterActions}
+            fullHeight
           />
         </div>
       </div>

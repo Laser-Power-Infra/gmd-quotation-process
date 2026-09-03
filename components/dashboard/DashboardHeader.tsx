@@ -48,7 +48,7 @@ export default function DashboardHeader({
   }, [searchVal, router]);
 
   return (
-    <div className="flex flex-col gap-4 py-5 px-6 bg-card sm:flex-row sm:items-center sm:justify-between border-b border-border">
+    <div className="flex flex-col gap-4 py-3 px-6 bg-card sm:flex-row sm:items-center sm:justify-between border-b border-border shrink-0">
       <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-center">
         <div className="flex items-center gap-2 shrink-0">
           <button

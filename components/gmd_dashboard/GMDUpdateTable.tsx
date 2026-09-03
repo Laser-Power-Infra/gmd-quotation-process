@@ -206,6 +206,7 @@ interface GMDUpdateTableProps {
     onPageChange: (page: number) => void;
     onPageSizeChange: (size: number) => void;
   };
+  fullHeight?: boolean;
 }
 
 export default function GMDUpdateTable({
@@ -226,6 +227,7 @@ export default function GMDUpdateTable({
   onRefreshRate,
   filterState,
   filterActions,
+  fullHeight,
 }: GMDUpdateTableProps) {
   const isControlled = !!filterState;
 
@@ -617,7 +619,7 @@ export default function GMDUpdateTable({
   }
 
   return (
-    <div className="flex flex-col w-full max-w-full min-w-0 bg-white border border-[#e1e6eb] rounded-lg shadow-sm">
+    <div className={`flex flex-col w-full max-w-full min-w-0 bg-white border border-[#e1e6eb] rounded-lg shadow-sm ${fullHeight ? "flex-1 min-h-0 overflow-hidden h-full" : ""}`}>
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#e1e6eb] bg-[#f8f9fa]">
         <div className="flex items-center gap-2">
@@ -699,7 +701,7 @@ export default function GMDUpdateTable({
       </div>
 
       {/* Scrollable Table */}
-      <div className="overflow-x-auto overflow-y-auto w-full min-w-0 max-h-[50vh]">
+      <div className={`w-full min-w-0 ${fullHeight ? "flex-1 min-h-0 overflow-auto" : "overflow-x-auto overflow-y-auto max-h-[50vh]"}`}>
         {" "}
         <table
           className="w-full text-left"

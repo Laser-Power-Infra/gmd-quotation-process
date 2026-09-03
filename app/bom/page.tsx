@@ -65,7 +65,7 @@ export default function BomPage() {
 
   if (loading) {
     return (
-      <main className="h-screen flex flex-col bg-background">
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader title="VERIFY BOM" totalRows={0} />
           <GMDUpdateSkeleton />
@@ -76,7 +76,7 @@ export default function BomPage() {
 
   if (error && !data) {
     return (
-      <main className="h-screen flex flex-col bg-background">
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader title="VERIFY BOM" totalRows={0} />
           <ErrorState message={error} onRetry={fetchData} />
@@ -86,7 +86,7 @@ export default function BomPage() {
   }
 
   return (
-    <main className="h-screen flex flex-col bg-background">
+    <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
       <div className="flex-1 flex flex-col p-6 min-h-0">
         <GMDUpdateHeader
           title="VERIFY BOM"

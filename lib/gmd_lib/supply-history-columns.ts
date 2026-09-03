@@ -129,6 +129,8 @@ export const SUPPLY_HEADER_TO_DB_FIELD: Record<string, string> = {
   "Item Type": "derivedItemType",
   "MOC": "derivedMoc",
   "Size": "derivedSize",
+  "State": "state",
+  "UTILITY": "utility",
 };
 
 export function dbItemToRow(item: {

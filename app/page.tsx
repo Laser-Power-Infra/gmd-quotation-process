@@ -137,8 +137,8 @@ export default async function Page({ searchParams }: PageProps) {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <main className="flex-1 flex flex-col p-6 w-full gap-4 mx-auto">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden bg-background">
+      <main className="flex-1 flex flex-col p-4 w-full gap-3 mx-auto min-h-0 overflow-hidden">
         <Suspense>
           <DashboardContainer
             enquiries={enquiriesList}

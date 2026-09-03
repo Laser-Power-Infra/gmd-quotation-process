@@ -25,10 +25,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${poppins.variable} h-full antialiased`}
+      className={`${poppins.variable} h-screen antialiased overflow-hidden`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col overflow-x-hidden overflow-y-hidden">
+      <body className="h-screen flex flex-col overflow-hidden bg-background">
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block"

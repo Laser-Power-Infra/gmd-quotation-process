@@ -119,7 +119,7 @@ export default function ContractReviewPage() {
 
   if (loading) {
     return (
-      <main className="h-screen flex flex-col bg-background">
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader title="CONTRACT REVIEW" totalRows={0} />
           <GMDUpdateSkeleton />
@@ -130,7 +130,7 @@ export default function ContractReviewPage() {
 
   if (error && !data) {
     return (
-      <main className="h-screen flex flex-col bg-background">
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader title="CONTRACT REVIEW" totalRows={0} />
           <ErrorState message={error} onRetry={fetchData} />
@@ -140,7 +140,7 @@ export default function ContractReviewPage() {
   }
 
   return (
-    <main className="h-screen flex flex-col bg-background">
+    <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
       <div className="flex-1 flex p-6 min-h-0 gap-4">
         <aside className="w-56 shrink-0 h-fit bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-4">
           <span className="text-xs font-bold uppercase tracking-wider text-white">

@@ -1629,7 +1629,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     "w-full bg-transparent border-none text-xs text-muted-foreground outline-none cursor-pointer focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded p-1 hover:bg-muted/80 transition-colors normal-case font-medium";
 
   return (
-    <div className="flex flex-col flex-1 w-full max-w-full min-w-0">
+    <div className="flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0">
       {/* Table Toolbar */}
       <div className="flex justify-between items-center px-4 py-2.5 bg-muted/50 border-b border-border">
         <span className="text-[11px] font-semibold text-muted-foreground">
@@ -1731,7 +1731,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-x-auto overflow-y-auto max-h-[70vh] w-full min-w-0 border-b border-border">
+      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-auto w-full min-w-0 border-b border-border">
         <table
         className="border-collapse text-left border border-border"
         style={{ tableLayout: "fixed", width: totalTableWidth }}
@@ -4276,16 +4276,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     </div>
 
     {filteredEnquiries.length > 0 && (
-      <Pagination
-        currentPage={currentPage}
-        totalCount={filteredEnquiries.length}
-        pageSize={pageSize}
-        onPageChange={(page) => dispatch(setPage(page))}
-        onPageSizeChange={(size) => {
-          dispatch(setPageSize(size));
-          dispatch(setPage(1));
-        }}
-      />
+      <div className="shrink-0 border-t border-border bg-white dark:bg-background">
+        <Pagination
+          currentPage={currentPage}
+          totalCount={filteredEnquiries.length}
+          pageSize={pageSize}
+          onPageChange={(page) => dispatch(setPage(page))}
+          onPageSizeChange={(size) => {
+            dispatch(setPageSize(size));
+            dispatch(setPage(1));
+          }}
+        />
+      </div>
     )}
 
     {/* Bulk Delete Confirm Dialog — per enquiry, filtered scope, persisted */}

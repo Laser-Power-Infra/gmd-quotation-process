@@ -265,7 +265,7 @@ export default function Home() {
 
   if (loading) {
     return (
-      <main className="h-screen flex flex-col bg-background">
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader totalRows={0} syncedAt={null} onSync={handleSync} syncing={false} />
           <GMDUpdateSkeleton />
@@ -276,7 +276,7 @@ export default function Home() {
 
   if (error) {
     return (
-      <main className="h-screen flex flex-col bg-background">
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader totalRows={0} syncedAt={null} onSync={handleSync} syncing={false} />
           <ErrorState message={error} onRetry={fetchData} />
@@ -286,9 +286,9 @@ export default function Home() {
   }
 
   return (
-    <main className="h-screen flex flex-col bg-background">
-      <div className="flex-1 flex p-6 min-h-0 gap-4">
-        <aside className="w-60 shrink-0 h-screen bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-3">
+    <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
+      <div className="flex-1 flex p-4 min-h-0 gap-4 overflow-hidden">
+        <aside className="w-60 shrink-0 h-full bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-3 overflow-y-auto">
           <span className="text-xs font-bold uppercase tracking-wider text-white">
             STOCK VALUE
           </span>
