@@ -146,7 +146,7 @@ export default function QuotationAnalyticsSidebar() {
       </div>
 
       {/* Party Name */}
-      <Card size="sm" className="shadow-sm overflow-visible !overflow-visible">
+      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold">Party Name</CardTitle>
           <CardDescription className="text-[11px]">Filter by customer</CardDescription>
@@ -160,13 +160,13 @@ export default function QuotationAnalyticsSidebar() {
             selected={selectedPartyNames}
             onChange={setSelectedPartyNames}
             searchPlaceholder="Search party..."
-            panelClassName="w-72 z-[80]"
+            panelClassName="w-72 z-80"
           />
         </CardContent>
       </Card>
 
       {/* Utility */}
-      <Card size="sm" className="shadow-sm overflow-visible !overflow-visible">
+      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold">Utility</CardTitle>
           <CardDescription className="text-[11px]">Filter by utility</CardDescription>
@@ -180,13 +180,13 @@ export default function QuotationAnalyticsSidebar() {
             selected={selectedUtilities}
             onChange={setSelectedUtilities}
             searchPlaceholder="Search utility..."
-            panelClassName="w-72 z-[80]"
+            panelClassName="w-72 z-80"
           />
         </CardContent>
       </Card>
 
       {/* Enquiry Type */}
-      <Card size="sm" className="shadow-sm overflow-visible !overflow-visible">
+      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold">Enquiry Type</CardTitle>
           <CardDescription className="text-[11px]">Filter by enquiry type</CardDescription>
@@ -200,13 +200,13 @@ export default function QuotationAnalyticsSidebar() {
             selected={selectedEnquiryTypes}
             onChange={setSelectedEnquiryTypes}
             searchPlaceholder="Search enquiry type..."
-            panelClassName="w-72 z-[80]"
+            panelClassName="w-72 z-80"
           />
         </CardContent>
       </Card>
 
       {/* State */}
-      <Card size="sm" className="shadow-sm overflow-visible !overflow-visible">
+      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold">State</CardTitle>
           <CardDescription className="text-[11px]">Filter by state</CardDescription>
@@ -220,13 +220,13 @@ export default function QuotationAnalyticsSidebar() {
             selected={selectedStates}
             onChange={setSelectedStates}
             searchPlaceholder="Search state..."
-            panelClassName="w-72 z-[80]"
+            panelClassName="w-72 z-80"
           />
         </CardContent>
       </Card>
 
       {/* KPI Card - Total Value incl GST */}
-      <Card size="sm" className="shadow-sm bg-gradient-to-br from-slate-50 to-white border-slate-200">
+      <Card size="sm" className="shadow-sm bg-linear-to-br from-slate-50 to-white border-slate-200">
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold flex items-center gap-1.5">
             <IndianRupee className="h-4 w-4 text-emerald-600" />

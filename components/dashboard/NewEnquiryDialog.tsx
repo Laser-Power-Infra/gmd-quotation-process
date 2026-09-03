@@ -423,7 +423,7 @@ export default function NewEnquiryDialog({
                       />
                       <div className="absolute top-10 left-0 w-full z-50 rounded border border-border bg-popover text-popover-foreground shadow-md outline-none animate-in fade-in-80">
                         <div className="flex items-center gap-2 border-b border-border px-3 py-2 bg-muted/50">
-                          <Search className="h-3.5 w-3.5 stroke-[2] text-muted-foreground" />
+                          <Search className="h-3.5 w-3.5 stroke-2 text-muted-foreground" />
                           <input
                             type="text"
                             placeholder="Search party name..."

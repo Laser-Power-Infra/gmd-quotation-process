@@ -1501,7 +1501,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             onClick={handleExportToExcel}
             className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-[#0f62fe] hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0"
           >
-            <Download className="h-3.5 w-3.5 text-[#0f62fe] dark:text-blue-400 stroke-[2]" />
+            <Download className="h-3.5 w-3.5 text-[#0f62fe] dark:text-blue-400 stroke-2" />
             Export Excel
           </button>
 
@@ -1518,7 +1518,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               onClick={() => document.getElementById("excel-import-file")?.click()}
               className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0"
             >
-              <Upload className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400 stroke-[2]" />
+              <Upload className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400 stroke-2" />
               Import Excel
             </button>
           </div>
@@ -1529,7 +1529,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             disabled={autoFillStatus === "running"}
             className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-400 dark:hover:bg-purple-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
           >
-            <Sparkles className="h-3.5 w-3.5 text-purple-700 dark:text-purple-400 stroke-[2]" />
+            <Sparkles className="h-3.5 w-3.5 text-purple-700 dark:text-purple-400 stroke-2" />
             {autoFillStatus === "running" ? "Filling..." : "Auto-Fill Blanks"}
           </button>
 
@@ -1539,7 +1539,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             disabled={fetchCodesStatus === "running"}
             className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
           >
-            <RefreshCw className={`h-3.5 w-3.5 text-blue-700 dark:text-blue-400 stroke-[2] ${fetchCodesStatus === "running" ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-3.5 w-3.5 text-blue-700 dark:text-blue-400 stroke-2 ${fetchCodesStatus === "running" ? "animate-spin" : ""}`} />
             {fetchCodesStatus === "running" ? "Fetching..." : "Fetch Item Codes"}
           </button>
 
@@ -1549,7 +1549,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             disabled={updateCostStatus === "running"}
             className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-400 dark:hover:bg-teal-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
           >
-            <DollarSign className={`h-3.5 w-3.5 text-teal-700 dark:text-teal-400 stroke-[2] ${updateCostStatus === "running" ? "animate-spin" : ""}`} />
+            <DollarSign className={`h-3.5 w-3.5 text-teal-700 dark:text-teal-400 stroke-2 ${updateCostStatus === "running" ? "animate-spin" : ""}`} />
             {updateCostStatus === "running" ? "Updating..." : "Update Product Cost"}
           </button>
 
@@ -1559,7 +1559,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             disabled={vaStatus === "running"}
             className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
           >
-            <Percent className="h-3.5 w-3.5 text-amber-700 dark:text-amber-400 stroke-[2]" />
+            <Percent className="h-3.5 w-3.5 text-amber-700 dark:text-amber-400 stroke-2" />
             {vaStatus === "running" ? "Filling VA%..." : "Auto-Fill VA%"}
           </button>
 
@@ -1569,7 +1569,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             disabled={crRateStatus === "running"}
             className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/30 dark:text-violet-400 dark:hover:bg-violet-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
           >
-            <RefreshCw className={`h-3.5 w-3.5 text-violet-700 dark:text-violet-400 stroke-[2] ${crRateStatus === "running" ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-3.5 w-3.5 text-violet-700 dark:text-violet-400 stroke-2 ${crRateStatus === "running" ? "animate-spin" : ""}`} />
             {crRateStatus === "running" ? "Fetching..." : "Fetch CR Rates"}
           </button>
         </div>
@@ -3019,7 +3019,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           />
                         ) : (
                           <div className="flex items-center justify-between w-full group truncate">
-                            <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable break-words whitespace-normal leading-normal">
+                            <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable wrap-break-word whitespace-normal leading-normal">
                               {firstItem.itemName}
                             </div>
                             <button
@@ -3439,7 +3439,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               rel="noopener noreferrer"
                               className="flex items-center gap-1.5 text-xs font-semibold text-[#0f62fe] dark:text-blue-400 hover:underline truncate"
                             >
-                              <FileText className="h-3.5 w-3.5 text-[#0f62fe] dark:text-blue-400 stroke-[2] shrink-0" />
+                              <FileText className="h-3.5 w-3.5 text-[#0f62fe] dark:text-blue-400 stroke-2 shrink-0" />
                               <span className="truncate">{att.name}</span>
                             </a>
                           ))
@@ -3574,7 +3574,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             />
                           ) : (
                             <div className="flex items-center justify-between w-full group truncate">
-                              <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable break-words whitespace-normal leading-normal">
+                              <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable wrap-break-word whitespace-normal leading-normal">
                                 {item.itemName}
                               </div>
                               <button

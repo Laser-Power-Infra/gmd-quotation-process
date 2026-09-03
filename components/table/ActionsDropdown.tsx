@@ -637,7 +637,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 rounded border border-border p-2 hover:bg-accent transition-colors text-xs font-semibold text-[#0f62fe] dark:text-blue-400 w-full"
                     >
-                      <FileText className="h-4 w-4 text-[#0f62fe] dark:text-blue-400 stroke-[2]" />
+                      <FileText className="h-4 w-4 text-[#0f62fe] dark:text-blue-400 stroke-2" />
                       <span className="truncate flex-1">{att.name}</span>
                     </a>
                   ))}
