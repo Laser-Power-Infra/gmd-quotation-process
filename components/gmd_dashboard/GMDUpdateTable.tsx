@@ -7,7 +7,6 @@ import {
   STATUS_COLUMNS,
   NUMERIC_COLUMNS,
   COL_INDEX_TO_DB_FIELD,
-  FIXED_DROPDOWN_OPTIONS,
 } from "../../lib/gmd_lib/sheet-columns";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import Pagination from "./Pagination";
@@ -184,6 +183,7 @@ interface GMDUpdateTableProps {
   hiddenFilters?: string[];
   categoryOptions?: Record<string, string[]>;
   uniqueKeyColumns?: string[];
+  fixedDropdownOptions?: Record<string, string[]>;
   onCellUpdate?: (id: string, colIndex: number, value: string) => Promise<void>;
   onFilteredRowsChange?: (rows: unknown[][]) => void;
   usdInrRate?: number | null;
@@ -222,6 +222,7 @@ export default function GMDUpdateTable({
   hiddenFilters,
   categoryOptions,
   uniqueKeyColumns,
+  fixedDropdownOptions,
   onCellUpdate,
   onFilteredRowsChange,
   usdInrRate,
@@ -488,12 +489,12 @@ export default function GMDUpdateTable({
     for (const h of headers) {
       const idx = headers.indexOf(h);
       result[h] =
-        FIXED_DROPDOWN_OPTIONS[h] ||
+        fixedDropdownOptions?.[h] ||
         categoryOptions?.[h] ||
         getUniqueColumnValues(idx);
     }
     return result;
-  }, [headers, categoryOptions, rows]);
+  }, [headers, categoryOptions, fixedDropdownOptions, rows]);
 
   const cascadedFilterOptions = useMemo(() => {
     const result: Record<string, string[]> = {};
@@ -983,7 +984,7 @@ export default function GMDUpdateTable({
                           >
                             <option value="">-</option>
                             {(
-                              FIXED_DROPDOWN_OPTIONS[header] ||
+                              fixedDropdownOptions?.[header] ||
                               categoryOptions?.[header] ||
                               columnUniqueVals[header] ||
                               []

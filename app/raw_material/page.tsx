@@ -12,6 +12,7 @@ import {
   type GMDUpdateRow,
 } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
+import { FIXED_DROPDOWN_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import { getUsdInrRateAction } from "@/app/actions";
 
 interface SheetData {
@@ -395,6 +396,7 @@ export default function Home() {
               // hiddenFilters={["NEW ITEM STATUS"]}
               categoryOptions={enhancedCategoryOptions}
               editable
+              fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
               editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD cost","HSN CODE","HSN Code Validation", "MAJOR MARKING", "RM TYPE", "NEW ITEM STATUS"]}
               uniqueKeyColumns={["ERP ITEM CODE"]}
               onFilteredRowsChange={setFirstFilteredRows}
