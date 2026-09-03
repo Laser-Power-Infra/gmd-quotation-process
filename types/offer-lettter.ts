@@ -14,7 +14,7 @@ export interface OfferLetterItem {
   /** QR with GST column — per-unit rate including 18% GST. */
   quotedRateGst: number;
 
-  /** Total value including GST (qty × quotedRate × 1.18) — used for the footer sum. */
+  /** Total value including GST (qty × quotedRate × 1.18) — rendered as "Total Val. Incld. GST" column beside QR with GST and used for the footer sum. */
   totalValue: number;
 
   /** UNIT column. Always hard-coded to "Nos.". */

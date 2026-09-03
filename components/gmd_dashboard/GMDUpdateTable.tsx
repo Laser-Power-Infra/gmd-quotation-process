@@ -7,6 +7,7 @@ import {
   STATUS_COLUMNS,
   NUMERIC_COLUMNS,
   COL_INDEX_TO_DB_FIELD,
+  FIXED_DROPDOWN_OPTIONS,
 } from "../../lib/gmd_lib/sheet-columns";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import Pagination from "./Pagination";
@@ -483,7 +484,10 @@ export default function GMDUpdateTable({
     const result: Record<string, string[]> = {};
     for (const h of headers) {
       const idx = headers.indexOf(h);
-      result[h] = categoryOptions?.[h] || getUniqueColumnValues(idx);
+      result[h] =
+        FIXED_DROPDOWN_OPTIONS[h] ||
+        categoryOptions?.[h] ||
+        getUniqueColumnValues(idx);
     }
     return result;
   }, [headers, categoryOptions, rows]);
@@ -976,6 +980,7 @@ export default function GMDUpdateTable({
                           >
                             <option value="">-</option>
                             {(
+                              FIXED_DROPDOWN_OPTIONS[header] ||
                               categoryOptions?.[header] ||
                               columnUniqueVals[header] ||
                               []

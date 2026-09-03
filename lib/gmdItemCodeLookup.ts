@@ -163,6 +163,76 @@ async function lookupItemCodeDirect(params: {
   return match?.itemCode ?? null;
 }
 
+// Cache for itemCode set that have a non-empty BOM ID in the reference spreadsheet
+let cachedBomIdSet: Set<string> | null = null;
+let cachedBomIdSetAt = 0;
+const BOM_ID_CACHE_TTL_MS = 60_000; // 1 minute
+
+export function clearBomIdCache() {
+  cachedBomIdSet = null;
+  cachedBomIdSetAt = 0;
+}
+
+export async function fetchBomIdSet(): Promise<Set<string>> {
+  const now = Date.now();
+  if (cachedBomIdSet && now - cachedBomIdSetAt < BOM_ID_CACHE_TTL_MS) {
+    return cachedBomIdSet;
+  }
+
+  const auth = getAuth();
+  const sheets = google.sheets({ version: "v4", auth });
+
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_SPREADSHEET_ID });
+  const tab = (meta.data.sheets ?? []).find(
+    (s) => s.properties?.sheetId === SHEET_GID
+  );
+  const tabTitle = tab?.properties?.title;
+  if (!tabTitle) {
+    throw new Error(`Sheet with gid ${SHEET_GID} not found in spreadsheet`);
+  }
+
+  const response = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_SPREADSHEET_ID,
+    range: `'${tabTitle}'!A:ZZZ`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+
+  const allRows = response.data.values ?? [];
+  if (allRows.length < 2) {
+    cachedBomIdSet = new Set();
+    cachedBomIdSetAt = now;
+    return cachedBomIdSet;
+  }
+
+  const headers = allRows[0].map(String);
+  const normalized = headers.map(normalizeHeader);
+
+  const itemCodeIdx = normalized.findIndex((h) => h === "CODE FOR THE ITEM");
+  const bomIdIdx = normalized.findIndex((h) => h === "BOM ID");
+
+  const bomIdSet = new Set<string>();
+
+  if (itemCodeIdx !== -1 && bomIdIdx !== -1) {
+    const dataRows = allRows.slice(1).filter((r) => r.some((c) => c !== null && c !== ""));
+    for (const row of dataRows) {
+      const code = String(row[itemCodeIdx] ?? "").trim();
+      const bomId = String(row[bomIdIdx] ?? "").trim();
+      if (code && bomId) {
+        bomIdSet.add(code);
+      }
+    }
+  }
+
+  cachedBomIdSet = bomIdSet;
+  cachedBomIdSetAt = now;
+  return bomIdSet;
+}
+
+export async function hasBomId(itemCode: string): Promise<boolean> {
+  const set = await fetchBomIdSet();
+  return set.has(itemCode);
+}
+
 export async function lookupItemCodeGated(params: {
   itemType: string;
   moc: string;
@@ -173,10 +243,9 @@ export async function lookupItemCodeGated(params: {
   await ensureFreshData();
   const code = await lookupItemCodeDirect(params);
   if (!code) return null;
-  // BOM gate: only return code if it has a DIRECT M2M entry in the same sheet
+  // BOM gate: only return code if it has a non-empty BOM ID in the reference sheet
   try {
-    const { hasDirectM2M } = await import("@/lib/gmdBomCostLookup");
-    const hasBom = await hasDirectM2M(code);
+    const hasBom = await hasBomId(code);
     if (!hasBom) return null;
   } catch {
     // If BOM check fails (sheet unreachable), fall back to no-gate behavior to not block UI

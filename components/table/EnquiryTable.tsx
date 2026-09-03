@@ -9,10 +9,11 @@ import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
 import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { useDebounce } from "@/lib/hooks/useDebounce";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, fetchContractReviewRates, deleteEnquiryItems, bulkUpdateValidation } from "@/lib/enquiriesSlice";
+import { useSearchParams } from "next/navigation";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiryItems, bulkUpdateValidation, clearQuotedRates, selectBomId } from "@/lib/enquiriesSlice";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
-import { toggleRow, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
+import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
 import type { DropdownOptions, EnquiryData, EnquiryItemData, FiltersState } from "@/lib/types";
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
@@ -122,7 +123,8 @@ function matchesMultiCI(values: string[], actual: unknown, blankCheck: (v: unkno
 // Helper for cascading filter evaluation
 function itemFieldMatches(item: EnquiryItemData, field: string, filterValue: string[]): boolean {
   const blankCheck = field === "size" ? isBlankSize : isBlankValue;
-  const actual = item[field as keyof EnquiryItemData] != null ? String(item[field as keyof EnquiryItemData]) : null;
+  const val = field === "pdcostValidation" ? getPdCostValidation(item) : item[field as keyof EnquiryItemData];
+  const actual = val != null ? String(val) : null;
   return matchesMulti(filterValue, actual, blankCheck);
 }
 
@@ -131,10 +133,16 @@ function enquiryFieldMatches(enquiry: EnquiryData, field: string, filterValue: s
   return matchesMulti(filterValue, enquiry[field as keyof EnquiryData]);
 }
 
+function matchesText(filterVal: string, actual: unknown): boolean {
+  if (!filterVal) return true;
+  if (actual == null) return false;
+  return String(actual).toLowerCase().includes(filterVal.toLowerCase());
+}
+
 const ALL_DROPDOWN_FIELDS = [
   "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass",
-  "validation", "vaPercent", "erpItemCode", "productCost", "contractReviewRate",
+  "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "cost", "contractReviewRate", "pdcostValidation",
 ] as const;
 
 const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus"]);
@@ -146,6 +154,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const filters = useAppSelector((s) => s.filters);
   const { currentPage, pageSize } = useAppSelector((s) => s.pagination);
   const { expandedRows, columnWidths } = useAppSelector((s) => s.ui);
+  const searchParams = useSearchParams();
+  const globalSearch = (searchParams.get("search") || "").trim();
 
   const [sortField, setSortField] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -189,7 +199,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterItemName, setFilterItemName] = useFilterInput(filters.itemName, "itemName");
   const [filterQuantity, setFilterQuantity] = useFilterInput(filters.quantity, "quantity");
   const [filterCostRefCode, setFilterCostRefCode] = useFilterInput(filters.costRefCode, "costRefCode");
-  const [filterCost, setFilterCost] = useFilterInput(filters.cost, "cost");
   const [filterStockStatus, setFilterStockStatus] = useFilterInput(filters.stockStatus, "stockStatus");
   const [filterDiscount, setFilterDiscount] = useFilterInput(filters.discount, "discount");
   const [filterQuotedRate, setFilterQuotedRate] = useFilterInput(filters.quotedRate, "quotedRate");
@@ -201,6 +210,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterItemTypeSearch, setFilterItemTypeSearch] = useFilterInput(filters.itemTypeSearch, "itemTypeSearch");
   const [filterMocSearch, setFilterMocSearch] = useFilterInput(filters.mocSearch, "mocSearch");
   const [filterErpItemCodeSearch, setFilterErpItemCodeSearch] = useFilterInput(filters.erpItemCodeSearch, "erpItemCodeSearch");
+  const [filterBomIdSearch, setFilterBomIdSearch] = useFilterInput(filters.bomIdSearch || "", "bomIdSearch");
   const [filterContractReviewRateSearch, setFilterContractReviewRateSearch] = useFilterInput(filters.contractReviewRateSearch || "", "contractReviewRateSearch");
   const [filterPdcostValidationSearch, setFilterPdcostValidationSearch] = useFilterInput(filters.pdcostValidationSearch || "", "pdcostValidationSearch");
   const [filterProjectReference, setFilterProjectReference] = useState("");
@@ -210,6 +220,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [fetchCodesStatus, setFetchCodesStatus] = useState<"idle" | "running">("idle");
   const [updateCostStatus, setUpdateCostStatus] = useState<"idle" | "running">("idle");
   const [crRateStatus, setCrRateStatus] = useState<"idle" | "running">("idle");
+  const [pdCostValStatus, setPdCostValStatus] = useState<"idle" | "running">("idle");
   // Bulk delete selection: per enquiry constraint, filtered scope, persisted across pagination
   const [selectedEnquiryId, setSelectedEnquiryId] = useState<string | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -298,8 +309,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     const ids = Array.from(selectedItemIds);
     setBulkDeleting(true);
     try {
-      const result: any = await dispatch(deleteEnquiryItems(ids)).unwrap();
-      toast.success(result.enquiryDeleted ? `Deleted ${ids.length} item(s) and enquiry was removed (no items left).` : `Deleted ${ids.length} item(s) successfully.`);
+      await dispatch(deleteEnquiryItems(ids)).unwrap();
+      toast.success(`Deleted ${ids.length} item(s) successfully.`);
       clearSelection();
       setBulkConfirmOpen(false);
     } catch (err: any) {
@@ -307,6 +318,39 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       toast.error(msg);
     } finally {
       setBulkDeleting(false);
+    }
+  };
+
+  const [clearQrRunning, setClearQrRunning] = useState(false);
+  const [clearQrConfirmOpen, setClearQrConfirmOpen] = useState(false);
+  const [clearQrPending, setClearQrPending] = useState<{ total: number; withQr: number; ids: string[] } | null>(null);
+  const handleClearQr = () => {
+    const allFiltered = filteredEnquiries.flatMap((e) => getFilteredItems(e));
+    if (allFiltered.length === 0) {
+      toast.info("No items match current filters.");
+      return;
+    }
+    const withQr = allFiltered.filter((i) => i.quotedRate != null && String(i.quotedRate).trim() !== "");
+    if (withQr.length === 0) {
+      toast.info("No Quoted Rates to clear for current filters.");
+      return;
+    }
+    setClearQrPending({ total: allFiltered.length, withQr: withQr.length, ids: withQr.map((i) => i.id) });
+    setClearQrConfirmOpen(true);
+  };
+  const handleClearQrConfirm = async () => {
+    if (!clearQrPending) return;
+    setClearQrRunning(true);
+    try {
+      const result: any = await dispatch(clearQuotedRates(clearQrPending.ids)).unwrap();
+      toast.success(`Cleared ${result.cleared} Quoted Rate(s). VA% preserved.`);
+      setClearQrConfirmOpen(false);
+      setClearQrPending(null);
+    } catch (err: any) {
+      const msg = typeof err === "string" ? err : err?.message || "Failed to clear quoted rates.";
+      toast.error(msg);
+    } finally {
+      setClearQrRunning(false);
     }
   };
 
@@ -343,9 +387,35 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       for (const other of ALL_DROPDOWN_FIELDS) {
         if (other === excludeField) continue;
         if (ENQUIRY_DROPDOWN_SET.has(other)) {
-          const val = filters[other];
+          const val = filters[other as keyof FiltersState] as unknown as string[];
           if (val.length > 0 && !enquiryFieldMatches(enquiry, other, val)) return false;
         }
+      }
+      // --- global search (?search) ---
+      if (globalSearch) {
+        const q = globalSearch.toLowerCase();
+        const matches =
+          enquiry.docketNumber.toLowerCase().includes(q) ||
+          enquiry.partyName.toLowerCase().includes(q) ||
+          enquiry.items.some((it) => it.itemName.toLowerCase().includes(q));
+        if (!matches) return false;
+      }
+      // --- text filters at enquiry level ---
+      if (excludeField !== "docketNumber" && filters.docketNumber && !matchesText(filters.docketNumber, enquiry.docketNumber)) return false;
+      if (excludeField !== "enquiryDateFrom" && filters.enquiryDateFrom) {
+        const from = new Date(filters.enquiryDateFrom);
+        if (new Date(enquiry.enquiryDate) < from) return false;
+      }
+      if (excludeField !== "enquiryDateTo" && filters.enquiryDateTo) {
+        const to = new Date(filters.enquiryDateTo);
+        const limit = new Date(to); limit.setDate(limit.getDate()+1);
+        if (new Date(enquiry.enquiryDate) > limit) return false;
+      }
+      if (excludeField !== "projectReference" && filterProjectReference && !matchesText(filterProjectReference, enquiry.projectReference || "")) return false;
+      if (excludeField !== "attachment" && filters.attachment) {
+        if (!enquiry.attachments || enquiry.attachments.length===0) return false;
+        const match = enquiry.attachments.some((a)=> a.name.toLowerCase().includes(filters.attachment.toLowerCase()));
+        if (!match) return false;
       }
       return true;
     };
@@ -354,10 +424,28 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       for (const other of ALL_DROPDOWN_FIELDS) {
         if (other === excludeField) continue;
         if (!ENQUIRY_DROPDOWN_SET.has(other)) {
-          const val = filters[other];
+          const val = filters[other as keyof FiltersState] as unknown as string[];
           if (val.length > 0 && !itemFieldMatches(item, other, val)) return false;
         }
       }
+      // --- item text filters ---
+      if (excludeField !== "itemName" && filters.itemName && !matchesText(filters.itemName, item.itemName)) return false;
+      if (excludeField !== "quantity" && filters.quantity && !matchesText(filters.quantity, String(item.quantity))) return false;
+      if (excludeField !== "itemTypeSearch" && filters.itemTypeSearch && !matchesText(filters.itemTypeSearch, item.itemType || "")) return false;
+      if (excludeField !== "mocSearch" && filters.mocSearch && !matchesText(filters.mocSearch, item.moc || "")) return false;
+      if (excludeField !== "erpItemCodeSearch" && filters.erpItemCodeSearch && !matchesText(filters.erpItemCodeSearch, item.erpItemCode || "")) return false;
+      if (excludeField !== "bomIdSearch" && (filters.bomIdSearch as string) && !matchesText(filters.bomIdSearch, (item as unknown as Record<string,unknown>).bomId as string || "")) return false;
+      if (excludeField !== "contractReviewRateSearch" && (filters.contractReviewRateSearch as string) && !matchesText(filters.contractReviewRateSearch, item.contractReviewRate || "")) return false;
+      if (excludeField !== "pdcostValidationSearch" && (filters.pdcostValidationSearch as string) && !matchesText(filters.pdcostValidationSearch, getPdCostValidation(item) || "")) return false;
+      if (excludeField !== "costRefCode" && filters.costRefCode && !matchesText(filters.costRefCode, item.costRefCode || "")) return false;
+      if (excludeField !== "stockStatus" && filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;
+      if (excludeField !== "discount" && filters.discount && !matchesText(filters.discount, item.discount != null ? String(item.discount) : "")) return false;
+      if (excludeField !== "quotedRate" && filters.quotedRate && !matchesText(filters.quotedRate, item.quotedRate || "")) return false;
+      if (excludeField !== "quotedRateGst" && (filters.quotedRateGst as string) && !matchesText(filters.quotedRateGst, item.quotedRateGst || "")) return false;
+      if (excludeField !== "itemNameMerge" && filters.itemNameMerge && !matchesText(filters.itemNameMerge, item.itemNameMerge || "")) return false;
+      if (excludeField !== "totalValue" && filters.totalValue && !matchesText(filters.totalValue, item.totalValue || "")) return false;
+      if (excludeField !== "itemWiseTotalValue" && filters.itemWiseTotalValue && !matchesText(filters.itemWiseTotalValue, item.itemWiseTotalValue || "")) return false;
+      // note: productCost/cost are dropdowns already handled
       return true;
     };
 
@@ -400,10 +488,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       .filter((enquiry) => {
         for (const other of ALL_DROPDOWN_FIELDS) {
           if (ENQUIRY_DROPDOWN_SET.has(other)) {
-            const val = filters[other];
+            const val = filters[other as keyof FiltersState] as unknown as string[];
             if (!enquiryFieldMatches(enquiry, other, val)) return false;
           }
         }
+        // also respect text/global for parties
+        if (!enquiryPasses(enquiry, "partyNames")) return false;
         return enquiry.items.some((item) => itemPasses(item, null));
       })
       .map((enquiry) => enquiry.partyName)
@@ -412,7 +502,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     result.partyNames = availableParties;
 
     return result;
-  }, [enquiries, allItems, filters]);
+  }, [enquiries, allItems, filters, filterProjectReference, globalSearch]);
 
   // VA% validation: compute set of item IDs where VA% exceeds allowed max
   const invalidVaItemIds = useMemo(() => {
@@ -426,18 +516,22 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
 
 
-  // Auto-expand rows when docket number is searched
+  // Auto-expand rows when docket number is searched - respects manual collapse
   useEffect(() => {
     if (filters.docketNumber) {
-      const matchingIds: Record<string, boolean> = {};
+      const next: Record<string, boolean> = {};
       for (const enquiry of enquiries) {
         if (enquiry.docketNumber.toLowerCase().includes(filters.docketNumber.toLowerCase())) {
-          matchingIds[enquiry.id] = true;
+          if (expandedRows[enquiry.id] === undefined) {
+            next[enquiry.id] = true;
+          }
         }
       }
-      dispatch(setExpandedRows(matchingIds));
+      if (Object.keys(next).length > 0) {
+        dispatch(setExpandedRows(next));
+      }
     }
-  }, [filters.docketNumber, enquiries, dispatch]);
+  }, [filters.docketNumber, enquiries, expandedRows, dispatch]);
 
   const hasActiveFilters = Object.values(filters).some((val) => {
     if (Array.isArray(val)) return val.length > 0;
@@ -506,7 +600,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       ) {
         return false;
       }
+      if (!matchesMulti(filters.bomId as any, (item as any).bomId)) {
+        return false;
+      }
+      if (
+        filters.bomIdSearch &&
+        !((item as any).bomId || "").toLowerCase().includes(filters.bomIdSearch.toLowerCase())
+      ) {
+        return false;
+      }
       if (!matchesMulti(filters.contractReviewRate, item.contractReviewRate)) {
+        return false;
+      }
+      if (!matchesMulti(filters.pdcostValidation, getPdCostValidation(item))) {
         return false;
       }
       if (
@@ -534,8 +640,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.cost &&
-        !(item.cost?.toString() || "").includes(filters.cost)
+        filters.cost.length > 0 &&
+        !matchesMulti(filters.cost, item.cost != null ? String(item.cost) : null)
       ) {
         return false;
       }
@@ -598,8 +704,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     });
   };
 
-  const toggleExpand = (id: string) => {
-    dispatch(toggleRow(id));
+  const toggleExpand = (id: string, currentExpanded: boolean) => {
+    dispatch(setRowExpanded({ id, expanded: !currentExpanded }));
   };
 
   const handleSort = (field: string) => {
@@ -691,10 +797,30 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     const dbVal = val === "" ? null : val;
     console.log(`[Client] updateItemField item=${itemId} field=${field} val="${dbVal}"`);
     const toastId = toast.loading(`Saving ${field}...`);
+    const prevItem = allItems.find((i) => i.id === itemId) || null;
+    const prevQr = prevItem?.quotedRate ? parseFloat(String(prevItem.quotedRate)) : null;
 
     try {
       const result = await dispatch(updateItemField({ itemId, field, value: dbVal })).unwrap();
       toast.success(`Saved successfully.`, { id: toastId });
+
+      // Toast when QR is rounded up after manual entry
+      const newQr = result?.quotedRate ? parseFloat(String(result.quotedRate)) : null;
+      if (newQr !== null && !isNaN(newQr)) {
+        if (field === "quotedRate" && dbVal !== null) {
+          const inNum = parseFloat(String(dbVal).replace(/,/g, ""));
+          if (!isNaN(inNum) && inNum !== newQr) {
+            toast.info(`Quoted Rate rounded up: ${inNum.toFixed(2)} → ${newQr.toFixed(2)}`, { duration: 4000 });
+          }
+        } else if (["vaPercent", "cost", "productCost", "extension", "bypass", "quantity"].includes(field)) {
+          // For vaPercent/cost etc., QR is derived — toast when the QR value changes
+          if (prevQr !== null && prevQr !== newQr) {
+            toast.info(`Quoted Rate rounded up: ${newQr.toFixed(2)}`, { duration: 4000 });
+          } else if (prevQr === null && newQr !== null) {
+            toast.info(`Quoted Rate rounded up: ${newQr.toFixed(2)}`, { duration: 3000 });
+          }
+        }
+      }
 
       // When updating item name, warn if size wasn't detected
       if (field === "itemName" && result && !result.size) {
@@ -780,22 +906,43 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
     const toastId = toast.loading(`Updating ${updates.length} item(s)...`);
     try {
-      await Promise.all(
-        updates.map(({ item, cost, vaPercent, quotedRate }) => {
-          const calls: Promise<unknown>[] = [];
+      const allResults = await Promise.all(
+        updates.map(async ({ item, cost, vaPercent, quotedRate }) => {
+          const resItems: any[] = [];
           if (cost !== undefined) {
-            calls.push(dispatch(updateItemField({ itemId: item.id, field: "cost", value: cost.toString() })).unwrap());
+            const r = await dispatch(updateItemField({ itemId: item.id, field: "cost", value: cost.toString() })).unwrap();
+            resItems.push(r);
           }
           if (vaPercent !== undefined) {
-            calls.push(dispatch(updateItemField({ itemId: item.id, field: "vaPercent", value: vaPercent.toString() })).unwrap());
+            const r = await dispatch(updateItemField({ itemId: item.id, field: "vaPercent", value: vaPercent.toString() })).unwrap();
+            resItems.push(r);
           }
           if (quotedRate !== undefined) {
-            calls.push(dispatch(updateItemField({ itemId: item.id, field: "quotedRate", value: quotedRate.toString() })).unwrap());
+            const r = await dispatch(updateItemField({ itemId: item.id, field: "quotedRate", value: quotedRate.toString() })).unwrap();
+            resItems.push(r);
           }
-          return Promise.all(calls);
+          return resItems;
         })
       );
+      const flatResults = (allResults.flat() as any[]) as EnquiryItemData[];
+      // Deduplicate to last result per item id (for cost+va case, last holds final QR)
+      const lastById = new Map<string, EnquiryItemData>();
+      for (const r of flatResults) lastById.set(r.id, r);
       toast.success(`Updated ${updates.length} item(s).`, { id: toastId });
+      // One aggregated toast for rounding
+      if (field === "quotedRate") {
+        let roundedCount = 0;
+        updates.forEach(({ item, quotedRate }) => {
+          if (quotedRate !== undefined) {
+            const res = lastById.get(item.id);
+            const outQr = res?.quotedRate ? parseFloat(String(res.quotedRate)) : null;
+            if (outQr !== null && !isNaN(outQr) && outQr !== quotedRate) roundedCount++;
+          }
+        });
+        if (roundedCount > 0) {
+          toast.info(`${roundedCount} rate(s) rounded up`, { duration: 4000 });
+        }
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to update items.", { id: toastId });
     }
@@ -923,6 +1070,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       ) {
         return false;
       }
+      if (!matchesMulti(filters.bomId as any, (item as any).bomId)) {
+        return false;
+      }
+      if (
+        filters.bomIdSearch &&
+        !((item as any).bomId || "").toLowerCase().includes(filters.bomIdSearch.toLowerCase())
+      ) {
+        return false;
+      }
       if (!matchesMulti(filters.contractReviewRate, item.contractReviewRate)) {
         return false;
       }
@@ -930,6 +1086,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         filters.contractReviewRateSearch &&
         !(item.contractReviewRate || "").toLowerCase().includes(filters.contractReviewRateSearch.toLowerCase())
       ) {
+        return false;
+      }
+      if (!matchesMulti(filters.pdcostValidation, getPdCostValidation(item))) {
         return false;
       }
       if (
@@ -951,8 +1110,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.cost &&
-        !(item.cost?.toString() || "").includes(filters.cost)
+        filters.cost.length > 0 &&
+        !matchesMulti(filters.cost, item.cost != null ? String(item.cost) : null)
       ) {
         return false;
       }
@@ -1190,6 +1349,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             "MOC": "",
             "Size": "",
             "PN Rating": "",
+            "Item Code": "",
+            "BOM ID": "",
             "Operation Type": "",
             "Extension": "",
             "Bypass": "",
@@ -1231,6 +1392,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               "MOC": item.moc || "",
               "Size": item.size || "",
               "PN Rating": item.pnRating || "",
+              "Item Code": (item as any).erpItemCode || item.erpItemCode || "",
+              "BOM ID": (item as any).bomId || "",
               "Operation Type": item.operationType || "",
               "Extension": item.extension || "",
               "Bypass": item.bypass || "",
@@ -1268,19 +1431,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   };
 
   const handleAutoFillBlanks = async () => {
-    // Collect items that pass all active filters (same logic as filteredEnquiries)
+    // Collect items that pass all active filters
     const matchedItems: EnquiryItemData[] = []
     for (const enquiry of paginatedEnquiries) {
-      for (const item of enquiry.items) {
-        let pass = true
-        if (filters.itemName && !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())) pass = false
-        if (filters.quantity && !item.quantity.toString().includes(filters.quantity)) pass = false
-        if (!matchesMulti(filters.itemType, item.itemType)) pass = false
-        if (filters.itemTypeSearch && !(item.itemType || "").toLowerCase().includes(filters.itemTypeSearch.toLowerCase())) pass = false
-        if (!matchesMulti(filters.moc, item.moc)) pass = false
-        if (filters.mocSearch && !(item.moc || "").toLowerCase().includes(filters.mocSearch.toLowerCase())) pass = false
-        if (!matchesMulti(filters.size, item.size, isBlankSize)) pass = false
-        if (pass) matchedItems.push(item)
+      for (const item of getFilteredItems(enquiry)) {
+        matchedItems.push(item)
       }
     }
 
@@ -1311,19 +1466,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   }
 
   const handleFetchItemCodes = async () => {
-    // Collect items that pass all active filters (same logic as filteredEnquiries)
+    // Collect items that pass all active filters
     const matchedItems: EnquiryItemData[] = []
     for (const enquiry of paginatedEnquiries) {
-      for (const item of enquiry.items) {
-        let pass = true
-        if (filters.itemName && !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())) pass = false
-        if (filters.quantity && !item.quantity.toString().includes(filters.quantity)) pass = false
-        if (!matchesMulti(filters.itemType, item.itemType)) pass = false
-        if (filters.itemTypeSearch && !(item.itemType || "").toLowerCase().includes(filters.itemTypeSearch.toLowerCase())) pass = false
-        if (!matchesMulti(filters.moc, item.moc)) pass = false
-        if (filters.mocSearch && !(item.moc || "").toLowerCase().includes(filters.mocSearch.toLowerCase())) pass = false
-        if (!matchesMulti(filters.size, item.size, isBlankSize)) pass = false
-        if (pass) matchedItems.push(item)
+      for (const item of getFilteredItems(enquiry)) {
+        matchedItems.push(item)
       }
     }
 
@@ -1348,38 +1495,36 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   }
 
-  const handleUpdateProductCost = async () => {
-    // Collect items that pass all active filters (same logic as filteredEnquiries)
+  const handleUpdateAllBomCosts = async () => {
     const matchedItems: EnquiryItemData[] = []
     for (const enquiry of paginatedEnquiries) {
-      for (const item of enquiry.items) {
-        let pass = true
-        if (filters.itemName && !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())) pass = false
-        if (filters.quantity && !item.quantity.toString().includes(filters.quantity)) pass = false
-        if (!matchesMulti(filters.itemType, item.itemType)) pass = false
-        if (filters.itemTypeSearch && !(item.itemType || "").toLowerCase().includes(filters.itemTypeSearch.toLowerCase())) pass = false
-        if (!matchesMulti(filters.moc, item.moc)) pass = false
-        if (filters.mocSearch && !(item.moc || "").toLowerCase().includes(filters.mocSearch.toLowerCase())) pass = false
-        if (!matchesMulti(filters.size, item.size, isBlankSize)) pass = false
-        if (pass) matchedItems.push(item)
+      for (const item of getFilteredItems(enquiry)) {
+        matchedItems.push(item)
       }
     }
 
-    const costItems = matchedItems.filter((i) => i.erpItemCode && !i.productCost)
-    console.log(`[Client] updateProductCost: ${costItems.length} items with blank product cost out of ${matchedItems.length} matched`)
-    if (costItems.length === 0) {
-      toast.info("No items with blank product cost found.")
+    const targetItems = matchedItems.filter(
+      (i) => i.erpItemCode && (!i.productCost || !i.cost || Number(i.cost) === 0)
+    )
+    console.log(`[Client] updateAllBomCosts: ${targetItems.length} target items out of ${matchedItems.length} matched`)
+    if (targetItems.length === 0) {
+      const missingCodeCount = matchedItems.filter((i) => !i.erpItemCode).length
+      if (missingCodeCount > 0) {
+        toast.info(`Found ${missingCodeCount} item(s) missing ERP item codes. Please click 'Fetch Item Codes' first.`)
+      } else {
+        toast.info("No items requiring BOM cost updates found.")
+      }
       return
     }
-    if (!confirm(`Update product cost for ${costItems.length} items from raw material BOM costs?`)) return
+    if (!confirm(`Update BOM costs (DIRECT M2M & 2:1) for ${targetItems.length} item(s)?`)) return
 
     setUpdateCostStatus("running")
-    const toastId = toast.loading(`Updating product cost for ${costItems.length} items...`)
+    const toastId = toast.loading(`Updating BOM costs for ${targetItems.length} item(s)...`)
     try {
-      const result = await dispatch(updateProductCost(costItems.map((i) => i.id))).unwrap()
-      toast.success(`Product cost updated for ${result.updated} item(s).`, { id: toastId })
+      const result = await dispatch(updateAllBomCosts(targetItems.map((i) => i.id))).unwrap()
+      toast.success(`BOM costs updated for ${result.updated} item(s).`, { id: toastId })
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to update product cost."
+      const message = err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to update BOM costs."
       toast.error(message, { id: toastId })
     } finally {
       setUpdateCostStatus("idle")
@@ -1389,16 +1534,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const handleAutoFillVa = async () => {
     const matchedItems: EnquiryItemData[] = []
     for (const enquiry of paginatedEnquiries) {
-      for (const item of enquiry.items) {
-        let pass = true
-        if (filters.itemName && !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())) pass = false
-        if (filters.quantity && !item.quantity.toString().includes(filters.quantity)) pass = false
-        if (!matchesMulti(filters.itemType, item.itemType)) pass = false
-        if (filters.itemTypeSearch && !(item.itemType || "").toLowerCase().includes(filters.itemTypeSearch.toLowerCase())) pass = false
-        if (!matchesMulti(filters.moc, item.moc)) pass = false
-        if (filters.mocSearch && !(item.moc || "").toLowerCase().includes(filters.mocSearch.toLowerCase())) pass = false
-        if (!matchesMulti(filters.size, item.size, isBlankSize)) pass = false
-        if (pass) matchedItems.push(item)
+      for (const item of getFilteredItems(enquiry)) {
+        matchedItems.push(item)
       }
     }
 
@@ -1447,6 +1584,35 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       toast.error(message, { id: toastId })
     } finally {
       setCrRateStatus("idle")
+    }
+  }
+
+  const handlePopulatePdCostVal = async () => {
+    // Collect items from currently paginated enquiries that pass active filters and have both CR Rate and Product Cost
+    const matchedItems: EnquiryItemData[] = []
+    for (const enquiry of paginatedEnquiries) {
+      for (const item of getFilteredItems(enquiry)) {
+        if (item.contractReviewRate && item.productCost != null) {
+          matchedItems.push(item)
+        }
+      }
+    }
+    if (matchedItems.length === 0) {
+      toast.info("No items with both Contract Review Rate and Product Cost found on this page.")
+      return
+    }
+    if (!confirm(`Populate PD Cost Validation % for ${matchedItems.length} item(s)?`)) return
+
+    setPdCostValStatus("running")
+    const toastId = toast.loading(`Populating PD Cost Validation % for ${matchedItems.length} item(s)...`)
+    try {
+      const result = await dispatch(populatePdCostValidation(matchedItems.map((i) => i.id))).unwrap()
+      toast.success(`PD Cost Validation % updated for ${result.updated} item(s).`, { id: toastId })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to populate PD Cost Validation."
+      toast.error(message, { id: toastId })
+    } finally {
+      setPdCostValStatus("idle")
     }
   }
 
@@ -1527,7 +1693,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             type="button"
             onClick={handleAutoFillBlanks}
             disabled={autoFillStatus === "running"}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-400 dark:hover:bg-purple-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
+            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/30 dark:text-purple-400 dark:hover:bg-purple-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
           >
             <Sparkles className="h-3.5 w-3.5 text-purple-700 dark:text-purple-400 stroke-2" />
             {autoFillStatus === "running" ? "Filling..." : "Auto-Fill Blanks"}
@@ -1537,7 +1703,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             type="button"
             onClick={handleFetchItemCodes}
             disabled={fetchCodesStatus === "running"}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
+            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-400 dark:hover:bg-blue-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 text-blue-700 dark:text-blue-400 stroke-2 ${fetchCodesStatus === "running" ? "animate-spin" : ""}`} />
             {fetchCodesStatus === "running" ? "Fetching..." : "Fetch Item Codes"}
@@ -1545,22 +1711,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
           <button
             type="button"
-            onClick={handleUpdateProductCost}
+            onClick={handleUpdateAllBomCosts}
             disabled={updateCostStatus === "running"}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-400 dark:hover:bg-teal-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
+            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-400 dark:hover:bg-teal-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
           >
-            <DollarSign className={`h-3.5 w-3.5 text-teal-700 dark:text-teal-400 stroke-2 ${updateCostStatus === "running" ? "animate-spin" : ""}`} />
-            {updateCostStatus === "running" ? "Updating..." : "Update Product Cost"}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleAutoFillVa}
-            disabled={vaStatus === "running"}
-            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all  shrink-0 disabled:opacity-50"
-          >
-            <Percent className="h-3.5 w-3.5 text-amber-700 dark:text-amber-400 stroke-2" />
-            {vaStatus === "running" ? "Filling VA%..." : "Auto-Fill VA%"}
+            <DollarSign className={`h-3.5 w-3.5 text-teal-700 dark:text-teal-400 stroke-[2] ${updateCostStatus === "running" ? "animate-spin" : ""}`} />
+            {updateCostStatus === "running" ? "Updating..." : "Update BOM Costs"}
           </button>
 
           <button
@@ -2128,6 +2284,41 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
+            {/* 18a. BOM ID (beside Item Code) */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>BOM ID</span>
+                {renderSortArrow("bomId")}
+              </div>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="BOM ID"
+                  allLabel="All BOM IDs"
+                  options={cascadedOptions.bomId || []}
+                  cascadedOptions={cascadedOptions.bomId || []}
+                  selected={filters.bomId as any || []}
+                  onChange={(v) => dispatch(setFilter({ field: "bomId" as any, value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search BOM IDs..."
+                />
+              </div>
+              <input
+                type="text"
+                placeholder="Search BOM ID..."
+                value={filterBomIdSearch}
+                onChange={(e) => setFilterBomIdSearch(e.target.value)}
+                className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(19, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
             {/* 18. Operation Type Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
@@ -2146,7 +2337,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(19, e)}
+                onMouseDown={(e) => handleMouseDown(20, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2173,7 +2364,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(20, e)}
+                onMouseDown={(e) => handleMouseDown(21, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2200,7 +2391,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(21, e)}
+                onMouseDown={(e) => handleMouseDown(22, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2227,7 +2418,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(22, e)}
+                onMouseDown={(e) => handleMouseDown(23, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2250,7 +2441,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(23, e)}
+                onMouseDown={(e) => handleMouseDown(24, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2265,15 +2456,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <span>Cost</span>
                 {renderSortArrow("cost")}
               </div>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={filterCost}
-                onChange={(e) => setFilterCost(e.target.value)}
-                className={inputClass}
+              <MultiSelectFilter
+                label="Cost"
+                allLabel="Cost: All"
+                options={cascadedOptions.cost}
+                cascadedOptions={cascadedOptions.cost}
+                selected={filters.cost}
+                onChange={(v) => dispatch(setFilter({ field: "cost", value: v }))}
+                includeBlank
+                className="mt-1 h-6 w-full rounded border border-input bg-background px-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-ring"
+                panelClassName="w-56 z-[80]"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(24, e)}
+                onMouseDown={(e) => handleMouseDown(25, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2296,7 +2491,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(25, e)}
+                onMouseDown={(e) => handleMouseDown(26, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2319,7 +2514,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(26, e)}
+                onMouseDown={(e) => handleMouseDown(27, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2338,7 +2533,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <MultiSelectFilter
                   label="VA%"
                   allLabel="All VA%"
-                  options={dropdownOptions.vaPercents}
+                  options={cascadedOptions.vaPercent}
                   cascadedOptions={cascadedOptions.vaPercent}
                   selected={filters.vaPercent}
                   onChange={(v) => dispatch(setFilter({ field: "vaPercent", value: v }))}
@@ -2346,7 +2541,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(27, e)}
+                onMouseDown={(e) => handleMouseDown(28, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2368,8 +2563,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 onChange={(e) => setFilterQuotedRate(e.target.value)}
                 className={inputClass}
               />
+              <div className="mt-1.5 normal-case">
+                <button
+                  type="button"
+                  onClick={handleClearQr}
+                  disabled={clearQrRunning}
+                  className="w-full px-1.5 py-1 text-[9px] font-bold rounded border border-border bg-background text-muted-foreground hover:bg-muted disabled:opacity-50 cursor-pointer"
+                  title="Clear Quoted Rate (and GST/Total) for all filtered items (all pages) — VA% kept"
+                >
+                  {clearQrRunning ? "..." : "Clear"}
+                </button>
+              </div>
               <div
-                onMouseDown={(e) => handleMouseDown(28, e)}
+                onMouseDown={(e) => handleMouseDown(29, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2404,7 +2610,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(29, e)}
+                onMouseDown={(e) => handleMouseDown(30, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2419,15 +2625,27 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <span>PD Cost Val</span>
                 {renderSortArrow("pdcostValidation")}
               </div>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="PD Cost Val"
+                  allLabel="All PD Cost Val"
+                  options={cascadedOptions.pdcostValidation || []}
+                  cascadedOptions={cascadedOptions.pdcostValidation || []}
+                  selected={filters.pdcostValidation || []}
+                  onChange={(v) => dispatch(setFilter({ field: "pdcostValidation", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search PD cost val..."
+                />
+              </div>
               <input
                 type="text"
-                placeholder="Search..."
+                placeholder="Search PD cost val..."
                 value={filterPdcostValidationSearch}
                 onChange={(e) => setFilterPdcostValidationSearch(e.target.value)}
-                className={inputClass}
+                className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(30, e)}
+                onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2450,7 +2668,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(31, e)}
+                onMouseDown={(e) => handleMouseDown(32, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2473,7 +2691,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(32, e)}
+                onMouseDown={(e) => handleMouseDown(33, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2496,7 +2714,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(33, e)}
+                onMouseDown={(e) => handleMouseDown(34, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2519,7 +2737,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(34, e)}
+                onMouseDown={(e) => handleMouseDown(35, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2575,7 +2793,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(35, e)}
+                onMouseDown={(e) => handleMouseDown(36, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2598,7 +2816,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(36, e)}
+                onMouseDown={(e) => handleMouseDown(37, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2614,7 +2832,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(37, e)}
+                onMouseDown={(e) => handleMouseDown(38, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2630,7 +2848,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(38, e)}
+                onMouseDown={(e) => handleMouseDown(39, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2649,7 +2867,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         <tbody className="bg-background">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={40} className="py-20 px-4 text-center border-b border-border">
+              <td colSpan={42} className="py-20 px-4 text-center border-b border-border">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground mb-4 border border-border">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -2669,9 +2887,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               const initials = getInitials(enquiry.partyName);
               const displayItems = getFilteredItems(enquiry);
               const hasMultiple = displayItems.length > 1;
-              const isExpanded = expandedRows[enquiry.id] !== undefined
-                ? expandedRows[enquiry.id]
-                : hasActiveFilters;
+              const isExpanded = expandedRows[enquiry.id] ?? hasActiveFilters;
               const firstItem = displayItems[0];
               const selectedCount = displayItems.filter((i) => selectedItemIds.has(i.id)).length;
               const isAllSelected = displayItems.length > 0 && selectedCount === displayItems.length;
@@ -2722,7 +2938,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         {hasMultiple && (
                           <button
                             type="button"
-                            onClick={() => toggleExpand(enquiry.id)}
+                            onClick={() => toggleExpand(enquiry.id, isExpanded)}
                             className="mr-1 inline-flex items-center justify-center p-0.5 hover:bg-muted rounded text-muted-foreground cursor-pointer focus:outline-none shrink-0"
                           >
                             {isExpanded ? (
@@ -3128,6 +3344,39 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         <span className="block text-[10px] text-muted-foreground p-1 font-mono truncate" title={firstItem.erpItemCode || ""}>
                           {firstItem.erpItemCode || "-"}
                         </span>
+                      ) : "-"}
+                    </td>
+
+                    {/* 18a. First Item BOM ID (dropdown when multiple, else read-only) */}
+                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
+                      {firstItem ? (
+                        (() => {
+                          const avail = (firstItem as any).availableBomIds as string[] | undefined;
+                          const hasMulti = Array.isArray(avail) && avail.length > 1;
+                          if (hasMulti) {
+                            return (
+                              <select
+                                value={(firstItem as any).bomId || ""}
+                                onChange={(e) => {
+                                  const v = e.target.value || null;
+                                  toast.promise(dispatch(selectBomId({ itemId: firstItem.id, bomId: v })).unwrap(), {
+                                    loading: "Saving BOM...",
+                                    success: "BOM saved.",
+                                    error: (err) => (typeof err === "string" ? err : err?.message || "Failed to save BOM."),
+                                  });
+                                }}
+                                className="w-full text-[10px] border border-border rounded px-1 py-1 bg-background"
+                                title={(avail || []).join(", ")}
+                              >
+                                <option value="">-- select --</option>
+                                {avail!.map((b) => (
+                                  <option key={b} value={b}>{b}</option>
+                                ))}
+                              </select>
+                            );
+                          }
+                          return <span className="block text-[10px] text-muted-foreground p-1 font-mono truncate" title={(firstItem as any).bomId || ""}>{(firstItem as any).bomId || "-"}</span>;
+                        })()
                       ) : "-"}
                     </td>
 
@@ -3671,6 +3920,37 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           </span>
                         </td>
 
+                        {/* BOM ID (dropdown when multiple, else read-only) */}
+                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
+                          {(() => {
+                            const avail = (item as any).availableBomIds as string[] | undefined;
+                            const hasMulti = Array.isArray(avail) && avail.length > 1;
+                            if (hasMulti) {
+                              return (
+                                <select
+                                  value={(item as any).bomId || ""}
+                                  onChange={(e) => {
+                                    const v = e.target.value || null;
+                                    toast.promise(dispatch(selectBomId({ itemId: item.id, bomId: v })).unwrap(), {
+                                      loading: "Saving BOM...",
+                                      success: "BOM saved.",
+                                      error: (err) => (typeof err === "string" ? err : err?.message || "Failed to save BOM."),
+                                    });
+                                  }}
+                                  className="w-full text-[10px] border border-border rounded px-1 py-1 bg-background"
+                                  title={(avail || []).join(", ")}
+                                >
+                                  <option value="">-- select --</option>
+                                  {avail!.map((b) => (
+                                    <option key={b} value={b}>{b}</option>
+                                  ))}
+                                </select>
+                              );
+                            }
+                            return <span className="block text-[10px] text-muted-foreground p-1 font-mono truncate" title={(item as any).bomId || ""}>{(item as any).bomId || "-"}</span>;
+                          })()}
+                        </td>
+
                         {/* 18. Operation Type Inline Select */}
                         <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
                           <select
@@ -4020,9 +4300,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           const selEnquiry = enquiries.find((e) => e.id === selectedEnquiryId);
           const selItems = selEnquiry ? selEnquiry.items.filter((it) => selectedItemIds.has(it.id)) : [];
           const allFilteredForEnquiry = selEnquiry ? getFilteredItems(selEnquiry) : [];
-          const willDeleteEnquiry = selEnquiry ? selectedItemIds.size >= (selEnquiry.items.length) : false;
-          // If filtering hides some items, deleting all filtered != deleting enquiry unless they are all actual items
-          const willDeleteEnquiryAccurate = selEnquiry ? selItems.length === selEnquiry.items.length : false;
+          const willEmptyEnquiry = selEnquiry ? selItems.length === selEnquiry.items.length : false;
           return (
             <div className="py-3 space-y-3">
               <p className="text-sm text-muted-foreground">
@@ -4033,18 +4311,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 )}
               </p>
               {selItems.length > 0 && (
-                <div className="max-h-40 overflow-y-auto rounded border border-border bg-muted/30 p-2 space-y-1">
+                <div className="max-h-40 overflow-y-auto overflow-x-hidden rounded border border-border bg-muted/30 p-2 space-y-1 min-w-0">
                   {selItems.map((it) => (
-                    <div key={it.id} className="text-xs text-foreground truncate flex items-start gap-1.5">
+                    <div key={it.id} className="text-xs text-foreground flex items-start gap-1.5 min-w-0 overflow-hidden">
                       <span className="text-muted-foreground shrink-0">•</span>
-                      <span className="truncate">{it.itemName}</span>
+                      <span className="truncate min-w-0 flex-1">{it.itemName}</span>
                     </div>
                   ))}
                 </div>
               )}
-              {willDeleteEnquiryAccurate ? (
-                <p className="text-xs text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded p-2">
-                  Warning: This will delete all items in this enquiry — the entire enquiry "{selEnquiry?.docketNumber}" will be removed. This cannot be undone.
+              {willEmptyEnquiry ? (
+                <p className="text-xs text-amber-700 dark:text-amber-600 font-medium bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded p-2">
+                  Note: This will remove all items from enquiry "{selEnquiry?.docketNumber}". The enquiry will remain with 0 items and you can add items later. This cannot be undone.
                 </p>
               ) : (
                 <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
@@ -4067,6 +4345,57 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             onClick={handleBulkDeleteConfirm}
           >
             {bulkDeleting ? "Deleting..." : `Delete ${selectedItemIds.size} Item(s)`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Clear Quoted Rate Confirm Dialog — filtered scope, VA% preserved */}
+    <Dialog open={clearQrConfirmOpen} onOpenChange={(v) => { if (!v && !clearQrRunning) { setClearQrConfirmOpen(false); setClearQrPending(null); } }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-bold text-foreground">
+            Confirm Clear Quoted Rates
+          </DialogTitle>
+        </DialogHeader>
+        <div className="py-3 space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Clear <span className="font-bold text-foreground">{clearQrPending?.withQr ?? 0}</span> Quoted Rate(s) from <span className="font-bold text-foreground">{clearQrPending?.total ?? 0}</span> filtered item(s) across all pages?
+          </p>
+          <p className="text-xs text-amber-700 dark:text-amber-400 font-medium bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded p-2">
+            This will delete <span className="font-semibold">Quotation Rate, QR incl. GST, Total Value</span> and <span className="font-semibold">Itemwise Total</span> from the database for filtered items only. <span className="font-semibold">VA% will be kept</span>. This cannot be undone without re-entering rates.
+          </p>
+          {(() => {
+            const allFiltered = filteredEnquiries.flatMap((e) => getFilteredItems(e));
+            const withQrItems = allFiltered.filter((i) => i.quotedRate != null && String(i.quotedRate).trim() !== "").slice(0, 8);
+            if (withQrItems.length === 0) return null;
+            return (
+              <div className="max-h-32 overflow-y-auto rounded border border-border bg-muted/30 p-2 space-y-1">
+                {withQrItems.map((it) => (
+                  <div key={it.id} className="text-xs text-foreground truncate flex items-start gap-1.5">
+                    <span className="text-muted-foreground shrink-0">•</span>
+                    <span className="truncate">{it.itemName} — QR: {it.quotedRate}</span>
+                  </div>
+                ))}
+                {clearQrPending && clearQrPending.withQr > 8 && (
+                  <div className="text-[11px] text-muted-foreground font-medium pt-1">+{clearQrPending.withQr - 8} more...</div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+        <DialogFooter className="pt-2 border-t border-border flex justify-end gap-2">
+          <DialogClose render={<Button type="button" variant="outline" size="sm" disabled={clearQrRunning} />}>
+            Cancel
+          </DialogClose>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={clearQrRunning || !clearQrPending}
+            onClick={handleClearQrConfirm}
+          >
+            {clearQrRunning ? "Clearing..." : `Clear ${clearQrPending?.withQr ?? 0} Rate(s)`}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -4142,7 +4471,7 @@ function OfferPdfCell({ enquiry }: { enquiry: EnquiryData }) {
         }, 0),
       };
 
-      const res = await generateOfferPdfAction(rowData);
+      const res = await generateOfferPdfAction(rowData, enquiry.id);
       if (res.success && res.pdfBase64) {
         triggerDownload(res.pdfBase64, res.fileName);
         setStatus("idle");

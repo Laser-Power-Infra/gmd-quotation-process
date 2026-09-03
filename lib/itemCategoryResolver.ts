@@ -6,6 +6,7 @@ import { ALLOWED_OPERATION_TYPES, OPERATION_TYPE_DEFAULT } from './operationType
 import { ALLOWED_EXTENSIONS, EXTENSION_DEFAULT } from './extensionPatterns';
 import { extractExtensionFromItemName } from './extensionMatcher';
 import { detectBypass } from './bypassDetector';
+import { hasBypassMention } from './bypassMatcher';
 
 const VALIDATION_ENABLED = process.env.AI_VALIDATION_ENABLED !== 'false';
 
@@ -140,7 +141,12 @@ export async function resolveItemCategory(params: {
     }
   }
 
-  result.bypass = detectBypass(result.size);
+  // Bypass logic only if itemName explicitly mentions bypass / by-pass / by pass
+  if (hasBypassMention(itemName)) {
+    result.bypass = detectBypass(result.size);
+  } else {
+    result.bypass = "-";
+  }
 
   return result;
 }

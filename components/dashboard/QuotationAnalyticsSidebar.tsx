@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useAppSelector } from "@/lib/hooks";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { selectAllEnquiries, selectAllItems } from "@/lib/enquiriesSlice";
+import { toggleAnalyticsSidebar } from "@/lib/uiSlice";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import MultiSelectFilter from "@/components/table/MultiSelectFilter";
 import { X, Filter, IndianRupee } from "lucide-react";
@@ -12,6 +13,8 @@ function sortStrings(arr: string[]): string[] {
 }
 
 export default function QuotationAnalyticsSidebar() {
+  const dispatch = useAppDispatch();
+  const isCollapsed = useAppSelector((s) => s.ui.isAnalyticsSidebarCollapsed);
   const enquiries = useAppSelector(selectAllEnquiries);
   const allItems = useAppSelector(selectAllItems);
 
@@ -126,7 +129,13 @@ export default function QuotationAnalyticsSidebar() {
   };
 
   return (
-    <aside className="w-full lg:w-[320px] xl:w-[340px] shrink-0 flex flex-col gap-3 lg:sticky lg:top-[64px] overflow-visible pr-0 lg:pr-1">
+    <aside
+      className={`shrink-0 flex flex-col gap-3 lg:sticky lg:top-[64px] overflow-visible pr-0 lg:pr-1 transition-all duration-300 ease-in-out ${
+        isCollapsed
+          ? "lg:w-0 lg:max-w-0 lg:opacity-0 lg:-ml-4 lg:overflow-hidden lg:pointer-events-none hidden lg:flex"
+          : "w-full lg:w-[320px] xl:w-[340px] opacity-100"
+      }`}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-2">

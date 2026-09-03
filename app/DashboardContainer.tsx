@@ -61,9 +61,9 @@ export default function DashboardContainer({
   }, [enquiries, dropdownOptions]);
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0 w-full">
+    <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0 w-full overflow-hidden transition-all duration-300">
       <QuotationAnalyticsSidebar />
-      <div className="flex-1 min-w-0 flex flex-col gap-4">
+      <div className="flex-1 min-w-0 flex flex-col gap-4 transition-all duration-300">
         <DashboardHeader
           enquiries={enquiriesList}
           nextDocketNumber={nextDocketNumber}

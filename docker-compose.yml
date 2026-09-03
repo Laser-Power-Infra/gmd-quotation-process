@@ -1,0 +1,32 @@
+services:
+  gmd-quotation-process:
+    image: ghcr.io/laser-power-infra/gmd-quotation-process:${APP_VERSION:-latest}
+
+    container_name: gmd-quotation-process
+
+    ports:
+      - "4560:4560"
+
+    env_file:
+      - .env.production
+
+    environment:
+      NODE_ENV: production
+      PORT: 4560
+      HOSTNAME: 0.0.0.0
+
+      GOOGLE_APPLICATION_CREDENTIALS: /app/credentials.json
+      TOKEN_PATH: /app/token.json
+
+    volumes:
+      - ./credentials.json:/app/credentials.json:ro
+      - ./token.json:/app/token.json:rw
+
+    restart: unless-stopped
+
+    networks:
+      - infra
+
+networks:
+  infra:
+    external: true

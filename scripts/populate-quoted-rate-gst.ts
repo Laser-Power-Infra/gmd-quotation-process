@@ -2,7 +2,7 @@ import { PrismaClient } from "../app/generated/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import "dotenv/config";
-import { roundToNearest10 } from "../lib/rounding";
+import { roundUp } from "../lib/rounding";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -53,7 +53,7 @@ async function main() {
         continue;
       }
 
-      const roundedQr = roundToNearest10(qr);
+      const roundedQr = roundUp(qr);
       const gst = (roundedQr * 1.18).toFixed(2);
 
       if (!isDryRun) {

@@ -29,8 +29,12 @@ export interface EnquiryItemData {
   mocSource?: string | null;
   validation?: string | null;
   erpItemCode?: string | null;
+  bomId?: string | null;
+  bomType?: string | null;
+  rmItemCode?: string | null;
   contractReviewRate?: string | null;
   pdcostValidation?: string | null;
+  availableBomIds?: string[] | null;
 }
 
 export interface AttachmentData {
@@ -107,7 +111,7 @@ export interface FiltersState {
   bypass: string[];
   productCost: string[];
   costRefCode: string;
-  cost: string;
+  cost: string[];
   stockStatus: string;
   discount: string;
   quotedRate: string;
@@ -119,14 +123,18 @@ export interface FiltersState {
   attachment: string;
   erpItemCode: string[];
   erpItemCodeSearch: string;
+  bomId: string[];
+  bomIdSearch: string;
   contractReviewRate: string[];
   contractReviewRateSearch: string;
+  pdcostValidation: string[];
   pdcostValidationSearch: string;
 }
 
 export interface UiState {
   expandedRows: Record<string, boolean>;
   columnWidths: Record<number, number>;
+  isAnalyticsSidebarCollapsed?: boolean;
 }
 
 export interface PaginationState {

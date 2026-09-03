@@ -2,13 +2,15 @@
 
 import { prisma } from "@/lib/prisma";
 import { uploadFileToDrive } from "@/lib/gdrive";
-import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry, autoDetectItemType, autoDetectMoc } from "@/lib/costCalculator";
+import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry, autoDetectItemType, autoDetectMoc, getItemNameMerge } from "@/lib/costCalculator";
 import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { extractSizeFromItemName } from "@/lib/sizeExtractor";
-import { roundToNearest10 } from "@/lib/rounding";
+import { roundUp } from "@/lib/rounding";
 import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
-import { lookupAndSetItemCode, recomputeItemCodeForValues } from "@/lib/gmdItemCodeLookup";
+import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
+import { update2to1CostForItems } from "@/lib/gmd2to1CostLookup";
+import { getDistinctBomIds, getBatchDistinctBomIds } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 
 // Create a new enquiry with initial items and multiple attachments
@@ -124,7 +126,7 @@ export async function createNewEnquiryAction(formData: {
             }
             let itemQR: string | null = null;
             if (itemCost !== null && itemCost > 0 && itemVa !== null) {
-              itemQR = (itemCost * (1 + (itemVa / 100))).toFixed(2);
+              itemQR = roundUp(itemCost * (1 + (itemVa / 100))).toFixed(2);
             }
             return {
               position: index,
@@ -242,7 +244,7 @@ export async function addItemsAction(formData: {
         }
         let itemQR: string | null = null;
         if (itemCost !== null && itemCost > 0 && itemVa !== null) {
-          itemQR = (itemCost * (1 + (itemVa / 100))).toFixed(2);
+          itemQR = roundUp(itemCost * (1 + (itemVa / 100))).toFixed(2);
         }
         return {
           position: startPos + index,
@@ -373,14 +375,14 @@ export async function updateEnquiryItemAction(formData: {
         const qrNum = parseFloat(finalQuotedRate);
         if (!isNaN(qrNum) && qrNum > 0) {
           finalVa = parseFloat(((qrNum / updatedCost - 1) * 100).toFixed(2));
-          finalQuotedRate = roundToNearest10(qrNum).toFixed(2);
+          finalQuotedRate = roundUp(qrNum).toFixed(2);
         }
       }
     } else {
       // Forward: QR not provided — calculate from Cost+VA% if both exist
       if (updatedCost !== null && updatedCost > 0 && finalVa !== null) {
         const qr = updatedCost * (1 + (finalVa / 100));
-        finalQuotedRate = roundToNearest10(qr).toFixed(2);
+        finalQuotedRate = roundUp(qr).toFixed(2);
       } else {
         finalQuotedRate = item.quotedRate || null;
       }
@@ -533,13 +535,16 @@ export async function updateEnquiryItemAction(formData: {
       },
     });
 
-    // If erpItemCode changed and productCost is null, auto-fill productCost from BOM (do not clear existing)
+    // Sync availableBomIds for new code (always) and auto-fill productCost if blank & single BOM
     const codeChangedInDialog = erpItemCode !== oldCodeForDialog;
-    if (codeChangedInDialog && erpItemCode) {
+    if (codeChangedInDialog) {
       try {
-        const cur = await prisma.enquiryItem.findUnique({ where: { id: formData.itemId }, select: { productCost: true } });
-        if (cur && cur.productCost === null) {
-          await maybeUpdateProductCostFromNewCode(formData.itemId, erpItemCode, cur.productCost);
+        await syncAvailableBomIds(formData.itemId, erpItemCode);
+        if (erpItemCode) {
+          const cur = await prisma.enquiryItem.findUnique({ where: { id: formData.itemId }, select: { productCost: true } });
+          if (cur && cur.productCost === null) {
+            await maybeUpdateProductCostFromNewCode(formData.itemId, erpItemCode, cur.productCost);
+          }
         }
       } catch (e) {
         console.warn("[updateEnquiryItemAction] auto productCost cascade failed:", e);
@@ -634,7 +639,7 @@ export async function updateEnquiryOrderStatusAction(enquiryId: string, orderSta
   }
 }
 
-// Delete an item. If it is the last item, delete the enquiry itself.
+// Delete an item. Enquiry is retained even if it becomes empty.
 export async function deleteEnquiryItemAction(itemId: string) {
   try {
     const item = await prisma.enquiryItem.findUnique({
@@ -645,27 +650,14 @@ export async function deleteEnquiryItemAction(itemId: string) {
       return { success: false, error: "Item not found." };
     }
 
-    // Count remaining items in parent enquiry
-    const remainingItemsCount = await prisma.enquiryItem.count({
-      where: { enquiryId: item.enquiryId },
-    });
+    console.log(`[Server] deleteItem item="${item.id}" name="${item.itemName}" enquiry=${item.enquiryId}`);
 
-    console.log(`[Server] deleteItem item="${item.id}" name="${item.itemName}" enquiry=${item.enquiryId} remaining=${remainingItemsCount - 1}`);
-
-    // Delete item
+    // Delete item - enquiry is kept even when no items remain
     await prisma.enquiryItem.delete({
       where: { id: itemId },
     });
 
-    // If it was the last item, delete the entire enquiry
-    let enquiryDeleted = false;
-    if (remainingItemsCount <= 1) {
-      await prisma.enquiry.delete({
-        where: { id: item.enquiryId },
-      });
-      enquiryDeleted = true;
-      console.log(`[Server] Enquiry ${item.enquiryId} also deleted (last item)`);
-    }
+    const enquiryDeleted = false;
 
     return { success: true, data: { itemId, enquiryId: item.enquiryId, enquiryDeleted } };
   } catch (error: any) {
@@ -674,7 +666,7 @@ export async function deleteEnquiryItemAction(itemId: string) {
   }
 }
 
-// Bulk delete multiple items from a single enquiry. If all items are deleted, the enquiry itself is removed.
+// Bulk delete multiple items from a single enquiry. Enquiry is retained even if all items are deleted.
 // Single-enquiry constraint is enforced on server.
 export async function deleteEnquiryItemsAction(itemIds: string[]) {
   try {
@@ -702,26 +694,19 @@ export async function deleteEnquiryItemsAction(itemIds: string[]) {
     }
     const enquiryId = enquiryIds[0];
 
-    const remainingCount = await prisma.enquiryItem.count({
+    console.log(`[Server] bulkDelete enquiry=${enquiryId} requested=${uniqueIds.length}`);
+
+    await prisma.enquiryItem.deleteMany({
+      where: { id: { in: uniqueIds }, enquiryId },
+    });
+
+    const remaining = await prisma.enquiryItem.count({
       where: { enquiryId },
     });
 
-    console.log(`[Server] bulkDelete enquiry=${enquiryId} requested=${uniqueIds.length} remainingBefore=${remainingCount}`);
+    const enquiryDeleted = false;
 
-    await prisma.enquiryItem.deleteMany({
-      where: { id: { in: uniqueIds } },
-    });
-
-    let enquiryDeleted = false;
-    if (remainingCount - uniqueIds.length <= 0) {
-      await prisma.enquiry.delete({
-        where: { id: enquiryId },
-      });
-      enquiryDeleted = true;
-      console.log(`[Server] Enquiry ${enquiryId} also deleted (all items removed via bulk delete)`);
-    }
-
-    return { success: true, data: { deletedIds: uniqueIds, enquiryId, enquiryDeleted, remaining: Math.max(0, remainingCount - uniqueIds.length) } };
+    return { success: true, data: { deletedIds: uniqueIds, enquiryId, enquiryDeleted, remaining } };
   } catch (error: any) {
     console.error("Error bulk deleting items:", error);
     return { success: false, error: error.message || "Failed to delete items." };
@@ -823,7 +808,7 @@ export async function updateItemFieldAction(
       if (field === "itemName") {
         const currentItem = await prisma.enquiryItem.findUnique({
           where: { id: itemId },
-          select: { itemName: true, itemType: true, moc: true, itemTypeSource: true, mocSource: true, size: true, pnRating: true },
+          select: { itemName: true, itemType: true, moc: true, itemTypeSource: true, mocSource: true, size: true, pnRating: true, bypass: true },
         });
         console.log(`[Server] itemName changed: "${currentItem?.itemName}" → "${parsedVal}"`);
         const resolved = await resolveItemCategory({
@@ -839,16 +824,38 @@ export async function updateItemFieldAction(
         updateData.itemTypeSource = resolved.itemTypeSource;
         updateData.mocSource = resolved.mocSource;
         updateData.size = resolved.size;
-        console.log(`[Server] Re-resolved: itemType="${resolved.itemType}" moc="${resolved.moc}" size="${resolved.size}" pnRating="${resolved.pnRating}"`);
+        // Bypass gating: sync bypass with resolved value ( "-" when no mention )
+        if (resolved.bypass !== currentItem?.bypass) {
+          updateData.bypass = resolved.bypass;
+        }
+        console.log(`[Server] Re-resolved: itemType="${resolved.itemType}" moc="${resolved.moc}" size="${resolved.size}" pnRating="${resolved.pnRating}" bypass="${resolved.bypass}"`);
       } else if (field === "itemType") {
         updateData.itemTypeSource = "sheet";
       } else if (field === "moc") {
         updateData.mocSource = "sheet";
       }
-      const dbItem = await prisma.enquiryItem.update({
+      let dbItem = await prisma.enquiryItem.update({
         where: { id: itemId },
         data: updateData,
       });
+
+      // If bypass changed via itemName gate, recalculate cost atomically
+      if (updateData.bypass !== undefined) {
+        const recalc = await recalculateItem(itemId, { bypass: updateData.bypass });
+        if (recalc) {
+          dbItem = await prisma.enquiryItem.findUnique({ where: { id: itemId } }) as any;
+        }
+      }
+
+      const MERGE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "itemName"];
+      if (MERGE_FIELDS.includes(field)) {
+        const merged = getItemNameMerge(dbItem);
+        dbItem = await prisma.enquiryItem.update({
+          where: { id: itemId },
+          data: { itemNameMerge: merged === "" ? null : merged },
+        });
+      }
+
       updatedItem = serializeItem(dbItem);
 
       if (updatedItem && !updatedItem.vaPercent && (updatedItem.itemType || updatedItem.size)) {
@@ -904,15 +911,21 @@ export async function updateItemFieldAction(
             },
             fresh.erpItemCode
           );
-          // If code actually changed (old vs new), maybe update productCost when it is null
+          // If code actually changed, sync availableBomIds (always) and maybe update productCost when null
           if (recomputed.changed) {
-            // Need fresh productCost after code update
             const afterCode = await prisma.enquiryItem.findUnique({
               where: { id: itemId },
-              select: { productCost: true, erpItemCode: true },
+              select: { productCost: true, erpItemCode: true, availableBomIds: true },
             });
-            if (afterCode?.erpItemCode && afterCode.productCost === null) {
-              await maybeUpdateProductCostFromNewCode(itemId, afterCode.erpItemCode, afterCode.productCost);
+            // Sync availableBomIds even if productCost not null
+            if (afterCode?.erpItemCode) {
+              await syncAvailableBomIds(itemId, afterCode.erpItemCode);
+            } else {
+              await syncAvailableBomIds(itemId, null);
+            }
+            const refreshedAfterSync = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { productCost: true, erpItemCode: true } });
+            if (refreshedAfterSync?.erpItemCode && refreshedAfterSync.productCost === null) {
+              await maybeUpdateProductCostFromNewCode(itemId, refreshedAfterSync.erpItemCode, refreshedAfterSync.productCost);
             }
             // Refresh updatedItem to return latest
             const latest = await prisma.enquiryItem.findUnique({ where: { id: itemId } });
@@ -931,11 +944,51 @@ export async function updateItemFieldAction(
   }
 }
 
+// Helper: populate availableBomIds from VerifyBom for a given erpItemCode
+async function syncAvailableBomIds(itemId: string, erpItemCode: string | null) {
+  try {
+    if (!erpItemCode) {
+      await prisma.enquiryItem.update({ where: { id: itemId }, data: { availableBomIds: [] } });
+      return [];
+    }
+    const ids = await getDistinctBomIds(erpItemCode);
+    await prisma.enquiryItem.update({ where: { id: itemId }, data: { availableBomIds: ids } });
+    return ids;
+  } catch (e) {
+    console.warn(`[syncAvailableBomIds] failed for ${itemId} code=${erpItemCode}:`, e);
+    return [];
+  }
+}
+
 // Helper: if itemCode changes and productCost is null, auto-fill productCost from BOM
+// Now respects availableBomIds: if VerifyBom has multiple BOMs, defer until user selects one
 async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string | null, currentProductCost: any) {
   if (!newCode) return;
   if (currentProductCost !== null && currentProductCost !== undefined) return; // only if null per requirement
   try {
+    // Always populate availableBomIds from VerifyBom first
+    const candidateIds = await syncAvailableBomIds(itemId, newCode);
+    // If multiple candidates, defer bom/productCost until user selects via selectBomIdAction
+    if (candidateIds.length > 1) {
+      return;
+    }
+    if (candidateIds.length === 1) {
+      // Single candidate path: try VerifyBom row for cost, fallback to sheet BOM
+      const vbRow = await prisma.verifyBom.findFirst({ where: { itemCode: newCode, bomId: candidateIds[0] }, select: { bomId: true, rmItemCode: true, bomIdType: true } });
+      if (vbRow?.rmItemCode) {
+        const costMap = await buildRmCostMap([vbRow.rmItemCode]);
+        const cost = costMap.get(vbRow.rmItemCode);
+        if (cost !== undefined && cost !== null) {
+          await recalculateItem(itemId, { productCost: cost });
+        }
+        await prisma.enquiryItem.update({
+          where: { id: itemId },
+          data: { bomId: vbRow.bomId, bomType: vbRow.bomIdType || DIRECT_M2M, rmItemCode: vbRow.rmItemCode },
+        });
+        return;
+      }
+    }
+    // Zero or single but VerifyBom miss → fallback to sheet DIRECT_M2M BOM
     const bom = await getBomEntry(newCode);
     if (!bom) return;
     const costMap = await buildRmCostMap([bom.rmItemCode]);
@@ -943,7 +996,6 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
     if (cost !== undefined && cost !== null) {
       await recalculateItem(itemId, { productCost: cost });
     }
-    // Persist bom linkage (even if cost was set via recalculate, ensure bom fields)
     await prisma.enquiryItem.update({
       where: { id: itemId },
       data: { bomId: bom.bomId, bomType: DIRECT_M2M, rmItemCode: bom.rmItemCode },
@@ -953,35 +1005,77 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
   }
 }
 
+// User selects a single bomId from availableBomIds dropdown → persist to bomId/rmItemCode/bomType + optional cost
+export async function selectBomIdAction(itemId: string, bomId: string | null) {
+  try {
+    const item = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { erpItemCode: true, productCost: true, availableBomIds: true } });
+    if (!item) return { success: false, error: "Item not found." };
+    if (!item.erpItemCode) return { success: false, error: "Item has no Item Code." };
+    if (bomId !== null && bomId !== "" && !item.availableBomIds.includes(bomId)) {
+      return { success: false, error: "Selected BOM ID is not in available options." };
+    }
+    if (!bomId) {
+      // Clear selection
+      const cleared = await prisma.enquiryItem.update({ where: { id: itemId }, data: { bomId: null, rmItemCode: null, bomType: null } });
+      return { success: true, data: serializeItem(cleared) };
+    }
+    const vbRow = await prisma.verifyBom.findFirst({ where: { itemCode: item.erpItemCode, bomId }, select: { bomId: true, rmItemCode: true, bomIdType: true } });
+    if (!vbRow) return { success: false, error: "BOM not found for this item code." };
+    // Update bom linkage
+    await prisma.enquiryItem.update({
+      where: { id: itemId },
+      data: { bomId: vbRow.bomId, bomType: vbRow.bomIdType || DIRECT_M2M, rmItemCode: vbRow.rmItemCode },
+    });
+    // Auto-fill productCost if blank
+    if (item.productCost === null && vbRow.rmItemCode) {
+      const costMap = await buildRmCostMap([vbRow.rmItemCode]);
+      const cost = costMap.get(vbRow.rmItemCode);
+      if (cost !== undefined && cost !== null) {
+        const recalc = await recalculateItem(itemId, { productCost: cost });
+        if (recalc) return { success: true, data: recalc };
+      }
+    }
+    const updated = await prisma.enquiryItem.findUnique({ where: { id: itemId } });
+    return { success: true, data: serializeItem(updated) };
+  } catch (e: any) {
+    console.error("[selectBomIdAction] failed:", e);
+    return { success: false, error: e.message || "Failed to select BOM." };
+  }
+}
+
 // Fetch/refresh ERP item codes for multiple enquiry items (triggered via UI button)
 export async function fetchErpItemCodesAction(itemIds: string[]) {
   const updatedItems: ReturnType<typeof serializeItem>[] = [];
   let fetched = 0;
   let lastError: string | null = null;
-  // Pre-warm BOM cache so gate checks don't fetch per item
+  // Pre-warm BOM & BOM ID cache so gate checks don't fetch per item
   try {
-    await getCachedBomRows();
+    await Promise.all([getCachedBomRows(), fetchBomIdSet()]);
   } catch {}
 
   for (const itemId of itemIds) {
     try {
       const code = await lookupAndSetItemCode(itemId, { bomGate: true });
-      const item = await prisma.enquiryItem.findUnique({
+      let item = await prisma.enquiryItem.findUnique({
         where: { id: itemId },
       });
       if (item) {
+        // Populate availableBomIds from VerifyBom for every code (even if productCost not null)
+        if (item.erpItemCode) {
+          try { await syncAvailableBomIds(itemId, item.erpItemCode); item = await prisma.enquiryItem.findUnique({ where: { id: itemId } }) as any; } catch {}
+        }
         // Only count as fetched if item now has a code (gate passed)
-        if (item.erpItemCode) fetched++;
-        // If we just fetched a new code and productCost is null, auto-fill cost (do not clear existing)
-        if (code && item.productCost === null) {
-          await maybeUpdateProductCostFromNewCode(itemId, item.erpItemCode, item.productCost);
+        if (item!.erpItemCode) fetched++;
+        // If we just fetched a new code and productCost is null, auto-fill cost (do not clear existing) - respects multi-BOM defer
+        if (code && item!.productCost === null) {
+          await maybeUpdateProductCostFromNewCode(itemId, item!.erpItemCode, item!.productCost);
           const refreshed = await prisma.enquiryItem.findUnique({ where: { id: itemId } });
           if (refreshed) {
             updatedItems.push(serializeItem(refreshed));
             continue;
           }
         }
-        updatedItems.push(serializeItem(item));
+        updatedItems.push(serializeItem(item!));
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "Failed to fetch ERP item code.";
@@ -1016,17 +1110,24 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     const updatedItems: ReturnType<typeof serializeItem>[] = [];
     let updated = 0;
     let lastError: string | null = null;
+    const noCostRmCodes = new Set<string>();
+    const noBomItemCodes = new Set<string>();
 
     for (const item of items) {
       if (item.productCost !== null) continue;
       if (!item.erpItemCode) continue;
       const bom = bomMap.get(item.erpItemCode);
-      if (!bom) continue;
+      if (!bom) {
+        noBomItemCodes.add(item.erpItemCode);
+        continue;
+      }
 
       const cost = costMap.get(bom.rmItemCode);
       try {
         if (cost !== undefined && cost !== null) {
           await recalculateItem(item.id, { productCost: cost });
+        } else {
+          noCostRmCodes.add(bom.rmItemCode);
         }
 
         await prisma.enquiryItem.update({
@@ -1043,7 +1144,9 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
         });
         if (refreshed) {
           updatedItems.push(serializeItem(refreshed));
-          updated++;
+          if (cost !== undefined && cost !== null) {
+            updated++;
+          }
         }
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : "Failed to update product cost.";
@@ -1053,11 +1156,85 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     }
 
     if (updated === 0) {
-      return { success: false, error: lastError || "No items updated." };
+      const errMsgs: string[] = [];
+      if (noCostRmCodes.size > 0) {
+        errMsgs.push(`No price found in Supply History for RM Code(s): ${[...noCostRmCodes].join(", ")}.`);
+      }
+      if (noBomItemCodes.size > 0) {
+        errMsgs.push(`No DIRECT M2M BOM recipe found for Item Code(s): ${[...noBomItemCodes].join(", ")}.`);
+      }
+      return { success: false, error: errMsgs.join(" ") || lastError || "No product costs updated." };
     }
     return { success: true, data: { items: updatedItems, updated } };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to update product cost.";
+    return { success: false, error: message };
+  }
+}
+
+// Fill null or "-" cost column from Raw Materials table (2:1 BOM), triggered via UI button or API
+export async function update2to1CostAction(itemIds: string[]) {
+  try {
+    const res = await update2to1CostForItems(itemIds);
+    if (res.updatedCount === 0) {
+      const errMsgs: string[] = [];
+      if (res.noCostItemCodes.length > 0) {
+        errMsgs.push(`No cost found in Raw Materials table for consumption item(s) of: ${res.noCostItemCodes.join(", ")}.`);
+      }
+      if (res.noBomItemCodes.length > 0) {
+        errMsgs.push(`No 2:1 BOM recipe found for Item Code(s): ${res.noBomItemCodes.join(", ")}.`);
+      }
+      return { success: false, error: errMsgs.join(" ") || "No costs updated for 2:1 items." };
+    }
+    return { success: true, data: { items: res.updatedItems, updated: res.updatedCount } };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to update 2:1 cost.";
+    return { success: false, error: message };
+  }
+}
+
+// Unified action to update both DIRECT M2M product costs and 2:1 BOM costs for target items
+export async function updateAllBomCostsAction(itemIds: string[]) {
+  try {
+    const updatedItemsMap = new Map<string, ReturnType<typeof serializeItem>>();
+    let totalUpdated = 0;
+    const errorMessages: string[] = [];
+
+    // 1. Process DIRECT M2M product costs
+    const m2mRes = await updateProductCostFromBomAction(itemIds);
+    if (m2mRes.success && m2mRes.data) {
+      for (const item of m2mRes.data.items) {
+        updatedItemsMap.set(item.id, item);
+      }
+      totalUpdated += m2mRes.data.updated;
+    } else if (m2mRes.error) {
+      errorMessages.push(m2mRes.error);
+    }
+
+    // 2. Process 2:1 BOM costs
+    const twoToOneRes = await update2to1CostAction(itemIds);
+    if (twoToOneRes.success && twoToOneRes.data) {
+      for (const item of twoToOneRes.data.items) {
+        updatedItemsMap.set(item.id, item);
+      }
+      totalUpdated += twoToOneRes.data.updated;
+    } else if (twoToOneRes.error && totalUpdated === 0) {
+      errorMessages.push(twoToOneRes.error);
+    }
+
+    if (totalUpdated === 0) {
+      return { success: false, error: errorMessages.join(" ") || "No BOM costs updated." };
+    }
+
+    return {
+      success: true,
+      data: {
+        items: Array.from(updatedItemsMap.values()),
+        updated: totalUpdated,
+      },
+    };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to update BOM costs.";
     return { success: false, error: message };
   }
 }
@@ -1401,6 +1578,89 @@ export async function fetchContractReviewRatesAction(itemIds: string[]) {
   } catch (error: any) {
     console.error("Error fetching contract review rates:", error);
     return { success: false, error: error.message || "Failed to fetch contract review rates." };
+  }
+}
+
+// Calculate and populate pdcostValidation % for selected items that have contractReviewRate and productCost
+export async function populatePdCostValidationAction(itemIds: string[]) {
+  try {
+    const items = await prisma.enquiryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true, contractReviewRate: true, productCost: true },
+    });
+
+    const updatedItems: ReturnType<typeof serializeItem>[] = [];
+    let updated = 0;
+
+    for (const item of items) {
+      if (!item.contractReviewRate || item.productCost == null) continue;
+      const cr = parseFloat(String(item.contractReviewRate).replace(/,/g, ""));
+      const pc = Number(item.productCost);
+      if (isNaN(cr) || isNaN(pc) || pc === 0) continue;
+
+      const pdVal = `${(((cr - pc) / pc) * 100).toFixed(2)}%`;
+      await prisma.enquiryItem.update({
+        where: { id: item.id },
+        data: { pdcostValidation: pdVal },
+      });
+
+      const refreshed = await prisma.enquiryItem.findUnique({ where: { id: item.id } });
+      if (refreshed) {
+        updatedItems.push(serializeItem(refreshed));
+        updated++;
+      }
+    }
+
+    if (updated === 0) {
+      return {
+        success: false,
+        error: "No items with both Contract Review Rate and Product Cost found to populate PD %.",
+      };
+    }
+
+    return { success: true, data: { items: updatedItems, updated } };
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Failed to populate PD Cost Validation.";
+    return { success: false, error: message };
+  }
+}
+
+// Clear Quoted Rate (and derived columns: GST, totalValue, itemWiseTotalValue) for filtered items. VA% is preserved.
+export async function clearQuotedRatesAction(itemIds: string[]) {
+  try {
+    if (!itemIds || itemIds.length === 0) {
+      return { success: false, error: "No items selected." };
+    }
+    const uniqueIds = [...new Set(itemIds)];
+
+    const existing = await prisma.enquiryItem.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true },
+    });
+    if (existing.length !== uniqueIds.length) {
+      return { success: false, error: "Some items not found. Please refresh and try again." };
+    }
+
+    console.log(`[Server] clearQuotedRates ids=${uniqueIds.length}`);
+
+    await prisma.enquiryItem.updateMany({
+      where: { id: { in: uniqueIds } },
+      data: {
+        quotedRate: null,
+        quotedRateGst: null,
+        itemWiseTotalValue: null,
+        totalValue: null,
+      },
+    });
+
+    const updatedItems = await prisma.enquiryItem.findMany({
+      where: { id: { in: uniqueIds } },
+    });
+
+    return { success: true, data: { items: updatedItems.map(serializeItem), cleared: updatedItems.length } };
+  } catch (error: any) {
+    console.error("Error clearing quoted rates:", error);
+    return { success: false, error: error.message || "Failed to clear quoted rates." };
   }
 }
 

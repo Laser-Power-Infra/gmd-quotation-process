@@ -230,12 +230,13 @@
       <tr>
         <th style="width:6%;">SL NO</th>
         <th style="width:22%;">PARTY ITEM NAME</th>
-        <th style="width:30%;">OUR ITEM NAME</th>
-        <th style="width:10%;">RATE/UNIT</th>
-        <th style="width:8%;">QTY</th>
-        <th style="width:8%;">UNIT</th>
-        <th style="width:8%;">QR with GST</th>
-        <th style="width:8%;">Delivery Schedule</th>
+        <th style="width:22%;">OUR ITEM NAME</th>
+        <th style="width:9%;">RATE/UNIT</th>
+        <th style="width:7%;">QTY</th>
+        <th style="width:7%;">UNIT</th>
+        <th style="width:10%;">QR with GST</th>
+        <th style="width:10%;">Total Val. Incld. GST</th>
+        <th style="width:7%;">Delivery Schedule</th>
       </tr>
     </thead>
     <tbody>
@@ -248,6 +249,7 @@
         <td>{{this.quantity}}</td>
         <td>Nos.</td>
         <td>{{this.quotedRateGst}}</td>
+        <td>{{this.totalValue}}</td>
         <td>{{this.deliverySchedule}}</td>
       </tr>
       {{/each}}
@@ -255,6 +257,7 @@
         <td colspan="3" style="text-align: right;">Total</td>
         <td>{{totalItemwise items}}</td>
         <td>{{totalQuantity items}}</td>
+        <td></td>
         <td></td>
         <td>{{totalItemwiseGst items}}</td>
         <td></td>

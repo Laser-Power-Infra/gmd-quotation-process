@@ -28,7 +28,7 @@ const initialState: FiltersState = {
   bypass: [],
   productCost: [],
   costRefCode: "",
-  cost: "",
+  cost: [],
   stockStatus: "",
   discount: "",
   quotedRate: "",
@@ -40,8 +40,11 @@ const initialState: FiltersState = {
   attachment: "",
   erpItemCode: [],
   erpItemCodeSearch: "",
+  bomId: [],
+  bomIdSearch: "",
   contractReviewRate: [],
   contractReviewRateSearch: "",
+  pdcostValidation: [],
   pdcostValidationSearch: "",
 };
 

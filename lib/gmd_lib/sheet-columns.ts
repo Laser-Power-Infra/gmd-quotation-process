@@ -30,6 +30,11 @@ export const CANONICAL_COLUMNS = [
 export const STATUS_COLUMNS = new Set(["NEW ITEM STATUS", "CURRENT STATUS", "RM TYPE","INDIAN/IMPORTED" ]);
 export const NUMERIC_COLUMNS = new Set(["Available Stock", "cost", "1 pcs wgt", "USD cost"]);
 
+export const FIXED_DROPDOWN_OPTIONS: Record<string, string[]> = {
+  "NEW ITEM STATUS": ["Updated"],
+  "RM TYPE": ["1538","9523", "ANSI", "COMMON","WAFER TYPE","ACT WIS","ACT WOS", "ACT SPH", "ACT SPC", "ACT WIS-F", "GB SPUR", "GB WROM", "CAP", "CONS"],
+};
+
 export const COL_INDEX_TO_DB_FIELD: Record<number, string> = {
   0: "erpItemCode",
   1: "itemNameAuto",

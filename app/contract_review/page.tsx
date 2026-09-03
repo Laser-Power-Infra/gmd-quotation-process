@@ -199,6 +199,7 @@ export default function ContractReviewPage() {
               selectedIndex={selectedIndex}
               onSelect={setSelectedIndex}
               title="Contract Review"
+              editableColumns={["BOM FORMULA TRAIL", ""]}
             />
           </div>
         </div>

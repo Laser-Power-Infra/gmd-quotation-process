@@ -114,13 +114,14 @@ So filtering/editing happens on **DB data** that was either created here or sync
 
 | Button | When shown / filtered | File | What it does |
 |--------|-----------------------|------|--------------|
-| **Auto-fill blanks** | Items where `!itemType || !moc || !size || size="Not detectable" || !operationType || extension="-" || bypass="-"` `EnquiryTable.tsx:1168` | `app/actions.ts:922 autoFillBlanksAction` | Calls `resolveItemCategory({itemName})` `app/actions.ts:937` — only fills blanks, respects existing, then defaults VA if needed `EnquiryTable.tsx:1151` |
-| **Fetch ERP Codes** | `!erpItemCode` `EnquiryTable.tsx:1211` | `app/actions.ts:778 fetchErpItemCodesAction` | Loops `lookupAndSetItemCode()` per id — see `06` |
-| **Update Product Cost** | `erpItemCode && !productCost` `EnquiryTable.tsx:1249` | `app/actions.ts:807 updateProductCostFromBomAction` | Fetches DIRECT M2M BOM + RM latest cost from `SupplyHistoryItem` — see `06` |
-| **Auto-fill VA%** | `!vaPercent` `EnquiryTable.tsx:1285` (approx) | `app/actions.ts:1002 updateVaPercentAction` | `getDefaultVaPercent(itemType,size)` `app/actions.ts:1024` → `recalculateItem({vaPercent})` |
-| **Fetch Contract Review Rates** | `erpItemCode` exists `EnquiryTable.tsx:1318` | `app/actions.ts:1080 fetchContractReviewRatesAction` | Finds most recent `ContractReview` by `dateOfContract` `L1096` → stores `contractReviewRate` + `pdcostValidation%` `L1143` |
+| **Auto-fill blanks** | Items passing active filters with missing attributes | `app/actions.ts:922 autoFillBlanksAction` | Calls `resolveItemCategory({itemName})` — only fills blanks, respects existing, then defaults VA |
+| **Fetch ERP Codes** | `!erpItemCode` matching active filters | `app/actions.ts:778 fetchErpItemCodesAction` | Loops `lookupAndSetItemCode()` per item using **BOM ID presence gate** (`hasBomId` in `lib/gmdItemCodeLookup.ts`) |
+| **Update Product Cost** | `erpItemCode && !productCost` matching active filters | `app/actions.ts:807 updateProductCostFromBomAction` | Fetches `DIRECT M2M` BOM + RM latest cost from `SupplyHistoryItem`. Only counts items where cost is set; warns if RM prices or BOM recipes are missing |
+| **Auto-fill VA%** | `!vaPercent` matching active filters | `app/actions.ts:1002 updateVaPercentAction` | `getDefaultVaPercent(itemType,size)` → `recalculateItem({vaPercent})` |
+| **Fetch Contract Review Rates** | `erpItemCode` exists matching active filters | `app/actions.ts:1080 fetchContractReviewRatesAction` | Finds most recent `ContractReview` by `dateOfContract` → stores `contractReviewRate` + `pdcostValidation%` |
+| **Populate PD Cost Val** | `contractReviewRate && productCost != null` | `app/actions.ts:1403 populatePdCostValidationAction` | Computes $\text{PD \%} = \frac{\text{ContractReviewRate} - \text{productCost}}{\text{productCost}} \times 100$ and updates `pdcostValidation` |
 
-All dispatch Redux thunks `lib/enquiriesSlice.ts:25-209` and show `toast.promise`.
+All bulk action buttons use `getFilteredItems(enquiry)` to strictly respect active column filters (including `PRODUCT COST: (blank)` and `PD COST VAL %`). All dispatch Redux thunks `lib/enquiriesSlice.ts`.
 
 ## 7. Create / Add / Delete / Attachments
 

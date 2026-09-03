@@ -377,10 +377,10 @@ export default function Home() {
               selectedIndex={selectedIndex}
               onSelect={setSelectedIndex}
               title={`New Items (Blank Status)`}
-              hiddenFilters={["NEW ITEM STATUS"]}
+              // hiddenFilters={["NEW ITEM STATUS"]}
               categoryOptions={enhancedCategoryOptions}
               editable
-              editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD cost","HSN CODE","HSN Code Validation", "MAJOR MARKING", "RM TYPE"]}
+              editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD cost","HSN CODE","HSN Code Validation", "MAJOR MARKING", "RM TYPE", "NEW ITEM STATUS"]}
               uniqueKeyColumns={["ERP ITEM CODE"]}
               onFilteredRowsChange={setFirstFilteredRows}
               usdInrRate={usdInrRate}

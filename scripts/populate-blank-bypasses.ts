@@ -3,6 +3,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import "dotenv/config";
 import { detectBypass } from "../lib/bypassDetector";
+import { hasBypassMention } from "../lib/bypassMatcher";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
@@ -44,6 +45,11 @@ async function main() {
     process.stdout.write(
       `\r[${i + 1}/${blankItems.length}] ${item.enquiry.docketNumber} | ${item.itemName.substring(0, 50).padEnd(50)}`
     );
+
+    if (!hasBypassMention(item.itemName)) {
+      skippedCount++;
+      continue;
+    }
 
     const bypass = detectBypass(item.size);
 
