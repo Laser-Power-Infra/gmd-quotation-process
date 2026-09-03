@@ -149,7 +149,7 @@ export default function Home() {
   const newItems = useMemo(
     () =>
       allItems.filter(
-        (item) => !item.newItemStatus || item.newItemStatus === "-",
+        (item) => !item.newItemStatus || item.newItemStatus === "-" || item.newItemStatus === "Updated",
       ),
     [allItems],
   );
@@ -157,19 +157,17 @@ export default function Home() {
   const processedItems = useMemo(
     () =>
       allItems.filter(
-        (item) => item.newItemStatus && item.newItemStatus !== "-",
+        (item) => item.newItemStatus && item.newItemStatus !== "-" && item.newItemStatus !== "Updated",
       ),
     [allItems],
   );
 
   const totalRows = allItems.length;
 
-  const newItemRows = useMemo(() => newItems.map(dbItemToRow), [newItems]);
   const processedItemRows = useMemo(
     () => processedItems.map(dbItemToRow),
     [processedItems],
   );
-  const newItemIds = useMemo(() => newItems.map((i) => i.id), [newItems]);
   const processedItemIds = useMemo(
     () => processedItems.map((i) => i.id),
     [processedItems],
@@ -177,6 +175,23 @@ export default function Home() {
 
   const [firstFilteredRows, setFirstFilteredRows] = useState<unknown[][]>([]);
   const [scope, setScope] = useState<"all" | "indian" | "imported">("all");
+
+  const scopedNewItems = useMemo(() => {
+    if (scope === "all") return newItems;
+    const target = scope;
+    return newItems.filter((item) =>
+      (item.indianImported ?? "").trim().toLowerCase() === target,
+    );
+  }, [newItems, scope]);
+
+  const scopedNewItemRows = useMemo(
+    () => scopedNewItems.map(dbItemToRow),
+    [scopedNewItems],
+  );
+  const scopedNewItemIds = useMemo(
+    () => scopedNewItems.map((i) => i.id),
+    [scopedNewItems],
+  );
 
   const cardStats = useMemo(() => {
     const baseRows = firstFilteredRows.length
@@ -372,8 +387,8 @@ export default function Home() {
           <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4 pr-1 mt-4">
             <GMDUpdateTable
               headers={headers}
-              rows={newItemRows}
-              ids={newItemIds}
+              rows={scopedNewItemRows}
+              ids={scopedNewItemIds}
               selectedIndex={selectedIndex}
               onSelect={setSelectedIndex}
               title={`New Items (Blank Status)`}
@@ -383,6 +398,7 @@ export default function Home() {
               editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD cost","HSN CODE","HSN Code Validation", "MAJOR MARKING", "RM TYPE", "NEW ITEM STATUS"]}
               uniqueKeyColumns={["ERP ITEM CODE"]}
               onFilteredRowsChange={setFirstFilteredRows}
+              onReset={() => setScope("all")}
               usdInrRate={usdInrRate}
               onRefreshRate={refreshRate}
             />

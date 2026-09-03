@@ -188,6 +188,7 @@ interface GMDUpdateTableProps {
   onFilteredRowsChange?: (rows: unknown[][]) => void;
   usdInrRate?: number | null;
   onRefreshRate?: () => void;
+  onReset?: () => void;
   filterState?: {
     columnFilters: Record<string, string>;
     multiFilters: Record<string, string[]>;
@@ -225,6 +226,7 @@ export default function GMDUpdateTable({
   onFilteredRowsChange,
   usdInrRate,
   onRefreshRate,
+  onReset,
   filterState,
   filterActions,
 }: GMDUpdateTableProps) {
@@ -353,6 +355,7 @@ export default function GMDUpdateTable({
       setLocalDateTo("");
     }
     setCurrentPage(1);
+    onReset?.();
   };
 
   const hasActiveFilters =

@@ -32,7 +32,7 @@ export const NUMERIC_COLUMNS = new Set(["Available Stock", "cost", "1 pcs wgt", 
 
 export const FIXED_DROPDOWN_OPTIONS: Record<string, string[]> = {
   "NEW ITEM STATUS": ["Updated"],
-  "RM TYPE": ["1538","9523", "ANSI", "COMMON","WAFER TYPE","ACT WIS","ACT WOS", "ACT SPH", "ACT SPC", "ACT WIS-F", "GB SPUR", "GB WROM", "CAP", "CONS"],
+  "RM TYPE": ["1538","9523", "ANSI", "COMMON","WAFER TYPE","ACT WIS","ACT WOS", "ACT SPH", "ACT SPC", "ACT WIS-F", "GB SPUR", "GB WORM", "CAP", "CONS"],
 };
 
 export const COL_INDEX_TO_DB_FIELD: Record<number, string> = {
