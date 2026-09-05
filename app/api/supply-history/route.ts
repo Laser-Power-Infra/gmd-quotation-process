@@ -60,9 +60,19 @@ const MERGE_FIELDS: Record<string, [string, string]> = {
 
 export async function GET() {
   try {
-    const items = await prisma.supplyHistoryItem.findMany({
-      orderBy: { syncedAt: "desc" },
-    });
+    const [items, utilityRows] = await Promise.all([
+      prisma.supplyHistoryItem.findMany({
+        orderBy: { syncedAt: "desc" },
+      }),
+      prisma.lookupOption.findMany({
+        where: { type: "UTILITY", isActive: true },
+        orderBy: [{ sortOrder: "asc" }],
+        select: { value: true },
+      }),
+    ]);
+    const utilityOptions = utilityRows
+      .map((r) => r.value)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
     const lastSynced =
       items.length > 0
@@ -94,6 +104,7 @@ export async function GET() {
       ids: items.map((i) => i.id),
       totalRows: rows.length,
       syncedAt: lastSynced?.toISOString() ?? null,
+      utilityOptions,
     });
   } catch (error) {
     return NextResponse.json(

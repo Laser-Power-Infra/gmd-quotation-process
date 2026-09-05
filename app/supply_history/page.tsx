@@ -9,7 +9,6 @@ import { toast } from "sonner";
 import { updateSupplyHistoryFieldAction } from "@/app/actions";
 import { SUPPLY_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/supply-history-columns";
 import { INDIAN_STATES } from "@/lib/supplyStateResolver";
-import { UTILITIES } from "@/lib/utilities";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import {
   setColumnFilter,
@@ -28,6 +27,7 @@ interface SupplyHistoryData {
   ids: string[];
   totalRows: number;
   syncedAt: string | null;
+  utilityOptions?: string[];
 }
 
 export default function SupplyHistoryPage() {
@@ -119,8 +119,8 @@ export default function SupplyHistoryPage() {
     }
     // Override State to show full India list for manual dropdown (blanks need all options)
     opts["State"] = [...INDIAN_STATES];
-    // Override UTILITY to show same values as quotation process dashboard (LookupOption UTILITY)
-    opts["UTILITY"] = [...UTILITIES].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    // UTILITY dropdown now comes from LookupOption (type=UTILITY, isActive=true) via /api/supply-history
+    opts["UTILITY"] = data.utilityOptions ? [...data.utilityOptions] : [];
     return opts;
   }, [data, headers]);
 
