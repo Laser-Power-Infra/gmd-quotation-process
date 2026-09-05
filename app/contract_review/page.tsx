@@ -6,7 +6,8 @@ import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
 import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
-import { selectContractReviewBomIdAction } from "@/app/actions";
+import { selectContractReviewBomIdAction, updateContractReviewFieldAction } from "@/app/actions";
+import { CONTRACT_REVIEW_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/contract-review-columns";
 
 interface ContractReviewData {
   headers: string[];
@@ -20,8 +21,9 @@ interface ContractReviewData {
 type BalBillFilter = "all" | "yes" | "no";
 
 function isZeroBal(value: unknown): boolean {
-  const s = String(value ?? "").trim();
+  let s = String(value ?? "").trim();
   if (!s) return false;
+  s = s.replace(/^["']+|["']+$/g, "").trim();
   const n = parseFloat(s.replace(/,/g, ""));
   return !isNaN(n) && n === 0;
 }
@@ -57,17 +59,89 @@ function groupCount(
     );
 }
 
-function matchesTiles(
+function matchesSidebar(
   row: unknown[],
+  balBill: BalBillFilter,
+  status: string,
   item: string,
   size: string,
   pn: string,
+  balBillIdx: number,
+  clearanceIdx: number,
+  exclude?: "balBill" | "status" | "item" | "size" | "pn",
 ): boolean {
-  return (
-    (!item || String(row[ITEM_IDX] ?? "").trim() === item) &&
-    (!size || String(row[SIZE_IDX] ?? "").trim() === size) &&
-    (!pn || String(row[PN_IDX] ?? "").trim() === pn)
-  );
+  if (exclude !== "balBill" && balBill !== "all") {
+    const isYes = isZeroBal(row[balBillIdx]);
+    const ok = balBill === "yes" ? isYes : !isYes;
+    if (!ok) return false;
+  }
+  if (exclude !== "status" && status !== "all") {
+    if (status === "Completed") {
+      if (!isZeroBal(row[balBillIdx])) return false;
+    } else {
+      const cell = String(row[clearanceIdx] ?? "").trim();
+      const ok = status === "Blanks" ? cell === "" : cell === status;
+      if (!ok) return false;
+    }
+  }
+  if (
+    exclude !== "item" &&
+    item &&
+    String(row[ITEM_IDX] ?? "").trim() !== item
+  ) {
+    return false;
+  }
+  if (
+    exclude !== "size" &&
+    size &&
+    String(row[SIZE_IDX] ?? "").trim() !== size
+  ) {
+    return false;
+  }
+  if (
+    exclude !== "pn" &&
+    pn &&
+    String(row[PN_IDX] ?? "").trim() !== pn
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function matchesTableFilters(
+  row: unknown[],
+  headers: string[],
+  columnFilters: Record<string, string>,
+  multiFilters: Record<string, string[]>,
+  globalSearch: string,
+): boolean {
+  if (globalSearch.trim()) {
+    const q = globalSearch.toLowerCase();
+    const hay = headers
+      .map((_, i) => String(row[i] ?? "").toLowerCase())
+      .join(" ");
+    if (!hay.includes(q)) return false;
+  }
+  for (const [colName, filterVal] of Object.entries(columnFilters)) {
+    if (!filterVal || filterVal === "All") continue;
+    const colIdx = headers.indexOf(colName);
+    if (colIdx === -1) continue;
+    const cellVal = String(row[colIdx] ?? "");
+    if (filterVal === "(Blank)") {
+      if (cellVal !== "") return false;
+    } else if (!cellVal.toLowerCase().includes(filterVal.toLowerCase())) {
+      return false;
+    }
+  }
+  for (const [colName, selected] of Object.entries(multiFilters)) {
+    if (!selected.length) continue;
+    const colIdx = headers.indexOf(colName);
+    if (colIdx === -1) continue;
+    const cellVal = String(row[colIdx] ?? "").trim();
+    const matchesBlank = selected.includes("(Blank)") && cellVal === "";
+    if (!(matchesBlank || selected.includes(cellVal))) return false;
+  }
+  return true;
 }
 
 export default function ContractReviewPage() {
@@ -84,6 +158,61 @@ export default function ContractReviewPage() {
   const [bomIdOptionsById, setBomIdOptionsById] = useState<
     Record<string, string[]>
   >({});
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [multiFilters, setMultiFilters] = useState<Record<string, string[]>>({});
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const filterState = useMemo(
+    () => ({
+      columnFilters,
+      multiFilters,
+      dateFrom,
+      dateTo,
+      globalSearch,
+      currentPage,
+      pageSize,
+    }),
+    [
+      columnFilters,
+      multiFilters,
+      dateFrom,
+      dateTo,
+      globalSearch,
+      currentPage,
+      pageSize,
+    ],
+  );
+
+  const filterActions = useMemo(
+    () => ({
+      onColumnFilter: (header: string, value: string) =>
+        setColumnFilters((prev) => ({ ...prev, [header]: value })),
+      onMultiFilter: (header: string, values: string[]) =>
+        setMultiFilters((prev) => {
+          const next = { ...prev };
+          if (values.length) next[header] = values;
+          else delete next[header];
+          return next;
+        }),
+      onDateFrom: setDateFrom,
+      onDateTo: setDateTo,
+      onGlobalSearch: setGlobalSearch,
+      onResetFilters: () => {
+        setColumnFilters({});
+        setMultiFilters({});
+        setGlobalSearch("");
+        setDateFrom("");
+        setDateTo("");
+      },
+      onPageChange: setCurrentPage,
+      onPageSizeChange: setPageSize,
+    }),
+    [],
+  );
 
   const STATUS_OPTIONS = [
     "Blanks",
@@ -114,29 +243,6 @@ export default function ContractReviewPage() {
     }
   }, []);
 
-  const handleSelectBomId = useCallback((id: string, bomId: string | null) => {
-    toast.promise(selectContractReviewBomIdAction(id, bomId), {
-      loading: "Saving BOM ID...",
-      success: (res) => {
-        if (res?.success) {
-          setData((prev) => {
-            if (!prev) return prev;
-            const rows = prev.rows.map((row, i) => {
-              if (prev.ids[i] !== id) return row;
-              const next = [...row];
-              next[BOM_ID_IDX] = bomId ?? "";
-              return next;
-            });
-            return { ...prev, rows };
-          });
-          return "BOM ID saved";
-        }
-        return res?.error || "Failed to save BOM ID";
-      },
-      error: (err) => err || "Failed to save BOM ID",
-    });
-  }, []);
-
   const handleSync = useCallback(async () => {
     setSyncing(true);
     setError(null);
@@ -160,47 +266,274 @@ export default function ContractReviewPage() {
 
   const headers = data?.headers ?? [];
   const balBillIdx = data ? headers.indexOf("BAL BILL AG CONT") : -1;
+  const clearanceIdx = data ? headers.indexOf("CLEARANCE STATUS") : -1;
 
-  const balBillCounts = useMemo(() => {
-    if (!data || balBillIdx === -1) return { all: 0, yes: 0, no: 0 };
-    let yes = 0;
-    for (const row of data.rows) {
-      if (isZeroBal(row[balBillIdx])) yes++;
-    }
-    return { all: data.rows.length, yes, no: data.rows.length - yes };
-  }, [data, balBillIdx]);
+  const handleSelectBomId = useCallback(
+    (id: string, bomId: string | null) => {
+      toast.promise(selectContractReviewBomIdAction(id, bomId), {
+        loading: "Saving BOM ID...",
+        success: (res) => {
+          if (res?.success) {
+            setData((prev) => {
+              if (!prev) return prev;
+              const itemTypeIdx = headers.indexOf("ITEM TYPE");
+              const rows = prev.rows.map((row, i) => {
+                if (prev.ids[i] !== id) return row;
+                const next = [...row];
+                next[BOM_ID_IDX] = bomId ?? "";
+                const itemTypeVal = res.data?.itemType;
+                if (itemTypeVal !== undefined && itemTypeIdx !== -1) {
+                  next[itemTypeIdx] = itemTypeVal;
+                }
+                return next;
+              });
+              return { ...prev, rows };
+            });
+            return "BOM ID saved";
+          }
+          return res?.error || "Failed to save BOM ID";
+        },
+        error: (err) => err || "Failed to save BOM ID",
+      });
+    },
+    [headers],
+  );
+
+  const handleCellUpdate = useCallback(
+    async (id: string, colIndex: number, value: string) => {
+      const header = headers[colIndex];
+      if (!header) return;
+      const field = CONTRACT_REVIEW_HEADER_TO_DB_FIELD[header];
+      if (!field) return;
+      await toast.promise(updateContractReviewFieldAction(id, field, value || null), {
+        loading: `Updating ${header}...`,
+        success: (res) => {
+          if (res?.success) {
+            setData((prev) => {
+              if (!prev) return prev;
+              const rows = prev.rows.map((row, i) => {
+                if (prev.ids[i] !== id) return row;
+                const next = [...row];
+                next[colIndex] = value;
+                return next;
+              });
+              return { ...prev, rows };
+            });
+            return `${header} updated`;
+          }
+          return res?.error || `Failed to update ${header}`;
+        },
+        error: (err) => err || `Failed to update ${header}`,
+      });
+    },
+    [headers],
+  );
+
+  const categoryOptions = useMemo<Record<string, string[]>>(() => {
+    if (!data) return {};
+    const items = [
+      ...new Set(
+        data.rows
+          .map((r) => String(r[ITEM_IDX] ?? "").trim())
+          .filter(Boolean),
+      ),
+    ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const result: Record<string, string[]> = {};
+    if (items.length) result.Item = items;
+    return result;
+  }, [data]);
 
   const allRows = data?.rows ?? [];
 
+  const sidebarBaseRows = useMemo(
+    () =>
+      allRows.filter((row) =>
+        matchesTableFilters(
+          row,
+          headers,
+          columnFilters,
+          multiFilters,
+          globalSearch,
+        ),
+      ),
+    [allRows, headers, columnFilters, multiFilters, globalSearch],
+  );
+
+  const balBillCounts = useMemo(() => {
+    if (balBillIdx === -1) return { all: 0, yes: 0, no: 0 };
+    let all = 0;
+    let yes = 0;
+    for (const row of sidebarBaseRows) {
+      if (
+        !matchesSidebar(
+          row,
+          "all",
+          statusFilter,
+          tileItem,
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          "balBill",
+        )
+      )
+        continue;
+      all++;
+      if (isZeroBal(row[balBillIdx])) yes++;
+    }
+    return { all, yes, no: all - yes };
+  }, [
+    sidebarBaseRows,
+    statusFilter,
+    tileItem,
+    tileSize,
+    tilePn,
+    balBillIdx,
+    clearanceIdx,
+  ]);
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: 0,
+      Blanks: 0,
+      Closed: 0,
+      Completed: 0,
+      Duplicate: 0,
+      Hold: 0,
+      Shortclosed: 0,
+      "To be closed": 0,
+    };
+    for (const row of sidebarBaseRows) {
+      if (
+        !matchesSidebar(
+          row,
+          balBillFilter,
+          "all",
+          tileItem,
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          "status",
+        )
+      )
+        continue;
+      counts.all++;
+      if (isZeroBal(row[balBillIdx])) {
+        counts.Completed++;
+        continue;
+      }
+      const cell = String(row[clearanceIdx] ?? "").trim();
+      const key = cell === "" ? "Blanks" : cell;
+      if (key in counts) counts[key]++;
+    }
+    return counts;
+  }, [
+    sidebarBaseRows,
+    balBillFilter,
+    tileItem,
+    tileSize,
+    tilePn,
+    balBillIdx,
+    clearanceIdx,
+  ]);
+
   const itemOptions = useMemo(
     () =>
-      groupCount(allRows, ITEM_IDX, (row) =>
-        matchesTiles(row, "", tileSize, tilePn),
+      groupCount(sidebarBaseRows, ITEM_IDX, (row) =>
+        matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          "",
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          "item",
+        ),
       ),
-    [allRows, tileSize, tilePn],
+    [
+      sidebarBaseRows,
+      balBillFilter,
+      statusFilter,
+      tileSize,
+      tilePn,
+      balBillIdx,
+      clearanceIdx,
+    ],
   );
 
   const sizeOptions = useMemo(
     () =>
-      groupCount(allRows, SIZE_IDX, (row) =>
-        matchesTiles(row, tileItem, "", tilePn),
+      groupCount(sidebarBaseRows, SIZE_IDX, (row) =>
+        matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          tileItem,
+          "",
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          "size",
+        ),
       ),
-    [allRows, tileItem, tilePn],
+    [
+      sidebarBaseRows,
+      balBillFilter,
+      statusFilter,
+      tileItem,
+      tilePn,
+      balBillIdx,
+      clearanceIdx,
+    ],
   );
 
   const pnOptions = useMemo(
     () =>
-      groupCount(allRows, PN_IDX, (row) =>
-        matchesTiles(row, tileItem, tileSize, ""),
+      groupCount(sidebarBaseRows, PN_IDX, (row) =>
+        matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          tileItem,
+          tileSize,
+          "",
+          balBillIdx,
+          clearanceIdx,
+          "pn",
+        ),
       ),
-    [allRows, tileItem, tileSize],
+    [
+      sidebarBaseRows,
+      balBillFilter,
+      statusFilter,
+      tileItem,
+      tileSize,
+      balBillIdx,
+      clearanceIdx,
+    ],
   );
 
   const rateMcCont = useMemo(() => {
     let sum = 0;
     let count = 0;
-    for (const row of allRows) {
-      if (!matchesTiles(row, tileItem, tileSize, tilePn)) continue;
+    for (const row of sidebarBaseRows) {
+      if (
+        !matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          tileItem,
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          undefined,
+        )
+      )
+        continue;
       const rate = parseFloat(String(row[RATE_IDX] ?? "").replace(/,/g, ""));
       const qty = parseFloat(String(row[MC_QTY_IDX] ?? "").replace(/,/g, ""));
       if (isNaN(rate) || isNaN(qty)) continue;
@@ -208,15 +541,47 @@ export default function ContractReviewPage() {
       count++;
     }
     return { sum, count };
-  }, [allRows, tileItem, tileSize, tilePn]);
+  }, [
+    sidebarBaseRows,
+    balBillFilter,
+    statusFilter,
+    tileItem,
+    tileSize,
+    tilePn,
+    balBillIdx,
+    clearanceIdx,
+  ]);
 
   const tileRowsCount = useMemo(
     () =>
-      allRows.reduce(
-        (n, row) => n + (matchesTiles(row, tileItem, tileSize, tilePn) ? 1 : 0),
+      sidebarBaseRows.reduce(
+        (n, row) =>
+          n +
+          (matchesSidebar(
+            row,
+            balBillFilter,
+            statusFilter,
+            tileItem,
+            tileSize,
+            tilePn,
+            balBillIdx,
+            clearanceIdx,
+            undefined,
+          )
+            ? 1
+            : 0),
         0,
       ),
-    [allRows, tileItem, tileSize, tilePn],
+    [
+      sidebarBaseRows,
+      balBillFilter,
+      statusFilter,
+      tileItem,
+      tileSize,
+      tilePn,
+      balBillIdx,
+      clearanceIdx,
+    ],
   );
 
   const hasTileFilter = tileItem !== "" || tileSize !== "" || tilePn !== "";
@@ -231,19 +596,22 @@ export default function ContractReviewPage() {
     const rows: unknown[][] = [];
     const filteredIds: string[] = [];
     data.rows.forEach((row, i) => {
-      const balMatch =
-        balBillIdx === -1 ||
-        balBillFilter === "all" ||
-        (balBillFilter === "yes"
-          ? isZeroBal(row[balBillIdx])
-          : !isZeroBal(row[balBillIdx]));
-      const statusMatch =
-        statusFilter === "Completed" ? isZeroBal(row[balBillIdx]) : true;
-      const tileMatch = matchesTiles(row, tileItem, tileSize, tilePn);
-      if (balMatch && statusMatch && tileMatch) {
-        rows.push(row);
-        filteredIds.push(data.ids[i]);
-      }
+      if (
+        !matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          tileItem,
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          undefined,
+        )
+      )
+        return;
+      rows.push(row);
+      filteredIds.push(data.ids[i]);
     });
     return { ...data, rows, ids: filteredIds, totalRows: rows.length };
   }, [
@@ -252,6 +620,7 @@ export default function ContractReviewPage() {
     balBillFilter,
     statusFilter,
     balBillIdx,
+    clearanceIdx,
     tileItem,
     tileSize,
     tilePn,
@@ -262,20 +631,71 @@ export default function ContractReviewPage() {
 
   const tileAllCounts = useMemo(
     () => ({
-      item: allRows.reduce(
-        (n, r) => n + (matchesTiles(r, "", tileSize, tilePn) ? 1 : 0),
+      item: sidebarBaseRows.reduce(
+        (n, r) =>
+          n +
+          (matchesSidebar(
+            r,
+            balBillFilter,
+            statusFilter,
+            "",
+            tileSize,
+            tilePn,
+            balBillIdx,
+            clearanceIdx,
+            "item",
+          )
+            ? 1
+            : 0),
         0,
       ),
-      size: allRows.reduce(
-        (n, r) => n + (matchesTiles(r, tileItem, "", tilePn) ? 1 : 0),
+      size: sidebarBaseRows.reduce(
+        (n, r) =>
+          n +
+          (matchesSidebar(
+            r,
+            balBillFilter,
+            statusFilter,
+            tileItem,
+            "",
+            tilePn,
+            balBillIdx,
+            clearanceIdx,
+            "size",
+          )
+            ? 1
+            : 0),
         0,
       ),
-      pn: allRows.reduce(
-        (n, r) => n + (matchesTiles(r, tileItem, tileSize, "") ? 1 : 0),
+      pn: sidebarBaseRows.reduce(
+        (n, r) =>
+          n +
+          (matchesSidebar(
+            r,
+            balBillFilter,
+            statusFilter,
+            tileItem,
+            tileSize,
+            "",
+            balBillIdx,
+            clearanceIdx,
+            "pn",
+          )
+            ? 1
+            : 0),
         0,
       ),
     }),
-    [allRows, tileItem, tileSize, tilePn],
+    [
+      sidebarBaseRows,
+      balBillFilter,
+      statusFilter,
+      tileItem,
+      tileSize,
+      tilePn,
+      balBillIdx,
+      clearanceIdx,
+    ],
   );
 
   if (loading) {
@@ -321,6 +741,23 @@ export default function ContractReviewPage() {
               <option value="all">All ({balBillCounts.all})</option>
               <option value="yes">Yes (0) ({balBillCounts.yes})</option>
               <option value="no">No ({balBillCounts.no})</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold text-white/60">
+              STATUS
+            </span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-2 py-1.5 outline-none cursor-pointer"
+            >
+              <option value="all">All ({statusCounts.all})</option>
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt} ({statusCounts[opt] ?? 0})
+                </option>
+              ))}
             </select>
           </div>
 
@@ -393,23 +830,7 @@ export default function ContractReviewPage() {
               {rateMcCont.count} rows of {tileRowsCount}
             </span>
           </div>
-          {/* <div className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-semibold text-white/60">
-              STATUS
-            </span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-2 py-1.5 outline-none cursor-pointer"
-            >
-              <option value="all">All</option>
-              {STATUS_OPTIONS.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt}
-                </option>
-              ))}
-            </select>
-          </div> */}
+          
         </aside>
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
           <GMDUpdateHeader
@@ -429,10 +850,14 @@ export default function ContractReviewPage() {
               onSelect={setSelectedIndex}
               title="Contract Review"
               editable
-              editableColumns={["bom formula trial"]}
+              editableColumns={["bom formula trial", "Item"]}
+              categoryOptions={categoryOptions}
+              onCellUpdate={handleCellUpdate}
               externalFiltersActive={
                 hasTileFilter || balBillFilter !== "all" || statusFilter !== "all"
               }
+              filterState={filterState}
+              filterActions={filterActions}
               bomIdOptionsById={bomIdOptionsById}
               onSelectBomId={handleSelectBomId}
               onReset={() => {

@@ -950,7 +950,7 @@ castingRateInputs,
                     const isCellEditable =
                       editable &&
                       (!editableColumns || editableColumns.includes(header));
-                    if (header === "BOM ID") {
+                    if (header === "BOM ID" && onSelectBomId) {
                       const options = bomIdOptionsById?.[id] ?? [];
                       cellContent = (
                         <select

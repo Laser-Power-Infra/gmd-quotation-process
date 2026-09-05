@@ -1525,15 +1525,48 @@ export async function selectContractReviewBomIdAction(
       if (!ids.includes(value)) {
         return { success: false, error: "Selected BOM ID is not in available options." };
       }
+      const vbRow = await prisma.verifyBom.findFirst({
+        where: { itemCode: item.itemCode, bomId: value },
+        select: { bomIdType: true },
+      });
+      const itemType = (vbRow?.bomIdType ?? "").trim()
+        ? vbRow!.bomIdType!
+        : "no itemtype present";
+      await prisma.contractReview.update({
+        where: { id },
+        data: { bomId: value, itemType },
+      });
+      return { success: true, data: { id, bomId: value, itemType } };
     }
     await prisma.contractReview.update({
       where: { id },
-      data: { bomId: value },
+      data: { bomId: null },
     });
-    return { success: true, data: { id, bomId: value } };
+    return { success: true, data: { id, bomId: null } };
   } catch (error: any) {
     console.error("Error selecting ContractReview BOM ID:", error);
     return { success: false, error: error.message || "Failed to select BOM ID." };
+  }
+}
+
+export async function updateContractReviewFieldAction(
+  id: string,
+  field: string,
+  value: string | null,
+) {
+  "use server";
+  try {
+    await prisma.contractReview.update({
+      where: { id },
+      data: { [field]: value },
+    });
+    return { success: true, data: { id, field, value } };
+  } catch (error: any) {
+    console.error("Error updating ContractReview field:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to update ContractReview field.",
+    };
   }
 }
 
