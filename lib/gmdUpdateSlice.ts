@@ -7,6 +7,7 @@ import type { RootState } from "./store";
 import {
   updateGMDUpdateFieldAction,
   updateGMDUsdCostAction,
+  selectGMDUpdateBomIdAction,
 } from "@/app/actions";
 
 export interface GMDUpdateRow {
@@ -36,6 +37,7 @@ export interface GMDUpdateRow {
   currentStatus: string | null;
   rmType: string | null;
   indianImported: string | null;
+  bomId: string | null;
 }
 
 const adapter = createEntityAdapter<GMDUpdateRow>();
@@ -66,6 +68,17 @@ export const updateGMDUsdCost = createAsyncThunk(
   },
 );
 
+export const selectGMDUpdateBomId = createAsyncThunk(
+  "gmdUpdate/selectBomId",
+  async ({ id, bomId }: { id: string; bomId: string | null }) => {
+    const result = await selectGMDUpdateBomIdAction(id, bomId);
+    if (!result.success) {
+      throw new Error(result.error || "Failed to select BOM ID.");
+    }
+    return result.data!;
+  },
+);
+
 const gmdUpdateSlice = createSlice({
   name: "gmdUpdate",
   initialState: adapter.getInitialState(),
@@ -85,6 +98,10 @@ const gmdUpdateSlice = createSlice({
         id,
         changes: { usdRateOption: usdCost, cost },
       });
+    });
+    builder.addCase(selectGMDUpdateBomId.fulfilled, (state, action) => {
+      const { id, bomId } = action.payload;
+      adapter.updateOne(state, { id, changes: { bomId } });
     });
   },
 });

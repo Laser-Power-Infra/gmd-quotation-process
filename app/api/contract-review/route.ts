@@ -4,6 +4,7 @@ import {
   CONTRACT_REVIEW_HEADERS,
   dbContractReviewToRow,
 } from "@/lib/gmd_lib/contract-review-columns";
+import { getBatchDistinctBomIds } from "@/lib/verifyBomLookup";
 
 export async function GET() {
   try {
@@ -20,6 +21,15 @@ export async function GET() {
           )
         : null;
 
+    const codes = [
+      ...new Set(items.map((i) => i.itemCode).filter(Boolean)),
+    ];
+    const bomMap = await getBatchDistinctBomIds(codes);
+    const bomIdOptions: Record<string, string[]> = {};
+    for (const item of items) {
+      bomIdOptions[item.id] = bomMap.get(item.itemCode) ?? [];
+    }
+
     const rows = items.map(dbContractReviewToRow);
 
     return NextResponse.json({
@@ -28,6 +38,7 @@ export async function GET() {
       ids: items.map((i) => i.id),
       totalRows: rows.length,
       syncedAt: lastSynced?.toISOString() ?? null,
+      bomIdOptions,
     });
   } catch (error) {
     return NextResponse.json(

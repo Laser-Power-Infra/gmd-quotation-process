@@ -9,17 +9,20 @@ import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import {
   hydrateGMDUpdate,
   selectAllGMDUpdateRows,
+  selectGMDUpdateBomId,
   type GMDUpdateRow,
 } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
 import { FIXED_DROPDOWN_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import { getUsdInrRateAction, getGMDCastingRatesAction, saveGMDCastingRateAction } from "@/app/actions";
+import { toast } from "sonner";
 
 interface SheetData {
   headers: string[];
   rows: unknown[][];
   ids: string[];
   syncedAt: string | null;
+  bomIdOptions?: Record<string, string[]>;
 }
 
 const NEW_STATUS_COL = "NEW ITEM STATUS";
@@ -103,6 +106,7 @@ function rowToGMDUpdateItem(id: string, row: unknown[]): GMDUpdateRow {
     currentStatus:  String(row[22] ?? ""),
     rmType:         String(row[23] ?? ""),
     indianImported: String(row[24] ?? ""),
+    bomId:          String(row[25] ?? ""),
   };
 }
 
@@ -116,6 +120,9 @@ export default function Home() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [categoryOptions, setCategoryOptions] = useState<Record<string, string[]>>({});
   const [usdInrRate, setUsdInrRate] = useState<number | null>(null);
+  const [bomIdOptionsById, setBomIdOptionsById] = useState<
+    Record<string, string[]>
+  >({});
   const [castingRates, setCastingRates] = useState<Record<CastingKey, string>>({
     DI: "",
     CS: "",
@@ -146,6 +153,17 @@ export default function Home() {
       if (saveRateTimer.current) clearTimeout(saveRateTimer.current);
     },
     [],
+  );
+
+  const handleSelectBomId = useCallback(
+    (id: string, bomId: string | null) => {
+      toast.promise(dispatch(selectGMDUpdateBomId({ id, bomId })).unwrap(), {
+        loading: "Saving BOM ID...",
+        success: "BOM ID saved",
+        error: (err) => err || "Failed to save BOM ID",
+      });
+    },
+    [dispatch],
   );
 
   const castingRateInputs = useMemo(
@@ -189,6 +207,7 @@ export default function Home() {
       }
       const json = await res.json();
       setData(json);
+      if (json.bomIdOptions) setBomIdOptionsById(json.bomIdOptions);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -387,7 +406,7 @@ export default function Home() {
 
   if (loading) {
     return (
-      <main className="h-screen flex flex-col bg-background">
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader totalRows={0} syncedAt={null} onSync={handleSync} syncing={false} />
           <GMDUpdateSkeleton />
@@ -398,7 +417,7 @@ export default function Home() {
 
   if (error) {
     return (
-      <main className="h-screen flex flex-col bg-background">
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader totalRows={0} syncedAt={null} onSync={handleSync} syncing={false} />
           <ErrorState message={error} onRetry={fetchData} />
@@ -408,9 +427,9 @@ export default function Home() {
   }
 
   return (
-    <main className="h-screen flex flex-col bg-background">
-      <div className="flex-1 flex p-6 min-h-0 gap-4">
-        <aside className="w-60 shrink-0 h-screen bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-3">
+    <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
+      <div className="flex-1 flex p-4 min-h-0 gap-4 overflow-hidden">
+        <aside className="w-60 shrink-0 h-full bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-3 overflow-y-auto">
           <span className="text-xs font-bold uppercase tracking-wider text-white">
             STOCK VALUE
           </span>
@@ -510,8 +529,11 @@ export default function Home() {
               externalFiltersActive={scope !== "all"}
               castingRateInputs={castingRateInputs}
               lockedCostIds={lockedCostIds}
+              bomIdOptionsById={bomIdOptionsById}
+              onSelectBomId={handleSelectBomId}
               usdInrRate={usdInrRate}
               onRefreshRate={refreshRate}
+              hiddenColumns={["BOM ID"]}
             />
             <GMDUpdateTable
               headers={headers}
@@ -524,6 +546,8 @@ export default function Home() {
               categoryOptions={enhancedCategoryOptions}
               uniqueKeyColumns={["ERP ITEM CODE"]}
               lockedCostIds={lockedCostIds}
+              bomIdOptionsById={bomIdOptionsById}
+              onSelectBomId={handleSelectBomId}
               usdInrRate={usdInrRate}
               onRefreshRate={refreshRate}
             />

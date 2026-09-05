@@ -61,6 +61,53 @@ export async function POST() {
 
       mapped.orderList = matchOrderLink(mapped.partyOrderNo, contractLinkMap);
 
+      // Build update payload; preserve manual State/UTILITY when sheet is blank
+      const updateData: Record<string, unknown> = {
+        financialYear: mapped.financialYear,
+        partyName: mapped.partyName,
+        erpPartyName: mapped.erpPartyName,
+        date: mapped.date,
+        partyOrderNo: mapped.partyOrderNo,
+        partyDate: mapped.partyDate,
+        quantity: mapped.quantity,
+        uom: mapped.uom,
+        value: mapped.value,
+        grossTotalInvoiceValue: mapped.grossTotalInvoiceValue,
+        lrNoDt: mapped.lrNoDt,
+        deliveryDestination: mapped.deliveryDestination,
+        consigneeAddress: mapped.consigneeAddress,
+        consigneeName: mapped.consigneeName,
+        erpContractNo: mapped.erpContractNo,
+        erpItemCode: mapped.erpItemCode,
+        typeOfValve: mapped.typeOfValve,
+        sizeOfValve: mapped.sizeOfValve,
+        classOfValve: mapped.classOfValve,
+        sparesType: mapped.sparesType,
+        moc: mapped.moc,
+        orderCopy: mapped.orderCopy,
+        invoice: mapped.invoice,
+        inspectionReport: mapped.inspectionReport,
+        performanceCertificate: mapped.performanceCertificate,
+        servicePeriodComplete: mapped.servicePeriodComplete,
+        warrantyValidTillAsPerContract: mapped.warrantyValidTillAsPerContract,
+        warrantyValidNot: mapped.warrantyValidNot,
+        bgNo: mapped.bgNo,
+        pbgValidTill: mapped.pbgValidTill,
+        asPerOrderWarrantyPeriod: mapped.asPerOrderWarrantyPeriod,
+        pbgClaimTill: mapped.pbgClaimTill,
+        pbgAmount: mapped.pbgAmount,
+        warrantyExpDateAsPerInv: mapped.warrantyExpDateAsPerInv,
+        partyMailAddress: mapped.partyMailAddress,
+        orderList: mapped.orderList,
+        syncedAt,
+      };
+      if (mapped.state != null && String(mapped.state).trim() !== "") {
+        updateData.state = mapped.state;
+      }
+      if (mapped.utility != null && String(mapped.utility).trim() !== "") {
+        updateData.utility = mapped.utility;
+      }
+
       await prisma.supplyHistoryItem.upsert({
         where: {
           invoiceNo_itemName: {
@@ -68,47 +115,7 @@ export async function POST() {
             itemName: mapped.itemName,
           },
         },
-        update: {
-          financialYear: mapped.financialYear,
-          partyName: mapped.partyName,
-          erpPartyName: mapped.erpPartyName,
-          date: mapped.date,
-          partyOrderNo: mapped.partyOrderNo,
-          partyDate: mapped.partyDate,
-          quantity: mapped.quantity,
-          uom: mapped.uom,
-          value: mapped.value,
-          grossTotalInvoiceValue: mapped.grossTotalInvoiceValue,
-          lrNoDt: mapped.lrNoDt,
-          deliveryDestination: mapped.deliveryDestination,
-          consigneeAddress: mapped.consigneeAddress,
-          consigneeName: mapped.consigneeName,
-          erpContractNo: mapped.erpContractNo,
-          erpItemCode: mapped.erpItemCode,
-          typeOfValve: mapped.typeOfValve,
-          sizeOfValve: mapped.sizeOfValve,
-          classOfValve: mapped.classOfValve,
-          sparesType: mapped.sparesType,
-          moc: mapped.moc,
-          orderCopy: mapped.orderCopy,
-          invoice: mapped.invoice,
-          inspectionReport: mapped.inspectionReport,
-          state: mapped.state,
-          utility: mapped.utility,
-          performanceCertificate: mapped.performanceCertificate,
-          servicePeriodComplete: mapped.servicePeriodComplete,
-          warrantyValidTillAsPerContract: mapped.warrantyValidTillAsPerContract,
-          warrantyValidNot: mapped.warrantyValidNot,
-          bgNo: mapped.bgNo,
-          pbgValidTill: mapped.pbgValidTill,
-          asPerOrderWarrantyPeriod: mapped.asPerOrderWarrantyPeriod,
-          pbgClaimTill: mapped.pbgClaimTill,
-          pbgAmount: mapped.pbgAmount,
-          warrantyExpDateAsPerInv: mapped.warrantyExpDateAsPerInv,
-          partyMailAddress: mapped.partyMailAddress,
-          orderList: mapped.orderList,
-          syncedAt,
-        },
+        update: updateData,
         create: mapped,
       });
       upserted++;

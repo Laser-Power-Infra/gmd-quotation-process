@@ -5,6 +5,8 @@ import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
 import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
+import { toast } from "sonner";
+import { selectContractReviewBomIdAction } from "@/app/actions";
 
 interface ContractReviewData {
   headers: string[];
@@ -12,6 +14,7 @@ interface ContractReviewData {
   ids: string[];
   totalRows: number;
   syncedAt: string | null;
+  bomIdOptions?: Record<string, string[]>;
 }
 
 type BalBillFilter = "all" | "yes" | "no";
@@ -23,11 +26,12 @@ function isZeroBal(value: unknown): boolean {
   return !isNaN(n) && n === 0;
 }
 
-const ITEM_IDX = 15;
-const SIZE_IDX = 17;
-const PN_IDX = 18;
+const ITEM_IDX = 16;
+const SIZE_IDX = 18;
+const PN_IDX = 19;
 const RATE_IDX = 5;
-const MC_QTY_IDX = 9;
+const MC_QTY_IDX = 10;
+const BOM_ID_IDX = 6;
 
 interface TileOption {
   value: string;
@@ -77,6 +81,9 @@ export default function ContractReviewPage() {
   const [tileItem, setTileItem] = useState("");
   const [tileSize, setTileSize] = useState("");
   const [tilePn, setTilePn] = useState("");
+  const [bomIdOptionsById, setBomIdOptionsById] = useState<
+    Record<string, string[]>
+  >({});
 
   const STATUS_OPTIONS = [
     "Blanks",
@@ -99,11 +106,35 @@ export default function ContractReviewPage() {
       }
       const json = await res.json();
       setData(json);
+      if (json.bomIdOptions) setBomIdOptionsById(json.bomIdOptions);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const handleSelectBomId = useCallback((id: string, bomId: string | null) => {
+    toast.promise(selectContractReviewBomIdAction(id, bomId), {
+      loading: "Saving BOM ID...",
+      success: (res) => {
+        if (res?.success) {
+          setData((prev) => {
+            if (!prev) return prev;
+            const rows = prev.rows.map((row, i) => {
+              if (prev.ids[i] !== id) return row;
+              const next = [...row];
+              next[BOM_ID_IDX] = bomId ?? "";
+              return next;
+            });
+            return { ...prev, rows };
+          });
+          return "BOM ID saved";
+        }
+        return res?.error || "Failed to save BOM ID";
+      },
+      error: (err) => err || "Failed to save BOM ID",
+    });
   }, []);
 
   const handleSync = useCallback(async () => {
@@ -249,7 +280,7 @@ export default function ContractReviewPage() {
 
   if (loading) {
     return (
-      <main className="h-screen flex flex-col bg-background">
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader title="CONTRACT REVIEW" totalRows={0} />
           <GMDUpdateSkeleton />
@@ -260,7 +291,7 @@ export default function ContractReviewPage() {
 
   if (error && !data) {
     return (
-      <main className="h-screen flex flex-col bg-background">
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader title="CONTRACT REVIEW" totalRows={0} />
           <ErrorState message={error} onRetry={fetchData} />
@@ -270,7 +301,7 @@ export default function ContractReviewPage() {
   }
 
   return (
-    <main className="h-screen flex flex-col bg-background">
+    <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
       <div className="flex-1 flex p-6 min-h-0 gap-4">
         <aside className="w-64 shrink-0 h-fit bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-4">
           <span className="text-xs font-bold uppercase tracking-wider text-white">
@@ -402,6 +433,8 @@ export default function ContractReviewPage() {
               externalFiltersActive={
                 hasTileFilter || balBillFilter !== "all" || statusFilter !== "all"
               }
+              bomIdOptionsById={bomIdOptionsById}
+              onSelectBomId={handleSelectBomId}
               onReset={() => {
                 setTileItem("");
                 setTileSize("");
@@ -409,7 +442,7 @@ export default function ContractReviewPage() {
                 setBalBillFilter("all");
                 setStatusFilter("all");
               }}
-              hiddenColumns={["BAL BILL AG MC", "JOB Code"]}
+              hiddenColumns={["BAL BILL AG MC", "JOB Code","MC QTY", "FREE STOCK","FINAL REQ","BAL BILL AG CONT"]}
             />
           </div>
         </div>

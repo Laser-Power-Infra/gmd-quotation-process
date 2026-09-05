@@ -31,7 +31,6 @@ const DISPLAY_HEADERS = <const>[
   "Size",
   "CLASS OF VALVE",
   "SPARES (TYPE)",
-  "ORDER COPY",
   "INVOICE",
   "INSPECTION REPORT",
   "State",

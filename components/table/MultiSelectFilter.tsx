@@ -13,6 +13,7 @@ interface MultiSelectFilterProps {
   cascadedOptions: string[];
   selected: string[];
   onChange: (values: string[]) => void;
+  counts?: Record<string, number>;
   includeBlank?: boolean;
   searchPlaceholder?: string;
   className?: string;
@@ -26,6 +27,7 @@ export default function MultiSelectFilter({
   cascadedOptions,
   selected,
   onChange,
+  counts,
   includeBlank = false,
   searchPlaceholder,
   className,
@@ -126,11 +128,12 @@ export default function MultiSelectFilter({
                     onChange={() => toggle(BLANK)}
                     className="h-3 w-3 rounded text-blue-600 focus:ring-blue-500 border-border cursor-pointer"
                   />
-                  <span className="truncate">(Blank)</span>
+                  <span className="truncate flex-1">(Blank)</span>
                 </label>
               )}
               {visibleOptions.map((opt) => {
                 const isChecked = selected.includes(opt);
+                const count = counts?.[opt];
                 return (
                   <label
                     key={opt}
@@ -142,7 +145,12 @@ export default function MultiSelectFilter({
                       onChange={() => toggle(opt)}
                       className="h-3 w-3 rounded text-blue-600 focus:ring-blue-500 border-border cursor-pointer"
                     />
-                    <span className="truncate">{opt}</span>
+                    <span className="truncate flex-1">{opt}</span>
+                    {count !== undefined && (
+                      <span className="text-[9px] text-muted-foreground font-semibold shrink-0 ml-1">
+                        ({count})
+                      </span>
+                    )}
                   </label>
                 );
               })}

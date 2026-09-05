@@ -1479,6 +1479,64 @@ export async function updateGMDUsdCostAction(id: string, usdCost: string | null)
   }
 }
 
+export async function selectGMDUpdateBomIdAction(
+  id: string,
+  bomId: string | null,
+) {
+  "use server";
+  try {
+    const item = await prisma.gMDUpdateItem.findUnique({
+      where: { id },
+      select: { erpItemCode: true },
+    });
+    if (!item) return { success: false, error: "Item not found." };
+    const value = bomId?.trim() || null;
+    if (value) {
+      const ids = await getDistinctBomIds(item.erpItemCode ?? "");
+      if (!ids.includes(value)) {
+        return { success: false, error: "Selected BOM ID is not in available options." };
+      }
+    }
+    await prisma.gMDUpdateItem.update({
+      where: { id },
+      data: { bomId: value },
+    });
+    return { success: true, data: { id, bomId: value } };
+  } catch (error: any) {
+    console.error("Error selecting GMD BOM ID:", error);
+    return { success: false, error: error.message || "Failed to select BOM ID." };
+  }
+}
+
+export async function selectContractReviewBomIdAction(
+  id: string,
+  bomId: string | null,
+) {
+  "use server";
+  try {
+    const item = await prisma.contractReview.findUnique({
+      where: { id },
+      select: { itemCode: true },
+    });
+    if (!item) return { success: false, error: "Item not found." };
+    const value = bomId?.trim() || null;
+    if (value) {
+      const ids = await getDistinctBomIds(item.itemCode);
+      if (!ids.includes(value)) {
+        return { success: false, error: "Selected BOM ID is not in available options." };
+      }
+    }
+    await prisma.contractReview.update({
+      where: { id },
+      data: { bomId: value },
+    });
+    return { success: true, data: { id, bomId: value } };
+  } catch (error: any) {
+    console.error("Error selecting ContractReview BOM ID:", error);
+    return { success: false, error: error.message || "Failed to select BOM ID." };
+  }
+}
+
 export async function updateSupplyHistoryFieldAction(
   id: string,
   field: string,

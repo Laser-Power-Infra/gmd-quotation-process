@@ -1,5 +1,5 @@
 import React from "react";
-import { Bell, Search } from "lucide-react";
+import { Bell } from "lucide-react";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 
@@ -60,15 +60,6 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-6">
-          <div className="relative w-64">
-            <Search className="absolute top-2.5 left-3 h-3.5 w-3.5 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Global search..."
-               className="w-full rounded-full border border-border bg-muted py-1.5 pr-4 pl-9 text-xs text-foreground placeholder-muted-foreground outline-none transition focus:border-ring"
-            />
-          </div>
-
           <div className="flex items-center gap-4">
             <button className="relative p-1 text-muted-foreground hover:text-foreground">
               <Bell className="h-5 w-5 stroke-[1.75]" />

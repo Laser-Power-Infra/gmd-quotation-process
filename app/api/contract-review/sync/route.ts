@@ -95,16 +95,20 @@ export async function POST() {
 
       const update = { ...mapped, syncedAt };
 
-      await prisma.contractReview.upsert({
+      const existing = await prisma.contractReview.findFirst({
         where: {
-          itemCode_contractNo: {
-            itemCode: mapped.itemCode,
-            contractNo: mapped.contractNo,
-          },
+          itemCode: mapped.itemCode,
+          contractNo: mapped.contractNo,
         },
-        update,
-        create: update,
       });
+      if (existing) {
+        await prisma.contractReview.update({
+          where: { id: existing.id },
+          data: update,
+        });
+      } else {
+        await prisma.contractReview.create({ data: update });
+      }
       upserted++;
     }
 

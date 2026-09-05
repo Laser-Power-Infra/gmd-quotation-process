@@ -5,6 +5,7 @@ export const CONTRACT_REVIEW_HEADERS = [
   "ITEM_NAME",
   "PARTY ITEM NAME",
   "RATE",
+  "BOM ID",
   // "CV",
   // "VA %",
   "ORDER QTY",
@@ -236,10 +237,12 @@ export function dbContractReviewToRow(item: {
   balDiVal: string | null;
   diVal: string | null;
   icQty: string | null;
+  bomId: string | null;
 }): unknown[] {
   return [
     item.contractNo, item.itemCode, item.mcNo,
     item.itemName, item.partyItemName, item.rate,
+    item.bomId,
     // item.cv, item.vaPercent, 
     item.orderQty,
     item.freeStock, item.finalReq, item.mcQty,

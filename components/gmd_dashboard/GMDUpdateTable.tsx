@@ -198,6 +198,8 @@ interface GMDUpdateTableProps {
     onChange: (value: string) => void;
   }[];
   lockedCostIds?: ReadonlySet<string>;
+  bomIdOptionsById?: Record<string, string[]>;
+  onSelectBomId?: (id: string, bomId: string | null) => void;
   filterState?: {
     columnFilters: Record<string, string>;
     multiFilters: Record<string, string[]>;
@@ -217,6 +219,7 @@ interface GMDUpdateTableProps {
     onPageChange: (page: number) => void;
     onPageSizeChange: (size: number) => void;
   };
+  fullHeight?: boolean;
 }
 
 export default function GMDUpdateTable({
@@ -239,8 +242,11 @@ export default function GMDUpdateTable({
   onRefreshRate,
   onReset,
   externalFiltersActive,
-  castingRateInputs,
+castingRateInputs,
   lockedCostIds,
+  bomIdOptionsById,
+  onSelectBomId,
+  fullHeight,
   filterState,
   filterActions,
 }: GMDUpdateTableProps) {
@@ -651,7 +657,7 @@ export default function GMDUpdateTable({
   }
 
   return (
-    <div className="flex flex-col w-full max-w-full min-w-0 bg-white border border-[#e1e6eb] rounded-lg shadow-sm">
+    <div className={`flex flex-col w-full max-w-full min-w-0 bg-white border border-[#e1e6eb] rounded-lg shadow-sm ${fullHeight ? "flex-1 min-h-0 overflow-hidden h-full" : ""}`}>
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-[#e1e6eb] bg-[#f8f9fa]">
         <div className="flex items-center gap-2">
@@ -681,7 +687,7 @@ export default function GMDUpdateTable({
             </span>
           )}
           {castingRateInputs && castingRateInputs.length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-[#0a2540]/60">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-black">
               <span className="text-[10px] uppercase tracking-wider">
                 Cast Rates
               </span>
@@ -690,14 +696,14 @@ export default function GMDUpdateTable({
                   key={key}
                   className="flex items-center gap-1 bg-white border border-[#e1e6eb] rounded px-1.5 py-0.5 cursor-text"
                 >
-                  <span className="text-[9px] text-[#0a2540]/50">{label}</span>
+                  <span className="text-[9px] text-black/80">{label}</span>
                   <input
                     type="text"
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
                     onClick={(e) => e.stopPropagation()}
                     placeholder="0"
-                    className="w-14 text-[10px] bg-transparent outline-none text-[#0a2540] placeholder:text-[#0a2540]/30"
+                    className="w-14 text-[10px] bg-transparent outline-none text-black placeholder:text-[#0a2540]/70"
                   />
                 </label>
               ))}
@@ -756,7 +762,7 @@ export default function GMDUpdateTable({
       </div>
 
       {/* Scrollable Table */}
-      <div className="overflow-x-auto overflow-y-auto w-full min-w-0 max-h-[50vh]">
+      <div className={`w-full min-w-0 ${fullHeight ? "flex-1 min-h-0 overflow-auto" : "overflow-x-auto overflow-y-auto max-h-[50vh]"}`}>
         {" "}
         <table
           className="w-full text-left"
@@ -944,7 +950,37 @@ export default function GMDUpdateTable({
                     const isCellEditable =
                       editable &&
                       (!editableColumns || editableColumns.includes(header));
-                    if (isCellEditable) {
+                    if (header === "BOM ID") {
+                      const options = bomIdOptionsById?.[id] ?? [];
+                      cellContent = (
+                        <select
+                          value={display}
+                          onChange={(e) =>
+                            onSelectBomId?.(id, e.target.value || null)
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-full text-xs bg-transparent border-none outline-none cursor-pointer"
+                          title={
+                            options.length
+                              ? options.join(", ")
+                              : "No BOM exists"
+                          }
+                        >
+                          <option value="">-- select --</option>
+                          {options.length === 0 ? (
+                            <option value="" disabled>
+                              No BOM exists
+                            </option>
+                          ) : (
+                            options.map((b) => (
+                              <option key={b} value={b}>
+                                {b}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                      );
+                    } else if (isCellEditable) {
                       if (header === "USD cost") {
                         cellContent = (
                           <input
