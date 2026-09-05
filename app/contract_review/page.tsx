@@ -6,8 +6,14 @@ import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
 import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
-import { selectContractReviewBomIdAction, updateContractReviewFieldAction } from "@/app/actions";
-import { CONTRACT_REVIEW_HEADER_TO_DB_FIELD, CONTRACT_REVIEW_HEADERS } from "@/lib/gmd_lib/contract-review-columns";
+import {
+  selectContractReviewBomIdAction,
+  updateContractReviewFieldAction,
+} from "@/app/actions";
+import {
+  CONTRACT_REVIEW_HEADER_TO_DB_FIELD,
+  CONTRACT_REVIEW_HEADERS,
+} from "@/lib/gmd_lib/contract-review-columns";
 
 interface ContractReviewData {
   headers: string[];
@@ -98,11 +104,7 @@ function matchesSidebar(
   ) {
     return false;
   }
-  if (
-    exclude !== "pn" &&
-    pn &&
-    String(row[PN_IDX] ?? "").trim() !== pn
-  ) {
+  if (exclude !== "pn" && pn && String(row[PN_IDX] ?? "").trim() !== pn) {
     return false;
   }
   return true;
@@ -158,8 +160,12 @@ export default function ContractReviewPage() {
   const [bomIdOptionsById, setBomIdOptionsById] = useState<
     Record<string, string[]>
   >({});
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
-  const [multiFilters, setMultiFilters] = useState<Record<string, string[]>>({});
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
+    {},
+  );
+  const [multiFilters, setMultiFilters] = useState<Record<string, string[]>>(
+    {},
+  );
   const [globalSearch, setGlobalSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -305,26 +311,29 @@ export default function ContractReviewPage() {
       if (!header) return;
       const field = CONTRACT_REVIEW_HEADER_TO_DB_FIELD[header];
       if (!field) return;
-      await toast.promise(updateContractReviewFieldAction(id, field, value || null), {
-        loading: `Updating ${header}...`,
-        success: (res) => {
-          if (res?.success) {
-            setData((prev) => {
-              if (!prev) return prev;
-              const rows = prev.rows.map((row, i) => {
-                if (prev.ids[i] !== id) return row;
-                const next = [...row];
-                next[colIndex] = value;
-                return next;
+      await toast.promise(
+        updateContractReviewFieldAction(id, field, value || null),
+        {
+          loading: `Updating ${header}...`,
+          success: (res) => {
+            if (res?.success) {
+              setData((prev) => {
+                if (!prev) return prev;
+                const rows = prev.rows.map((row, i) => {
+                  if (prev.ids[i] !== id) return row;
+                  const next = [...row];
+                  next[colIndex] = value;
+                  return next;
+                });
+                return { ...prev, rows };
               });
-              return { ...prev, rows };
-            });
-            return `${header} updated`;
-          }
-          return res?.error || `Failed to update ${header}`;
+              return `${header} updated`;
+            }
+            return res?.error || `Failed to update ${header}`;
+          },
+          error: (err) => err || `Failed to update ${header}`,
         },
-        error: (err) => err || `Failed to update ${header}`,
-      });
+      );
     },
     [headers],
   );
@@ -333,9 +342,7 @@ export default function ContractReviewPage() {
     if (!data) return {};
     const items = [
       ...new Set(
-        data.rows
-          .map((r) => String(r[ITEM_IDX] ?? "").trim())
-          .filter(Boolean),
+        data.rows.map((r) => String(r[ITEM_IDX] ?? "").trim()).filter(Boolean),
       ),
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     const result: Record<string, string[]> = {};
@@ -830,7 +837,6 @@ export default function ContractReviewPage() {
               {rateMcCont.count} rows of {tileRowsCount}
             </span>
           </div>
-          
         </aside>
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
           <GMDUpdateHeader
@@ -854,7 +860,9 @@ export default function ContractReviewPage() {
               categoryOptions={categoryOptions}
               onCellUpdate={handleCellUpdate}
               externalFiltersActive={
-                hasTileFilter || balBillFilter !== "all" || statusFilter !== "all"
+                hasTileFilter ||
+                balBillFilter !== "all" ||
+                statusFilter !== "all"
               }
               filterState={filterState}
               filterActions={filterActions}
@@ -867,7 +875,30 @@ export default function ContractReviewPage() {
                 setBalBillFilter("all");
                 setStatusFilter("all");
               }}
-              hiddenColumns={["VA %","CV"]}
+              hiddenColumns={[
+                "VA %",
+                "CV",
+                "FREE STOCK",
+                "FINAL REQ",
+                "MC QTY",
+                "Balance mc",
+                "PROD ORD QTY",
+                "BALANCE TO PROD ORD",
+                "BALANCE TO PROD ENT",
+                "DI QTY",
+                "BAL DI QTY",
+                "BAL MC VAL",
+                "BAL PROD ORD VAL",
+                "BAL TO PROD ORD ENT VAL",
+                "BAL BILL AG CONT VAL",
+                "BAL BILL AG MC VAL",
+                "BAL DI VAL",
+                "DI VAL",
+                "ERP PARTY NAME FROM GMD SUPPLY HISTORY",
+                "JOB Code",
+                "BAL BILL AG MC",
+                "ic qty",
+              ]}
             />
           </div>
         </div>
