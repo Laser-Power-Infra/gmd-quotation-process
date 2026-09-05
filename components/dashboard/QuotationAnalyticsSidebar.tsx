@@ -4,12 +4,20 @@ import { useMemo, useState } from "react";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { selectAllEnquiries, selectAllItems } from "@/lib/enquiriesSlice";
 import { toggleAnalyticsSidebar } from "@/lib/uiSlice";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import MultiSelectFilter from "@/components/table/MultiSelectFilter";
 import { X, Filter, IndianRupee } from "lucide-react";
 
 function sortStrings(arr: string[]): string[] {
-  return [...arr].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return [...arr].sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true }),
+  );
 }
 
 export default function QuotationAnalyticsSidebar() {
@@ -20,7 +28,9 @@ export default function QuotationAnalyticsSidebar() {
 
   const [selectedPartyNames, setSelectedPartyNames] = useState<string[]>([]);
   const [selectedUtilities, setSelectedUtilities] = useState<string[]>([]);
-  const [selectedEnquiryTypes, setSelectedEnquiryTypes] = useState<string[]>([]);
+  const [selectedEnquiryTypes, setSelectedEnquiryTypes] = useState<string[]>(
+    [],
+  );
   const [selectedStates, setSelectedStates] = useState<string[]>([]);
 
   // All unique options (static) derived from current enquiries
@@ -47,12 +57,34 @@ export default function QuotationAnalyticsSidebar() {
   // but include the other 3 filters — symmetric cascading
   const cascaded = useMemo(() => {
     // helper: does enquiry pass filters except the one field we are computing?
-    const getCascadedFor = (exclude: "party" | "utility" | "enquiryType" | "state"): string[] => {
+    const getCascadedFor = (
+      exclude: "party" | "utility" | "enquiryType" | "state",
+    ): string[] => {
       const filtered = enquiries.filter((e) => {
-        if (exclude !== "party" && selectedPartyNames.length > 0 && !selectedPartyNames.includes(e.partyName)) return false;
-        if (exclude !== "utility" && selectedUtilities.length > 0 && !selectedUtilities.includes(e.utility ?? "")) return false;
-        if (exclude !== "enquiryType" && selectedEnquiryTypes.length > 0 && !selectedEnquiryTypes.includes(e.enquiryType ?? "")) return false;
-        if (exclude !== "state" && selectedStates.length > 0 && !selectedStates.includes(e.state ?? "")) return false;
+        if (
+          exclude !== "party" &&
+          selectedPartyNames.length > 0 &&
+          !selectedPartyNames.includes(e.partyName)
+        )
+          return false;
+        if (
+          exclude !== "utility" &&
+          selectedUtilities.length > 0 &&
+          !selectedUtilities.includes(e.utility ?? "")
+        )
+          return false;
+        if (
+          exclude !== "enquiryType" &&
+          selectedEnquiryTypes.length > 0 &&
+          !selectedEnquiryTypes.includes(e.enquiryType ?? "")
+        )
+          return false;
+        if (
+          exclude !== "state" &&
+          selectedStates.length > 0 &&
+          !selectedStates.includes(e.state ?? "")
+        )
+          return false;
         return true;
       });
 
@@ -74,20 +106,48 @@ export default function QuotationAnalyticsSidebar() {
       enquiryTypes: getCascadedFor("enquiryType"),
       states: getCascadedFor("state"),
     };
-  }, [enquiries, selectedPartyNames, selectedUtilities, selectedEnquiryTypes, selectedStates]);
+  }, [
+    enquiries,
+    selectedPartyNames,
+    selectedUtilities,
+    selectedEnquiryTypes,
+    selectedStates,
+  ]);
 
   // Filtered enquiries by analytics sidebar (all 4 filters ANDed)
   const filteredEnquiries = useMemo(() => {
     return enquiries.filter((e) => {
-      if (selectedPartyNames.length > 0 && !selectedPartyNames.includes(e.partyName)) return false;
-      if (selectedUtilities.length > 0 && !selectedUtilities.includes(e.utility ?? "")) return false;
-      if (selectedEnquiryTypes.length > 0 && !selectedEnquiryTypes.includes(e.enquiryType ?? "")) return false;
-      if (selectedStates.length > 0 && !selectedStates.includes(e.state ?? "")) return false;
+      if (
+        selectedPartyNames.length > 0 &&
+        !selectedPartyNames.includes(e.partyName)
+      )
+        return false;
+      if (
+        selectedUtilities.length > 0 &&
+        !selectedUtilities.includes(e.utility ?? "")
+      )
+        return false;
+      if (
+        selectedEnquiryTypes.length > 0 &&
+        !selectedEnquiryTypes.includes(e.enquiryType ?? "")
+      )
+        return false;
+      if (selectedStates.length > 0 && !selectedStates.includes(e.state ?? ""))
+        return false;
       return true;
     });
-  }, [enquiries, selectedPartyNames, selectedUtilities, selectedEnquiryTypes, selectedStates]);
+  }, [
+    enquiries,
+    selectedPartyNames,
+    selectedUtilities,
+    selectedEnquiryTypes,
+    selectedStates,
+  ]);
 
-  const filteredIds = useMemo(() => new Set(filteredEnquiries.map((e) => e.id)), [filteredEnquiries]);
+  const filteredIds = useMemo(
+    () => new Set(filteredEnquiries.map((e) => e.id)),
+    [filteredEnquiries],
+  );
 
   const analyticsItems = useMemo(() => {
     // Items whose parent enquiry matches analytics filters
@@ -130,17 +190,19 @@ export default function QuotationAnalyticsSidebar() {
 
   return (
     <aside
-      className={`shrink-0 flex flex-col gap-3 lg:sticky lg:top-[64px] overflow-visible pr-0 lg:pr-1 transition-all duration-300 ease-in-out ${
+      className={`shrink-0 flex flex-col gap-3 lg:sticky lg:top-16 overflow-visible pr-0 lg:pr-1 transition-all duration-300 ease-in-out ${
         isCollapsed
           ? "lg:w-0 lg:max-w-0 lg:opacity-0 lg:-ml-4 lg:overflow-hidden lg:pointer-events-none hidden lg:flex"
-          : "w-full lg:w-[320px] xl:w-[340px] opacity-100"
+          : "w-full lg:w-[320px] xl:w-85 opacity-100"
       }`}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-semibold text-foreground">Analytics Filters</h2>
+          <h2 className="text-sm font-semibold text-foreground">
+            Analytics Filters
+          </h2>
         </div>
         {hasActiveAnalyticsFilters && (
           <button
@@ -157,8 +219,12 @@ export default function QuotationAnalyticsSidebar() {
       {/* Party Name */}
       <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
-          <CardTitle className="text-[12px] font-semibold">Party Name</CardTitle>
-          <CardDescription className="text-[11px]">Filter by customer</CardDescription>
+          <CardTitle className="text-[12px] font-semibold">
+            Party Name
+          </CardTitle>
+          <CardDescription className="text-[11px]">
+            Filter by customer
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <MultiSelectFilter
@@ -178,7 +244,9 @@ export default function QuotationAnalyticsSidebar() {
       <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold">Utility</CardTitle>
-          <CardDescription className="text-[11px]">Filter by utility</CardDescription>
+          <CardDescription className="text-[11px]">
+            Filter by utility
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <MultiSelectFilter
@@ -197,8 +265,12 @@ export default function QuotationAnalyticsSidebar() {
       {/* Enquiry Type */}
       <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
-          <CardTitle className="text-[12px] font-semibold">Enquiry Type</CardTitle>
-          <CardDescription className="text-[11px]">Filter by enquiry type</CardDescription>
+          <CardTitle className="text-[12px] font-semibold">
+            Enquiry Type
+          </CardTitle>
+          <CardDescription className="text-[11px]">
+            Filter by enquiry type
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <MultiSelectFilter
@@ -218,7 +290,9 @@ export default function QuotationAnalyticsSidebar() {
       <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold">State</CardTitle>
-          <CardDescription className="text-[11px]">Filter by state</CardDescription>
+          <CardDescription className="text-[11px]">
+            Filter by state
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <MultiSelectFilter
@@ -235,17 +309,21 @@ export default function QuotationAnalyticsSidebar() {
       </Card>
 
       {/* KPI Card - Total Value incl GST */}
-      <Card size="sm" className="shadow-sm bg-linear-to-br from-slate-50 to-white border-slate-200">
+      <Card
+        size="sm"
+        className="shadow-sm bg-linear-to-br from-slate-50 to-white border-slate-200"
+      >
         <CardHeader className="pb-2">
           <CardTitle className="text-[12px] font-semibold flex items-center gap-1.5">
             <IndianRupee className="h-4 w-4 text-emerald-600" />
             Total Value (incl. GST)
           </CardTitle>
-         
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <div className="flex items-baseline gap-1">
-            <span className="text-lg font-bold tracking-tight text-foreground">₹ {formattedSum}</span>
+            <span className="text-lg font-bold tracking-tight text-foreground">
+              ₹ {formattedSum}
+            </span>
           </div>
           <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
             <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 font-medium">
@@ -256,15 +334,23 @@ export default function QuotationAnalyticsSidebar() {
             </span>
             {hasActiveAnalyticsFilters && (
               <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 px-2 py-0.5 font-medium">
-                {selectedPartyNames.length + selectedUtilities.length + selectedEnquiryTypes.length + selectedStates.length} filters
+                {selectedPartyNames.length +
+                  selectedUtilities.length +
+                  selectedEnquiryTypes.length +
+                  selectedStates.length}{" "}
+                filters
               </span>
             )}
           </div>
           {!hasActiveAnalyticsFilters && (
-            <p className="text-[11px] text-muted-foreground italic">Showing total for all dockets. Apply filters above to narrow.</p>
+            <p className="text-[11px] text-muted-foreground italic">
+              Showing total for all dockets. Apply filters above to narrow.
+            </p>
           )}
           {hasActiveAnalyticsFilters && analyticsItems.length === 0 && (
-            <p className="text-[11px] text-amber-600">No items match current filter combination.</p>
+            <p className="text-[11px] text-amber-600">
+              No items match current filter combination.
+            </p>
           )}
         </CardContent>
       </Card>

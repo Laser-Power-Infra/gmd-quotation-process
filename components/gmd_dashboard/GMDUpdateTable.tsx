@@ -181,6 +181,7 @@ interface GMDUpdateTableProps {
   editable?: boolean;
   editableColumns?: string[];
   hiddenFilters?: string[];
+  hiddenColumns?: string[];
   categoryOptions?: Record<string, string[]>;
   uniqueKeyColumns?: string[];
   fixedDropdownOptions?: Record<string, string[]>;
@@ -189,6 +190,14 @@ interface GMDUpdateTableProps {
   usdInrRate?: number | null;
   onRefreshRate?: () => void;
   onReset?: () => void;
+  externalFiltersActive?: boolean;
+  castingRateInputs?: {
+    key: string;
+    label: string;
+    value: string;
+    onChange: (value: string) => void;
+  }[];
+  lockedCostIds?: ReadonlySet<string>;
   filterState?: {
     columnFilters: Record<string, string>;
     multiFilters: Record<string, string[]>;
@@ -220,6 +229,7 @@ export default function GMDUpdateTable({
   editable,
   editableColumns,
   hiddenFilters,
+  hiddenColumns,
   categoryOptions,
   uniqueKeyColumns,
   fixedDropdownOptions,
@@ -228,6 +238,9 @@ export default function GMDUpdateTable({
   usdInrRate,
   onRefreshRate,
   onReset,
+  externalFiltersActive,
+  castingRateInputs,
+  lockedCostIds,
   filterState,
   filterActions,
 }: GMDUpdateTableProps) {
@@ -270,6 +283,17 @@ export default function GMDUpdateTable({
     : setLocalPageSize;
 
   const dateColIdx = useMemo(() => headers.indexOf("Date"), [headers]);
+  const hiddenSet = useMemo(
+    () => new Set(hiddenColumns ?? []),
+    [hiddenColumns],
+  );
+  const visibleCols = useMemo(
+    () =>
+      headers
+        .map((header, idx) => ({ header, idx }))
+        .filter(({ header }) => !hiddenSet.has(header)),
+    [headers, hiddenSet],
+  );
   const dispatch = useAppDispatch();
   const [columnWidths, setColumnWidths] = useState<Record<number, number>>(
     () => {
@@ -365,6 +389,8 @@ export default function GMDUpdateTable({
     globalSearch.trim() !== "" ||
     dateFrom !== "" ||
     dateTo !== "";
+
+  const showResetFilters = hasActiveFilters || !!externalFiltersActive;
 
   const sortedWithIds = useMemo(() => {
     if (sortColumn === null) return rows.map((row, i) => ({ row, id: ids[i] }));
@@ -616,7 +642,7 @@ export default function GMDUpdateTable({
     );
   };
 
-  if (headers.length === 0) {
+  if (visibleCols.length === 0) {
     return (
       <div className="flex items-center justify-center py-20 text-xs text-muted-foreground">
         No data available
@@ -654,6 +680,29 @@ export default function GMDUpdateTable({
               )}
             </span>
           )}
+          {castingRateInputs && castingRateInputs.length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-[#0a2540]/60">
+              <span className="text-[10px] uppercase tracking-wider">
+                Cast Rates
+              </span>
+              {castingRateInputs.map(({ key, label, value, onChange }) => (
+                <label
+                  key={key}
+                  className="flex items-center gap-1 bg-white border border-[#e1e6eb] rounded px-1.5 py-0.5 cursor-text"
+                >
+                  <span className="text-[9px] text-[#0a2540]/50">{label}</span>
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={(e) => onChange(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="0"
+                    className="w-14 text-[10px] bg-transparent outline-none text-[#0a2540] placeholder:text-[#0a2540]/30"
+                  />
+                </label>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -686,7 +735,7 @@ export default function GMDUpdateTable({
               </button>
             )}
           </div>
-          {hasActiveFilters && (
+          {showResetFilters && (
             <button
               onClick={handleResetFilters}
               className="flex items-center gap-1 text-xs font-semibold text-red-800 hover:text-[#0a2540] transition-colors px-2 py-1.5 rounded hover:bg-white/80 border border-[#e1e6eb]"
@@ -718,13 +767,13 @@ export default function GMDUpdateTable({
           }}
         >
           <colgroup>
-            {headers.map((_, i) => (
-              <col key={i} style={{ width: `${columnWidths[i]}px` }} />
+            {visibleCols.map(({ idx }) => (
+              <col key={idx} style={{ width: `${columnWidths[idx]}px` }} />
             ))}
           </colgroup>
           <thead className="sticky top-0 z-20">
             <tr className="bg-[#f4f6f8]">
-              {headers.map((header, idx) => {
+              {visibleCols.map(({ header, idx }) => {
                 const isSorted = sortColumn === idx;
                 const uniqueVals = cascadedFilterOptions[header] ?? [];
                 return (
@@ -872,7 +921,7 @@ export default function GMDUpdateTable({
             {paginatedWithIds.length === 0 ? (
               <tr>
                 <td
-                  colSpan={headers.length}
+                  colSpan={visibleCols.length}
                   className="h-24 text-center text-xs text-muted-foreground"
                 >
                   No matching rows
@@ -887,7 +936,7 @@ export default function GMDUpdateTable({
                   }`}
                   onClick={() => onSelect(idx)}
                 >
-                  {headers.map((header, cellIdx) => {
+                  {visibleCols.map(({ header, idx: cellIdx }) => {
                     const value = row[cellIdx];
                     const display = value != null ? String(value) : "";
 
@@ -916,23 +965,34 @@ export default function GMDUpdateTable({
                           />
                         );
                       } else if (header === "cost") {
-                        cellContent = (
-                          <input
-                            key={display + "-" + idx + "-" + cellIdx}
-                            type="text"
-                            defaultValue={display}
-                            onBlur={(e) => {
-                              if (e.target.value !== display) {
-                                handleCellUpdate(idx, cellIdx, e.target.value);
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter")
-                                (e.target as HTMLInputElement).blur();
-                            }}
-                            className="w-full text-xs bg-transparent border-none outline-none"
-                          />
-                        );
+                        if (lockedCostIds?.has(id)) {
+                          cellContent = (
+                            <span
+                              className="truncate block font-mono-md text-foreground"
+                              title={display}
+                            >
+                              {display || "—"}
+                            </span>
+                          );
+                        } else {
+                          cellContent = (
+                            <input
+                              key={display + "-" + idx + "-" + cellIdx}
+                              type="text"
+                              defaultValue={display}
+                              onBlur={(e) => {
+                                if (e.target.value !== display) {
+                                  handleCellUpdate(idx, cellIdx, e.target.value);
+                                }
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter")
+                                  (e.target as HTMLInputElement).blur();
+                              }}
+                              className="w-full text-xs bg-transparent border-none outline-none"
+                            />
+                          );
+                        }
                       } else if (header === "MAJOR MARKING") {
                         const isYes = display === "true";
                         const isNo = display === "false";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
@@ -13,7 +13,7 @@ import {
 } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
 import { FIXED_DROPDOWN_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
-import { getUsdInrRateAction } from "@/app/actions";
+import { getUsdInrRateAction, getGMDCastingRatesAction, saveGMDCastingRateAction } from "@/app/actions";
 
 interface SheetData {
   headers: string[];
@@ -23,6 +23,57 @@ interface SheetData {
 }
 
 const NEW_STATUS_COL = "NEW ITEM STATUS";
+
+type CastingKey = "DI" | "CS" | "CI" | "SS" | "Bronze";
+
+const CASTING_KEYS: CastingKey[] = ["DI", "CS", "CI", "SS", "Bronze"];
+
+const CASTING_RATE_MATCHERS: {
+  key: CastingKey;
+  l8: string[];
+  l5: string[];
+}[] = [
+  { key: "DI", l8: ["CASTING"], l5: ["DUCTILE IRON"] },
+  {
+    key: "CS",
+    l8: ["CASTING"],
+    l5: ["CARBON STEEL/CAST STEEL", "CARBIDE STEEL"],
+  },
+  { key: "CI", l8: ["CASTING"], l5: ["CAST IRON"] },
+  { key: "SS", l8: ["SS SPARES"], l5: ["STAINLESS STEEL"] },
+  { key: "Bronze", l8: ["BRONZE ITEMS"], l5: ["BRONZE/BRASS/GUN METAL"] },
+];
+
+function getCastingKey(l8: string, l5: string): CastingKey | null {
+  const a = l8.trim().toUpperCase();
+  const b = l5.trim().toUpperCase();
+  for (const m of CASTING_RATE_MATCHERS) {
+    if (m.l8.includes(a) && m.l5.includes(b)) return m.key;
+  }
+  return null;
+}
+
+function applyCastingCost(
+  items: GMDUpdateRow[],
+  rates: Record<CastingKey, string>,
+): { items: GMDUpdateRow[]; lockedIds: Set<string> } {
+  const lockedIds = new Set<string>();
+  const out = items.map((item) => {
+    const key = getCastingKey(
+      item.l8ItemCategory ?? "",
+      item.l5Material ?? "",
+    );
+    if (!key) return item;
+    const rateStr = (rates[key] ?? "").trim();
+    if (!rateStr) return item;
+    const rate = parseFloat(rateStr.replace(/,/g, ""));
+    const wgt = parseFloat(String(item.pcsWgt ?? "").replace(/,/g, ""));
+    if (isNaN(rate) || isNaN(wgt)) return item;
+    lockedIds.add(item.id);
+    return { ...item, cost: (rate * wgt).toFixed(2) };
+  });
+  return { items: out, lockedIds };
+}
 
 function rowToGMDUpdateItem(id: string, row: unknown[]): GMDUpdateRow {
   return {
@@ -65,6 +116,48 @@ export default function Home() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [categoryOptions, setCategoryOptions] = useState<Record<string, string[]>>({});
   const [usdInrRate, setUsdInrRate] = useState<number | null>(null);
+  const [castingRates, setCastingRates] = useState<Record<CastingKey, string>>({
+    DI: "",
+    CS: "",
+    CI: "",
+    SS: "",
+    Bronze: "",
+  });
+  const saveRateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleCastingRateChange = useCallback((key: string, value: string) => {
+    setCastingRates((prev) => ({ ...prev, [key]: value }));
+    if (saveRateTimer.current) clearTimeout(saveRateTimer.current);
+    saveRateTimer.current = setTimeout(() => {
+      saveGMDCastingRateAction(key, value);
+    }, 600);
+  }, []);
+
+  useEffect(() => {
+    getGMDCastingRatesAction().then((res) => {
+      if (res.success && res.data) {
+        setCastingRates((prev) => ({ ...prev, ...res.data }));
+      }
+    });
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (saveRateTimer.current) clearTimeout(saveRateTimer.current);
+    },
+    [],
+  );
+
+  const castingRateInputs = useMemo(
+    () =>
+      CASTING_KEYS.map((key) => ({
+        key,
+        label: key,
+        value: castingRates[key],
+        onChange: (value: string) => handleCastingRateChange(key, value),
+      })),
+    [castingRates, handleCastingRateChange],
+  );
 
   const refreshRate = useCallback(async () => {
     const res = await getUsdInrRateAction(true);
@@ -165,13 +258,17 @@ export default function Home() {
 
   const totalRows = allItems.length;
 
+  const processedCost = useMemo(
+    () => applyCastingCost(processedItems, castingRates),
+    [processedItems, castingRates],
+  );
   const processedItemRows = useMemo(
-    () => processedItems.map(dbItemToRow),
-    [processedItems],
+    () => processedCost.items.map(dbItemToRow),
+    [processedCost],
   );
   const processedItemIds = useMemo(
-    () => processedItems.map((i) => i.id),
-    [processedItems],
+    () => processedCost.items.map((i) => i.id),
+    [processedCost],
   );
 
   const [firstFilteredRows, setFirstFilteredRows] = useState<unknown[][]>([]);
@@ -185,13 +282,22 @@ export default function Home() {
     );
   }, [newItems, scope]);
 
+  const scopedNewCost = useMemo(
+    () => applyCastingCost(scopedNewItems, castingRates),
+    [scopedNewItems, castingRates],
+  );
   const scopedNewItemRows = useMemo(
-    () => scopedNewItems.map(dbItemToRow),
-    [scopedNewItems],
+    () => scopedNewCost.items.map(dbItemToRow),
+    [scopedNewCost],
   );
   const scopedNewItemIds = useMemo(
-    () => scopedNewItems.map((i) => i.id),
-    [scopedNewItems],
+    () => scopedNewCost.items.map((i) => i.id),
+    [scopedNewCost],
+  );
+
+  const lockedCostIds = useMemo(
+    () => new Set([...scopedNewCost.lockedIds, ...processedCost.lockedIds]),
+    [scopedNewCost, processedCost],
   );
 
   const cardStats = useMemo(() => {
@@ -401,6 +507,9 @@ export default function Home() {
               uniqueKeyColumns={["ERP ITEM CODE"]}
               onFilteredRowsChange={setFirstFilteredRows}
               onReset={() => setScope("all")}
+              externalFiltersActive={scope !== "all"}
+              castingRateInputs={castingRateInputs}
+              lockedCostIds={lockedCostIds}
               usdInrRate={usdInrRate}
               onRefreshRate={refreshRate}
             />
@@ -414,6 +523,7 @@ export default function Home() {
               editable
               categoryOptions={enhancedCategoryOptions}
               uniqueKeyColumns={["ERP ITEM CODE"]}
+              lockedCostIds={lockedCostIds}
               usdInrRate={usdInrRate}
               onRefreshRate={refreshRate}
             />

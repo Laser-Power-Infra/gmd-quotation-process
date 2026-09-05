@@ -1494,6 +1494,61 @@ export async function updateSupplyHistoryFieldAction(
   return { id, field, value };
 }
 
+export async function getGMDCastingRatesAction() {
+  "use server";
+  try {
+    const rows = await prisma.lookupOption.findMany({
+      where: { type: "GMD_CASTING_RATE" },
+    });
+    const rates: Record<string, string> = {
+      DI: "",
+      CS: "",
+      CI: "",
+      SS: "",
+      Bronze: "",
+    };
+    for (const row of rows) {
+      const eq = row.value.indexOf("=");
+      if (eq === -1) continue;
+      const key = row.value.slice(0, eq).trim();
+      if (key in rates) rates[key] = row.value.slice(eq + 1).trim();
+    }
+    return { success: true, data: rates };
+  } catch (error: any) {
+    console.error("Error fetching casting rates:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to fetch casting rates.",
+    };
+  }
+}
+
+export async function saveGMDCastingRateAction(key: string, value: string) {
+  "use server";
+  try {
+    const type = "GMD_CASTING_RATE";
+    const rowValue = `${key}=${value}`;
+    const existing = await prisma.lookupOption.findFirst({
+      where: { type, value: { startsWith: `${key}=` } },
+    });
+    if (existing) {
+      await prisma.lookupOption.update({
+        where: { id: existing.id },
+        data: { value: rowValue },
+      });
+    } else {
+      await prisma.lookupOption.create({ data: { type, value: rowValue } });
+    }
+    return { success: true };
+  } catch (error: any) {
+    console.error("Error saving casting rate:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to save casting rate.",
+    };
+  }
+}
+
 // Match each EnquiryItem's erpItemCode against ContractReview.itemCode and
 // populate contractReviewRate with the rate from the most-recent contract row.
 export async function fetchContractReviewRatesAction(itemIds: string[]) {

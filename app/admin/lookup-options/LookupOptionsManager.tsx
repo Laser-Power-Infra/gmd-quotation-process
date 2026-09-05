@@ -30,6 +30,7 @@ const TYPE_LABELS: Record<string, string> = {
   OPERATION_TYPE: "Operation Types",
   EXTENSION: "Extensions",
   BYPASS: "Bypasses",
+  GMD_CASTING_RATE: "GMD Casting Rates",
 };
 
 interface LookupOptionsManagerProps {

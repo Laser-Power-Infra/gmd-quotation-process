@@ -48,7 +48,9 @@ function groupCount(
   }
   return [...counts.entries()]
     .map(([value, count]) => ({ value, count }))
-    .sort((a, b) => a.value.localeCompare(b.value, undefined, { numeric: true }));
+    .sort((a, b) =>
+      a.value.localeCompare(b.value, undefined, { numeric: true }),
+    );
 }
 
 function matchesTiles(
@@ -141,33 +143,24 @@ export default function ContractReviewPage() {
 
   const itemOptions = useMemo(
     () =>
-      groupCount(
-        allRows,
-        ITEM_IDX,
-        (row) =>
-          matchesTiles(row, "", tileSize, tilePn),
+      groupCount(allRows, ITEM_IDX, (row) =>
+        matchesTiles(row, "", tileSize, tilePn),
       ),
     [allRows, tileSize, tilePn],
   );
 
   const sizeOptions = useMemo(
     () =>
-      groupCount(
-        allRows,
-        SIZE_IDX,
-        (row) =>
-          matchesTiles(row, tileItem, "", tilePn),
+      groupCount(allRows, SIZE_IDX, (row) =>
+        matchesTiles(row, tileItem, "", tilePn),
       ),
     [allRows, tileItem, tilePn],
   );
 
   const pnOptions = useMemo(
     () =>
-      groupCount(
-        allRows,
-        PN_IDX,
-        (row) =>
-          matchesTiles(row, tileItem, tileSize, ""),
+      groupCount(allRows, PN_IDX, (row) =>
+        matchesTiles(row, tileItem, tileSize, ""),
       ),
     [allRows, tileItem, tileSize],
   );
@@ -200,9 +193,7 @@ export default function ContractReviewPage() {
   const filteredData = useMemo(() => {
     if (
       !data ||
-      (!hasTileFilter &&
-        balBillFilter === "all" &&
-        statusFilter === "all")
+      (!hasTileFilter && balBillFilter === "all" && statusFilter === "all")
     ) {
       return data;
     }
@@ -215,7 +206,8 @@ export default function ContractReviewPage() {
         (balBillFilter === "yes"
           ? isZeroBal(row[balBillIdx])
           : !isZeroBal(row[balBillIdx]));
-      const statusMatch = statusFilter === "Completed" ? isZeroBal(row[balBillIdx]) : true;
+      const statusMatch =
+        statusFilter === "Completed" ? isZeroBal(row[balBillIdx]) : true;
       const tileMatch = matchesTiles(row, tileItem, tileSize, tilePn);
       if (balMatch && statusMatch && tileMatch) {
         rows.push(row);
@@ -223,7 +215,16 @@ export default function ContractReviewPage() {
       }
     });
     return { ...data, rows, ids: filteredIds, totalRows: rows.length };
-  }, [data, hasTileFilter, balBillFilter, statusFilter, balBillIdx, tileItem, tileSize, tilePn]);
+  }, [
+    data,
+    hasTileFilter,
+    balBillFilter,
+    statusFilter,
+    balBillIdx,
+    tileItem,
+    tileSize,
+    tilePn,
+  ]);
 
   const fmt = (n: number) =>
     n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
@@ -387,9 +388,7 @@ export default function ContractReviewPage() {
             onSync={handleSync}
             syncing={syncing}
           />
-          {error && (
-            <div className="mt-2 text-sm text-red-600">{error}</div>
-          )}
+          {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
           <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4 pr-1 mt-4">
             <GMDUpdateTable
               headers={headers}
@@ -398,7 +397,19 @@ export default function ContractReviewPage() {
               selectedIndex={selectedIndex}
               onSelect={setSelectedIndex}
               title="Contract Review"
-              editableColumns={["BOM FORMULA TRAIL", ""]}
+              editable
+              editableColumns={["bom formula trial"]}
+              externalFiltersActive={
+                hasTileFilter || balBillFilter !== "all" || statusFilter !== "all"
+              }
+              onReset={() => {
+                setTileItem("");
+                setTileSize("");
+                setTilePn("");
+                setBalBillFilter("all");
+                setStatusFilter("all");
+              }}
+              hiddenColumns={["BAL BILL AG MC", "JOB Code"]}
             />
           </div>
         </div>
