@@ -150,7 +150,7 @@ export default function QuotationAnalyticsSidebar({
       className={`shrink-0 flex flex-col gap-2.5 overflow-y-auto max-h-full pr-1 transition-all duration-300 ease-in-out ${
         isCollapsed
           ? "lg:w-0 lg:max-w-0 lg:opacity-0 lg:-ml-4 lg:overflow-hidden lg:pointer-events-none hidden lg:flex"
-          : "w-full lg:w-[300px] xl:w-[320px] opacity-100"
+          : "w-full lg:w-75 xl:w-[320px] opacity-100"
       }`}
     >
       {/* Header */}

@@ -21,7 +21,7 @@ export default function QuotationTotalValueCard({
   className,
 }: QuotationTotalValueCardProps) {
   return (
-    <Card size="sm" className={`shadow-sm bg-gradient-to-br from-slate-50 to-white border-slate-200 shrink-0 w-full py-1 ${className ?? ""}`}>
+    <Card size="sm" className={`shadow-sm bg-linear-to-br from-slate-50 to-white border-slate-200 shrink-0 w-full py-1 ${className ?? ""}`}>
       <CardHeader className="py-1 pb-0.5">
         <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
           <IndianRupee className="h-3 w-3 text-emerald-600" />

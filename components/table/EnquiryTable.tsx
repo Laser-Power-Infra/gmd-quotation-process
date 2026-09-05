@@ -1715,7 +1715,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             disabled={updateCostStatus === "running"}
             className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-400 dark:hover:bg-teal-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
           >
-            <DollarSign className={`h-3.5 w-3.5 text-teal-700 dark:text-teal-400 stroke-[2] ${updateCostStatus === "running" ? "animate-spin" : ""}`} />
+            <DollarSign className={`h-3.5 w-3.5 text-teal-700 dark:text-teal-400 stroke-2 ${updateCostStatus === "running" ? "animate-spin" : ""}`} />
             {updateCostStatus === "running" ? "Updating..." : "Update BOM Costs"}
           </button>
 
@@ -2465,7 +2465,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 onChange={(v) => dispatch(setFilter({ field: "cost", value: v }))}
                 includeBlank
                 className="mt-1 h-6 w-full rounded border border-input bg-background px-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-ring"
-                panelClassName="w-56 z-[80]"
+                panelClassName="w-56 z-80"
               />
               <div
                 onMouseDown={(e) => handleMouseDown(25, e)}
