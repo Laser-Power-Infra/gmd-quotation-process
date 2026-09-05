@@ -5,21 +5,27 @@ export const CONTRACT_REVIEW_HEADERS = [
   "ITEM_NAME",
   "PARTY ITEM NAME",
   "RATE",
-  "BOM ID",
-  // "CV",
-  // "VA %",
+  "CV",
+  "VA %",
   "ORDER QTY",
   "FREE STOCK",
   "FINAL REQ",
   "MC QTY",
   "Balance mc",
-  // "PROD ORD QTY",
-  // "BALANCE TO PROD ORD",
-  // "BALANCE TO PROD ENT",
+  "PROD ORD QTY",
+  "BALANCE TO PROD ORD",
+  "BALANCE TO PROD ENT",
   "DI QTY",
   "BILLED QTY",
-  "BAL BILL AG MC",
   "BAL BILL AG CONT",
+  "BAL DI QTY",
+  "BAL MC VAL",
+  "BAL PROD ORD VAL",
+  "BAL TO PROD ORD ENT VAL",
+  "BAL BILL AG CONT VAL",
+  "BAL BILL AG MC VAL",
+  "BAL DI VAL",
+  "DI VAL",
   "Item",
   "VALUE",
   "SIZE",
@@ -27,6 +33,7 @@ export const CONTRACT_REVIEW_HEADERS = [
   "DATE OF CONTRACT",
   "CLEARANCE STATUS",
   "Actuator",
+  "ITEM TYPE",
   "RM CODE FOR ACTUATOR",
   "RM CODE FOR GB",
   "PAYMENT TERMS",
@@ -36,17 +43,10 @@ export const CONTRACT_REVIEW_HEADERS = [
   "Issuing bank name",
   "bom formula trial",
   "ERP PARTY NAME FROM GMD SUPPLY HISTORY",
-  "ITEM TYPE",
   "JOB Code",
-  "BAL DI QTY",
-  "BAL MC VAL",
-  "BAL PROD ORD VAL",
-  "BAL TO PROD ORD ENT VAL",
-  "BAL BILL AG MC VAL",
-  "BAL BILL AG CONT VAL",
-  "BAL DI VAL",
-  "DI VAL",
+  "BAL BILL AG MC",
   "ic qty",
+  "BOM ID",
 ] as const;
 
 export const CONTRACTS_SHEET_COLUMNS = [
@@ -100,6 +100,7 @@ export const DUMP_SHEET_COLUMNS = [
   "BAL DI VAL",
   "DI VAL",
   "ic qty",
+  "BAL BILL AG MC",
 ] as const;
 
 function normalizeHeader(h: string): string {
@@ -110,7 +111,7 @@ export function buildContractsColumnMap(sheetHeaders: string[]): number[] {
   const normalized = sheetHeaders.map(normalizeHeader);
   return CONTRACTS_SHEET_COLUMNS.map((col) => {
     const target = normalizeHeader(col);
-    return normalized.lastIndexOf(target);
+    return normalized.findIndex((h) => h === target);
   });
 }
 
@@ -157,7 +158,6 @@ export function mapContractReviewRow(
     balanceToProdEnt: field(15),
     diQty: field(16),
     billedQty: field(17),
-    balBillAgMc: field(18),
     balBillAgCont: field(19),
     item: field(20),
     value: field(21),
@@ -177,6 +177,7 @@ export function mapContractReviewRow(
     erpPartyNameFromGmdSupplyHistory: field(35),
     itemType: field(36),
     jobCode: dumpRow ? getVal(dumpRow, dumpColumnMap[0]) : null,
+    balBillAgMc: dumpRow ? getVal(dumpRow, dumpColumnMap[10]) : null,
     balDiQty: dumpRow ? getVal(dumpRow, dumpColumnMap[1]) : null,
     balMcVal: dumpRow ? getVal(dumpRow, dumpColumnMap[2]) : null,
     balProdOrdVal: dumpRow ? getVal(dumpRow, dumpColumnMap[3]) : null,
@@ -191,25 +192,32 @@ export function mapContractReviewRow(
 
 export function dbContractReviewToRow(item: {
   contractNo: string | null;
-  mcNo: string | null;
   itemCode: string | null;
+  mcNo: string | null;
   itemName: string | null;
   partyItemName: string | null;
   rate: string | null;
-  // cv: string | null;
-  // vaPercent: string | null;
+  cv: string | null;
+  vaPercent: string | null;
   orderQty: string | null;
   freeStock: string | null;
   finalReq: string | null;
   mcQty: string | null;
   balanceMc: string | null;
-  // prodOrdQty: string | null;
-  // balanceToProdOrd: string | null;
-  // balanceToProdEnt: string | null;
+  prodOrdQty: string | null;
+  balanceToProdOrd: string | null;
+  balanceToProdEnt: string | null;
   diQty: string | null;
   billedQty: string | null;
-  balBillAgMc: string | null;
   balBillAgCont: string | null;
+  balDiQty: string | null;
+  balMcVal: string | null;
+  balProdOrdVal: string | null;
+  balToProdOrdEntVal: string | null;
+  balBillAgContVal: string | null;
+  balBillAgMcVal: string | null;
+  balDiVal: string | null;
+  diVal: string | null;
   item: string | null;
   value: string | null;
   size: string | null;
@@ -217,6 +225,7 @@ export function dbContractReviewToRow(item: {
   dateOfContract: string | null;
   clearanceStatus: string | null;
   actuator: string | null;
+  itemType: string | null;
   rmCodeForActuator: string | null;
   rmCodeForGb: string | null;
   paymentTerms: string | null;
@@ -226,40 +235,32 @@ export function dbContractReviewToRow(item: {
   issuingBankName: string | null;
   bomFormulaTrial: string | null;
   erpPartyNameFromGmdSupplyHistory: string | null;
-  itemType: string | null;
   jobCode: string | null;
-  balDiQty: string | null;
-  balMcVal: string | null;
-  balProdOrdVal: string | null;
-  balToProdOrdEntVal: string | null;
-  balBillAgMcVal: string | null;
-  balBillAgContVal: string | null;
-  balDiVal: string | null;
-  diVal: string | null;
+  balBillAgMc: string | null;
   icQty: string | null;
   bomId: string | null;
 }): unknown[] {
   return [
     item.contractNo, item.itemCode, item.mcNo,
     item.itemName, item.partyItemName, item.rate,
-    item.bomId,
-    // item.cv, item.vaPercent, 
+    item.cv, item.vaPercent,
     item.orderQty,
     item.freeStock, item.finalReq, item.mcQty,
     item.balanceMc,
-    //  item.prodOrdQty, item.balanceToProdOrd, item.balanceToProdEnt, 
-     item.diQty, item.billedQty,
-    item.balBillAgMc, item.balBillAgCont, item.item,
-    item.value, item.size, item.pnRating,
+    item.prodOrdQty, item.balanceToProdOrd, item.balanceToProdEnt,
+    item.diQty, item.billedQty,
+    item.balBillAgCont,
+    item.balDiQty, item.balMcVal, item.balProdOrdVal,
+    item.balToProdOrdEntVal, item.balBillAgContVal, item.balBillAgMcVal,
+    item.balDiVal, item.diVal,
+    item.item, item.value, item.size, item.pnRating,
     item.dateOfContract, item.clearanceStatus, item.actuator,
+    item.itemType,
     item.rmCodeForActuator, item.rmCodeForGb, item.paymentTerms,
     item.lcRtgsRefNo, item.lcDateRtgsDate, item.lastDateOfShipmentDateOfLc,
     item.issuingBankName, item.bomFormulaTrial, item.erpPartyNameFromGmdSupplyHistory,
-    item.itemType,
-    item.jobCode, item.balDiQty, item.balMcVal,
-    item.balProdOrdVal, item.balToProdOrdEntVal, item.balBillAgMcVal,
-    item.balBillAgContVal, item.balDiVal, item.diVal,
-    item.icQty,
+    item.jobCode, item.balBillAgMc, item.icQty,
+    item.bomId,
   ];
 }
 

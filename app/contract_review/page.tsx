@@ -7,7 +7,7 @@ import ErrorState from "../../components/gmd_dashboard/ErrorState";
 import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
 import { selectContractReviewBomIdAction, updateContractReviewFieldAction } from "@/app/actions";
-import { CONTRACT_REVIEW_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/contract-review-columns";
+import { CONTRACT_REVIEW_HEADER_TO_DB_FIELD, CONTRACT_REVIEW_HEADERS } from "@/lib/gmd_lib/contract-review-columns";
 
 interface ContractReviewData {
   headers: string[];
@@ -28,12 +28,12 @@ function isZeroBal(value: unknown): boolean {
   return !isNaN(n) && n === 0;
 }
 
-const ITEM_IDX = 16;
-const SIZE_IDX = 18;
-const PN_IDX = 19;
-const RATE_IDX = 5;
-const MC_QTY_IDX = 10;
-const BOM_ID_IDX = 6;
+const ITEM_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Item");
+const SIZE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("SIZE");
+const PN_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PN RATING");
+const RATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RATE");
+const MC_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC QTY");
+const BOM_ID_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BOM ID");
 
 interface TileOption {
   value: string;
@@ -867,7 +867,7 @@ export default function ContractReviewPage() {
                 setBalBillFilter("all");
                 setStatusFilter("all");
               }}
-              hiddenColumns={["BAL BILL AG MC", "JOB Code","MC QTY", "FREE STOCK","FINAL REQ","BAL BILL AG CONT"]}
+              hiddenColumns={["VA %","CV"]}
             />
           </div>
         </div>
