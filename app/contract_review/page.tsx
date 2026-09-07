@@ -935,6 +935,7 @@ export default function ContractReviewPage() {
                 "JOB Code",
                 "BAL BILL AG MC",
                 "ic qty",
+                "bom formula trial"
               ]}
             />
           </div>
