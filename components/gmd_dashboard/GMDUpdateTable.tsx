@@ -34,6 +34,24 @@ function parseDate(str: string): Date | null {
   return null;
 }
 
+function cellCompare(aVal: unknown, bVal: unknown, dir: number): number {
+  const aNum = typeof aVal === "number" ? aVal : NaN;
+  const bNum = typeof bVal === "number" ? bVal : NaN;
+  if (!isNaN(aNum) && !isNaN(bNum)) return (aNum - bNum) * dir;
+  const aKey = isNaN(aNum) ? String(aVal ?? "").toLowerCase() : "";
+  const bKey = isNaN(bNum) ? String(bVal ?? "").toLowerCase() : "";
+  const aNull = aKey === "" && isNaN(aNum);
+  const bNull = bKey === "" && isNaN(bNum);
+  if (aNull && bNull) return 0;
+  if (aNull) return dir;
+  if (bNull) return -dir;
+  return aKey.localeCompare(bKey, undefined, { numeric: true }) * dir;
+}
+
+function cellEq(rowA: unknown[], rowB: unknown[], colIdx: number): boolean {
+  return String(rowA[colIdx] ?? "") === String(rowB[colIdx] ?? "");
+}
+
 function MultiSelect({
   options,
   selected,
@@ -182,6 +200,10 @@ interface GMDUpdateTableProps {
   editableColumns?: string[];
   hiddenFilters?: string[];
   hiddenColumns?: string[];
+  groupByColumn?: string;
+  mergeColumns?: string[];
+  mergeTypeColumn?: string;
+  mergeOnlyTypes?: string[];
   categoryOptions?: Record<string, string[]>;
   uniqueKeyColumns?: string[];
   fixedDropdownOptions?: Record<string, string[]>;
@@ -233,6 +255,10 @@ export default function GMDUpdateTable({
   editableColumns,
   hiddenFilters,
   hiddenColumns,
+  groupByColumn,
+  mergeColumns,
+  mergeTypeColumn,
+  mergeOnlyTypes,
   categoryOptions,
   uniqueKeyColumns,
   fixedDropdownOptions,
@@ -293,6 +319,24 @@ castingRateInputs,
     () => new Set(hiddenColumns ?? []),
     [hiddenColumns],
   );
+  const groupByIdx = groupByColumn ? headers.indexOf(groupByColumn) : -1;
+  const mergeTypeIdx = mergeTypeColumn ? headers.indexOf(mergeTypeColumn) : -1;
+  const isMergeable = (row: unknown[]): boolean => {
+    if (mergeTypeIdx === -1 || !mergeOnlyTypes || mergeOnlyTypes.length === 0) {
+      return true;
+    }
+    return mergeOnlyTypes.includes(String(row[mergeTypeIdx] ?? "").trim());
+  };
+  const mergeIdxSet = useMemo(
+    () =>
+      new Set(
+        (mergeColumns ?? [])
+          .map((h) => headers.indexOf(h))
+          .filter((i) => i >= 0),
+      ),
+    [mergeColumns, headers],
+  );
+  const isGrouped = groupByIdx >= 0 && mergeIdxSet.size > 0;
   const visibleCols = useMemo(
     () =>
       headers
@@ -399,27 +443,26 @@ castingRateInputs,
   const showResetFilters = hasActiveFilters || !!externalFiltersActive;
 
   const sortedWithIds = useMemo(() => {
-    if (sortColumn === null) return rows.map((row, i) => ({ row, id: ids[i] }));
-    const decorated = rows.map((row, i) => {
-      const val = row[sortColumn];
-      const isNum = typeof val === "number";
-      const num = isNum ? val : NaN;
-      const key = isNum ? "" : String(val ?? "").toLowerCase();
-      return { row, id: ids[i], i, num, key };
-    });
+    const decorated = rows.map((row, i) => ({ row, id: ids[i], i }));
+    if (sortColumn === null && !isGrouped) return decorated;
     const dir = sortDirection === "asc" ? 1 : -1;
     decorated.sort((a, b) => {
-      if (!isNaN(a.num) && !isNaN(b.num)) return (a.num - b.num) * dir;
-      const aNull = a.key === "" && isNaN(a.num);
-      const bNull = b.key === "" && isNaN(b.num);
-      if (aNull && bNull) return a.i - b.i;
-      if (aNull) return dir;
-      if (bNull) return -dir;
-      const c = a.key.localeCompare(b.key, undefined, { numeric: true });
-      return c * dir;
+      if (isGrouped) {
+        const g = cellCompare(a.row[groupByIdx], b.row[groupByIdx], 1);
+        if (g !== 0) return g;
+      }
+      if (sortColumn !== null) {
+        const c = cellCompare(
+          a.row[sortColumn],
+          b.row[sortColumn],
+          dir,
+        );
+        if (c !== 0) return c;
+      }
+      return a.i - b.i;
     });
-    return decorated.map(({ row, id }) => ({ row, id }));
-  }, [rows, ids, sortColumn, sortDirection]);
+    return decorated;
+  }, [rows, ids, sortColumn, sortDirection, isGrouped, groupByIdx]);
 
   const rowSearchCache = useMemo(() => {
     const cache = new Map<unknown[], string>();
@@ -560,6 +603,36 @@ castingRateInputs,
     const start = (activePage - 1) * pageSize;
     return filteredWithIds.slice(start, start + pageSize);
   }, [filteredWithIds, activePage, pageSize]);
+
+  const { mergedSpans, mergedSkipped } = useMemo(() => {
+    const spans = new Map<string, number>();
+    const skipped = new Set<string>();
+    if (!isGrouped) return { mergedSpans: spans, mergedSkipped: skipped };
+    const list = paginatedWithIds;
+    const n = list.length;
+    for (const c of mergeIdxSet) {
+      let i = 0;
+      while (i < n) {
+        let j = i;
+        while (
+          j + 1 < n &&
+          isMergeable(list[j].row) &&
+          isMergeable(list[j + 1].row) &&
+          cellEq(list[j].row, list[j + 1].row, groupByIdx) &&
+          cellEq(list[j].row, list[j + 1].row, c)
+        ) {
+          j++;
+        }
+        const len = j - i + 1;
+        if (len > 1) {
+          spans.set(`${i}:${c}`, len);
+          for (let k = i + 1; k <= j; k++) skipped.add(`${k}:${c}`);
+        }
+        i = j + 1;
+      }
+    }
+    return { mergedSpans: spans, mergedSkipped: skipped };
+  }, [paginatedWithIds, isGrouped, groupByIdx, mergeIdxSet]);
 
   const handleResizeStart = useCallback(
     (index: number, e: React.MouseEvent) => {
@@ -946,6 +1019,16 @@ castingRateInputs,
                     const value = row[cellIdx];
                     const display = value != null ? String(value) : "";
 
+                    const mergedKey = `${idx}:${cellIdx}`;
+                    const isMergedCell =
+                      isGrouped && mergeIdxSet.has(cellIdx);
+                    if (isMergedCell && mergedSkipped.has(mergedKey)) {
+                      return null;
+                    }
+                    const mergedSpan = isMergedCell
+                      ? (mergedSpans.get(mergedKey) ?? undefined)
+                      : undefined;
+
                     let cellContent: React.ReactNode;
                     const isCellEditable =
                       editable &&
@@ -987,17 +1070,26 @@ castingRateInputs,
                           </select>
                         );
                       }
-                    } else if (header === "NO USE") {
-                        cellContent =
-                          display === "YES" ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold">
-                              NOT TO BE USED
+                    } else if (header === "NO USE" || header === "USE/NO USE") {
+                        if (display === "USE") {
+                          cellContent = (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold">
+                              USE
                             </span>
-                          ) : (
+                          );
+                        } else if (display === "NO USE") {
+                          cellContent = (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold">
+                              NO USE
+                            </span>
+                          );
+                        } else {
+                          cellContent = (
                             <span className="truncate block text-gray-400">
                               —
                             </span>
                           );
+                        }
                       } else if (isCellEditable) {
                       if (header === "USD cost") {
                         cellContent = (
@@ -1161,6 +1253,7 @@ castingRateInputs,
                     return (
                       <td
                         key={cellIdx}
+                        rowSpan={mergedSpan}
                         className={`px-3 py-2 text-xs border-b border-[#e1e6eb] border-r  last:border-r-0${
                           cellIdx < 2 ? " sticky z-10 bg-white" : ""
                         }${isCellEditable ? " bg-amber-50" : ""}`}

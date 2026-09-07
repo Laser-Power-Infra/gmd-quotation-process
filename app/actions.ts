@@ -10,7 +10,7 @@ import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
 import { update2to1CostForItems } from "@/lib/gmd2to1CostLookup";
-import { getDistinctBomIds, getBatchDistinctBomIds } from "@/lib/verifyBomLookup";
+import { getDistinctBomIds, getBatchDistinctBomIds, getBomUseStatus, getBomUseStatusBatch } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 
 // Create a new enquiry with initial items and multiple attachments
@@ -1532,22 +1532,60 @@ export async function selectContractReviewBomIdAction(
       const itemType = (vbRow?.bomIdType ?? "").trim()
         ? vbRow!.bomIdType!
         : "no itemtype present";
-      const noUse =
-        itemType.trim().toUpperCase() === "2:1" ? "YES" : null;
+      const noUse = await getBomUseStatus(value);
       await prisma.contractReview.update({
         where: { id },
-        data: { bomId: value, itemType, noUse },
+        data: { bomId: value, itemType, noUse: noUse ?? "" },
       });
       return { success: true, data: { id, bomId: value, itemType, noUse } };
     }
     await prisma.contractReview.update({
       where: { id },
-      data: { bomId: null },
+      data: { bomId: null, noUse: null },
     });
     return { success: true, data: { id, bomId: null } };
   } catch (error: any) {
     console.error("Error selecting ContractReview BOM ID:", error);
     return { success: false, error: error.message || "Failed to select BOM ID." };
+  }
+}
+
+export async function backfillContractReviewNoUseBatchAction(ids: string[]) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+    const items = await prisma.contractReview.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, bomId: true },
+    });
+    const bomIds = [
+      ...new Set(
+        items.map((i) => i.bomId).filter((b): b is string => !!b),
+      ),
+    ];
+    const statusMap = await getBomUseStatusBatch(bomIds);
+    await prisma.$transaction(
+      items.map((i) =>
+        prisma.contractReview.update({
+          where: { id: i.id },
+          data: { noUse: i.bomId ? (statusMap.get(i.bomId) ?? "") : null },
+        }),
+      ),
+    );
+    return {
+      success: true,
+      data: items.map((i) => ({
+        id: i.id,
+        noUse: i.bomId ? (statusMap.get(i.bomId) ?? null) : null,
+      })),
+    };
+  } catch (error: any) {
+    console.error("Error backfilling ContractReview NO USE:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to backfill NO USE.",
+    };
   }
 }
 

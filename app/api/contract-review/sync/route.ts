@@ -7,6 +7,7 @@ import {
   buildDumpColumnMap,
   mapContractReviewRow,
 } from "@/lib/gmd_lib/contract-review-columns";
+import { getBomUseStatusBatch } from "@/lib/verifyBomLookup";
 
 const SPREADSHEET_ID = process.env.CONTRACT_SHEET_SPREADSHEET_ID;
 const DUMP_GID = 0;
@@ -110,6 +111,32 @@ export async function POST() {
         await prisma.contractReview.create({ data: update });
       }
       upserted++;
+    }
+
+    const withBom = await prisma.contractReview.findMany({
+      where: { bomId: { not: null } },
+      select: { id: true, bomId: true, noUse: true },
+    });
+    const bomIds = [
+      ...new Set(
+        withBom.map((i) => i.bomId).filter((b): b is string => !!b),
+      ),
+    ];
+    const statusMap = await getBomUseStatusBatch(bomIds);
+    const noUseUpdates = withBom
+      .map((i) => {
+        const status = i.bomId ? (statusMap.get(i.bomId) ?? "") : null;
+        return { i, status };
+      })
+      .filter(({ i, status }) => status !== i.noUse)
+      .map(({ i, status }) =>
+        prisma.contractReview.update({
+          where: { id: i.id },
+          data: { noUse: status },
+        }),
+      );
+    if (noUseUpdates.length > 0) {
+      await prisma.$transaction(noUseUpdates);
     }
 
     return NextResponse.json({

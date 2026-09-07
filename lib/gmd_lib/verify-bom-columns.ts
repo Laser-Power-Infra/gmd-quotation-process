@@ -4,6 +4,8 @@ export const VERIFY_BOM_HEADERS = [
   "RM ITEM CODE",
   "BOM ID TYPE",
   "BOM ITEM QTY",
+  "USE/NO USE",
+  "AVAILABLE STOCK",
 ] as const;
 
 function normalizeHeader(h: string): string {
@@ -50,6 +52,8 @@ export function dbVerifyBomToRow(item: {
   rmItemCode: string | null;
   bomIdType: string | null;
   bomItemQty: string | null;
+  noUse: string | null;
+  availableStock: string | null;
 }): unknown[] {
   return [
     item.bomId,
@@ -57,6 +61,8 @@ export function dbVerifyBomToRow(item: {
     item.rmItemCode,
     item.bomIdType,
     item.bomItemQty,
+    item.noUse,
+    item.availableStock,
   ];
 }
 

@@ -179,7 +179,6 @@ export function mapContractReviewRow(
     bomFormulaTrial: field(34),
     erpPartyNameFromGmdSupplyHistory: field(35),
     itemType: itemTypeVal,
-    noUse: itemTypeVal && itemTypeVal.trim().toUpperCase() === "2:1" ? "YES" : null,
     jobCode: dumpRow ? getVal(dumpRow, dumpColumnMap[0]) : null,
     balBillAgMc: dumpRow ? getVal(dumpRow, dumpColumnMap[10]) : null,
     balDiQty: dumpRow ? getVal(dumpRow, dumpColumnMap[1]) : null,
