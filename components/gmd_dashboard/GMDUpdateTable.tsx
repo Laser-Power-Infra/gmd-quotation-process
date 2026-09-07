@@ -952,35 +952,53 @@ castingRateInputs,
                       (!editableColumns || editableColumns.includes(header));
                     if (header === "BOM ID" && onSelectBomId) {
                       const options = bomIdOptionsById?.[id] ?? [];
-                      cellContent = (
-                        <select
-                          value={display}
-                          onChange={(e) =>
-                            onSelectBomId?.(id, e.target.value || null)
-                          }
-                          onClick={(e) => e.stopPropagation()}
-                          className="w-full text-xs bg-transparent border-none outline-none cursor-pointer"
-                          title={
-                            options.length
-                              ? options.join(", ")
-                              : "No BOM exists"
-                          }
-                        >
-                          <option value="">-- select --</option>
-                          {options.length === 0 ? (
-                            <option value="" disabled>
-                              No BOM exists
-                            </option>
-                          ) : (
-                            options.map((b) => (
+                      if (options.length === 0) {
+                        cellContent = (
+                          <span className="truncate block italic text-gray-400">
+                            No BOM exists
+                          </span>
+                        );
+                      } else if (options.length === 1) {
+                        cellContent = (
+                          <span
+                            className="truncate block"
+                            title={options[0]}
+                          >
+                            {display || options[0] || "—"}
+                          </span>
+                        );
+                      } else {
+                        cellContent = (
+                          <select
+                            value={display}
+                            onChange={(e) =>
+                              onSelectBomId?.(id, e.target.value || null)
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full text-xs bg-transparent border-none outline-none cursor-pointer"
+                            title={options.join(", ")}
+                          >
+                            <option value="">-- select --</option>
+                            {options.map((b) => (
                               <option key={b} value={b}>
                                 {b}
                               </option>
-                            ))
-                          )}
-                        </select>
-                      );
-                    } else if (isCellEditable) {
+                            ))}
+                          </select>
+                        );
+                      }
+                    } else if (header === "NO USE") {
+                        cellContent =
+                          display === "YES" ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold">
+                              NOT TO BE USED
+                            </span>
+                          ) : (
+                            <span className="truncate block text-gray-400">
+                              —
+                            </span>
+                          );
+                      } else if (isCellEditable) {
                       if (header === "USD cost") {
                         cellContent = (
                           <input

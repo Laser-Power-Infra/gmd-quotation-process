@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
@@ -337,6 +337,43 @@ export default function ContractReviewPage() {
     },
     [headers],
   );
+
+  const autoSavedBomIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!data) return;
+    const pending: { id: string; bomId: string }[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoSavedBomIdsRef.current.has(id)) return;
+      if (String(row[BOM_ID_IDX] ?? "").trim() !== "") return;
+      const options = bomIdOptionsById[id];
+      if (!options || options.length !== 1) return;
+      autoSavedBomIdsRef.current.add(id);
+      pending.push({ id, bomId: options[0] });
+    });
+    const itemTypeIdx = headers.indexOf("ITEM TYPE");
+    for (const { id, bomId } of pending) {
+      selectContractReviewBomIdAction(id, bomId).then((res) => {
+        if (!res?.success) return;
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rows: prev.rows.map((row, i) => {
+              if (prev.ids[i] !== id) return row;
+              const next = [...row];
+              next[BOM_ID_IDX] = bomId;
+              if (res.data?.itemType !== undefined && itemTypeIdx !== -1) {
+                next[itemTypeIdx] = res.data.itemType;
+              }
+              return next;
+            }),
+          };
+        });
+      });
+    }
+  }, [data, bomIdOptionsById, headers]);
 
   const categoryOptions = useMemo<Record<string, string[]>>(() => {
     if (!data) return {};
@@ -856,7 +893,7 @@ export default function ContractReviewPage() {
               onSelect={setSelectedIndex}
               title="Contract Review"
               editable
-              editableColumns={["bom formula trial", "Item"]}
+              editableColumns={["bom formula trial", "Item", "BOM ID"]}
               categoryOptions={categoryOptions}
               onCellUpdate={handleCellUpdate}
               externalFiltersActive={

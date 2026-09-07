@@ -1532,11 +1532,13 @@ export async function selectContractReviewBomIdAction(
       const itemType = (vbRow?.bomIdType ?? "").trim()
         ? vbRow!.bomIdType!
         : "no itemtype present";
+      const noUse =
+        itemType.trim().toUpperCase() === "2:1" ? "YES" : null;
       await prisma.contractReview.update({
         where: { id },
-        data: { bomId: value, itemType },
+        data: { bomId: value, itemType, noUse },
       });
-      return { success: true, data: { id, bomId: value, itemType } };
+      return { success: true, data: { id, bomId: value, itemType, noUse } };
     }
     await prisma.contractReview.update({
       where: { id },

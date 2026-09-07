@@ -282,6 +282,7 @@ balDiVal               String?
   diVal                  String?
   icQty                  String?
   bomId                  String?
+  noUse                  String?
   syncedAt               DateTime @default(now())
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt

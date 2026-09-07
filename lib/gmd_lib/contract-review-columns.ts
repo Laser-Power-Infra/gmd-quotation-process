@@ -47,6 +47,7 @@ export const CONTRACT_REVIEW_HEADERS = [
   "BAL BILL AG MC",
   "ic qty",
   "BOM ID",
+  "NO USE",
 ] as const;
 
 export const CONTRACTS_SHEET_COLUMNS = [
@@ -139,6 +140,8 @@ export function mapContractReviewRow(
     canonicalIdx: number,
   ): string | null => getVal(contractRow, contractsColumnMap[canonicalIdx]);
 
+  const itemTypeVal = field(36);
+
   return {
     contractNo: field(0) ?? "",
     itemCode: field(2) ?? "",
@@ -175,7 +178,8 @@ export function mapContractReviewRow(
     issuingBankName: field(33),
     bomFormulaTrial: field(34),
     erpPartyNameFromGmdSupplyHistory: field(35),
-    itemType: field(36),
+    itemType: itemTypeVal,
+    noUse: itemTypeVal && itemTypeVal.trim().toUpperCase() === "2:1" ? "YES" : null,
     jobCode: dumpRow ? getVal(dumpRow, dumpColumnMap[0]) : null,
     balBillAgMc: dumpRow ? getVal(dumpRow, dumpColumnMap[10]) : null,
     balDiQty: dumpRow ? getVal(dumpRow, dumpColumnMap[1]) : null,
@@ -239,6 +243,7 @@ export function dbContractReviewToRow(item: {
   balBillAgMc: string | null;
   icQty: string | null;
   bomId: string | null;
+  noUse: string | null;
 }): unknown[] {
   return [
     item.contractNo, item.itemCode, item.mcNo,
@@ -262,6 +267,7 @@ export function dbContractReviewToRow(item: {
     item.erpPartyNameFromGmdSupplyHistory,
     item.jobCode, item.balBillAgMc, item.icQty,
     item.bomId,
+    item.noUse,
   ];
 }
 
@@ -313,4 +319,6 @@ export const CONTRACT_REVIEW_HEADER_TO_DB_FIELD: Record<string, string> = {
   "BAL DI VAL": "balDiVal",
   "DI VAL": "diVal",
   "ic qty": "icQty",
+  "BOM ID": "bomId",
+  "NO USE": "noUse",
 };
