@@ -65,6 +65,60 @@ export async function getBatchDistinctBomIds(itemCodes: string[]): Promise<Map<s
   return out;
 }
 
+export type BomUseStatus = "USE" | "NO USE" | null;
+
+type BomRowShape = {
+  itemCode: string | null;
+  rmItemCode: string | null;
+  bomIdType: string | null;
+};
+
+function computeBomUseStatus(rows: BomRowShape[]): BomUseStatus {
+  if (rows.length === 0) return null;
+  const types = new Set<string>();
+  for (const r of rows) if (r.bomIdType) types.add(r.bomIdType);
+  if (types.size !== 1) return null;
+  const type = [...types][0];
+  const minRms = type === "3:1" ? 3 : type === "2:1" ? 2 : null;
+  if (minRms === null) return null;
+  const items = new Set<string>();
+  for (const r of rows) if (r.itemCode) items.add(r.itemCode);
+  if (items.size !== 1) return null;
+  const rms = new Set<string>();
+  for (const r of rows) if (r.rmItemCode) rms.add(r.rmItemCode);
+  return rms.size === minRms ? "USE" : "NO USE";  
+}
+
+export async function getBomUseStatus(bomId: string): Promise<BomUseStatus> {
+  const rows = await prisma.verifyBom.findMany({
+    where: { bomId },
+    select: { itemCode: true, rmItemCode: true, bomIdType: true },
+  });
+  return computeBomUseStatus(rows);
+}
+
+export async function getBomUseStatusBatch(
+  bomIds: string[],
+): Promise<Map<string, BomUseStatus>> {
+  const unique = [...new Set(bomIds.filter(Boolean))];
+  const out = new Map<string, BomUseStatus>();
+  if (unique.length === 0) return out;
+  const rows = await prisma.verifyBom.findMany({
+    where: { bomId: { in: unique } },
+    select: { bomId: true, itemCode: true, rmItemCode: true, bomIdType: true },
+  });
+  const groups = new Map<string, BomRowShape[]>();
+  for (const r of rows) {
+    if (!r.bomId) continue;
+    if (!groups.has(r.bomId)) groups.set(r.bomId, []);
+    groups.get(r.bomId)!.push(r);
+  }
+  for (const id of unique) {
+    out.set(id, computeBomUseStatus(groups.get(id) ?? []));
+  }
+  return out;
+}
+
 export async function populateAvailableBomIdsForItemId(itemId: string): Promise<string[]> {
   const item = await prisma.enquiryItem.findUnique({
     where: { id: itemId },

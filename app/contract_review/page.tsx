@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import {
   selectContractReviewBomIdAction,
   updateContractReviewFieldAction,
+  backfillContractReviewNoUseBatchAction,
 } from "@/app/actions";
 import {
   CONTRACT_REVIEW_HEADER_TO_DB_FIELD,
@@ -40,6 +41,7 @@ const PN_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PN RATING");
 const RATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RATE");
 const MC_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC QTY");
 const BOM_ID_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BOM ID");
+const NO_USE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("NO USE");
 
 interface TileOption {
   value: string;
@@ -291,6 +293,10 @@ export default function ContractReviewPage() {
                 if (itemTypeVal !== undefined && itemTypeIdx !== -1) {
                   next[itemTypeIdx] = itemTypeVal;
                 }
+                const noUseVal = res.data?.noUse ?? "";
+                if (NO_USE_IDX !== -1) {
+                  next[NO_USE_IDX] = noUseVal;
+                }
                 return next;
               });
               return { ...prev, rows };
@@ -367,6 +373,9 @@ export default function ContractReviewPage() {
               if (res.data?.itemType !== undefined && itemTypeIdx !== -1) {
                 next[itemTypeIdx] = res.data.itemType;
               }
+              if (NO_USE_IDX !== -1) {
+                next[NO_USE_IDX] = res.data?.noUse ?? "";
+              }
               return next;
             }),
           };
@@ -374,6 +383,42 @@ export default function ContractReviewPage() {
       });
     }
   }, [data, bomIdOptionsById, headers]);
+
+  const autoNoUseRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!data) return;
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoNoUseRef.current.has(id)) return;
+      if (String(row[BOM_ID_IDX] ?? "").trim() === "") return;
+      const v = row[NO_USE_IDX];
+      if (v === "" || v === "USE" || v === "NO USE") return;
+      autoNoUseRef.current.add(id);
+      pending.push(id);
+    });
+    if (!pending.length) return;
+    backfillContractReviewNoUseBatchAction(pending).then((res) => {
+      if (!res?.success) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(
+          (res.data ?? []).map((d) => [d.id, d.noUse ?? ""]),
+        );
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined || NO_USE_IDX === -1) return row;
+            const next = [...row];
+            next[NO_USE_IDX] = v;
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
 
   const categoryOptions = useMemo<Record<string, string[]>>(() => {
     if (!data) return {};
@@ -935,7 +980,8 @@ export default function ContractReviewPage() {
                 "JOB Code",
                 "BAL BILL AG MC",
                 "ic qty",
-                "bom formula trial"
+                "bom formula trial",
+                "NO USE",
               ]}
             />
           </div>

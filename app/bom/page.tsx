@@ -106,6 +106,10 @@ export default function BomPage() {
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
             title="Verify BOM"
+            groupByColumn="BOM ID"
+            mergeColumns={["BOM ID", "ITEM CODE", "BOM ID TYPE", "USE/NO USE", "AVAILABLE STOCK"]}
+            mergeTypeColumn="BOM ID TYPE"
+            mergeOnlyTypes={["2:1", "3:1"]}
           />
         </div>
       </div>
