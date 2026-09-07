@@ -187,6 +187,29 @@ function parseDate(str: string): Date | null {
   return null;
 }
 
+const DATE_SORT_HEADERS = new Set(["Date", "expiryDate", "PBG VALID TILL", "PBG CLAIM TILL"]);
+function isDateHeader(header: string): boolean {
+  if (DATE_SORT_HEADERS.has(header)) return true;
+  const l = header.toLowerCase();
+  return l.includes("date") || l.includes("warranty");
+}
+
+function compareDates(aVal: unknown, bVal: unknown, dir: number): number {
+  const aStr = String(aVal ?? "").trim();
+  const bStr = String(bVal ?? "").trim();
+  const aD = aStr ? parseDate(aStr) : null;
+  const bD = bStr ? parseDate(bStr) : null;
+  const aT = aD ? aD.getTime() : null;
+  const bT = bD ? bD.getTime() : null;
+  const aNull = aT === null || isNaN(aT as number);
+  const bNull = bT === null || isNaN(bT as number);
+  if (aNull && bNull) return 0;
+  if (aNull) return 1;
+  if (bNull) return -1;
+  if (aT === bT) return 0;
+  return (aT! < bT! ? -1 : 1) * dir;
+}
+
 function cellCompare(aVal: unknown, bVal: unknown, dir: number): number {
   const aNum = typeof aVal === "number" ? aVal : NaN;
   const bNum = typeof bVal === "number" ? bVal : NaN;
@@ -609,17 +632,17 @@ castingRateInputs,
     const decorated = rows.map((row, i) => ({ row, id: ids[i], i }));
     if (sortColumn === null && !isGrouped) return decorated;
     const dir = sortDirection === "asc" ? 1 : -1;
+    const sortHeader = sortColumn !== null ? (headers[sortColumn] ?? "") : "";
+    const isDateSort = sortColumn !== null && isDateHeader(sortHeader);
     decorated.sort((a, b) => {
       if (isGrouped) {
         const g = cellCompare(a.row[groupByIdx], b.row[groupByIdx], 1);
         if (g !== 0) return g;
       }
       if (sortColumn !== null) {
-        const c = cellCompare(
-          a.row[sortColumn],
-          b.row[sortColumn],
-          dir,
-        );
+        const c = isDateSort
+          ? compareDates(a.row[sortColumn], b.row[sortColumn], dir)
+          : cellCompare(a.row[sortColumn], b.row[sortColumn], dir);
         if (c !== 0) return c;
       }
       return a.i - b.i;
