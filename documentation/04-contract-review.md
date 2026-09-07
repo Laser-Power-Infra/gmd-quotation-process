@@ -117,13 +117,16 @@ CONTRACT NO, ITEM_CODE, MC NO, ITEM_NAME, PARTY ITEM NAME, RATE, ORDER QTY, FREE
    - `contractsByKey` Map from `contractsRows` — first occurrence wins (skips blank `itemCode||contractNo`)
    - `dumpByKey` Map from `dumpRows` — hard-coded indices `row[4]=itemCode, row[2]=contractNo` in dump (note dump order differs), dedup same way
 
-4. **Merge + upsert:**
+4. **Merge + upsert (Strict Preserve Mode A — since 2026-09-07):**
    - `syncedAt = new Date()`
-   - For each `contractsByKey` entry `[key, contractRow]`, find `dumpRow = dumpByKey.get(key)` (may be undefined), `mapped = mapContractReviewRow(contractRow, dumpRow, ...)`
-   - `prisma.contractReview.upsert(where: {itemCode_contractNo: {itemCode: mapped.itemCode, contractNo: mapped.contractNo}} unique :285, update/create: {...mapped, syncedAt})`
-   - So re-sync updates existing contracts, never duplicates.
+   - For each `contractsByKey` entry `[key, contractRow]`, find `dumpRow = dumpByKey.get(key)` (may be undefined), `mapped = mapContractReviewRow(contractRow, dumpRow, ...)` `app/api/contract-review/sync/route.ts:94`
+   - `existing = prisma.contractReview.findFirst({itemCode, contractNo})` `route.ts:101`
+   - If `!existing`: `create({ ...mapped, syncedAt })` `route.ts:108` — new contracts fully inserted.
+   - If `existing`: **Strict preserve** `route.ts:113` — `isNullOrEmpty(v)= v==null||String(v).trim()==""` `route.ts:23`. Build `filtered={syncedAt}` and only add `field` where `isNullOrEmpty(existing[field]) && !isNullOrEmpty(mapped[field])`. Keys `contractNo/itemCode` skipped (immutable). `bomId` preserved (not in `mapped`). So sheet blanks never clear DB, and sheet corrections never overwrite existing non-null values — only gaps are filled.
+   - If `hasDataChange`: `update({data:filtered})` else `update({data:{syncedAt}})` to bump timestamp `route.ts:125`.
+   - So re-sync fills missing data, never overwrites existing data, never duplicates. Sheet deletions remain in DB (no `deleteMany`).
 
-5. **Return:** `{count, totalInContracts, syncedAt}` shown as `totalRows/syncedAt`.
+5. **Return:** `{count:upserted, patched, totalInContracts, syncedAt}` `route.ts:141` shown as `totalRows/syncedAt` (`patched` = rows where at least one gap was filled).
 
 6. **GET** `app/api/contract-review/route.ts` → `prisma.contractReview orderBy syncedAt desc`, `headers=CONTRACT_REVIEW_HEADERS`, `rows=dbContractReviewToRow`, `totalRows`, `syncedAt`.
 

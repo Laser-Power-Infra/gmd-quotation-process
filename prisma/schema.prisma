@@ -84,6 +84,10 @@ model EnquiryItem {
   availableBomIds  String[] @default([])
   position  Int      @default(0)
   validation String?
+  stockQuantity     String?
+  costLogic       String?
+  availableStock   String?
+  stockAgainstContract   String?
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
