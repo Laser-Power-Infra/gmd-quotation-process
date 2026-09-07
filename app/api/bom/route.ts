@@ -27,7 +27,7 @@ export async function GET() {
     const statusMap = await getBomUseStatusBatch(bomIds);
 
     const codes = [
-      ...new Set(items.map((i) => i.itemCode).filter((c): c is string => !!c)),
+      ...new Set(items.map((i) => i.rmItemCode).filter((c): c is string => !!c)),
     ];
     const rawItems = await prisma.gMDUpdateItem.findMany({
       where: { erpItemCode: { in: codes } },
@@ -48,8 +48,8 @@ export async function GET() {
     const updates = items
       .map((item) => {
         const noUse = item.bomId ? (statusMap.get(item.bomId) ?? "") : null;
-        const stock = item.itemCode
-          ? (stockMap.get(item.itemCode) ?? "")
+        const stock = item.rmItemCode
+          ? (stockMap.get(item.rmItemCode) ?? "")
           : null;
         return { id: item.id, noUse, stock };
       })
@@ -73,8 +73,8 @@ export async function GET() {
       dbVerifyBomToRow({
         ...item,
         noUse: item.bomId ? (statusMap.get(item.bomId) ?? "") : "",
-        availableStock: item.itemCode
-          ? (stockMap.get(item.itemCode) ?? "")
+        availableStock: item.rmItemCode
+          ? (stockMap.get(item.rmItemCode) ?? "")
           : "",
       }),
     );
