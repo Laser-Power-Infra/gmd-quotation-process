@@ -21,6 +21,10 @@ function normalizeKey(value: string): string {
   return value.trim().replace(/\s+/g, " ").toUpperCase();
 }
 
+function isNullOrEmpty(value: unknown): boolean {
+  return value === null || value === undefined || String(value).trim() === "";
+}
+
 export async function POST() {
   try {
     if (!SPREADSHEET_ID) {
@@ -85,6 +89,7 @@ export async function POST() {
     const syncedAt = new Date();
 
     let upserted = 0;
+    let patched = 0;
     for (const [key, contractRow] of contractsByKey) {
       const dumpRow = dumpByKey.get(key) ?? null;
       const mapped = mapContractReviewRow(
@@ -94,21 +99,42 @@ export async function POST() {
         dumpColumnMap,
       );
 
-      const update = { ...mapped, syncedAt };
-
       const existing = await prisma.contractReview.findFirst({
         where: {
           itemCode: mapped.itemCode,
           contractNo: mapped.contractNo,
         },
       });
-      if (existing) {
+      if (!existing) {
+        await prisma.contractReview.create({ data: { ...mapped, syncedAt } });
+        upserted++;
+        continue;
+      }
+
+      // Strict Mode A: preserve any existing non-null/ non-empty value; only fill gaps from sheet
+      const filtered: Record<string, unknown> = { syncedAt };
+      let hasDataChange = false;
+      for (const [field, sheetVal] of Object.entries(mapped)) {
+        if (field === "contractNo" || field === "itemCode") continue; // keys immutable
+        const dbVal = (existing as unknown as Record<string, unknown>)[field];
+        if (isNullOrEmpty(dbVal) && !isNullOrEmpty(sheetVal)) {
+          (filtered as Record<string, unknown>)[field] = sheetVal;
+          hasDataChange = true;
+        }
+      }
+
+      if (hasDataChange) {
         await prisma.contractReview.update({
           where: { id: existing.id },
-          data: update,
+          data: filtered,
         });
+        patched++;
       } else {
-        await prisma.contractReview.create({ data: update });
+        // No data gaps to fill, still bump syncedAt to record sync time
+        await prisma.contractReview.update({
+          where: { id: existing.id },
+          data: { syncedAt },
+        });
       }
       upserted++;
     }
@@ -141,6 +167,7 @@ export async function POST() {
 
     return NextResponse.json({
       count: upserted,
+      patched,
       totalInContracts: contractsByKey.size,
       syncedAt: syncedAt.toISOString(),
     });

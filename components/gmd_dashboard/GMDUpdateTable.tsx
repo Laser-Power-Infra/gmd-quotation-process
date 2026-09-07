@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { ChevronUp, ChevronDown, Search, RotateCcw, X, Download } from "lucide-react";
+import { ChevronUp, ChevronDown, Search, RotateCcw, X, Download, Files, FileText, ExternalLink, Copy } from "lucide-react";
 import GMDUpdateStatusBadge from "./GMDUpdateStatusBadge";
 import {
   STATUS_COLUMNS,
@@ -13,6 +13,8 @@ import Pagination from "./Pagination";
 import { useAppDispatch } from "@/lib/hooks";
 import { updateGMDUpdateField, updateGMDUsdCost } from "@/lib/gmdUpdateSlice";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 import * as XLSX from "xlsx";
 
@@ -23,6 +25,140 @@ function isUrl(text: string): boolean {
   } catch {
     return false;
   }
+}
+
+function renderLinksCell(display: string) {
+  const parts = display
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return null;
+  const linkParts = parts.filter(isUrl);
+  if (linkParts.length === 0) return null;
+  // Mix of links and non-links: render links as anchors, others as text, comma separated
+  return (
+    <span className="block break-all" title={display}>
+      {parts.map((part, idx) => (
+        <span key={`${part}-${idx}`}>
+          {isUrl(part) ? (
+            <a
+              href={part}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline text-blue-600 hover:text-blue-800"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {part}
+            </a>
+          ) : (
+            <span>{part}</span>
+          )}
+          {idx < parts.length - 1 ? ", " : ""}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function OrderListCell({ display, poNo }: { display: string; poNo?: string }) {
+  const links = useMemo(
+    () => display.split(",").map((s) => s.trim()).filter(Boolean).filter(isUrl),
+    [display]
+  );
+  const [open, setOpen] = useState(false);
+  if (links.length === 0) {
+    return <span className="truncate block text-gray-400" title={display}>—</span>;
+  }
+  const handleCopy = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied");
+    } catch {
+      toast.error("Failed to copy");
+    }
+  };
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="xs"
+        className="h-6 text-[11px] gap-1.5 px-2 font-semibold border-[#0a2540]/15 bg-white hover:bg-[#f4f6f8] text-[#0a2540]"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        title={links.join(", ")}
+      >
+        <Files size={12} className="shrink-0" />
+        {links.length === 1 ? "View File" : `View Files (${links.length})`}
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-[520px] p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-4 pt-4 pb-3 border-b border-[#e1e6eb] bg-[#f8f9fa]">
+            <DialogTitle className="text-sm font-bold text-[#0a2540] flex items-center gap-2">
+              <FileText size={16} className="text-[#0a2540]/70" />
+              {poNo ? `Attachments — ${poNo}` : `Attachments`}
+              <span className="ml-1 text-xs font-semibold text-[#0a2540]/60">({links.length})</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {links.length === 1 ? "1 file linked to this PO" : `${links.length} files linked to this PO`} from GMD Clientwise
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto divide-y divide-[#e1e6eb]">
+            {links.map((url, idx) => {
+              const shortId = (() => {
+                try {
+                  const u = new URL(url);
+                  const id = u.searchParams.get("id") || u.pathname.split("/").pop() || url;
+                  return id.length > 18 ? id.slice(0, 18) + "…" : id;
+                } catch {
+                  return url.length > 32 ? url.slice(0, 32) + "…" : url;
+                }
+              })();
+              return (
+                <div key={`${url}-${idx}`} className="flex items-center gap-3 px-4 py-3 hover:bg-[#f8f9fa] transition-colors">
+                  <div className="shrink-0 w-8 h-8 rounded bg-[#eef2f7] border border-[#e1e6eb] flex items-center justify-center text-[#0a2540]/70">
+                    <FileText size={14} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-[#0a2540]">File {idx + 1}</div>
+                    <div className="text-[11px] text-muted-foreground truncate" title={url}>{shortId}</div>
+                    <div className="text-[10px] text-[#0a2540]/50 truncate" title={url}>{url}</div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="h-7 px-2 gap-1 text-[11px]"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopy(url);
+                      }}
+                      title="Copy link"
+                    >
+                      <Copy size={12} /> Copy
+                    </Button>
+                    <Button
+                      variant="default"
+                      size="xs"
+                      className="h-7 px-2.5 gap-1 text-[11px]"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.open(url, "_blank", "noopener,noreferrer");
+                      }}
+                      title="Open file"
+                    >
+                      <ExternalLink size={12} /> Open
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 function parseDate(str: string): Date | null {
@@ -355,7 +491,7 @@ castingRateInputs,
             : h === "Party Mail Address"
               ? 300
               : h === "ORDER LIST"
-                ? 300
+                ? 160
                 : 180;
       });
       return widths;
@@ -1230,7 +1366,17 @@ castingRateInputs,
                           {display || "—"}
                         </span>
                       );
+                    } else if (header === "ORDER LIST") {
+                      if (!display) {
+                        cellContent = <span className="truncate block text-gray-400">—</span>;
+                      } else {
+                        const poIdx = headers.indexOf("PARTY Order No.");
+                        const poAltIdx = headers.indexOf("PO NO");
+                        const poVal = String(row[poIdx !== -1 ? poIdx : poAltIdx] ?? "");
+                        cellContent = <OrderListCell display={display} poNo={poVal} />;
+                      }
                     } else if (display && isUrl(display)) {
+                      // Single URL case (non-ORDER LIST columns)
                       cellContent = (
                         <a
                           href={display}
@@ -1241,6 +1387,13 @@ castingRateInputs,
                         >
                           {display}
                         </a>
+                      );
+                    } else if (display && display.includes(",") && display.split(",").some((p) => isUrl(p.trim()))) {
+                      const linksContent = renderLinksCell(display);
+                      cellContent = linksContent ?? (
+                        <span className="truncate block" title={display}>
+                          {display || "—"}
+                        </span>
                       );
                     } else {
                       cellContent = (

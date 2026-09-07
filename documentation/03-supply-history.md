@@ -118,13 +118,16 @@ PBG CLAIM TILL, PBG AMOUNT, Warranty Exp Date as Per Inv, Party Mail Address
      - Helper `stripDtSuffix` removes ` DT...` suffix, `matchOrderLink(partyOrderNo,map)` tries exact then stripped.
    - Wrapped `try/catch` — failure just logs.
 
-3. **Iterate rows:**
+3. **Iterate rows (Strict Preserve Mode A — since 2026-09-07):**
    - `rawRows = allRows.slice(1).filter(r=> r.some(c!=null&&c!=""))` (skip empty)
    - For each `row`: `mapped = mapSheetRowToDb(row,columnMap,syncedAt)`; **skip if `!itemName || !invoiceNo`**
    - `mapped.orderList = matchOrderLink(partyOrderNo, contractLinkMap)` (enrich, not in sheet)
-   - `prisma.supplyHistoryItem.upsert(where: {invoiceNo_itemName unique} :197, update: mapped, create: mapped)` — so re-sync updates existing invoice+item.
+   - `existing = prisma.supplyHistoryItem.findFirst({invoiceNo, itemName})` `app/api/supply-history/sync/route.ts:69`
+   - If `!existing`: `create(mapped)` — new invoice fully inserted.
+   - If `existing`: **Strict preserve** `route.ts:82` — `isNullOrEmpty(v)=v==null||String(v).trim()==""` `route.ts:22`. Build `filtered={syncedAt}` and only add `field` where `isNullOrEmpty(existing[field]) && !isNullOrEmpty(mapped[field])`. Keys `invoiceNo/itemName/syncedAt` and `derived*` skipped. All 40 MASTER fields incl. `orderList/state/utility` only fill gaps — existing non-null values never overwritten.
+   - If `hasDataChange`: `update(filtered)` else `update({syncedAt})` to bump timestamp `route.ts:95`.
 
-4. **Return:** `{count, totalInSheet, syncedAt}`.
+4. **Return:** `{count:upserted, patched, totalInSheet, syncedAt}` `route.ts:110` (`patched` = rows where at least one gap was filled).
 
 5. **GET for display** `app/api/supply-history/route.ts`:
    - `prisma.supplyHistoryItem.findMany`, map via `displayColumnMap = DISPLAY_HEADERS.map(h=>SUPPLY_HISTORY_HEADERS.indexOf(h))`, apply `MERGE_FIELDS` overrides, returns `{headers:DISPLAY_HEADERS, rows, ids, totalRows, syncedAt}`.
