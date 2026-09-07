@@ -1587,6 +1587,33 @@ export async function updateSupplyHistoryFieldAction(
   return { id, field, value };
 }
 
+export async function updateBisStatusFieldAction(
+  id: string,
+  field: string,
+  value: string | null,
+) {
+  "use server";
+  // Only remark should be editable from UI, but guard allows future extensibility
+  const allowed = ["remark", "itemName", "bisNo", "expiryDate", "applicationStatus", "reachedLab"];
+  if (!allowed.includes(field)) {
+    return { success: false, error: `Field ${field} is not editable.` } as any;
+  }
+  try {
+    let parsedVal: any = value;
+    if (field === "expiryDate" && value) {
+      const d = new Date(value);
+      parsedVal = isNaN(d.getTime()) ? null : d;
+    }
+    const updated = await prisma.bisStatus.update({
+      where: { id },
+      data: { [field]: parsedVal },
+    });
+    return { success: true, data: updated } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || `Failed to update ${field}.` } as any;
+  }
+}
+
 export async function getGMDCastingRatesAction() {
   "use server";
   try {

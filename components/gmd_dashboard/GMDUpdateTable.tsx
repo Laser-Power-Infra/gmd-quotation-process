@@ -162,11 +162,28 @@ function OrderListCell({ display, poNo }: { display: string; poNo?: string }) {
 }
 
 function parseDate(str: string): Date | null {
-  if (!str) return null;
-  const d = new Date(str);
+  if (!str || typeof str !== "string") return null;
+  const s = str.trim();
+  // Primary: DD-Mmm-YY / DD-Mmm-YYYY e.g. 12-Jan-24, 05-Feb-2023 (supply sheet format)
+  const m = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
+  if (m) {
+    const months: Record<string, number> = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    };
+    const mon = months[m[2].toLowerCase()];
+    if (mon !== undefined) {
+      const day = parseInt(m[1], 10);
+      let year = parseInt(m[3], 10);
+      if (year < 100) year += 2000;
+      if (!isNaN(day) && day >= 1 && day <= 31 && !isNaN(year)) {
+        return new Date(year, mon, day);
+      }
+    }
+  }
+  // Fallback: ISO / locale strings (e.g. 2024-01-12)
+  const d = new Date(s);
   if (!isNaN(d.getTime())) return d;
-  const m = str.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
-  if (m) return new Date(`${m[2]} ${m[1]}, ${m[3]}`);
   return null;
 }
 
@@ -424,7 +441,17 @@ castingRateInputs,
     ? filterActions!.onPageSizeChange
     : setLocalPageSize;
 
-  const dateColIdx = useMemo(() => headers.indexOf("Date"), [headers]);
+  const DATE_FILTER_CANDIDATES = useMemo(() => new Set(["Date", "expiryDate"]), []);
+  const dateColIdx = useMemo(() => {
+    for (const cand of DATE_FILTER_CANDIDATES) {
+      const idx = headers.indexOf(cand);
+      if (idx !== -1) return idx;
+    }
+    // Fallback: any header containing "date" (e.g. future Warranty Exp Date)
+    const fallback = headers.findIndex((h) => h.toLowerCase().includes("date"));
+    return fallback;
+  }, [headers, DATE_FILTER_CANDIDATES]);
+  const isDateFilterHeader = useCallback((header: string) => DATE_FILTER_CANDIDATES.has(header), [DATE_FILTER_CANDIDATES]);
   const hiddenSet = useMemo(
     () => new Set(hiddenColumns ?? []),
     [hiddenColumns],
@@ -536,6 +563,31 @@ castingRateInputs,
 
   const sortedWithIds = useMemo(() => {
     if (sortColumn === null) return rows.map((row, i) => ({ row, id: ids[i] }));
+    const headerName = headers[sortColumn] ?? "";
+    const isDateCol =
+      headerName.toLowerCase().includes("date") ||
+      headerName.toLowerCase().includes("warranty") ||
+      headerName === "PBG VALID TILL" ||
+      headerName === "PBG CLAIM TILL";
+    if (isDateCol) {
+      const decorated = rows.map((row, i) => {
+        const val = row[sortColumn];
+        const str = String(val ?? "").trim();
+        const d = str ? parseDate(str) : null;
+        const time = d ? d.getTime() : NaN;
+        const isNull = str === "" || isNaN(time);
+        return { row, id: ids[i], i, time, isNull };
+      });
+      const dir = sortDirection === "asc" ? 1 : -1;
+      decorated.sort((a, b) => {
+        if (a.isNull && b.isNull) return a.i - b.i;
+        if (a.isNull) return 1;
+        if (b.isNull) return -1;
+        if (a.time !== b.time) return (a.time - b.time) * dir;
+        return a.i - b.i;
+      });
+      return decorated.map(({ row, id }) => ({ row, id }));
+    }
     const decorated = rows.map((row, i) => {
       const val = row[sortColumn];
       const isNum = typeof val === "number";
@@ -555,7 +607,7 @@ castingRateInputs,
       return c * dir;
     });
     return decorated.map(({ row, id }) => ({ row, id }));
-  }, [rows, ids, sortColumn, sortDirection]);
+  }, [rows, ids, sortColumn, sortDirection, headers]);
 
   const rowSearchCache = useMemo(() => {
     const cache = new Map<unknown[], string>();
@@ -605,7 +657,7 @@ castingRateInputs,
         const dateStr = String(row[dateColIdx] ?? "");
         if (!dateStr) return false;
         const date = parseDate(dateStr);
-        if (!date) return true;
+        if (!date) return false;
         if (fromDate && date < fromDate) return false;
         if (toEnd && date > toEnd) return false;
       }
@@ -954,7 +1006,7 @@ castingRateInputs,
                     </div>
                     {/* Column filter */}
                     {!hiddenFilters?.includes(header) &&
-                      (header === "Date" ? (
+                      (isDateFilterHeader(header) ? (
                         <div className="flex flex-col gap-1 mt-1.5">
                           <div className="flex items-center gap-1">
                             <input
@@ -982,17 +1034,17 @@ castingRateInputs,
                           </div>
                           <div className="flex items-center gap-1">
                             <DebouncedSearchInput
-                              value={columnFilters["Date"] ?? ""}
+                              value={columnFilters[header] ?? ""}
                               onCommit={(val) =>
-                                handleColumnFilter("Date", val)
+                                handleColumnFilter(header, val)
                               }
-                              placeholder="Search Date..."
+                              placeholder={`Search ${header}...`}
                             />
-                            {(columnFilters["Date"] || dateFrom || dateTo) && (
+                            {(columnFilters[header] || dateFrom || dateTo) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleColumnFilter("Date", "");
+                                  handleColumnFilter(header, "");
                                   if (isControlled)
                                     filterActions!.onDateFrom("");
                                   else setLocalDateFrom("");

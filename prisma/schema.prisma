@@ -308,6 +308,19 @@ model VerifyBom {
   @@unique([bomId, itemCode, rmItemCode])
   @@index([itemCode])
 }
+
+model BisStatus {
+  id          String   @id @default(cuid())
+  itemName    String?
+  bisNo       String  @unique
+  expiryDate  DateTime?
+  applicationStatus String?
+  remark    String?
+  reachedLab  String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
 model LookupOption {
   id        String   @id @default(cuid())
   type      String
