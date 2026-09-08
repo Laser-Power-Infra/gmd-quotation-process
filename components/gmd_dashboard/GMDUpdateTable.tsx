@@ -1294,7 +1294,27 @@ castingRateInputs,
                           </select>
                         );
                       }
-                    } else if (header === "NO USE" || header === "USE/NO USE") {
+                    } else if (header === "RM AVAIL") {
+                        if (display === "SA") {
+                          cellContent = (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold">
+                              SA
+                            </span>
+                          );
+                        } else if (display === "Not available") {
+                          cellContent = (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold">
+                              Not available
+                            </span>
+                          );
+                        } else {
+                          cellContent = (
+                            <span className="truncate block text-gray-400">
+                              —
+                            </span>
+                          );
+                        }
+                      } else if (header === "NO USE" || header === "USE/NO USE") {
                         if (display === "USE") {
                           cellContent = (
                             <span className="inline-flex items-center px-2 py-0.5 rounded bg-emerald-600 text-white text-[10px] font-bold">

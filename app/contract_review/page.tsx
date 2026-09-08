@@ -27,6 +27,16 @@ interface ContractReviewData {
 
 type BalBillFilter = "all" | "yes" | "no";
 
+const STATUS_OPTIONS = [
+  "Blanks",
+  "Closed",
+  "Completed",
+  "Duplicate",
+  "Hold",
+  "Shortclosed",
+  "To be closed",
+] as const;
+
 function isZeroBal(value: unknown): boolean {
   let s = String(value ?? "").trim();
   if (!s) return false;
@@ -48,7 +58,7 @@ const PN_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PN RATING");
 const RATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RATE");
 const MC_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC QTY");
 const BOM_ID_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BOM ID");
-const NO_USE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("NO USE");
+const NO_USE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RM AVAIL");
 const ORDER_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER QTY");
 const DI_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("DI QTY");
 const BILLED_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BILLED QTY");
@@ -233,16 +243,6 @@ export default function ContractReviewPage() {
     [],
   );
 
-  const STATUS_OPTIONS = [
-    "Blanks",
-    "Closed",
-    "Completed",
-    "Duplicate",
-    "Hold",
-    "Shortclosed",
-    "To be closed",
-  ] as const;
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -404,8 +404,6 @@ export default function ContractReviewPage() {
       const id = data.ids[i];
       if (!id || autoNoUseRef.current.has(id)) return;
       if (String(row[BOM_ID_IDX] ?? "").trim() === "") return;
-      const v = row[NO_USE_IDX];
-      if (v === "" || v === "USE" || v === "NO USE") return;
       autoNoUseRef.current.add(id);
       pending.push(id);
     });
@@ -1120,7 +1118,6 @@ export default function ContractReviewPage() {
                 "BAL BILL AG MC",
                 "ic qty",
                 "bom formula trial",
-                "NO USE",
               ]}
             />
           </div>

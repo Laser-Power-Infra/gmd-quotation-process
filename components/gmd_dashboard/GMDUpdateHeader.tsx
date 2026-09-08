@@ -26,7 +26,7 @@ function formatSyncTime(dateStr: string | null): string {
   }
 }
 
-export default function GMDUpdateHeader({ totalRows, syncedAt = null, onSync, syncing, onRecompute, recomputing, title = "GMD UPDATE" }: GMDUpdateHeaderProps) {
+export default function GMDUpdateHeader({ totalRows, syncedAt = null, onSync, syncing,onRecompute, recomputing, title = "GMD UPDATE" }: GMDUpdateHeaderProps) {
   return (
     <div className="bg-[#0a2540] px-6 py-3 border-b border-[#1e3d59] flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -40,20 +40,36 @@ export default function GMDUpdateHeader({ totalRows, syncedAt = null, onSync, sy
           </span>
         )}
       </div>
-      {onRecompute && (
+      {(onSync || onRecompute) && (
         <div className="flex items-center gap-2">
-          <button
-            onClick={onRecompute}
-            disabled={recomputing}
-            className="flex items-center gap-1.5 bg-[#38ef7d]/10 hover:bg-[#38ef7d]/20 border border-[#38ef7d]/30 rounded px-3 py-1.5 text-[11px] font-semibold text-[#38ef7d] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {recomputing ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <RefreshCw size={12} />
-            )}
-            {recomputing ? "Recomputing..." : "Recompute"}
-          </button>
+          {onSync && (
+            <button
+              onClick={onSync}
+              disabled={syncing}
+              className="flex items-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/30 rounded px-3 py-1.5 text-[11px] font-semibold text-blue-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {syncing ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              {syncing ? "Syncing..." : "Sync"}
+            </button>
+          )}
+          {onRecompute && (
+            <button
+              onClick={onRecompute}
+              disabled={recomputing}
+              className="flex items-center gap-1.5 bg-[#38ef7d]/10 hover:bg-[#38ef7d]/20 border border-[#38ef7d]/30 rounded px-3 py-1.5 text-[11px] font-semibold text-[#38ef7d] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {recomputing ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              {recomputing ? "Recomputing..." : "Recompute"}
+            </button>
+          )}
         </div>
       )}
     </div>

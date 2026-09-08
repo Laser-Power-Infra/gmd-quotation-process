@@ -7,7 +7,7 @@ import {
   buildDumpColumnMap,
   mapContractReviewRow,
 } from "@/lib/gmd_lib/contract-review-columns";
-import { getBomUseStatusBatch } from "@/lib/verifyBomLookup";
+import { getBomRmAvailBatch } from "@/lib/verifyBomLookup";
 
 const SPREADSHEET_ID = process.env.CONTRACT_SHEET_SPREADSHEET_ID;
 const DUMP_GID = 0;
@@ -70,7 +70,7 @@ export async function POST() {
 
     const contractsByKey = new Map<string, unknown[]>();
     for (const row of contractsRows) {
-      const itemCode = String(row[contractsColumnMap[2]] ?? "").trim();
+      const itemCode = String(row[contractsColumnMap[1]] ?? "").trim();
       const contractNo = String(row[contractsColumnMap[0]] ?? "").trim();
       if (!itemCode || !contractNo) continue;
       const key = normalizeKey(itemCode) + "||" + normalizeKey(contractNo);
@@ -141,24 +141,46 @@ export async function POST() {
 
     const withBom = await prisma.contractReview.findMany({
       where: { bomId: { not: null } },
-      select: { id: true, bomId: true, noUse: true },
+      select: { id: true, bomId: true, orderQty: true, noUse: true },
     });
     const bomIds = [
       ...new Set(
         withBom.map((i) => i.bomId).filter((b): b is string => !!b),
       ),
     ];
-    const statusMap = await getBomUseStatusBatch(bomIds);
+    const bomAvail = await getBomRmAvailBatch(bomIds);
+    const groups = new Map<string, typeof withBom>();
+    for (const i of withBom) {
+      if (!i.bomId) continue;
+      if (!groups.has(i.bomId)) groups.set(i.bomId, []);
+      groups.get(i.bomId)!.push(i);
+    }
+    const availMap = new Map<string, string>();
+    for (const [bomId, group] of groups) {
+      const avail = bomAvail.get(bomId);
+      if (!avail || !avail.qualifies) continue;
+      let remaining = avail.stock;
+      const sorted = [...group].sort((a, b) => {
+        const qa = parseFloat(String(a.orderQty ?? "").replace(/,/g, ""));
+        const qb = parseFloat(String(b.orderQty ?? "").replace(/,/g, ""));
+        return (isNaN(qa) ? 0 : qa) - (isNaN(qb) ? 0 : qb);
+      });
+      for (const r of sorted) {
+        const qty = parseFloat(String(r.orderQty ?? "").replace(/,/g, ""));
+        const n = isNaN(qty) ? 0 : qty;
+        availMap.set(r.id, n <= remaining ? "SA" : "Not available");
+        if (n <= remaining) remaining -= n;
+      }
+    }
     const noUseUpdates = withBom
-      .map((i) => {
-        const status = i.bomId ? (statusMap.get(i.bomId) ?? "") : null;
-        return { i, status };
+      .filter((i) => {
+        const status = availMap.get(i.id) ?? null;
+        return status !== i.noUse;
       })
-      .filter(({ i, status }) => status !== i.noUse)
-      .map(({ i, status }) =>
+      .map((i) =>
         prisma.contractReview.update({
           where: { id: i.id },
-          data: { noUse: status },
+          data: { noUse: availMap.get(i.id) ?? null },
         }),
       );
     if (noUseUpdates.length > 0) {

@@ -119,6 +119,60 @@ export async function getBomUseStatusBatch(
   return out;
 }
 
+export type BomRmAvail = {
+  qualifies: boolean;
+  stock: number;
+};
+
+export async function getBomRmAvailBatch(
+  bomIds: string[],
+): Promise<Map<string, BomRmAvail>> {
+  const unique = [...new Set(bomIds.filter(Boolean))];
+  const out = new Map<string, BomRmAvail>();
+  if (unique.length === 0) return out;
+  const rows = await prisma.verifyBom.findMany({
+    where: { bomId: { in: unique } },
+    select: {
+      bomId: true,
+      itemCode: true,
+      rmItemCode: true,
+      bomIdType: true,
+      availableStock: true,
+    },
+  });
+  const groups = new Map<
+    string,
+    (BomRowShape & { availableStock: string | null })[]
+  >();
+  for (const r of rows) {
+    if (!r.bomId) continue;
+    if (!groups.has(r.bomId)) groups.set(r.bomId, []);
+    groups.get(r.bomId)!.push(r);
+  }
+  for (const id of unique) {
+    const group = groups.get(id) ?? [];
+    if (group.length === 0) {
+      out.set(id, { qualifies: false, stock: 0 });
+      continue;
+    }
+    const status = computeBomUseStatus(group);
+    if (status !== "USE") {
+      out.set(id, { qualifies: false, stock: 0 });
+      continue;
+    }
+    let stock = 0;
+    for (const r of group) {
+      const s = parseFloat(String(r.availableStock ?? "").replace(/,/g, ""));
+      if (!isNaN(s)) stock += s;
+    }
+    out.set(id, {
+      qualifies: true,
+      stock,
+    });
+  }
+  return out;
+}
+
 export async function populateAvailableBomIdsForItemId(itemId: string): Promise<string[]> {
   const item = await prisma.enquiryItem.findUnique({
     where: { id: itemId },
