@@ -112,7 +112,7 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState):
   if (filters.costLogic && !matchesText(filters.costLogic, item.costLogic || "")) return false;
   if (filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;
   if (filters.stockQuantity && !matchesText(filters.stockQuantity, item.stockQuantity || "")) return false;
-  if (filters.availableStock.length > 0 && !matchesMulti(filters.availableStock, item.availableStock ?? null)) return false;
+  if (filters.availableStock && !matchesText(filters.availableStock, item.availableStock || "")) return false;
   if (filters.stockAgainstContract && !matchesText(filters.stockAgainstContract, item.stockAgainstContract || "")) return false;
   if (filters.discount && !matchesText(filters.discount, item.discount != null ? String(item.discount) : "")) return false;
   if (filters.vaPercent.length > 0 && !matchesMulti(filters.vaPercent, item.vaPercent?.toString() ?? null)) return false;
