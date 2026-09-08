@@ -1,6 +1,7 @@
 export const BIS_STATUS_HEADERS = [
   "itemName",
   "bisNo",
+  "licenseNo",
   "expiryDate",
   "applicationStatus",
   "remark",
@@ -10,6 +11,9 @@ export const BIS_STATUS_HEADERS = [
 export const BIS_HEADER_TO_DB_FIELD: Record<string, string> = {
   itemName: "itemName",
   bisNo: "bisNo",
+  licenseNo: "licenseNo",
+  // Human-readable alias so header label "License No/ Application No" also resolves
+  "License No/ Application No": "licenseNo",
   expiryDate: "expiryDate",
   applicationStatus: "applicationStatus",
   remark: "remark",
@@ -35,6 +39,7 @@ function formatDate(value: Date | string | null | undefined): string | null {
 export function dbBisStatusToRow(item: {
   itemName: string | null;
   bisNo: string | null;
+  licenseNo: string | null;
   expiryDate: Date | string | null;
   applicationStatus: string | null;
   remark: string | null;
@@ -43,6 +48,7 @@ export function dbBisStatusToRow(item: {
   return [
     item.itemName,
     item.bisNo,
+    item.licenseNo,
     formatDate(item.expiryDate as any),
     item.applicationStatus,
     item.remark,

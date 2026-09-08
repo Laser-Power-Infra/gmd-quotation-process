@@ -31,7 +31,7 @@ export async function getRmStockMap(rmCodes: string[]): Promise<Map<string, stri
  * Syncs availableStock into EnquiryItem from GMDUpdateItem for items with bomType = 'DIRECT M2M'.
  * Can optionally target specific itemIds or all matching items.
  */
-export async function syncDirectM2MAvailableStock(itemIds?: string[]): Promise<{ updatedCount: number }> {
+export async function syncDirectM2MAvailableStock(itemIds?: string[]): Promise<{ updatedCount: number; updatedIds: string[] }> {
   const whereClause: any = {
     bomType: "DIRECT M2M",
     rmItemCode: { not: null },
@@ -47,13 +47,14 @@ export async function syncDirectM2MAvailableStock(itemIds?: string[]): Promise<{
   });
 
   if (!items.length) {
-    return { updatedCount: 0 };
+    return { updatedCount: 0, updatedIds: [] };
   }
 
   const rmCodes = items.map((i) => i.rmItemCode).filter(Boolean) as string[];
   const stockMap = await getRmStockMap(rmCodes);
 
   let updatedCount = 0;
+  const updatedIds: string[] = [];
   for (const item of items) {
     if (!item.rmItemCode) continue;
     const stock = stockMap.get(item.rmItemCode);
@@ -63,8 +64,9 @@ export async function syncDirectM2MAvailableStock(itemIds?: string[]): Promise<{
         data: { availableStock: stock },
       });
       updatedCount++;
+      updatedIds.push(item.id);
     }
   }
 
-  return { updatedCount };
+  return { updatedCount, updatedIds };
 }

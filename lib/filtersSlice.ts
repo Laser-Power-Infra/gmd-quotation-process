@@ -48,7 +48,7 @@ const initialState: FiltersState = {
   pdcostValidationSearch: "",
   stockQuantity: "",
   costLogic: "",
-  availableStock: "",
+  availableStock: [],
   stockAgainstContract: "",
 };
 

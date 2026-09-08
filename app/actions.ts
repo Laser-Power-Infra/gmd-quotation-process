@@ -1284,10 +1284,18 @@ export async function updateAllBomCostsAction(itemIds: string[]) {
 }
 
 // Action to sync available stock for all or specified DIRECT M2M enquiry items
+// Global backfill: call with no itemIds to sync all DIRECT M2M items from raw materials (GMDUpdateItem)
 export async function syncDirectM2MAvailableStockAction(itemIds?: string[]) {
   try {
     const res = await syncDirectM2MAvailableStock(itemIds);
-    return { success: true, count: res.updatedCount };
+    let items: ReturnType<typeof serializeItem>[] = [];
+    if (res.updatedIds.length > 0) {
+      const updated = await prisma.enquiryItem.findMany({
+        where: { id: { in: res.updatedIds } },
+      });
+      items = updated.map(serializeItem);
+    }
+    return { success: true, count: res.updatedCount, items } as const;
   } catch (error: any) {
     return { success: false, error: error.message || "Failed to sync available stock." };
   }
@@ -1685,8 +1693,7 @@ export async function updateBisStatusFieldAction(
   value: string | null,
 ) {
   "use server";
-  // Only remark should be editable from UI, but guard allows future extensibility
-  const allowed = ["remark", "itemName", "bisNo", "expiryDate", "applicationStatus", "reachedLab"];
+  const allowed = ["remark", "licenseNo", "itemName", "bisNo", "expiryDate", "applicationStatus", "reachedLab"];
   if (!allowed.includes(field)) {
     return { success: false, error: `Field ${field} is not editable.` } as any;
   }

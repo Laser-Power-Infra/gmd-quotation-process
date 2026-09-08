@@ -60,8 +60,8 @@ export default function BisStatusPage() {
       if (!header) return;
       const field = BIS_HEADER_TO_DB_FIELD[header];
       if (!field) return;
-      // Only remark should be editable, but guard in action will enforce
-      if (field !== "remark") {
+      const editableFields = new Set(["remark", "licenseNo"]);
+      if (!editableFields.has(field)) {
         toast.error(`Field ${header} is not editable`);
         return;
       }
@@ -95,7 +95,7 @@ export default function BisStatusPage() {
   const categoryOptions = useMemo(() => {
     if (!data) return {};
     const opts: Record<string, string[]> = {};
-    const dropdownCols = ["applicationStatus", "reachedLab"];
+    const dropdownCols = ["applicationStatus", "reachedLab", "licenseNo"];
     for (const col of dropdownCols) {
       const idx = headers.indexOf(col);
       if (idx === -1) continue;
@@ -162,7 +162,7 @@ export default function BisStatusPage() {
             onSelect={setSelectedIndex}
             title={`BIS Status`}
             editable
-            editableColumns={["remark"]}
+            editableColumns={["remark", "licenseNo"]}
             onCellUpdate={handleCellUpdate}
             categoryOptions={categoryOptions}
             uniqueKeyColumns={["bisNo"]}
