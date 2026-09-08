@@ -5,6 +5,9 @@ import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
 import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
+import { toast } from "sonner";
+import { updateVerifyBomFieldBatchAction } from "@/app/actions";
+import { VERIFY_BOM_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/verify-bom-columns";
 
 interface BomData {
   headers: string[];
@@ -18,6 +21,7 @@ export default function BomPage() {
   const [data, setData] = useState<BomData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [recomputing, setRecomputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
@@ -56,12 +60,86 @@ export default function BomPage() {
     }
   }, [fetchData]);
 
+  const handleRecompute = useCallback(async () => {
+    setRecomputing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/bom/recompute", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error ?? "Recompute failed");
+      }
+      await fetchData();
+      toast.success(`Recomputed ${body.verifyUpdated ?? 0} rows`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Recompute failed";
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setRecomputing(false);
+    }
+  }, [fetchData]);
+
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
   const headers = data?.headers ?? [];
   const ids = data?.ids ?? [];
+
+  const handleCellUpdate = useCallback(
+    async (id: string, colIndex: number, value: string) => {
+      if (!data) return;
+      const header = headers[colIndex];
+      if (!header) return;
+      const field = VERIFY_BOM_HEADER_TO_DB_FIELD[header];
+      if (!field) return;
+
+      const bomIdIdx = headers.indexOf("BOM ID");
+      const rowIdx = data.ids.indexOf(id);
+      const bomId =
+        rowIdx !== -1 ? String(data.rows[rowIdx][bomIdIdx] ?? "").trim() : "";
+
+      let groupIds = [id];
+      if (field === "bomIdType" && bomId) {
+        groupIds = data.rows
+          .map((r, i) => ({
+            id: data.ids[i],
+            bom: String(r[bomIdIdx] ?? "").trim(),
+          }))
+          .filter((x) => x.bom === bomId)
+          .map((x) => x.id);
+      }
+
+      const res = await updateVerifyBomFieldBatchAction(
+        groupIds,
+        field,
+        value || null,
+      );
+      if (res?.success) {
+        const idSet = new Set(groupIds);
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rows: prev.rows.map((row, i) =>
+              idSet.has(prev.ids[i])
+                ? (() => {
+                    const next = [...row];
+                    next[colIndex] = value;
+                    return next;
+                  })()
+                : row,
+            ),
+          };
+        });
+        toast.success(`Updated ${groupIds.length} row(s)`);
+      } else {
+        toast.error(res?.error || "Failed to update");
+      }
+    },
+    [data, headers],
+  );
 
   if (loading) {
     return (
@@ -94,6 +172,8 @@ export default function BomPage() {
           syncedAt={data?.syncedAt ?? undefined}
           onSync={handleSync}
           syncing={syncing}
+          onRecompute={handleRecompute}
+          recomputing={recomputing}
         />
         {error && (
           <div className="mt-2 text-sm text-red-600">{error}</div>
@@ -110,6 +190,10 @@ export default function BomPage() {
             mergeColumns={["BOM ID", "ITEM CODE", "BOM ID TYPE", "USE/NO USE", "AVAILABLE STOCK"]}
             mergeTypeColumn="BOM ID TYPE"
             mergeOnlyTypes={["2:1", "3:1"]}
+            editable
+            editableColumns={["BOM ID TYPE"]}
+            fixedDropdownOptions={{ "BOM ID TYPE": ["2:1", "3:1", "DIRECT M2M", "CREATE BOM"] }}
+            onCellUpdate={handleCellUpdate}
           />
         </div>
       </div>

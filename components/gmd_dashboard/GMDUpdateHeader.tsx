@@ -1,10 +1,12 @@
-import { RotateCcw, Loader2 } from "lucide-react";
+import { RefreshCw, Loader2 } from "lucide-react";
 
 interface GMDUpdateHeaderProps {
   totalRows: number;
   syncedAt?: string | null;
   onSync?: () => void;
   syncing?: boolean;
+  onRecompute?: () => void;
+  recomputing?: boolean;
   title?: string;
 }
 
@@ -24,7 +26,7 @@ function formatSyncTime(dateStr: string | null): string {
   }
 }
 
-export default function GMDUpdateHeader({ totalRows, syncedAt = null, onSync, syncing, title = "GMD UPDATE" }: GMDUpdateHeaderProps) {
+export default function GMDUpdateHeader({ totalRows, syncedAt = null, onSync, syncing, onRecompute, recomputing, title = "GMD UPDATE" }: GMDUpdateHeaderProps) {
   return (
     <div className="bg-[#0a2540] px-6 py-3 border-b border-[#1e3d59] flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -38,22 +40,22 @@ export default function GMDUpdateHeader({ totalRows, syncedAt = null, onSync, sy
           </span>
         )}
       </div>
-      {/* {onSync && (
+      {onRecompute && (
         <div className="flex items-center gap-2">
           <button
-            onClick={onSync}
-            disabled={syncing}
-            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded px-3 py-1.5 text-[11px] font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={onRecompute}
+            disabled={recomputing}
+            className="flex items-center gap-1.5 bg-[#38ef7d]/10 hover:bg-[#38ef7d]/20 border border-[#38ef7d]/30 rounded px-3 py-1.5 text-[11px] font-semibold text-[#38ef7d] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {syncing ? (
+            {recomputing ? (
               <Loader2 size={12} className="animate-spin" />
             ) : (
-              <RotateCcw size={12} />
+              <RefreshCw size={12} />
             )}
-            {syncing ? "Syncing..." : "Sync"}
+            {recomputing ? "Recomputing..." : "Recompute"}
           </button>
         </div>
-      )} */}
+      )}
     </div>
   );
 }

@@ -398,6 +398,7 @@ interface GMDUpdateTableProps {
   lockedCostIds?: ReadonlySet<string>;
   bomIdOptionsById?: Record<string, string[]>;
   onSelectBomId?: (id: string, bomId: string | null) => void;
+  bomIdCategoryFilter?: boolean;
   filterState?: {
     columnFilters: Record<string, string>;
     multiFilters: Record<string, string[]>;
@@ -448,6 +449,7 @@ castingRateInputs,
   lockedCostIds,
   bomIdOptionsById,
   onSelectBomId,
+  bomIdCategoryFilter,
   fullHeight,
   filterState,
   filterActions,
@@ -513,6 +515,15 @@ castingRateInputs,
     }
     return mergeOnlyTypes.includes(String(row[mergeTypeIdx] ?? "").trim());
   };
+  const getBomIdCategory = useCallback(
+    (id: string): string => {
+      const options = bomIdOptionsById?.[id];
+      if (!options || options.length === 0) return "Blanks";
+      if (options.length === 1) return "Single";
+      return "Dropdown";
+    },
+    [bomIdOptionsById],
+  );
   const mergeIdxSet = useMemo(
     () =>
       new Set(
@@ -662,7 +673,7 @@ castingRateInputs,
   }, [rows, headers]);
 
   const rowPassesFilters = useCallback(
-    (row: unknown[], opts: { excludeHeader?: string } = {}): boolean => {
+    (row: unknown[], opts: { excludeHeader?: string; id?: string } = {}): boolean => {
       const gs = globalSearch;
       if (gs.trim()) {
         const q = gs.toLowerCase();
@@ -672,6 +683,12 @@ castingRateInputs,
       for (const [colName, filterVal] of Object.entries(columnFilters)) {
         if (colName === opts.excludeHeader) continue;
         if (!filterVal || filterVal === "All") continue;
+        if (colName === "BOM ID" && bomIdCategoryFilter) {
+          if (!opts.id) continue;
+          const cat = getBomIdCategory(opts.id);
+          if (cat !== filterVal) return false;
+          continue;
+        }
         const colIdx = headers.indexOf(colName);
         if (colIdx === -1) continue;
         const cellVal = String(row[colIdx] ?? "");
@@ -714,11 +731,13 @@ castingRateInputs,
       dateColIdx,
       dateFrom,
       dateTo,
+      bomIdCategoryFilter,
+      getBomIdCategory,
     ],
   );
 
   const filteredWithIds = useMemo(
-    () => sortedWithIds.filter(({ row }) => rowPassesFilters(row)),
+    () => sortedWithIds.filter(({ row, id }) => rowPassesFilters(row, { id })),
     [sortedWithIds, rowPassesFilters],
   );
 
@@ -765,8 +784,9 @@ castingRateInputs,
     for (const h of headers) {
       const idx = headers.indexOf(h);
       const vals = new Set<string>();
-      for (const row of rows) {
-        if (!rowPassesFilters(row, { excludeHeader: h })) continue;
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (!rowPassesFilters(row, { excludeHeader: h, id: ids[i] })) continue;
         const v = String(row[idx] ?? "");
         if (v) vals.add(v);
       }
@@ -783,7 +803,7 @@ castingRateInputs,
       result[h] = list;
     }
     return result;
-  }, [rows, headers, categoryOptions, multiFilters, hasActiveFilters, rowPassesFilters, columnUniqueVals]);
+  }, [rows, ids, headers, categoryOptions, multiFilters, hasActiveFilters, rowPassesFilters, columnUniqueVals]);
 
   const paginatedWithIds = useMemo(() => {
     const start = (activePage - 1) * pageSize;
@@ -1130,6 +1150,24 @@ castingRateInputs,
                             )}
                           </div>
                         </div>
+                      ) : bomIdCategoryFilter && header === "BOM ID" ? (
+                        <div className="flex flex-col gap-1 mt-1.5">
+                          <select
+                            value={columnFilters["BOM ID"] ?? "All"}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleColumnFilter("BOM ID", e.target.value);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 outline-none cursor-pointer"
+                            title="Filter by BOM ID availability"
+                          >
+                            <option value="All">All</option>
+                            <option value="Single">Single</option>
+                            <option value="Dropdown">Dropdown</option>
+                            <option value="Blanks">Blanks</option>
+                          </select>
+                        </div>
                       ) : (
                         <div className="flex flex-col gap-1 mt-1.5">
                           <MultiSelect
@@ -1362,7 +1400,8 @@ castingRateInputs,
                         );
                       } else if (
                         STATUS_COLUMNS.has(header) ||
-                        categoryOptions?.[header]
+                        categoryOptions?.[header] ||
+                        fixedDropdownOptions?.[header]
                       ) {
                         cellContent = (
                           <select

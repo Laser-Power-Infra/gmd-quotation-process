@@ -35,6 +35,13 @@ function isZeroBal(value: unknown): boolean {
   return !isNaN(n) && n === 0;
 }
 
+function parseNum(value: unknown): number {
+  let s = String(value ?? "").trim();
+  if (!s) return NaN;
+  s = s.replace(/^["']+|["']+$/g, "").replace(/,/g, "");
+  return parseFloat(s);
+}
+
 const ITEM_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Item");
 const SIZE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("SIZE");
 const PN_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PN RATING");
@@ -42,6 +49,10 @@ const RATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RATE");
 const MC_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC QTY");
 const BOM_ID_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BOM ID");
 const NO_USE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("NO USE");
+const ORDER_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER QTY");
+const DI_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("DI QTY");
+const BILLED_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BILLED QTY");
+const BAL_BILL_AG_CONT_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BAL BILL AG CONT");
 
 interface TileOption {
   value: string;
@@ -429,8 +440,16 @@ export default function ContractReviewPage() {
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     const result: Record<string, string[]> = {};
     if (items.length) result.Item = items;
+    result["CLEARANCE STATUS"] = [
+      ...new Set([
+        ...STATUS_OPTIONS.filter((o) => o !== "Blanks" && o !== "Completed"),
+        ...data.rows
+          .map((r) => String(r[clearanceIdx] ?? "").trim())
+          .filter(Boolean),
+      ]),
+    ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return result;
-  }, [data]);
+  }, [data, clearanceIdx]);
 
   const allRows = data?.rows ?? [];
 
@@ -641,6 +660,71 @@ export default function ContractReviewPage() {
     clearanceIdx,
   ]);
 
+  const rateTile = useCallback(
+    (rateIdx: number, qtyIdx: number, subIdx?: number) => {
+      let sum = 0;
+      let count = 0;
+      for (const row of sidebarBaseRows) {
+        if (
+          !matchesSidebar(
+            row,
+            balBillFilter,
+            statusFilter,
+            tileItem,
+            tileSize,
+            tilePn,
+            balBillIdx,
+            clearanceIdx,
+            undefined,
+          )
+        )
+          continue;
+        const rate = parseNum(row[rateIdx]);
+        const qty = parseNum(row[qtyIdx]);
+        if (subIdx !== undefined) {
+          const sub = parseNum(row[subIdx]);
+          if (isNaN(rate) || isNaN(qty) || isNaN(sub)) continue;
+          sum += rate * (qty - sub);
+        } else {
+          if (isNaN(rate) || isNaN(qty)) continue;
+          sum += rate * qty;
+        }
+        count++;
+      }
+      return { sum, count };
+    },
+    [
+      sidebarBaseRows,
+      balBillFilter,
+      statusFilter,
+      tileItem,
+      tileSize,
+      tilePn,
+      balBillIdx,
+      clearanceIdx,
+    ],
+  );
+
+  const rateBalBillCont = useMemo(
+    () => rateTile(RATE_IDX, BAL_BILL_AG_CONT_IDX),
+    [rateTile],
+  );
+
+  const rateOrderQty = useMemo(
+    () => rateTile(RATE_IDX, ORDER_QTY_IDX),
+    [rateTile],
+  );
+
+  const rateBalDiQty = useMemo(
+    () => rateTile(RATE_IDX, DI_QTY_IDX, BILLED_QTY_IDX),
+    [rateTile],
+  );
+
+  const rateBalMspQty = useMemo(
+    () => rateTile(RATE_IDX, MC_QTY_IDX, DI_QTY_IDX),
+    [rateTile],
+  );
+
   const tileRowsCount = useMemo(
     () =>
       sidebarBaseRows.reduce(
@@ -812,7 +896,7 @@ export default function ContractReviewPage() {
   return (
     <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
       <div className="flex-1 flex p-6 min-h-0 gap-4">
-        <aside className="w-64 shrink-0 h-fit bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-4">
+        <aside className="w-64 shrink-0 self-stretch min-h-0 max-h-full overflow-y-auto overscroll-contain bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-4 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent hover:scrollbar-thumb-white/30 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:bg-transparent pr-3">
           <span className="text-xs font-bold uppercase tracking-wider text-white">
             Filters
           </span>
@@ -919,6 +1003,60 @@ export default function ContractReviewPage() {
               {rateMcCont.count} rows of {tileRowsCount}
             </span>
           </div>
+
+          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+              RATE × BAL BILL AG CONT
+            </span>
+            <span className="block text-lg font-bold text-white mt-1">
+              {fmt(rateBalBillCont.sum)}
+            </span>
+            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+              {rateBalBillCont.count} rows of {tileRowsCount}
+            </span>
+          </div>
+
+          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+              RATE × ORDER QTY
+            </span>
+            <span className="block text-lg font-bold text-white mt-1">
+              {fmt(rateOrderQty.sum)}
+            </span>
+            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+              {rateOrderQty.count} rows of {tileRowsCount}
+            </span>
+          </div>
+
+          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+              RATE × (DI QTY - BILLED QTY)
+            </span>
+            <span className="block text-[10px] font-semibold text-white/40">
+              BAL DI QTY
+            </span>
+            <span className="block text-lg font-bold text-white mt-1">
+              {fmt(rateBalDiQty.sum)}
+            </span>
+            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+              {rateBalDiQty.count} rows of {tileRowsCount}
+            </span>
+          </div>
+
+          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+              RATE × (MC QTY - DI QTY)
+            </span>
+            <span className="block text-[10px] font-semibold text-white/40">
+              BAL MC QTY
+            </span>
+            <span className="block text-lg font-bold text-white mt-1">
+              {fmt(rateBalMspQty.sum)}
+            </span>
+            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+              {rateBalMspQty.count} rows of {tileRowsCount}
+            </span>
+          </div>
         </aside>
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
           <GMDUpdateHeader
@@ -938,7 +1076,7 @@ export default function ContractReviewPage() {
               onSelect={setSelectedIndex}
               title="Contract Review"
               editable
-              editableColumns={["bom formula trial", "Item", "BOM ID"]}
+              editableColumns={["bom formula trial", "Item", "BOM ID", "CLEARANCE STATUS"]}
               categoryOptions={categoryOptions}
               onCellUpdate={handleCellUpdate}
               externalFiltersActive={
@@ -950,6 +1088,7 @@ export default function ContractReviewPage() {
               filterActions={filterActions}
               bomIdOptionsById={bomIdOptionsById}
               onSelectBomId={handleSelectBomId}
+              bomIdCategoryFilter
               onReset={() => {
                 setTileItem("");
                 setTileSize("");
@@ -962,12 +1101,12 @@ export default function ContractReviewPage() {
                 "CV",
                 "FREE STOCK",
                 "FINAL REQ",
-                "MC QTY",
+                // "MC QTY",
                 "Balance mc",
                 "PROD ORD QTY",
                 "BALANCE TO PROD ORD",
                 "BALANCE TO PROD ENT",
-                "DI QTY",
+                // "DI QTY",
                 "BAL DI QTY",
                 "BAL MC VAL",
                 "BAL PROD ORD VAL",

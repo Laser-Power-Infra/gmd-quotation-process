@@ -1672,6 +1672,40 @@ export async function updateContractReviewFieldAction(
   }
 }
 
+const VERIFY_BOM_EDITABLE_FIELDS = new Set(["bomIdType"]);
+
+export async function updateVerifyBomFieldBatchAction(
+  ids: string[],
+  field: string,
+  value: string | null,
+) {
+  "use server";
+  try {
+    if (!VERIFY_BOM_EDITABLE_FIELDS.has(field)) {
+      return { success: false, error: `Field "${field}" is not editable.` };
+    }
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) {
+      return { success: true, count: 0 };
+    }
+    await prisma.$transaction(
+      unique.map((id) =>
+        prisma.verifyBom.update({
+          where: { id },
+          data: { [field]: value },
+        }),
+      ),
+    );
+    return { success: true, count: unique.length };
+  } catch (error: any) {
+    console.error("Error updating VerifyBom fields:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to update VerifyBom fields.",
+    };
+  }
+}
+
 export async function updateSupplyHistoryFieldAction(
   id: string,
   field: string,
