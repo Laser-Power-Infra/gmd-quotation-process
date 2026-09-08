@@ -1257,6 +1257,8 @@ castingRateInputs,
                     const isCellEditable =
                       editable &&
                       (!editableColumns || editableColumns.includes(header));
+                    const isPnBlankDropdown =
+                      header === "PN RATING" && !String(display).trim() && (fixedDropdownOptions?.[header]?.length ?? 0) > 0;
                     if (header === "BOM ID" && onSelectBomId) {
                       const options = bomIdOptionsById?.[id] ?? [];
                       if (options.length === 0) {
@@ -1330,6 +1332,32 @@ castingRateInputs,
                         } else {
                           cellContent = (
                             <span className="truncate block text-gray-400">
+                              —
+                            </span>
+                          );
+                        }
+                      } else if (header === "PN RATING" && !String(display).trim()) {
+                        const pnOpts = fixedDropdownOptions?.[header] ?? categoryOptions?.[header] ?? [];
+                        if (pnOpts.length > 0) {
+                          cellContent = (
+                            <select
+                              key={`pn-${id}-${idx}-${cellIdx}`}
+                              value={display}
+                              onChange={(e) => handleCellUpdate(idx, cellIdx, e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full text-xs bg-white border border-[#e1e6eb] rounded px-1 py-0.5 outline-none cursor-pointer"
+                            >
+                              <option value="">Select PN rating</option>
+                              {pnOpts.map((v) => (
+                                <option key={v} value={v}>
+                                  {v}
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        } else {
+                          cellContent = (
+                            <span className="truncate block text-gray-400" title="No PN options">
                               —
                             </span>
                           );
@@ -1518,7 +1546,7 @@ castingRateInputs,
                         rowSpan={mergedSpan}
                         className={`px-3 py-2 text-xs border-b border-[#e1e6eb] border-r  last:border-r-0${
                           cellIdx < 2 ? " sticky z-10 bg-white" : ""
-                        }${isCellEditable ? " bg-amber-50" : ""}`}
+                        }${isCellEditable || isPnBlankDropdown ? " bg-amber-50" : ""}`}
                         style={
                           cellIdx === 1
                             ? { left: columnWidths[0] }

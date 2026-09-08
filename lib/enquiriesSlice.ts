@@ -27,6 +27,7 @@ import {
   fetchContractReviewRatesAction,
   populatePdCostValidationAction,
   selectBomIdAction,
+  syncDirectM2MAvailableStockAction,
 } from "@/app/actions";
 
 export const populatePdCostValidation = createAsyncThunk(
@@ -307,6 +308,17 @@ export const selectBomId = createAsyncThunk(
   }
 );
 
+export const syncAvailableStock = createAsyncThunk(
+  "enquiries/syncAvailableStock",
+  async (itemIds: string[] | undefined, { rejectWithValue }) => {
+    const result = await syncDirectM2MAvailableStockAction(itemIds);
+    if (!result.success) {
+      return rejectWithValue((result as any).error || "Failed to sync available stock");
+    }
+    return result as { success: true; count: number; items: EnquiryItemData[] };
+  }
+);
+
 const enquiriesAdapter = createEntityAdapter<EnquiryData>({
   sortComparer: (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
 });
@@ -555,6 +567,38 @@ const enquiriesSlice = createSlice({
       .addCase(updateAllBomCosts.rejected, (state, action) => {
         state.updateCostStatus = "failed";
         state.updateCostError = (action.payload as string) || "Update BOM costs failed";
+      })
+      .addCase(syncAvailableStock.pending, (state) => {
+        state.updateCostStatus = "loading";
+        state.updateCostError = null;
+      })
+      .addCase(syncAvailableStock.fulfilled, (state, action) => {
+        const { items } = action.payload;
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, EnquiryItemData[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
+        state.updateCostStatus = "succeeded";
+      })
+      .addCase(syncAvailableStock.rejected, (state, action) => {
+        state.updateCostStatus = "failed";
+        state.updateCostError = (action.payload as string) || "Sync available stock failed";
       })
       .addCase(addItems.pending, (state) => {
         state.addItemsStatus = "loading";

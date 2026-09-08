@@ -23,6 +23,7 @@ interface ContractReviewData {
   totalRows: number;
   syncedAt: string | null;
   bomIdOptions?: Record<string, string[]>;
+  pnRatingOptions?: string[];
 }
 
 type BalBillFilter = "all" | "yes" | "no";
@@ -183,6 +184,7 @@ export default function ContractReviewPage() {
   const [bomIdOptionsById, setBomIdOptionsById] = useState<
     Record<string, string[]>
   >({});
+  const [pnRatingOptions, setPnRatingOptions] = useState<string[]>([]);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
     {},
   );
@@ -255,6 +257,7 @@ export default function ContractReviewPage() {
       const json = await res.json();
       setData(json);
       if (json.bomIdOptions) setBomIdOptionsById(json.bomIdOptions);
+      if (json.pnRatingOptions) setPnRatingOptions(json.pnRatingOptions);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -1076,6 +1079,7 @@ export default function ContractReviewPage() {
               editable
               editableColumns={["bom formula trial", "Item", "BOM ID", "CLEARANCE STATUS"]}
               categoryOptions={categoryOptions}
+              fixedDropdownOptions={pnRatingOptions.length ? { "PN RATING": pnRatingOptions } : undefined}
               onCellUpdate={handleCellUpdate}
               externalFiltersActive={
                 hasTileFilter ||

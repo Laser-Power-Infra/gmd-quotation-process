@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X } from "lucide-react";
+import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X, PackageCheck } from "lucide-react";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
 import Pagination from "./Pagination";
@@ -10,7 +10,7 @@ import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import { useSearchParams } from "next/navigation";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiryItems, bulkUpdateValidation, clearQuotedRates, selectBomId } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiryItems, bulkUpdateValidation, clearQuotedRates, selectBomId, syncAvailableStock } from "@/lib/enquiriesSlice";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
 import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
@@ -142,7 +142,7 @@ function matchesText(filterVal: string, actual: unknown): boolean {
 const ALL_DROPDOWN_FIELDS = [
   "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass",
-  "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "cost", "contractReviewRate", "pdcostValidation",
+  "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "cost", "contractReviewRate", "pdcostValidation", "availableStock",
 ] as const;
 
 const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus"]);
@@ -202,7 +202,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterStockStatus, setFilterStockStatus] = useFilterInput(filters.stockStatus, "stockStatus");
   const [filterCostLogic, setFilterCostLogic] = useFilterInput(filters.costLogic || "", "costLogic");
   const [filterStockQuantity, setFilterStockQuantity] = useFilterInput(filters.stockQuantity || "", "stockQuantity");
-  const [filterAvailableStock, setFilterAvailableStock] = useFilterInput(filters.availableStock || "", "availableStock");
   const [filterStockAgainstContract, setFilterStockAgainstContract] = useFilterInput(filters.stockAgainstContract || "", "stockAgainstContract");
   const [filterDiscount, setFilterDiscount] = useFilterInput(filters.discount, "discount");
   const [filterQuotedRate, setFilterQuotedRate] = useFilterInput(filters.quotedRate, "quotedRate");
@@ -225,6 +224,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [updateCostStatus, setUpdateCostStatus] = useState<"idle" | "running">("idle");
   const [crRateStatus, setCrRateStatus] = useState<"idle" | "running">("idle");
   const [pdCostValStatus, setPdCostValStatus] = useState<"idle" | "running">("idle");
+  const [syncStockStatus, setSyncStockStatus] = useState<"idle" | "running">("idle");
   // Bulk delete selection: per enquiry constraint, filtered scope, persisted across pagination
   const [selectedEnquiryId, setSelectedEnquiryId] = useState<string | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -445,7 +445,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (excludeField !== "costLogic" && filters.costLogic && !matchesText(filters.costLogic, item.costLogic || "")) return false;
       if (excludeField !== "stockStatus" && filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;
       if (excludeField !== "stockQuantity" && filters.stockQuantity && !matchesText(filters.stockQuantity, item.stockQuantity || "")) return false;
-      if (excludeField !== "availableStock" && filters.availableStock && !matchesText(filters.availableStock, item.availableStock || "")) return false;
       if (excludeField !== "stockAgainstContract" && filters.stockAgainstContract && !matchesText(filters.stockAgainstContract, item.stockAgainstContract || "")) return false;
       if (excludeField !== "discount" && filters.discount && !matchesText(filters.discount, item.discount != null ? String(item.discount) : "")) return false;
       if (excludeField !== "quotedRate" && filters.quotedRate && !matchesText(filters.quotedRate, item.quotedRate || "")) return false;
@@ -672,8 +671,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.availableStock &&
-        !(item.availableStock || "").toLowerCase().includes(filters.availableStock.toLowerCase())
+        filters.availableStock.length > 0 &&
+        !matchesMulti(filters.availableStock, item.availableStock ?? null)
       ) {
         return false;
       }
@@ -694,20 +693,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         !matchesMulti(filters.vaPercent, item.vaPercent?.toString() ?? null)
       ) {
         return false;
-      }
-      if (filters.vaPercent.length > 0) {
-        const matchesBlank = filters.vaPercent.includes(BLANK) && item.vaPercent == null;
-        const matchesValue = item.vaPercent != null && filters.vaPercent.includes(String(item.vaPercent));
-        if (!matchesBlank && !matchesValue) {
-          return false;
-        }
-      }
-      if (filters.vaPercent.length > 0) {
-        const matchesBlank = filters.vaPercent.includes(BLANK) && item.vaPercent == null;
-        const matchesValue = item.vaPercent != null && filters.vaPercent.includes(String(item.vaPercent));
-        if (!matchesBlank && !matchesValue) {
-          return false;
-        }
       }
       if (
         filters.itemNameMerge &&
@@ -1166,8 +1151,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.availableStock &&
-        !(item.availableStock || "").toLowerCase().includes(filters.availableStock.toLowerCase())
+        filters.availableStock.length > 0 &&
+        !matchesMulti(filters.availableStock, item.availableStock ?? null)
       ) {
         return false;
       }
@@ -1680,6 +1665,27 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   }
 
+  const handleSyncAvailableStock = async () => {
+    if (!confirm("Sync available stock for ALL DIRECT M2M items from Raw Materials dashboard (GMDUpdateItem)? This will backfill availableStock wherever rmItemCode matches.")) return
+
+    setSyncStockStatus("running")
+    const toastId = toast.loading("Syncing available stock for all DIRECT M2M items...")
+    try {
+      const result: any = await dispatch(syncAvailableStock(undefined)).unwrap()
+      const count = result.count ?? 0
+      if (count === 0) {
+        toast.info("No available stock changes found.", { id: toastId })
+      } else {
+        toast.success(`Available stock synced for ${count} item(s).`, { id: toastId })
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to sync available stock."
+      toast.error(message, { id: toastId })
+    } finally {
+      setSyncStockStatus("idle")
+    }
+  }
+
   const SELECT_COL_WIDTH = 44;
   const totalTableWidth = Object.values(columnWidths).reduce((a, b) => a + b, 0) + SELECT_COL_WIDTH;
 
@@ -1791,6 +1797,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           >
             <RefreshCw className={`h-3.5 w-3.5 text-violet-700 dark:text-violet-400 stroke-2 ${crRateStatus === "running" ? "animate-spin" : ""}`} />
             {crRateStatus === "running" ? "Fetching..." : "Fetch CR Rates"}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSyncAvailableStock}
+            disabled={syncStockStatus === "running" || updateCostStatus === "running"}
+            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
+            title="Backfill availableStock for all DIRECT M2M items from Raw Materials (GMDUpdateItem)"
+          >
+            <PackageCheck className={`h-3.5 w-3.5 text-amber-700 dark:text-amber-400 stroke-2 ${syncStockStatus === "running" ? "animate-spin" : ""}`} />
+            {syncStockStatus === "running" ? "Syncing Stock..." : "Sync Available Stock"}
           </button>
         </div>
       </div>
@@ -2616,13 +2633,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <span>Available Stock</span>
                 {renderSortArrow("availableStock")}
               </div>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={filterAvailableStock}
-                onChange={(e) => setFilterAvailableStock(e.target.value)}
-                className={inputClass}
-              />
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Available Stock"
+                  allLabel="All Stock"
+                  options={cascadedOptions.availableStock ?? []}
+                  cascadedOptions={cascadedOptions.availableStock ?? []}
+                  selected={filters.availableStock}
+                  onChange={(v) => dispatch(setFilter({ field: "availableStock", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(29, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"

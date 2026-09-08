@@ -8,9 +8,20 @@ import { getBatchDistinctBomIds } from "@/lib/verifyBomLookup";
 
 export async function GET() {
   try {
-    const items = await prisma.contractReview.findMany({
-      orderBy: { syncedAt: "desc" },
-    });
+    const [items, pnRatingRows] = await Promise.all([
+      prisma.contractReview.findMany({
+        orderBy: { syncedAt: "desc" },
+      }),
+      prisma.lookupOption.findMany({
+        where: { type: { in: ["PN_RATING", "pnRating"] }, isActive: true },
+        orderBy: [{ sortOrder: "asc" }],
+        select: { value: true },
+      }),
+    ]);
+
+    const pnRatingOptions = [...new Set(pnRatingRows.map((r) => r.value.trim()).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
+    );
 
     const lastSynced =
       items.length > 0
@@ -39,6 +50,7 @@ export async function GET() {
       totalRows: rows.length,
       syncedAt: lastSynced?.toISOString() ?? null,
       bomIdOptions,
+      pnRatingOptions,
     });
   } catch (error) {
     return NextResponse.json(

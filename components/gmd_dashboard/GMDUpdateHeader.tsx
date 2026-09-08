@@ -14,7 +14,7 @@ function formatSyncTime(dateStr: string | null): string {
   if (!dateStr) return "Never";
   try {
     const d = new Date(dateStr);
-   return d.toLocaleString("en-IN", {
+    return d.toLocaleString("en-IN", {
       day: "2-digit",
       month: "short",
       hour: "2-digit",
@@ -26,7 +26,15 @@ function formatSyncTime(dateStr: string | null): string {
   }
 }
 
-export default function GMDUpdateHeader({ totalRows, syncedAt = null, onSync, syncing,onRecompute, recomputing, title = "GMD UPDATE" }: GMDUpdateHeaderProps) {
+export default function GMDUpdateHeader({
+  totalRows,
+  syncedAt = null,
+  onSync,
+  syncing,
+  onRecompute,
+  recomputing,
+  title = "GMD UPDATE",
+}: GMDUpdateHeaderProps) {
   return (
     <div className="bg-[#0a2540] px-6 py-3 border-b border-[#1e3d59] flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -40,7 +48,7 @@ export default function GMDUpdateHeader({ totalRows, syncedAt = null, onSync, sy
           </span>
         )}
       </div>
-      {(onSync || onRecompute) && (
+      {/* {(onSync || onRecompute) && (
         <div className="flex items-center gap-2">
           {onSync && (
             <button
@@ -71,7 +79,7 @@ export default function GMDUpdateHeader({ totalRows, syncedAt = null, onSync, sy
             </button>
           )}
         </div>
-      )}
+      )} */}
     </div>
   );
 }
