@@ -46,6 +46,10 @@ const initialState: FiltersState = {
   contractReviewRateSearch: "",
   pdcostValidation: [],
   pdcostValidationSearch: "",
+  stockQuantity: "",
+  costLogic: "",
+  availableStock: [],
+  stockAgainstContract: "",
 };
 
 const filtersSlice = createSlice({

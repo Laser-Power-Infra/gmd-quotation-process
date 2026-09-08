@@ -12,6 +12,7 @@ import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows
 import { update2to1CostForItems } from "@/lib/gmd2to1CostLookup";
 import { getDistinctBomIds, getBatchDistinctBomIds, getBomUseStatus, getBomUseStatusBatch } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
+import { getRmStockMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -981,9 +982,16 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
         if (cost !== undefined && cost !== null) {
           await recalculateItem(itemId, { productCost: cost });
         }
+        const bomType = vbRow.bomIdType || DIRECT_M2M;
+        const dataToUpdate: any = { bomId: vbRow.bomId, bomType, rmItemCode: vbRow.rmItemCode };
+        if (bomType === DIRECT_M2M) {
+          const stockMap = await getRmStockMap([vbRow.rmItemCode]);
+          const stock = stockMap.get(vbRow.rmItemCode);
+          if (stock !== undefined) dataToUpdate.availableStock = stock;
+        }
         await prisma.enquiryItem.update({
           where: { id: itemId },
-          data: { bomId: vbRow.bomId, bomType: vbRow.bomIdType || DIRECT_M2M, rmItemCode: vbRow.rmItemCode },
+          data: dataToUpdate,
         });
         return;
       }
@@ -996,9 +1004,13 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
     if (cost !== undefined && cost !== null) {
       await recalculateItem(itemId, { productCost: cost });
     }
+    const dataToUpdate: any = { bomId: bom.bomId, bomType: DIRECT_M2M, rmItemCode: bom.rmItemCode };
+    const stockMap = await getRmStockMap([bom.rmItemCode]);
+    const stock = stockMap.get(bom.rmItemCode);
+    if (stock !== undefined) dataToUpdate.availableStock = stock;
     await prisma.enquiryItem.update({
       where: { id: itemId },
-      data: { bomId: bom.bomId, bomType: DIRECT_M2M, rmItemCode: bom.rmItemCode },
+      data: dataToUpdate,
     });
   } catch (e) {
     console.warn(`[maybeUpdateProductCost] failed for ${itemId} code=${newCode}:`, e);
@@ -1021,10 +1033,17 @@ export async function selectBomIdAction(itemId: string, bomId: string | null) {
     }
     const vbRow = await prisma.verifyBom.findFirst({ where: { itemCode: item.erpItemCode, bomId }, select: { bomId: true, rmItemCode: true, bomIdType: true } });
     if (!vbRow) return { success: false, error: "BOM not found for this item code." };
-    // Update bom linkage
+    // Update bom linkage and available stock if DIRECT M2M
+    const bomType = vbRow.bomIdType || DIRECT_M2M;
+    const dataToUpdate: any = { bomId: vbRow.bomId, bomType, rmItemCode: vbRow.rmItemCode };
+    if (bomType === DIRECT_M2M && vbRow.rmItemCode) {
+      const stockMap = await getRmStockMap([vbRow.rmItemCode]);
+      const stock = stockMap.get(vbRow.rmItemCode);
+      if (stock !== undefined) dataToUpdate.availableStock = stock;
+    }
     await prisma.enquiryItem.update({
       where: { id: itemId },
-      data: { bomId: vbRow.bomId, bomType: vbRow.bomIdType || DIRECT_M2M, rmItemCode: vbRow.rmItemCode },
+      data: dataToUpdate,
     });
     // Auto-fill productCost if blank
     if (item.productCost === null && vbRow.rmItemCode) {
@@ -1100,7 +1119,10 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     }
 
     const rmCodes = [...new Set(bomRows.map((r) => r.rmItemCode))];
-    const costMap = await buildRmCostMap(rmCodes);
+    const [costMap, stockMap] = await Promise.all([
+      buildRmCostMap(rmCodes),
+      getRmStockMap(rmCodes),
+    ]);
 
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
@@ -1130,13 +1152,19 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
           noCostRmCodes.add(bom.rmItemCode);
         }
 
+        const dataToUpdate: any = {
+          bomId: bom.bomId,
+          bomType: DIRECT_M2M,
+          rmItemCode: bom.rmItemCode,
+        };
+        const stock = stockMap.get(bom.rmItemCode);
+        if (stock !== undefined) {
+          dataToUpdate.availableStock = stock;
+        }
+
         await prisma.enquiryItem.update({
           where: { id: item.id },
-          data: {
-            bomId: bom.bomId,
-            bomType: DIRECT_M2M,
-            rmItemCode: bom.rmItemCode,
-          },
+          data: dataToUpdate,
         });
 
         const refreshed = await prisma.enquiryItem.findUnique({
@@ -1222,6 +1250,22 @@ export async function updateAllBomCostsAction(itemIds: string[]) {
       errorMessages.push(twoToOneRes.error);
     }
 
+    // 3. Sync available stock for any DIRECT M2M items in target
+    try {
+      await syncDirectM2MAvailableStock(itemIds);
+      // Refresh items that might have had stock updated
+      const refreshedItems = await prisma.enquiryItem.findMany({
+        where: { id: { in: itemIds } },
+      });
+      for (const ref of refreshedItems) {
+        if (updatedItemsMap.has(ref.id)) {
+          updatedItemsMap.set(ref.id, serializeItem(ref));
+        }
+      }
+    } catch (e) {
+      console.warn("[updateAllBomCostsAction] syncDirectM2MAvailableStock failed:", e);
+    }
+
     if (totalUpdated === 0) {
       return { success: false, error: errorMessages.join(" ") || "No BOM costs updated." };
     }
@@ -1236,6 +1280,16 @@ export async function updateAllBomCostsAction(itemIds: string[]) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Failed to update BOM costs.";
     return { success: false, error: message };
+  }
+}
+
+// Action to sync available stock for all or specified DIRECT M2M enquiry items
+export async function syncDirectM2MAvailableStockAction(itemIds?: string[]) {
+  try {
+    const res = await syncDirectM2MAvailableStock(itemIds);
+    return { success: true, count: res.updatedCount };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Failed to sync available stock." };
   }
 }
 

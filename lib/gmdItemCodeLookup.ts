@@ -244,14 +244,15 @@ export async function lookupItemCodeGated(params: {
   const code = await lookupItemCodeDirect(params);
   if (!code) return null;
   // BOM gate: only return code if it has a non-empty BOM ID in the reference sheet
-  try {
-    const hasBom = await hasBomId(code);
-    if (!hasBom) return null;
-  } catch {
-    // If BOM check fails (sheet unreachable), fall back to no-gate behavior to not block UI
-    // But log for visibility
-    console.warn(`[GmdItemCode] BOM gate check failed for ${code}, allowing code anyway`);
-  }
+  // (Commented out: itemcode will come even if bomid is absent)
+  // try {
+  //   const hasBom = await hasBomId(code);
+  //   if (!hasBom) return null;
+  // } catch {
+  //   // If BOM check fails (sheet unreachable), fall back to no-gate behavior to not block UI
+  //   // But log for visibility
+  //   console.warn(`[GmdItemCode] BOM gate check failed for ${code}, allowing code anyway`);
+  // }
   return code;
 }
 

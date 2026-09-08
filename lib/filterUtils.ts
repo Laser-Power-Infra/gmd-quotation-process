@@ -109,7 +109,11 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState):
   if (filters.productCost.length > 0 && !matchesMulti(filters.productCost, item.productCost != null ? String(item.productCost) : null)) return false;
   if (filters.costRefCode && !matchesText(filters.costRefCode, item.costRefCode || "")) return false;
   if (filters.cost.length > 0 && !matchesMulti(filters.cost, item.cost != null ? String(item.cost) : null)) return false;
+  if (filters.costLogic && !matchesText(filters.costLogic, item.costLogic || "")) return false;
   if (filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;
+  if (filters.stockQuantity && !matchesText(filters.stockQuantity, item.stockQuantity || "")) return false;
+  if (filters.availableStock.length > 0 && !matchesMulti(filters.availableStock, item.availableStock ?? null)) return false;
+  if (filters.stockAgainstContract && !matchesText(filters.stockAgainstContract, item.stockAgainstContract || "")) return false;
   if (filters.discount && !matchesText(filters.discount, item.discount != null ? String(item.discount) : "")) return false;
   if (filters.vaPercent.length > 0 && !matchesMulti(filters.vaPercent, item.vaPercent?.toString() ?? null)) return false;
   if (filters.itemNameMerge && !matchesText(filters.itemNameMerge, item.itemNameMerge || "")) return false;

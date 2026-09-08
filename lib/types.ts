@@ -35,6 +35,10 @@ export interface EnquiryItemData {
   contractReviewRate?: string | null;
   pdcostValidation?: string | null;
   availableBomIds?: string[] | null;
+  stockQuantity?: string | null;
+  costLogic?: string | null;
+  availableStock?: string | null;
+  stockAgainstContract?: string | null;
 }
 
 export interface AttachmentData {
@@ -129,6 +133,10 @@ export interface FiltersState {
   contractReviewRateSearch: string;
   pdcostValidation: string[];
   pdcostValidationSearch: string;
+  stockQuantity: string;
+  costLogic: string;
+  availableStock: string[];
+  stockAgainstContract: string;
 }
 
 export interface UiState {

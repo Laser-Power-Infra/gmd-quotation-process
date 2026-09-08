@@ -200,6 +200,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [filterQuantity, setFilterQuantity] = useFilterInput(filters.quantity, "quantity");
   const [filterCostRefCode, setFilterCostRefCode] = useFilterInput(filters.costRefCode, "costRefCode");
   const [filterStockStatus, setFilterStockStatus] = useFilterInput(filters.stockStatus, "stockStatus");
+  const [filterCostLogic, setFilterCostLogic] = useFilterInput(filters.costLogic || "", "costLogic");
+  const [filterStockQuantity, setFilterStockQuantity] = useFilterInput(filters.stockQuantity || "", "stockQuantity");
+  const [filterAvailableStock, setFilterAvailableStock] = useFilterInput(filters.availableStock || "", "availableStock");
+  const [filterStockAgainstContract, setFilterStockAgainstContract] = useFilterInput(filters.stockAgainstContract || "", "stockAgainstContract");
   const [filterDiscount, setFilterDiscount] = useFilterInput(filters.discount, "discount");
   const [filterQuotedRate, setFilterQuotedRate] = useFilterInput(filters.quotedRate, "quotedRate");
   const [filterQuotedRateGst, setFilterQuotedRateGst] = useFilterInput(filters.quotedRateGst || "", "quotedRateGst");
@@ -438,7 +442,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (excludeField !== "contractReviewRateSearch" && (filters.contractReviewRateSearch as string) && !matchesText(filters.contractReviewRateSearch, item.contractReviewRate || "")) return false;
       if (excludeField !== "pdcostValidationSearch" && (filters.pdcostValidationSearch as string) && !matchesText(filters.pdcostValidationSearch, getPdCostValidation(item) || "")) return false;
       if (excludeField !== "costRefCode" && filters.costRefCode && !matchesText(filters.costRefCode, item.costRefCode || "")) return false;
+      if (excludeField !== "costLogic" && filters.costLogic && !matchesText(filters.costLogic, item.costLogic || "")) return false;
       if (excludeField !== "stockStatus" && filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;
+      if (excludeField !== "stockQuantity" && filters.stockQuantity && !matchesText(filters.stockQuantity, item.stockQuantity || "")) return false;
+      if (excludeField !== "availableStock" && filters.availableStock && !matchesText(filters.availableStock, item.availableStock || "")) return false;
+      if (excludeField !== "stockAgainstContract" && filters.stockAgainstContract && !matchesText(filters.stockAgainstContract, item.stockAgainstContract || "")) return false;
       if (excludeField !== "discount" && filters.discount && !matchesText(filters.discount, item.discount != null ? String(item.discount) : "")) return false;
       if (excludeField !== "quotedRate" && filters.quotedRate && !matchesText(filters.quotedRate, item.quotedRate || "")) return false;
       if (excludeField !== "quotedRateGst" && (filters.quotedRateGst as string) && !matchesText(filters.quotedRateGst, item.quotedRateGst || "")) return false;
@@ -646,8 +654,32 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
+        filters.costLogic &&
+        !(item.costLogic || "").toLowerCase().includes(filters.costLogic.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
         filters.stockStatus &&
         !(item.stockStatus || "").toLowerCase().includes(filters.stockStatus.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.stockQuantity &&
+        !(item.stockQuantity || "").toLowerCase().includes(filters.stockQuantity.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.availableStock &&
+        !(item.availableStock || "").toLowerCase().includes(filters.availableStock.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.stockAgainstContract &&
+        !(item.stockAgainstContract || "").toLowerCase().includes(filters.stockAgainstContract.toLowerCase())
       ) {
         return false;
       }
@@ -1116,8 +1148,32 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
+        filters.costLogic &&
+        !(item.costLogic || "").toLowerCase().includes(filters.costLogic.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
         filters.stockStatus &&
         !(item.stockStatus || "").toLowerCase().includes(filters.stockStatus.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.stockQuantity &&
+        !(item.stockQuantity || "").toLowerCase().includes(filters.stockQuantity.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.availableStock &&
+        !(item.availableStock || "").toLowerCase().includes(filters.availableStock.toLowerCase())
+      ) {
+        return false;
+      }
+      if (
+        filters.stockAgainstContract &&
+        !(item.stockAgainstContract || "").toLowerCase().includes(filters.stockAgainstContract.toLowerCase())
       ) {
         return false;
       }
@@ -1357,7 +1413,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             "Product Cost": "",
             "Cost Ref Code": "",
             "Cost": "",
+            "Cost Logic": "",
             "Stock Status": "",
+            "Stock Quantity": "",
+            "Available Stock": "",
+            "Stock Against Contract": "",
             "Discount": "",
             "Quotation Rate": "",
             "CR Rate": "",
@@ -1400,7 +1460,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               "Product Cost": item.productCost ? Number(item.productCost) : "",
               "Cost Ref Code": item.costRefCode || "",
               "Cost": item.cost ? Number(item.cost) : "",
+              "Cost Logic": item.costLogic || "",
               "Stock Status": item.stockStatus || "",
+              "Stock Quantity": item.stockQuantity || "",
+              "Available Stock": item.availableStock || "",
+              "Stock Against Contract": item.stockAgainstContract || "",
               "Discount": item.discount ? `${Number(item.discount)}%` : "",
               "Quotation Rate": item.quotedRate || "",
               "CR Rate": item.contractReviewRate || "",
@@ -2477,7 +2541,30 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 24. Stock Status */}
+            {/* 26. Cost Logic */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Cost Logic</span>
+                {renderSortArrow("costLogic")}
+              </div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filterCostLogic}
+                onChange={(e) => setFilterCostLogic(e.target.value)}
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(26, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 27. Stock Status */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Stock Status</span>
@@ -2491,7 +2578,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(26, e)}
+                onMouseDown={(e) => handleMouseDown(27, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2500,7 +2587,76 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 25. Discount */}
+            {/* 28. Stock Quantity */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Stock Quantity</span>
+                {renderSortArrow("stockQuantity")}
+              </div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filterStockQuantity}
+                onChange={(e) => setFilterStockQuantity(e.target.value)}
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(28, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 29. Available Stock */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Available Stock</span>
+                {renderSortArrow("availableStock")}
+              </div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filterAvailableStock}
+                onChange={(e) => setFilterAvailableStock(e.target.value)}
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(29, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 30. Stock Against Contract */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Stock Against Contract</span>
+                {renderSortArrow("stockAgainstContract")}
+              </div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filterStockAgainstContract}
+                onChange={(e) => setFilterStockAgainstContract(e.target.value)}
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(30, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 31. Discount */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Discount</span>
@@ -2514,7 +2670,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(27, e)}
+                onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2523,7 +2679,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 26. VA% (Moved here next to Quotation Rate) */}
+            {/* 32. VA% (Moved here next to Quotation Rate) */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>VA%</span>
@@ -2541,7 +2697,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(28, e)}
+                onMouseDown={(e) => handleMouseDown(32, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2550,7 +2706,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 27. Quoted Rate */}
+            {/* 33. Quoted Rate */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Quotation Rate</span>
@@ -2575,7 +2731,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(29, e)}
+                onMouseDown={(e) => handleMouseDown(33, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2584,7 +2740,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 29. CR Rate (Contract Review Rate — read-only) */}
+            {/* 34. CR Rate (Contract Review Rate — read-only) */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Rate(Contract Review)</span>
@@ -2610,7 +2766,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(30, e)}
+                onMouseDown={(e) => handleMouseDown(34, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2619,7 +2775,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 30. PD Cost Validation (read-only) */}
+            {/* 35. PD Cost Validation (read-only) */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>PD Cost Val</span>
@@ -2645,7 +2801,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(31, e)}
+                onMouseDown={(e) => handleMouseDown(35, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2654,7 +2810,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 31. QR incl. GST */}
+            {/* 36. QR incl. GST */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>QR incl. GST</span>
@@ -2668,7 +2824,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(32, e)}
+                onMouseDown={(e) => handleMouseDown(36, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2677,7 +2833,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 32. Item Name (Merge) */}
+            {/* 37. Item Name (Merge) */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Item Name (Merge)</span>
@@ -2691,7 +2847,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(33, e)}
+                onMouseDown={(e) => handleMouseDown(37, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2700,7 +2856,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 33. Total Value */}
+            {/* 38. Total Value */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Total Value incl. GST</span>
@@ -2714,7 +2870,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(34, e)}
+                onMouseDown={(e) => handleMouseDown(38, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2723,7 +2879,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 34. Itemwise Total Value */}
+            {/* 39. Itemwise Total Value */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Itemwise Total Value</span>
@@ -2737,7 +2893,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(35, e)}
+                onMouseDown={(e) => handleMouseDown(39, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2746,7 +2902,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 35. Validation */}
+            {/* 40. Validation */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Validation</span>
@@ -2793,7 +2949,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(36, e)}
+                onMouseDown={(e) => handleMouseDown(40, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2802,7 +2958,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 36. Attachment */}
+            {/* 41. Attachment */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Attachment</span>
@@ -2816,7 +2972,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(37, e)}
+                onMouseDown={(e) => handleMouseDown(41, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2825,14 +2981,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 37. Delivery Schedule */}
+            {/* 42. Delivery Schedule */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Delivery Schedule</span>
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(38, e)}
+                onMouseDown={(e) => handleMouseDown(42, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2841,14 +2997,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 38. Offer PDF */}
+            {/* 43. Offer PDF */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Offer PDF</span>
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(39, e)}
+                onMouseDown={(e) => handleMouseDown(43, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2857,7 +3013,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 35. Actions */}
+            {/* Actions */}
             <th className="sticky top-0 z-30 bg-muted/90 py-2.5 px-3 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-b border-border text-right">
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
@@ -2867,7 +3023,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         <tbody className="bg-background">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={42} className="py-20 px-4 text-center border-b border-border">
+              <td colSpan={46} className="py-20 px-4 text-center border-b border-border">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground mb-4 border border-border">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -3489,6 +3645,27 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       ) : "-"}
                     </td>
 
+                    {/* First Item Cost Logic */}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          key={firstItem.id + "-costLogic-" + (firstItem.costLogic || "")}
+                          type="text"
+                          defaultValue={firstItem.costLogic || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.costLogic || "")) {
+                              handleItemFieldChange(firstItem.id, "costLogic", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
+                        />
+                      ) : "-"}
+                    </td>
+
                     {/* First Item Stock Status */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
@@ -3507,6 +3684,37 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
                         />
                       ) : "-"}
+                    </td>
+
+                    {/* First Item Stock Quantity */}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          key={firstItem.id + "-stockQuantity-" + (firstItem.stockQuantity || "")}
+                          type="text"
+                          defaultValue={firstItem.stockQuantity || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.stockQuantity || "")) {
+                              handleItemFieldChange(firstItem.id, "stockQuantity", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                        />
+                      ) : "-"}
+                    </td>
+
+                    {/* First Item Available Stock */}
+                    <td className="py-3.5 px-3 text-xs text-foreground border-r border-b border-border last:border-r-0 text-right">
+                      {firstItem?.availableStock ? firstItem.availableStock : "-"}
+                    </td>
+
+                    {/* First Item Stock Against Contract */}
+                    <td className="py-3.5 px-3 text-xs text-foreground border-r border-b border-border last:border-r-0 text-right">
+                      {firstItem?.stockAgainstContract ? firstItem.stockAgainstContract : "-"}
                     </td>
 
                     {/* First Item Discount */}
@@ -4048,6 +4256,25 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         />
                       </td>
 
+                      {/* Cost Logic */}
+                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                          <input
+                            key={item.id + "-costLogic-" + (item.costLogic || "")}
+                            type="text"
+                            defaultValue={item.costLogic || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.costLogic || "")) {
+                              handleItemFieldChange(item.id, "costLogic", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
+                        />
+                      </td>
+
                       {/* Stock Status */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                           <input
@@ -4065,6 +4292,35 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
                         />
                       </td>
+
+                      {/* Stock Quantity */}
+                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                          <input
+                            key={item.id + "-stockQuantity-" + (item.stockQuantity || "")}
+                            type="text"
+                            defaultValue={item.stockQuantity || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.stockQuantity || "")) {
+                              handleItemFieldChange(item.id, "stockQuantity", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                        />
+                      </td>
+
+                      {/* Available Stock */}
+                        <td className="py-3.5 px-3 text-xs text-foreground border-r border-b border-border last:border-r-0 text-right">
+                          {item.availableStock || "-"}
+                        </td>
+
+                      {/* Stock Against Contract */}
+                        <td className="py-3.5 px-3 text-xs text-foreground border-r border-b border-border last:border-r-0 text-right">
+                          {item.stockAgainstContract || "-"}
+                        </td>
 
                       {/* Discount */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
