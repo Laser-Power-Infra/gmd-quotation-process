@@ -162,12 +162,52 @@ function OrderListCell({ display, poNo }: { display: string; poNo?: string }) {
 }
 
 function parseDate(str: string): Date | null {
-  if (!str) return null;
-  const d = new Date(str);
+  if (!str || typeof str !== "string") return null;
+  const s = str.trim();
+  // Primary: DD-Mmm-YY / DD-Mmm-YYYY e.g. 12-Jan-24, 05-Feb-2023 (supply sheet format)
+  const m = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
+  if (m) {
+    const months: Record<string, number> = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    };
+    const mon = months[m[2].toLowerCase()];
+    if (mon !== undefined) {
+      const day = parseInt(m[1], 10);
+      let year = parseInt(m[3], 10);
+      if (year < 100) year += 2000;
+      if (!isNaN(day) && day >= 1 && day <= 31 && !isNaN(year)) {
+        return new Date(year, mon, day);
+      }
+    }
+  }
+  // Fallback: ISO / locale strings (e.g. 2024-01-12)
+  const d = new Date(s);
   if (!isNaN(d.getTime())) return d;
-  const m = str.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
-  if (m) return new Date(`${m[2]} ${m[1]}, ${m[3]}`);
   return null;
+}
+
+const DATE_SORT_HEADERS = new Set(["Date", "expiryDate", "PBG VALID TILL", "PBG CLAIM TILL"]);
+function isDateHeader(header: string): boolean {
+  if (DATE_SORT_HEADERS.has(header)) return true;
+  const l = header.toLowerCase();
+  return l.includes("date") || l.includes("warranty");
+}
+
+function compareDates(aVal: unknown, bVal: unknown, dir: number): number {
+  const aStr = String(aVal ?? "").trim();
+  const bStr = String(bVal ?? "").trim();
+  const aD = aStr ? parseDate(aStr) : null;
+  const bD = bStr ? parseDate(bStr) : null;
+  const aT = aD ? aD.getTime() : null;
+  const bT = bD ? bD.getTime() : null;
+  const aNull = aT === null || isNaN(aT as number);
+  const bNull = bT === null || isNaN(bT as number);
+  if (aNull && bNull) return 0;
+  if (aNull) return 1;
+  if (bNull) return -1;
+  if (aT === bT) return 0;
+  return (aT! < bT! ? -1 : 1) * dir;
 }
 
 function cellCompare(aVal: unknown, bVal: unknown, dir: number): number {
@@ -452,7 +492,17 @@ castingRateInputs,
     ? filterActions!.onPageSizeChange
     : setLocalPageSize;
 
-  const dateColIdx = useMemo(() => headers.indexOf("Date"), [headers]);
+  const DATE_FILTER_CANDIDATES = useMemo(() => new Set(["Date", "expiryDate"]), []);
+  const dateColIdx = useMemo(() => {
+    for (const cand of DATE_FILTER_CANDIDATES) {
+      const idx = headers.indexOf(cand);
+      if (idx !== -1) return idx;
+    }
+    // Fallback: any header containing "date" (e.g. future Warranty Exp Date)
+    const fallback = headers.findIndex((h) => h.toLowerCase().includes("date"));
+    return fallback;
+  }, [headers, DATE_FILTER_CANDIDATES]);
+  const isDateFilterHeader = useCallback((header: string) => DATE_FILTER_CANDIDATES.has(header), [DATE_FILTER_CANDIDATES]);
   const hiddenSet = useMemo(
     () => new Set(hiddenColumns ?? []),
     [hiddenColumns],
@@ -593,23 +643,23 @@ castingRateInputs,
     const decorated = rows.map((row, i) => ({ row, id: ids[i], i }));
     if (sortColumn === null && !isGrouped) return decorated;
     const dir = sortDirection === "asc" ? 1 : -1;
+    const sortHeader = sortColumn !== null ? (headers[sortColumn] ?? "") : "";
+    const isDateSort = sortColumn !== null && isDateHeader(sortHeader);
     decorated.sort((a, b) => {
       if (isGrouped) {
         const g = cellCompare(a.row[groupByIdx], b.row[groupByIdx], 1);
         if (g !== 0) return g;
       }
       if (sortColumn !== null) {
-        const c = cellCompare(
-          a.row[sortColumn],
-          b.row[sortColumn],
-          dir,
-        );
+        const c = isDateSort
+          ? compareDates(a.row[sortColumn], b.row[sortColumn], dir)
+          : cellCompare(a.row[sortColumn], b.row[sortColumn], dir);
         if (c !== 0) return c;
       }
       return a.i - b.i;
     });
     return decorated;
-  }, [rows, ids, sortColumn, sortDirection, isGrouped, groupByIdx]);
+  }, [rows, ids, sortColumn, sortDirection, isGrouped, groupByIdx, headers]);
 
   const rowSearchCache = useMemo(() => {
     const cache = new Map<unknown[], string>();
@@ -665,7 +715,7 @@ castingRateInputs,
         const dateStr = String(row[dateColIdx] ?? "");
         if (!dateStr) return false;
         const date = parseDate(dateStr);
-        if (!date) return true;
+        if (!date) return false;
         if (fromDate && date < fromDate) return false;
         if (toEnd && date > toEnd) return false;
       }
@@ -1047,7 +1097,7 @@ castingRateInputs,
                     </div>
                     {/* Column filter */}
                     {!hiddenFilters?.includes(header) &&
-                      (header === "Date" ? (
+                      (isDateFilterHeader(header) ? (
                         <div className="flex flex-col gap-1 mt-1.5">
                           <div className="flex items-center gap-1">
                             <input
@@ -1075,17 +1125,17 @@ castingRateInputs,
                           </div>
                           <div className="flex items-center gap-1">
                             <DebouncedSearchInput
-                              value={columnFilters["Date"] ?? ""}
+                              value={columnFilters[header] ?? ""}
                               onCommit={(val) =>
-                                handleColumnFilter("Date", val)
+                                handleColumnFilter(header, val)
                               }
-                              placeholder="Search Date..."
+                              placeholder={`Search ${header}...`}
                             />
-                            {(columnFilters["Date"] || dateFrom || dateTo) && (
+                            {(columnFilters[header] || dateFrom || dateTo) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleColumnFilter("Date", "");
+                                  handleColumnFilter(header, "");
                                   if (isControlled)
                                     filterActions!.onDateFrom("");
                                   else setLocalDateFrom("");

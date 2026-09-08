@@ -46,6 +46,12 @@ export default function Navbar() {
             BOM
           </Link>
           <Link
+            href="/bis-status"
+            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
+          >
+            BIS Status
+          </Link>
+          <Link
             href="http://192.168.1.190:6001/" target="_blank"
             className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
           >
