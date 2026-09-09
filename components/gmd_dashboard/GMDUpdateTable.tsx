@@ -232,10 +232,15 @@ function MultiSelect({
   options,
   selected,
   onChange,
+  optionMeta,
 }: {
   options: string[];
   selected: string[];
   onChange: (vals: string[]) => void;
+  optionMeta?: Record<
+    string,
+    { count: number; sumLabel: string; partyName?: string }
+  >;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -263,7 +268,9 @@ function MultiSelect({
       </button>
       {open && (
         <div
-          className="absolute top-full left-0 z-50 mt-1 w-48 bg-white border border-[#e1e6eb] rounded shadow-lg"
+          className={`absolute top-full left-0 z-50 mt-1 bg-white border border-[#e1e6eb] rounded shadow-lg ${
+            optionMeta ? "min-w-64 max-w-[26rem]" : "w-48"
+          }`}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex justify-between items-center px-1 py-1.5 text-[10px] border-b border-[#e1e6eb]">
@@ -297,25 +304,40 @@ function MultiSelect({
               />
               <span className="italic text-gray-400">(Blank)</span>
             </label>
-            {options.map((opt) => (
-              <label
-                key={opt}
-                className="flex items-center gap-1.5 px-2 py-1 hover:bg-gray-50 cursor-pointer text-[10px]"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(opt)}
-                  onChange={() => {
-                    const next = selected.includes(opt)
-                      ? selected.filter((v) => v !== opt)
-                      : [...selected, opt];
-                    onChange(next);
-                  }}
-                  className="accent-blue-600"
-                />
-                <span className="truncate">{opt}</span>
-              </label>
-            ))}
+            {options.map((opt) => {
+              const meta = optionMeta?.[opt];
+              return (
+                <label
+                  key={opt}
+                  className="flex items-center gap-1.5 px-2 py-1 hover:bg-gray-50 cursor-pointer text-[10px]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(opt)}
+                    onChange={() => {
+                      const next = selected.includes(opt)
+                        ? selected.filter((v) => v !== opt)
+                        : [...selected, opt];
+                      onChange(next);
+                    }}
+                    className="accent-blue-600"
+                  />
+                  <span className="flex-1 min-w-0 leading-tight">
+                    <span className="block truncate font-medium">{opt}</span>
+                    {meta && (
+                      <>
+                        <span className="block text-[9px] text-[#0a2540]/60 truncate">
+                          {meta.partyName || "—"}
+                        </span>
+                        <span className="block text-[9px] text-[#0a2540]/80">
+                          {meta.count} · {meta.sumLabel}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </label>
+              );
+            })}
           </div>
         </div>
       )}
@@ -418,6 +440,10 @@ interface GMDUpdateTableProps {
     onPageChange: (page: number) => void;
     onPageSizeChange: (size: number) => void;
   };
+  columnOptionMeta?: Record<
+    string,
+    Record<string, { count: number; sumLabel: string; partyName?: string }>
+  >;
   fullHeight?: boolean;
 }
 
@@ -453,6 +479,7 @@ castingRateInputs,
   fullHeight,
   filterState,
   filterActions,
+  columnOptionMeta,
 }: GMDUpdateTableProps) {
   const isControlled = !!filterState;
 
@@ -1174,6 +1201,7 @@ castingRateInputs,
                             options={uniqueVals}
                             selected={multiFilters[header] ?? []}
                             onChange={(vals) => handleMultiFilter(header, vals)}
+                            optionMeta={columnOptionMeta?.[header]}
                           />
                           <div className="flex items-center gap-1">
                             <DebouncedSearchInput
