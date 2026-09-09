@@ -3905,29 +3905,32 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       )}
                     </td>
 
-                    {/* Attachment */}
-                    <td className="py-3.5 px-4 text-xs border-r border-b border-border last:border-r-0 truncate align-top">
-                      <div className="flex flex-col gap-1 max-w-[150px]">
-                        {enquiry.attachments && enquiry.attachments.length > 0 ? (
-                          enquiry.attachments.map((att) => (
-                            <a
-                              key={att.id}
-                              href={att.url || "#"}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 text-xs font-semibold text-[#0f62fe] dark:text-blue-400 hover:underline truncate"
-                            >
-                              <FileText className="h-3.5 w-3.5 text-[#0f62fe] dark:text-blue-400 stroke-2 shrink-0" />
-                              <span className="truncate">{att.name}</span>
-                            </a>
-                          ))
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
+                    {/* Attachment - self scrollable, does not expand row */}
+                    <td className="py-2 px-2 text-xs border-r border-b border-border last:border-r-0 align-top overflow-hidden">
+                      <div className="flex flex-col gap-1 w-full min-w-0">
+                        <div className="flex flex-col gap-1 max-h-20 overflow-y-auto overflow-x-hidden cell-scrollable pr-1 min-w-0">
+                          {enquiry.attachments && enquiry.attachments.length > 0 ? (
+                            enquiry.attachments.map((att) => (
+                              <a
+                                key={att.id}
+                                href={att.url || "#"}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title={att.name}
+                                className="flex items-center gap-1.5 text-xs font-semibold text-[#0f62fe] dark:text-blue-400 hover:underline truncate min-w-0"
+                              >
+                                <FileText className="h-3.5 w-3.5 text-[#0f62fe] dark:text-blue-400 stroke-2 shrink-0" />
+                                <span className="truncate min-w-0">{att.name}</span>
+                              </a>
+                            ))
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </div>
                         <button
                           type="button"
                           onClick={() => attachInputRefs.current[enquiry.id]?.click()}
-                          className="inline-flex items-center gap-0.5 self-start text-[10px] font-semibold text-[#0f62fe] dark:text-blue-400 hover:underline cursor-pointer"
+                          className="inline-flex items-center gap-0.5 self-start shrink-0 text-[10px] font-semibold text-[#0f62fe] dark:text-blue-400 hover:underline cursor-pointer"
                         >
                           <Plus className="h-3 w-3 stroke-[2.5]" />
                           Add
