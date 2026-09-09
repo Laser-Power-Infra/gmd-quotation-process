@@ -111,10 +111,11 @@ function matchesSidebar(
   if (exclude !== "status" && status !== "all") {
     if (status === "Completed") {
       if (!isZeroBal(row[balBillIdx])) return false;
+    } else if (status === "Blanks") {
+      if (String(row[balBillIdx] ?? "").trim() !== "") return false;
     } else {
       const cell = String(row[clearanceIdx] ?? "").trim();
-      const ok = status === "Blanks" ? cell === "" : cell === status;
-      if (!ok) return false;
+      if (cell !== status) return false;
     }
   }
   if (exclude !== "clearance" && clearance.length > 0) {
@@ -144,12 +145,39 @@ function matchesSidebar(
   return true;
 }
 
+function parseDateCR(str: string): Date | null {
+  if (!str || typeof str !== "string") return null;
+  const s = str.trim();
+  const m = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
+  if (m) {
+    const months: Record<string, number> = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    };
+    const mon = months[m[2].toLowerCase()];
+    if (mon !== undefined) {
+      const day = parseInt(m[1], 10);
+      let year = parseInt(m[3], 10);
+      if (year < 100) year += 2000;
+      if (!isNaN(day) && day >= 1 && day <= 31 && !isNaN(year)) {
+        return new Date(year, mon, day);
+      }
+    }
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  return null;
+}
+
 function matchesTableFilters(
   row: unknown[],
   headers: string[],
   columnFilters: Record<string, string>,
   multiFilters: Record<string, string[]>,
   globalSearch: string,
+  dateFrom?: string,
+  dateTo?: string,
+  excludeHeader?: string,
 ): boolean {
   if (globalSearch.trim()) {
     const q = globalSearch.toLowerCase();
@@ -159,6 +187,7 @@ function matchesTableFilters(
     if (!hay.includes(q)) return false;
   }
   for (const [colName, filterVal] of Object.entries(columnFilters)) {
+    if (excludeHeader && colName === excludeHeader) continue;
     if (!filterVal || filterVal === "All") continue;
     const colIdx = headers.indexOf(colName);
     if (colIdx === -1) continue;
@@ -170,12 +199,33 @@ function matchesTableFilters(
     }
   }
   for (const [colName, selected] of Object.entries(multiFilters)) {
+    if (excludeHeader && colName === excludeHeader) continue;
     if (!selected.length) continue;
     const colIdx = headers.indexOf(colName);
     if (colIdx === -1) continue;
     const cellVal = String(row[colIdx] ?? "").trim();
     const matchesBlank = selected.includes("(Blank)") && cellVal === "";
     if (!(matchesBlank || selected.includes(cellVal))) return false;
+  }
+  if (dateFrom || dateTo) {
+    const dateColIdx = (() => {
+      const candidates = new Set(["Date", "expiryDate"]);
+      for (const cand of candidates) {
+        const idx = headers.indexOf(cand);
+        if (idx !== -1) return idx;
+      }
+      return headers.findIndex((h) => h.toLowerCase().includes("date"));
+    })();
+    if (dateColIdx !== -1) {
+      const fromDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
+      const toEnd = dateTo ? new Date(dateTo + "T23:59:59") : null;
+      const dateStr = String(row[dateColIdx] ?? "");
+      if (!dateStr) return false;
+      const date = parseDateCR(dateStr);
+      if (!date) return false;
+      if (fromDate && date < fromDate) return false;
+      if (toEnd && date > toEnd) return false;
+    }
   }
   return true;
 }
@@ -188,7 +238,6 @@ export default function ContractReviewPage() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [balBillFilter, setBalBillFilter] = useState<BalBillFilter>("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [clearanceFilter, setClearanceFilter] = useState<string[]>([]);
   const [clearanceOpen, setClearanceOpen] = useState(false);
   const clearanceRef = useRef<HTMLDivElement>(null);
   const [tileItem, setTileItem] = useState("");
@@ -315,6 +364,9 @@ export default function ContractReviewPage() {
     if (clearanceOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [clearanceOpen]);
+
+  // Single source of truth: sidebar CLEARANCE STATUS mirrors column multiFilters["CLEARANCE STATUS"]
+  const clearanceFilter = multiFilters["CLEARANCE STATUS"] ?? [];
 
   const handleSelectBomId = useCallback(
     (id: string, bomId: string | null) => {
@@ -499,13 +551,11 @@ export default function ContractReviewPage() {
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     const result: Record<string, string[]> = {};
     if (items.length) result.Item = items;
+    // Pure row-value distinct for CLEARANCE STATUS (plus (Blank) handled by MultiSelect)
     result["CLEARANCE STATUS"] = [
-      ...new Set([
-        ...STATUS_OPTIONS.filter((o) => o !== "Blanks" && o !== "Completed"),
-        ...data.rows
-          .map((r) => String(r[clearanceIdx] ?? "").trim())
-          .filter(Boolean),
-      ]),
+      ...new Set(
+        data.rows.map((r) => String(r[clearanceIdx] ?? "").trim()).filter(Boolean),
+      ),
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return result;
   }, [data, clearanceIdx]);
@@ -521,9 +571,11 @@ export default function ContractReviewPage() {
           columnFilters,
           multiFilters,
           globalSearch,
+          dateFrom,
+          dateTo,
         ),
       ),
-    [allRows, headers, columnFilters, multiFilters, globalSearch],
+    [allRows, headers, columnFilters, multiFilters, globalSearch, dateFrom, dateTo],
   );
 
   const balBillCounts = useMemo(() => {
@@ -593,8 +645,9 @@ export default function ContractReviewPage() {
         counts.Completed++;
         continue;
       }
+      const balBlank = String(row[balBillIdx] ?? "").trim() === "";
       const cell = String(row[clearanceIdx] ?? "").trim();
-      const key = cell === "" ? "Blanks" : cell;
+      const key = balBlank ? "Blanks" : cell;
       if (key in counts) counts[key]++;
     }
     return counts;
@@ -611,9 +664,13 @@ export default function ContractReviewPage() {
 
   // Cascading multi-select clearance filter: counts exclude own selection (exclude-self)
   // like item/size/pn/balBill/status. "(Blank)" represents empty string.
+  // Bidirectional: also exclude column's CLEARANCE STATUS filter (same logical filter synced)
   const clearanceCounts = useMemo(() => {
     const counts: Record<string, number> = { all: 0 };
-    for (const row of sidebarBaseRows) {
+    const baseForClearance = allRows.filter((row) =>
+      matchesTableFilters(row, headers, columnFilters, multiFilters, globalSearch, dateFrom, dateTo, "CLEARANCE STATUS"),
+    );
+    for (const row of baseForClearance) {
       if (
         !matchesSidebar(
           row,
@@ -636,7 +693,13 @@ export default function ContractReviewPage() {
     }
     return counts;
   }, [
-    sidebarBaseRows,
+    allRows,
+    headers,
+    columnFilters,
+    multiFilters,
+    globalSearch,
+    dateFrom,
+    dateTo,
     balBillFilter,
     statusFilter,
     tileItem,
@@ -650,12 +713,16 @@ export default function ContractReviewPage() {
     const keys = Object.keys(clearanceCounts).filter((k) => k !== "all");
     // Always include (Blank) like table column filter does, even if count 0 (cascading still shows 0)
     if (!keys.includes("(Blank)")) keys.push("(Blank)");
+    // Keep selected values visible even if count 0 (bidirectional cascading keep-selected)
+    for (const s of clearanceFilter) {
+      if (s !== "(Blank)" && !keys.includes(s)) keys.push(s);
+    }
     return keys.sort((a, b) => {
       if (a === "(Blank)") return 1;
       if (b === "(Blank)") return -1;
       return a.localeCompare(b, undefined, { numeric: true });
     });
-  }, [clearanceCounts]);
+  }, [clearanceCounts, clearanceFilter]);
 
   const itemOptions = useMemo(
     () =>
@@ -1032,7 +1099,7 @@ export default function ContractReviewPage() {
           <span className="text-xs font-bold uppercase tracking-wider text-white">
             Filters
           </span>
-          <div className="flex flex-col gap-1.5">
+          {/* <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold text-white/60">
               BAL BILL AG CONT
             </span>
@@ -1047,7 +1114,7 @@ export default function ContractReviewPage() {
               <option value="yes">Yes (0) ({balBillCounts.yes})</option>
               <option value="no">No ({balBillCounts.no})</option>
             </select>
-          </div>
+          </div> */}
           <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold text-white/60">
               STATUS
@@ -1089,14 +1156,20 @@ export default function ContractReviewPage() {
                   <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-[#e1e6eb] bg-[#f8f9fa]">
                     <button
                       type="button"
-                      onClick={() => setClearanceFilter([...clearanceOptions])}
+                      onClick={() =>
+                        filterActions.onMultiFilter("CLEARANCE STATUS", [
+                          ...clearanceOptions,
+                        ])
+                      }
                       className="text-blue-600 font-bold hover:underline cursor-pointer"
                     >
                       Select All
                     </button>
                     <button
                       type="button"
-                      onClick={() => setClearanceFilter([])}
+                      onClick={() =>
+                        filterActions.onMultiFilter("CLEARANCE STATUS", [])
+                      }
                       className="text-red-600 font-semibold hover:underline cursor-pointer"
                     >
                       Clear
@@ -1117,10 +1190,11 @@ export default function ContractReviewPage() {
                             type="checkbox"
                             checked={clearanceFilter.includes(opt)}
                             onChange={() => {
-                              setClearanceFilter((prev) =>
-                                prev.includes(opt)
-                                  ? prev.filter((v) => v !== opt)
-                                  : [...prev, opt],
+                              filterActions.onMultiFilter(
+                                "CLEARANCE STATUS",
+                                clearanceFilter.includes(opt)
+                                  ? clearanceFilter.filter((v) => v !== opt)
+                                  : [...clearanceFilter, opt],
                               );
                             }}
                             className="accent-blue-600 shrink-0"
@@ -1305,7 +1379,7 @@ export default function ContractReviewPage() {
                 setTilePn("");
                 setBalBillFilter("all");
                 setStatusFilter("all");
-                setClearanceFilter([]);
+                filterActions.onMultiFilter("CLEARANCE STATUS", []);
               }}
               hiddenColumns={[
                 "VA %",
