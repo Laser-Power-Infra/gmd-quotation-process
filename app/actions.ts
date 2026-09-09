@@ -10,7 +10,7 @@ import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
 import { update2to1CostForItems } from "@/lib/gmd2to1CostLookup";
-import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, type BomRmAvail } from "@/lib/verifyBomLookup";
+import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, type BomRmAvail } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 
@@ -1615,6 +1615,55 @@ export async function selectContractReviewBomIdAction(
   } catch (error: any) {
     console.error("Error selecting ContractReview BOM ID:", error);
     return { success: false, error: error.message || "Failed to select BOM ID." };
+  }
+}
+
+export async function autoAssignContractReviewBomIdFromActuator(ids: string[]) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+    const rows = await prisma.contractReview.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, itemCode: true, actuator: true, bomId: true, orderQty: true },
+    });
+    const unresolved = rows.filter((r) => !r.bomId && r.actuator?.includes("@"));
+    const bomIdByRow = await resolveContractReviewBomIdsFromActuator(unresolved);
+
+    const results: { id: string; bomId: string; itemType: string; noUse: string | null }[] = [];
+    for (const row of unresolved) {
+      const bomId = bomIdByRow.get(row.id);
+      if (!bomId) continue;
+      const vbRow = await prisma.verifyBom.findFirst({
+        where: { itemCode: row.itemCode, bomId },
+        select: { bomIdType: true },
+      });
+      const itemType = (vbRow?.bomIdType ?? "").trim()
+        ? vbRow!.bomIdType!
+        : "no itemtype present";
+      const groupRows = await prisma.contractReview.findMany({
+        where: { bomId },
+        select: { id: true, bomId: true, orderQty: true },
+      });
+      if (!groupRows.some((g) => g.id === row.id)) {
+        groupRows.push({ id: row.id, bomId, orderQty: row.orderQty });
+      }
+      const bomAvail = await getBomRmAvailBatch([bomId]);
+      const availMap = computeContractReviewRmAvail(groupRows, bomAvail);
+      const noUse = availMap.get(row.id) ?? null;
+      await prisma.contractReview.update({
+        where: { id: row.id },
+        data: { bomId, itemType, noUse: noUse || null },
+      });
+      results.push({ id: row.id, bomId, itemType, noUse });
+    }
+    return { success: true, data: results };
+  } catch (error: any) {
+    console.error("Error auto-assigning ContractReview BOM ID from actuator:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to auto-assign BOM ID from actuator.",
+    };
   }
 }
 

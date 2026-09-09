@@ -10,6 +10,7 @@ import {
   selectContractReviewBomIdAction,
   updateContractReviewFieldAction,
   backfillContractReviewNoUseBatchAction,
+  autoAssignContractReviewBomIdFromActuator,
 } from "@/app/actions";
 import {
   CONTRACT_REVIEW_HEADER_TO_DB_FIELD,
@@ -60,6 +61,7 @@ const RATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RATE");
 const MC_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC QTY");
 const BOM_ID_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BOM ID");
 const NO_USE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RM AVAIL");
+const ACTUATOR_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Actuator");
 const ORDER_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER QTY");
 const DI_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("DI QTY");
 const BILLED_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BILLED QTY");
@@ -363,14 +365,23 @@ export default function ContractReviewPage() {
   useEffect(() => {
     if (!data) return;
     const pending: { id: string; bomId: string }[] = [];
+    const pendingActuator: string[] = [];
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
       if (!id || autoSavedBomIdsRef.current.has(id)) return;
       if (String(row[BOM_ID_IDX] ?? "").trim() !== "") return;
       const options = bomIdOptionsById[id];
-      if (!options || options.length !== 1) return;
-      autoSavedBomIdsRef.current.add(id);
-      pending.push({ id, bomId: options[0] });
+      if (!options || options.length === 0) return;
+      if (options.length === 1) {
+        autoSavedBomIdsRef.current.add(id);
+        pending.push({ id, bomId: options[0] });
+        return;
+      }
+      const actuator = ACTUATOR_IDX !== -1 ? String(row[ACTUATOR_IDX] ?? "") : "";
+      if (actuator.includes("@")) {
+        autoSavedBomIdsRef.current.add(id);
+        pendingActuator.push(id);
+      }
     });
     const itemTypeIdx = headers.indexOf("ITEM TYPE");
     for (const { id, bomId } of pending) {
@@ -390,6 +401,29 @@ export default function ContractReviewPage() {
               if (NO_USE_IDX !== -1) {
                 next[NO_USE_IDX] = res.data?.noUse ?? "";
               }
+              return next;
+            }),
+          };
+        });
+      });
+    }
+    if (pendingActuator.length > 0) {
+      autoAssignContractReviewBomIdFromActuator(pendingActuator).then((res) => {
+        if (!res?.success) return;
+        setData((prev) => {
+          if (!prev) return prev;
+          const map = new Map(
+            (res.data ?? []).map((d) => [d.id, d]),
+          );
+          return {
+            ...prev,
+            rows: prev.rows.map((row, i) => {
+              const d = map.get(prev.ids[i]);
+              if (!d) return row;
+              const next = [...row];
+              next[BOM_ID_IDX] = d.bomId;
+              if (itemTypeIdx !== -1) next[itemTypeIdx] = d.itemType;
+              if (NO_USE_IDX !== -1) next[NO_USE_IDX] = d.noUse ?? "";
               return next;
             }),
           };

@@ -200,6 +200,80 @@ export async function refreshAvailableBomIdsForCodes(itemCodes: string[]): Promi
   return updated;
 }
 
+export type ActuatorResolveRow = {
+  id: string;
+  itemCode: string;
+  actuator: string | null;
+};
+
+function normalizeActuatorPart(value: string): string {
+  return value.trim().toUpperCase().replace(/\s+/g, " ");
+}
+
+export async function resolveContractReviewBomIdsFromActuator(
+  rows: ActuatorResolveRow[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (rows.length === 0) return out;
+
+  const itemCodes = [...new Set(rows.map((r) => r.itemCode).filter(Boolean))];
+  const bomIdsByItem = await getBatchDistinctBomIds(itemCodes);
+
+  const bomIds = [
+    ...new Set([...bomIdsByItem.values()].flat()),
+  ];
+  const vbRows = await prisma.verifyBom.findMany({
+    where: { bomId: { in: bomIds } },
+    select: { bomId: true, itemCode: true, rmItemCode: true },
+  });
+  const rmCodes = [
+    ...new Set(vbRows.map((r) => r.rmItemCode).filter(Boolean)),
+  ];
+  const rmItems = await prisma.gMDUpdateItem.findMany({
+    where: { erpItemCode: { in: rmCodes } },
+    select: { erpItemCode: true, l7Dimension: true, l6Std: true },
+  });
+  const rmMap = new Map<string, { l7: string; l6: string }>();
+  for (const r of rmItems) {
+    if (!r.erpItemCode) continue;
+    rmMap.set(r.erpItemCode, {
+      l7: normalizeActuatorPart(r.l7Dimension ?? ""),
+      l6: normalizeActuatorPart(r.l6Std ?? ""),
+    });
+  }
+
+  const rmsByBom: Record<string, { l7: string; l6: string }[]> = {};
+  for (const v of vbRows) {
+    if (!v.rmItemCode) continue;
+    const meta = rmMap.get(v.rmItemCode);
+    if (!meta) continue;
+    if (!rmsByBom[v.bomId]) rmsByBom[v.bomId] = [];
+    rmsByBom[v.bomId].push(meta);
+  }
+
+  for (const row of rows) {
+    if (!row.actuator || !row.actuator.includes("@")) continue;
+    const [aRaw, bRaw] = row.actuator.split("@");
+    const a = normalizeActuatorPart(aRaw);
+    const b = normalizeActuatorPart(bRaw);
+    const candidates = bomIdsByItem.get(row.itemCode) ?? [];
+    let match: string | null = null;
+    let multi = false;
+    for (const bomId of candidates) {
+      const metas = rmsByBom[bomId] ?? [];
+      const isMatch = metas.some(
+        (m) =>
+          (a === m.l7 && b === m.l6) || (a === m.l6 && b === m.l7),
+      );
+      if (!isMatch) continue;
+      if (match === null) match = bomId;
+      else multi = true;
+    }
+    if (match !== null && !multi) out.set(row.id, match);
+  }
+  return out;
+}
+
 
 
 
