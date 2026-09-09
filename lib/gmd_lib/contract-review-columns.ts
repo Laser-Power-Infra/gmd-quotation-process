@@ -49,6 +49,7 @@ export const CONTRACT_REVIEW_HEADERS = [
   "ic qty",
   "BOM ID",
   "RM AVAIL",
+  "STATUS",
 ] as const;
 
 export const CONTRACTS_SHEET_COLUMNS = [
@@ -89,6 +90,7 @@ export const CONTRACTS_SHEET_COLUMNS = [
   "bom formula trial",
   "ERP PARTY NAME FROM GMD SUPPLY HISTORY",
   "BOM NATURE",
+  "STATUS",
 ] as const;
 
 export const DUMP_SHEET_COLUMNS = [
@@ -234,6 +236,7 @@ export function mapContractReviewRow(
     partyNameDump: dumpRow
       ? getVal(dumpRow, dumpColumnMap[DUMP_SHEET_COLUMNS.indexOf("PARTY NAME")])
       : null,
+    status: field(37),
   };
 }
 
@@ -288,6 +291,7 @@ export function dbContractReviewToRow(item: {
   bomId: string | null;
   noUse: string | null;
   partyNameDump: string | null;
+  status: string | null;
 }): unknown[] {
   return [
     item.contractNo,
@@ -314,6 +318,7 @@ export function dbContractReviewToRow(item: {
     item.jobCode, item.balBillAgMc, item.icQty,
     item.bomId,
     item.noUse,
+    item.status,
   ];
 }
 
@@ -368,4 +373,5 @@ export const CONTRACT_REVIEW_HEADER_TO_DB_FIELD: Record<string, string> = {
   "ic qty": "icQty",
   "BOM ID": "bomId",
   "RM AVAIL": "noUse",
+  "STATUS": "status",
 };

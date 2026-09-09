@@ -29,15 +29,14 @@ interface ContractReviewData {
 
 type BalBillFilter = "all" | "yes" | "no";
 
-const STATUS_OPTIONS = [
-  "Blanks",
-  "Closed",
-  "Completed",
-  "Duplicate",
-  "Hold",
-  "Shortclosed",
-  "To be closed",
-] as const;
+function statusTitle(value: string): string {
+  const s = value.trim();
+  if (!s) return "Blanks";
+  return s
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
 
 function isZeroBal(value: unknown): boolean {
   let s = String(value ?? "").trim();
@@ -66,6 +65,7 @@ const ORDER_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER QTY");
 const DI_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("DI QTY");
 const BILLED_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BILLED QTY");
 const BAL_BILL_AG_CONT_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BAL BILL AG CONT");
+const STATUS_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATUS");
 
 interface TileOption {
   value: string;
@@ -109,13 +109,11 @@ function matchesSidebar(
     if (!ok) return false;
   }
   if (exclude !== "status" && status !== "all") {
-    if (status === "Completed") {
-      if (!isZeroBal(row[balBillIdx])) return false;
-    } else if (status === "Blanks") {
-      if (String(row[balBillIdx] ?? "").trim() !== "") return false;
-    } else {
-      const cell = String(row[clearanceIdx] ?? "").trim();
-      if (cell !== status) return false;
+    const cell = String(row[STATUS_IDX] ?? "").trim();
+    if (status === "Blanks") {
+      if (cell !== "") return false;
+    } else if (cell.toLowerCase() !== status.toLowerCase()) {
+      return false;
     }
   }
   if (exclude !== "clearance" && clearance.length > 0) {
@@ -614,16 +612,7 @@ export default function ContractReviewPage() {
   ]);
 
   const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = {
-      all: 0,
-      Blanks: 0,
-      Closed: 0,
-      Completed: 0,
-      Duplicate: 0,
-      Hold: 0,
-      Shortclosed: 0,
-      "To be closed": 0,
-    };
+    const counts: Record<string, number> = { all: 0 };
     for (const row of sidebarBaseRows) {
       if (
         !matchesSidebar(
@@ -641,14 +630,9 @@ export default function ContractReviewPage() {
       )
         continue;
       counts.all++;
-      if (isZeroBal(row[balBillIdx])) {
-        counts.Completed++;
-        continue;
-      }
-      const balBlank = String(row[balBillIdx] ?? "").trim() === "";
-      const cell = String(row[clearanceIdx] ?? "").trim();
-      const key = balBlank ? "Blanks" : cell;
-      if (key in counts) counts[key]++;
+      const cell = String(row[STATUS_IDX] ?? "").trim();
+      const key = cell === "" ? "Blanks" : statusTitle(cell);
+      counts[key] = (counts[key] ?? 0) + 1;
     }
     return counts;
   }, [
@@ -660,7 +644,16 @@ export default function ContractReviewPage() {
     tilePn,
     balBillIdx,
     clearanceIdx,
+    STATUS_IDX,
   ]);
+
+  const statusOptions = useMemo(() => {
+    return Object.keys(statusCounts)
+      .filter((k) => k !== "all")
+      .sort((a, b) =>
+        a === "Blanks" ? -1 : b === "Blanks" ? 1 : a.localeCompare(b, undefined, { numeric: true }),
+      );
+  }, [statusCounts]);
 
   // Cascading multi-select clearance filter: counts exclude own selection (exclude-self)
   // like item/size/pn/balBill/status. "(Blank)" represents empty string.
@@ -1181,7 +1174,7 @@ export default function ContractReviewPage() {
               className="w-full text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-2 py-1.5 outline-none cursor-pointer"
             >
               <option value="all">All ({statusCounts.all})</option>
-              {STATUS_OPTIONS.map((opt) => (
+              {statusOptions.map((opt) => (
                 <option key={opt} value={opt}>
                   {opt} ({statusCounts[opt] ?? 0})
                 </option>
@@ -1368,10 +1361,10 @@ export default function ContractReviewPage() {
 
           <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-              RATE × (DI QTY - BILLED QTY)
+              RATE × BAL DI QTY
             </span>
             <span className="block text-[10px] font-semibold text-white/40">
-              BAL DI QTY
+              (DI QTY - BILLED QTY)
             </span>
             <span className="block text-lg font-bold text-white mt-1">
               {fmt(rateBalDiQty.sum)}
@@ -1383,10 +1376,10 @@ export default function ContractReviewPage() {
 
           <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-              RATE × (MC QTY - DI QTY)
+              RATE × BAL MC QTY
             </span>
             <span className="block text-[10px] font-semibold text-white/40">
-              BAL MC QTY
+             (MC QTY - DI QTY) 
             </span>
             <span className="block text-lg font-bold text-white mt-1">
               {fmt(rateBalMspQty.sum)}
@@ -1405,7 +1398,7 @@ export default function ContractReviewPage() {
             syncing={syncing}
           />
           {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
-          <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4 pr-1 mt-4">
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden gap-4 pr-1 mt-4">
             <GMDUpdateTable
               headers={headers}
               rows={filteredData?.rows ?? []}
@@ -1414,6 +1407,7 @@ export default function ContractReviewPage() {
               onSelect={setSelectedIndex}
               title="Contract Review"
               editable
+              fullHeight
               editableColumns={["bom formula trial", "Item", "BOM ID", "CLEARANCE STATUS"]}
               categoryOptions={categoryOptions}
               fixedDropdownOptions={pnRatingOptions.length ? { "PN RATING": pnRatingOptions } : undefined}
@@ -1462,6 +1456,7 @@ export default function ContractReviewPage() {
                 "BAL BILL AG MC",
                 "ic qty",
                 "bom formula trial",
+                "STATUS",
               ]}
             />
           </div>
