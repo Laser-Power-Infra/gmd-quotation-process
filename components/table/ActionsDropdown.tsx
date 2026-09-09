@@ -79,6 +79,9 @@ interface ActionsDropdownProps {
     costRefCode?: string | null;
     cost?: any | null;
     stockStatus?: string | null;
+    stockQuantity?: string | null;
+    availableStock?: string | null;
+    stockAgainstContract?: string | null;
     discount?: any | null;
     vaPercent?: any | null;
     quotedRate?: string | null;
@@ -136,6 +139,9 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
   const [costRefCode, setCostRefCode] = useState(item.costRefCode || "");
   const [cost, setCost] = useState(item.cost?.toString() || "");
   const [stockStatus, setStockStatus] = useState(item.stockStatus || "");
+  const [stockQuantity, setStockQuantity] = useState((item as any).stockQuantity || "");
+  const [availableStock, setAvailableStock] = useState((item as any).availableStock || "");
+  const [stockAgainstContract, setStockAgainstContract] = useState((item as any).stockAgainstContract || "");
   const [discount, setDiscount] = useState(item.discount?.toString() || "");
   const [quotedRate, setQuotedRate] = useState(item.quotedRate || "");
 
@@ -262,6 +268,18 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
       toast.error("Stock Status is required.");
       return;
     }
+    if (!stockQuantity.trim()) {
+      toast.error("Stock Quantity is required.");
+      return;
+    }
+    if (!availableStock.trim()) {
+      toast.error("Available Stock is required.");
+      return;
+    }
+    if (!stockAgainstContract.trim()) {
+      toast.error("Stock Against Contract is required.");
+      return;
+    }
     if (!discount.trim() || isNaN(Number(discount)) || Number(discount) < 0) {
       toast.error("A valid Discount is required.");
       return;
@@ -315,6 +333,9 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
         costRefCode: costRefCode.trim(),
         cost: parseFloat(cost),
         stockStatus: stockStatus.trim(),
+        stockQuantity: stockQuantity.trim(),
+        availableStock: availableStock.trim(),
+        stockAgainstContract: stockAgainstContract.trim(),
         discount: parseFloat(discount),
         attachments: attachmentsPayload,
       })).unwrap();
@@ -603,6 +624,30 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                   </span>
                   <span className="text-foreground font-medium text-xs">
                     {item.stockStatus || "-"}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider block">
+                    Stock Quantity
+                  </span>
+                  <span className="text-foreground font-medium text-xs">
+                    {(item as any).stockQuantity || "-"}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider block">
+                    Available Stock
+                  </span>
+                  <span className="text-foreground font-medium text-xs">
+                    {(item as any).availableStock || "-"}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-semibold text-muted-foreground text-[10px] uppercase tracking-wider block">
+                    Stock Against Contract
+                  </span>
+                  <span className="text-foreground font-medium text-xs">
+                    {(item as any).stockAgainstContract || "-"}
                   </span>
                 </div>
                 <div>
@@ -1069,6 +1114,42 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
                     type="text"
                     value={stockStatus}
                     onChange={(e) => setStockStatus(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
+                    Stock Quantity <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    type="text"
+                    value={stockQuantity}
+                    onChange={(e) => setStockQuantity(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
+                    Available Stock <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    type="text"
+                    value={availableStock}
+                    onChange={(e) => setAvailableStock(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
+                    Stock Against Contract <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    type="text"
+                    value={stockAgainstContract}
+                    onChange={(e) => setStockAgainstContract(e.target.value)}
                     className="h-8 text-xs"
                   />
                 </div>
