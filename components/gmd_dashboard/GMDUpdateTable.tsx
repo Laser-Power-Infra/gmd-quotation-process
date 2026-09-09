@@ -8,15 +8,13 @@ import {
   NUMERIC_COLUMNS,
   COL_INDEX_TO_DB_FIELD,
 } from "../../lib/gmd_lib/sheet-columns";
-import { useDebounce } from "@/lib/hooks/useDebounce";
+import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import Pagination from "./Pagination";
 import { useAppDispatch } from "@/lib/hooks";
 import { updateGMDUpdateField, updateGMDUsdCost } from "@/lib/gmdUpdateSlice";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-
-import * as XLSX from "xlsx";
 
 function isUrl(text: string): boolean {
   try {
@@ -345,48 +343,6 @@ function MultiSelect({
   );
 }
 
-function DebouncedSearchInput({
-  value,
-  onCommit,
-  placeholder,
-  className,
-}: {
-  value: string;
-  onCommit: (val: string) => void;
-  placeholder?: string;
-  className?: string;
-}) {
-  const [local, setLocal] = useState(value);
-  const debounced = useDebounce(local, 300);
-  const isTypingRef = useRef(false);
-
-  useEffect(() => {
-    setLocal(value);
-    isTypingRef.current = false;
-  }, [value]);
-
-  useEffect(() => {
-    if (isTypingRef.current && debounced !== value) onCommit(debounced);
-  }, [debounced, value, onCommit]);
-
-  return (
-    <input
-      type="text"
-      placeholder={placeholder}
-      value={local}
-      onChange={(e) => {
-        isTypingRef.current = true;
-        setLocal(e.target.value);
-      }}
-      onClick={(e) => e.stopPropagation()}
-      className={
-        className ||
-        "flex-1 min-w-0 text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 outline-none placeholder:text-[#0a2540]/30"
-      }
-    />
-  );
-}
-
 interface GMDUpdateTableProps {
   headers: string[];
   rows: unknown[][];
@@ -618,7 +574,7 @@ castingRateInputs,
       });
     setCurrentPage(1);
   };
-  const handleExportToExcel = () => {
+  const handleExportToExcel = async () => {
     const toastId = toast.loading("Preparing Excel file...");
     try {
       const rows = filteredRows.map((row) => {
@@ -629,6 +585,7 @@ castingRateInputs,
         });
         return obj;
       });
+      const XLSX = await import("xlsx");
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "Data");

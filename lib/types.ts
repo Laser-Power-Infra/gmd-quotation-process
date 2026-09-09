@@ -90,6 +90,7 @@ export interface DropdownOptions {
 }
 
 export interface FiltersState {
+  globalSearch: string;
   enquiryDateFrom: string;
   enquiryDateTo: string;
   docketNumber: string;
