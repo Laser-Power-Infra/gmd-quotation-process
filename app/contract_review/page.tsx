@@ -997,6 +997,62 @@ export default function ContractReviewPage() {
   const fmt = (n: number) =>
     n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
+  // Per-contract meta for the CONTRACT NO column filter dropdown
+  // (party name, row count, and RATE × BAL BILL AG CONT sum). Excludes the
+  // CONTRACT NO filter itself (exclude-self cascading), respects all other filters.
+  const CONTRACT_NO_IDX = headers.indexOf("CONTRACT NO");
+  const PARTY_NAME_IDX = headers.indexOf("PARTY NAME");
+
+  const contractNoMeta = useMemo(() => {
+    const meta: Record<string, { count: number; sum: number; partyName: string }> =
+      {};
+    for (const row of filteredData?.rows ?? []) {
+      if (
+        !matchesTableFilters(
+          row,
+          headers,
+          columnFilters,
+          multiFilters,
+          globalSearch,
+          dateFrom,
+          dateTo,
+          "CONTRACT NO",
+        )
+      )
+        continue;
+      const cn = String(row[CONTRACT_NO_IDX] ?? "").trim();
+      if (!cn) continue;
+      const e =
+        meta[cn] ?? (meta[cn] = { count: 0, sum: 0, partyName: "" });
+      e.count++;
+      const rate = parseNum(row[RATE_IDX]);
+      const bal = parseNum(row[BAL_BILL_AG_CONT_IDX]);
+      if (!isNaN(rate) && !isNaN(bal)) e.sum += rate * bal;
+      if (!e.partyName) e.partyName = String(row[PARTY_NAME_IDX] ?? "").trim();
+    }
+    return meta;
+  }, [
+    filteredData,
+    headers,
+    columnFilters,
+    multiFilters,
+    globalSearch,
+    dateFrom,
+    dateTo,
+  ]);
+
+  const columnOptionMeta = useMemo(
+    () => ({
+      "CONTRACT NO": Object.fromEntries(
+        Object.entries(contractNoMeta).map(([cn, m]) => [
+          cn,
+          { count: m.count, sumLabel: fmt(m.sum), partyName: m.partyName },
+        ]),
+      ),
+    }),
+    [contractNoMeta],
+  );
+
   const tileAllCounts = useMemo(
     () => ({
       item: sidebarBaseRows.reduce(
@@ -1370,6 +1426,7 @@ export default function ContractReviewPage() {
               }
               filterState={filterState}
               filterActions={filterActions}
+              columnOptionMeta={columnOptionMeta}
               bomIdOptionsById={bomIdOptionsById}
               onSelectBomId={handleSelectBomId}
               bomIdCategoryFilter

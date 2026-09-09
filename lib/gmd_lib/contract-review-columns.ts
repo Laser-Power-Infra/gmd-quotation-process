@@ -1,5 +1,6 @@
 export const CONTRACT_REVIEW_HEADERS = [
   "CONTRACT NO",
+  "PARTY NAME",
   "ITEM_CODE",
   "MC NO",
   "ITEM_NAME",
@@ -106,26 +107,55 @@ export const DUMP_SHEET_COLUMNS = [
   "MC QTY",
   "BILLED QTY",
   "ORDER QTY",
+  "PARTY NAME",
 ] as const;
 
 function normalizeHeader(h: string): string {
-  return h.trim().toUpperCase().replace(/\s+/g, " ").replace(/\n/g, "");
+  return h
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/\n/g, "")
+    .replace(/[^a-z0-9]/g, "");
 }
 
 export function buildContractsColumnMap(sheetHeaders: string[]): number[] {
   const normalized = sheetHeaders.map(normalizeHeader);
-  return CONTRACTS_SHEET_COLUMNS.map((col) => {
+  const map = CONTRACTS_SHEET_COLUMNS.map((col) => {
     const target = normalizeHeader(col);
-    return normalized.findIndex((h) => h === target);
+    return normalized.lastIndexOf(target);
   });
+  assertNoCollision(map, CONTRACTS_SHEET_COLUMNS);
+  return map;
 }
 
 export function buildDumpColumnMap(sheetHeaders: string[]): number[] {
   const normalized = sheetHeaders.map(normalizeHeader);
-  return DUMP_SHEET_COLUMNS.map((col) => {
+  const map = DUMP_SHEET_COLUMNS.map((col) => {
     const target = normalizeHeader(col);
     return normalized.findIndex((h) => h === target);
   });
+  assertNoCollision(map, DUMP_SHEET_COLUMNS);
+  return map;
+}
+
+function assertNoCollision(
+  map: number[],
+  cols: readonly string[],
+): void {
+  const seen = new Map<number, string>();
+  for (let i = 0; i < map.length; i++) {
+    const idx = map[i];
+    if (idx < 0) continue;
+    const prev = seen.get(idx);
+    if (prev !== undefined) {
+      throw new Error(
+        `Column collision: "${prev}" and "${cols[i]}" both map to sheet index ${idx}. ` +
+          `Refusing to interchange data. Check sheet headers for exact/duplicate column names.`,
+      );
+    }
+    seen.set(idx, cols[i]);
+  }
 }
 
 export function mapContractReviewRow(
@@ -201,6 +231,9 @@ export function mapContractReviewRow(
     balDiVal: dumpRow ? getVal(dumpRow, dumpColumnMap[7]) : null,
     diVal: dumpRow ? getVal(dumpRow, dumpColumnMap[8]) : null,
     icQty: dumpRow ? getVal(dumpRow, dumpColumnMap[9]) : null,
+    partyNameDump: dumpRow
+      ? getVal(dumpRow, dumpColumnMap[DUMP_SHEET_COLUMNS.indexOf("PARTY NAME")])
+      : null,
   };
 }
 
@@ -254,9 +287,12 @@ export function dbContractReviewToRow(item: {
   icQty: string | null;
   bomId: string | null;
   noUse: string | null;
+  partyNameDump: string | null;
 }): unknown[] {
   return [
-    item.contractNo, item.itemCode, item.mcNo,
+    item.contractNo,
+    item.partyNameDump,
+    item.itemCode, item.mcNo,
     item.itemName, item.partyItemName, item.rate,
     item.cv, item.vaPercent,
     item.orderQty,
@@ -283,6 +319,7 @@ export function dbContractReviewToRow(item: {
 
 export const CONTRACT_REVIEW_HEADER_TO_DB_FIELD: Record<string, string> = {
   "CONTRACT NO": "contractNo",
+  "PARTY NAME": "partyNameDump",
   "MC NO": "mcNo",
   "ITEM_CODE": "itemCode",
   "ITEM_NAME": "itemName",
