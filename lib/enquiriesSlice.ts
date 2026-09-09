@@ -15,6 +15,7 @@ import {
   deleteEnquiryItemAction,
   deleteEnquiryItemsAction,
   bulkUpdateValidationAction,
+  bulkUpdateApmAction,
   clearQuotedRatesAction,
   importExcelDataAction,
   autoFillBlanksAction,
@@ -281,6 +282,20 @@ export const bulkUpdateValidation = createAsyncThunk(
     const result = await bulkUpdateValidationAction(payload.itemIds, payload.validation);
     if (!result.success) {
       return rejectWithValue(result.error || "Failed to update validation");
+    }
+    return result.data!;
+  }
+);
+
+export const bulkUpdateApm = createAsyncThunk(
+  "enquiries/bulkUpdateApm",
+  async (
+    payload: { itemIds: string[]; apm: string | null },
+    { rejectWithValue }
+  ) => {
+    const result = await bulkUpdateApmAction(payload.itemIds, payload.apm);
+    if (!result.success) {
+      return rejectWithValue(result.error || "Failed to update APM");
     }
     return result.data!;
   }
@@ -865,6 +880,38 @@ const enquiriesSlice = createSlice({
       .addCase(bulkUpdateValidation.rejected, (state, action) => {
         state.updateStatus = "failed";
         state.updateError = (action.payload as string) || "Bulk validation update failed";
+      })
+      .addCase(bulkUpdateApm.pending, (state) => {
+        state.updateStatus = "loading";
+        state.updateError = null;
+      })
+      .addCase(bulkUpdateApm.fulfilled, (state, action) => {
+        const { items } = action.payload as { items: EnquiryItemData[] };
+        if (items && items.length > 0) {
+          itemsAdapter.upsertMany(state.items, items);
+          const updatedByEnquiry = new Map<string, EnquiryItemData[]>();
+          for (const item of items) {
+            const existing = updatedByEnquiry.get(item.enquiryId) || [];
+            existing.push(item);
+            updatedByEnquiry.set(item.enquiryId, existing);
+          }
+          for (const [enqId, updatedItems] of updatedByEnquiry) {
+            const storedEnquiry = state.enquiries.entities[enqId];
+            if (storedEnquiry) {
+              for (const updatedItem of updatedItems) {
+                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
+                if (idx !== -1) {
+                  storedEnquiry.items[idx] = updatedItem;
+                }
+              }
+            }
+          }
+        }
+        state.updateStatus = "succeeded";
+      })
+      .addCase(bulkUpdateApm.rejected, (state, action) => {
+        state.updateStatus = "failed";
+        state.updateError = (action.payload as string) || "Bulk APM update failed";
       })
       .addCase(clearQuotedRates.pending, (state) => {
         state.updateStatus = "loading";

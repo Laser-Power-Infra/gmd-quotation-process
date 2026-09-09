@@ -104,6 +104,9 @@ export default function NewEnquiryDialog({
     costRefCode: string;
     cost: string;
     stockStatus: string;
+    stockQuantity: string;
+    availableStock: string;
+    stockAgainstContract: string;
     discount: string;
   }[]>([
     {
@@ -120,6 +123,9 @@ export default function NewEnquiryDialog({
       costRefCode: "",
       cost: "",
       stockStatus: "",
+      stockQuantity: "",
+      availableStock: "",
+      stockAgainstContract: "",
       discount: "",
     },
   ]);
@@ -142,6 +148,9 @@ export default function NewEnquiryDialog({
         costRefCode: "",
         cost: "",
         stockStatus: "",
+        stockQuantity: "",
+        availableStock: "",
+        stockAgainstContract: "",
         discount: "",
       },
     ]);
@@ -199,6 +208,9 @@ export default function NewEnquiryDialog({
           costRefCode: "",
           cost: "",
           stockStatus: "",
+          stockQuantity: "",
+          availableStock: "",
+          stockAgainstContract: "",
           discount: "",
         });
       }
@@ -300,6 +312,9 @@ export default function NewEnquiryDialog({
             costRefCode: item.costRefCode ? item.costRefCode.trim() : null,
             cost: item.cost ? parseFloat(item.cost) : null,
             stockStatus: item.stockStatus ? item.stockStatus.trim() : null,
+            stockQuantity: (item as any).stockQuantity ? String((item as any).stockQuantity).trim() : null,
+            availableStock: (item as any).availableStock ? String((item as any).availableStock).trim() : null,
+            stockAgainstContract: (item as any).stockAgainstContract ? String((item as any).stockAgainstContract).trim() : null,
             discount: item.discount ? parseFloat(item.discount) : null,
           })),
         })).unwrap();
@@ -330,6 +345,9 @@ export default function NewEnquiryDialog({
             costRefCode: "",
             cost: "",
             stockStatus: "",
+            stockQuantity: "",
+            availableStock: "",
+            stockAgainstContract: "",
             discount: "",
           },
         ]);

@@ -37,6 +37,7 @@ const initialState: FiltersState = {
   totalValue: "",
   itemWiseTotalValue: "",
   validation: [],
+  apm: [],
   attachment: "",
   erpItemCode: [],
   erpItemCodeSearch: "",

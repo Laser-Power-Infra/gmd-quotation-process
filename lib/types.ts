@@ -28,6 +28,7 @@ export interface EnquiryItemData {
   itemTypeSource?: string | null;
   mocSource?: string | null;
   validation?: string | null;
+  apm?: string | null;
   erpItemCode?: string | null;
   bomId?: string | null;
   bomType?: string | null;
@@ -124,6 +125,7 @@ export interface FiltersState {
   totalValue: string;
   itemWiseTotalValue: string;
   validation: string[];
+  apm: string[];
   attachment: string;
   erpItemCode: string[];
   erpItemCodeSearch: string;

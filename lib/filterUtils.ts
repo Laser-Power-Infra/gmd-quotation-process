@@ -120,6 +120,7 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState):
   if (filters.totalValue && !matchesText(filters.totalValue, item.totalValue || "")) return false;
   if (filters.itemWiseTotalValue && !matchesText(filters.itemWiseTotalValue, item.itemWiseTotalValue || "")) return false;
   if (filters.validation.length > 0 && !matchesMulti(filters.validation, item.validation)) return false;
+  if (filters.apm.length > 0 && !matchesMulti(filters.apm, (item as any).apm)) return false;
 
   return true;
 }

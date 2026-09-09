@@ -10,7 +10,7 @@ import * as XLSX from "xlsx";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import { useSearchParams } from "next/navigation";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiryItems, bulkUpdateValidation, clearQuotedRates, selectBomId, syncAvailableStock } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiryItems, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock } from "@/lib/enquiriesSlice";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
 import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
@@ -142,7 +142,7 @@ function matchesText(filterVal: string, actual: unknown): boolean {
 const ALL_DROPDOWN_FIELDS = [
   "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass",
-  "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "cost", "contractReviewRate", "pdcostValidation", "availableStock",
+  "validation", "apm", "vaPercent", "erpItemCode", "bomId", "productCost", "cost", "contractReviewRate", "pdcostValidation", "availableStock",
 ] as const;
 
 const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus"]);
@@ -378,6 +378,29 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       toast.error(msg);
     } finally {
       setBulkValidationRunning(null);
+    }
+  };
+
+  const [bulkApmRunning, setBulkApmRunning] = useState<"Yes" | "No" | "Clear" | null>(null);
+  const handleBulkApm = async (val: "Yes" | "No" | "") => {
+    const allFiltered = filteredEnquiries.flatMap((e) => getFilteredItems(e));
+    if (allFiltered.length === 0) {
+      toast.info("No items match current filters.");
+      return;
+    }
+    const label = val === "" ? "Blank" : val;
+    const differing = allFiltered.filter((i) => ((i as any).apm || "") !== (val || "")).length;
+    if (!confirm(`Set APM to "${label}" for ${allFiltered.length} filtered item(s) across all pages?${differing > 0 ? ` This will overwrite ${differing} differing value(s).` : ""}`)) return;
+    const runKey = val === "" ? "Clear" : val;
+    setBulkApmRunning(runKey as any);
+    try {
+      const result: any = await dispatch(bulkUpdateApm({ itemIds: allFiltered.map((i) => i.id), apm: val === "" ? null : val })).unwrap();
+      toast.success(`APM set to "${label}" for ${result.updated} item(s).`);
+    } catch (err: any) {
+      const msg = typeof err === "string" ? err : err?.message || "Failed to update APM.";
+      toast.error(msg);
+    } finally {
+      setBulkApmRunning(null);
     }
   };
 
@@ -714,6 +737,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       }
       if (filters.validation.length > 0) {
         if (!matchesMulti(filters.validation, item.validation)) {
+          return false;
+        }
+      }
+      if (filters.apm.length > 0) {
+        if (!matchesMulti(filters.apm, (item as any).apm)) {
           return false;
         }
       }
@@ -1209,6 +1237,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           return false;
         }
       }
+      if (filters.apm.length > 0) {
+        if (!matchesMulti(filters.apm, (item as any).apm)) {
+          return false;
+        }
+      }
       return true;
     });
 
@@ -1412,6 +1445,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             "Itemwise Total Value": "",
             "Delivery Schedule": "",
             "Validation": "",
+            "APM": "",
             "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
             "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
           });
@@ -1459,6 +1493,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               "Itemwise Total Value": item.itemWiseTotalValue || "",
               "Delivery Schedule": item.deliverySchedule || "",
               "Validation": item.validation || "",
+              "APM": (item as any).apm || "",
               "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
               "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
             });
@@ -2979,7 +3014,63 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 41. Attachment */}
+            {/* 41. APM */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>APM</span>
+                {renderSortArrow("apm")}
+              </div>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="APM"
+                  allLabel="All"
+                  options={["Yes", "No"]}
+                  cascadedOptions={cascadedOptions.apm}
+                  selected={filters.apm}
+                  onChange={(v) => dispatch(setFilter({ field: "apm", value: v }))}
+                  includeBlank
+                />
+              </div>
+              <div className="mt-1.5 grid grid-cols-3 gap-1 normal-case">
+                <button
+                  type="button"
+                  onClick={() => handleBulkApm("Yes")}
+                  disabled={bulkApmRunning !== null}
+                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer"
+                  title="Set all filtered items (all pages) to Yes"
+                >
+                  {bulkApmRunning === "Yes" ? "..." : "All Yes"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkApm("No")}
+                  disabled={bulkApmRunning !== null}
+                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50 cursor-pointer"
+                  title="Set all filtered items (all pages) to No"
+                >
+                  {bulkApmRunning === "No" ? "..." : "All No"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkApm("")}
+                  disabled={bulkApmRunning !== null}
+                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-border bg-background text-muted-foreground hover:bg-muted disabled:opacity-50 cursor-pointer"
+                  title="Clear APM for all filtered items (all pages)"
+                >
+                  {bulkApmRunning === "Clear" ? "..." : "Clear"}
+                </button>
+              </div>
+              <div
+                onMouseDown={(e) => handleMouseDown(41, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 42. Attachment */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Attachment</span>
@@ -2993,22 +3084,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(41, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 42. Delivery Schedule */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Delivery Schedule</span>
-              </div>
-              <div className="h-7 mt-1.5" />
-              <div
                 onMouseDown={(e) => handleMouseDown(42, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
@@ -3018,14 +3093,30 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 43. Offer PDF */}
+            {/* 43. Delivery Schedule */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Delivery Schedule</span>
+              </div>
+              <div className="h-7 mt-1.5" />
+              <div
+                onMouseDown={(e) => handleMouseDown(43, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 44. Offer PDF */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Offer PDF</span>
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(43, e)}
+                onMouseDown={(e) => handleMouseDown(44, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3044,7 +3135,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         <tbody className="bg-background">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={46} className="py-20 px-4 text-center border-b border-border">
+              <td colSpan={47} className="py-20 px-4 text-center border-b border-border">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground mb-4 border border-border">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -3691,6 +3782,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
                         <input
+                          key={firstItem.id + "-stockStatus-" + (firstItem.stockStatus || "")}
                           type="text"
                           defaultValue={firstItem.stockStatus || ""}
                           onBlur={(e) => {
@@ -3729,13 +3821,45 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     </td>
 
                     {/* First Item Available Stock */}
-                    <td className="py-3.5 px-3 text-xs text-foreground border-r border-b border-border last:border-r-0 text-right">
-                      {firstItem?.availableStock ? firstItem.availableStock : "-"}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          key={firstItem.id + "-availableStock-" + (firstItem.availableStock || "")}
+                          type="text"
+                          defaultValue={firstItem.availableStock || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.availableStock || "")) {
+                              handleItemFieldChange(firstItem.id, "availableStock", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                        />
+                      ) : "-"}
                     </td>
 
                     {/* First Item Stock Against Contract */}
-                    <td className="py-3.5 px-3 text-xs text-foreground border-r border-b border-border last:border-r-0 text-right">
-                      {firstItem?.stockAgainstContract ? firstItem.stockAgainstContract : "-"}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                      {firstItem ? (
+                        <input
+                          key={firstItem.id + "-stockAgainstContract-" + (firstItem.stockAgainstContract || "")}
+                          type="text"
+                          defaultValue={firstItem.stockAgainstContract || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (firstItem.stockAgainstContract || "")) {
+                              handleItemFieldChange(firstItem.id, "stockAgainstContract", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                        />
+                      ) : "-"}
                     </td>
 
                     {/* First Item Discount */}
@@ -3893,6 +4017,38 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             onClick={() => handleItemFieldChange(firstItem.id, "validation", firstItem.validation === "No" ? "" : "No")}
                             className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                               firstItem.validation === "No"
+                                ? "bg-rose-500 text-white "
+                                : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
+                            }`}
+                          >
+                            No
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+
+                    {/* APM */}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                      {firstItem ? (
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleItemFieldChange(firstItem.id, "apm", (firstItem as any).apm === "Yes" ? "" : "Yes")}
+                            className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                              (firstItem as any).apm === "Yes"
+                                ? "bg-emerald-500 text-white "
+                                : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950/50"
+                            }`}
+                          >
+                            Yes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleItemFieldChange(firstItem.id, "apm", (firstItem as any).apm === "No" ? "" : "No")}
+                            className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                              (firstItem as any).apm === "No"
                                 ? "bg-rose-500 text-white "
                                 : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
                             }`}
@@ -4302,6 +4458,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       {/* Stock Status */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                           <input
+                            key={item.id + "-stockStatus-" + (item.stockStatus || "")}
                             type="text"
                             defaultValue={item.stockStatus || ""}
                           onBlur={(e) => {
@@ -4337,14 +4494,42 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       </td>
 
                       {/* Available Stock */}
-                        <td className="py-3.5 px-3 text-xs text-foreground border-r border-b border-border last:border-r-0 text-right">
-                          {item.availableStock || "-"}
-                        </td>
+                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                          <input
+                            key={item.id + "-availableStock-" + (item.availableStock || "")}
+                            type="text"
+                            defaultValue={item.availableStock || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.availableStock || "")) {
+                              handleItemFieldChange(item.id, "availableStock", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                        />
+                      </td>
 
                       {/* Stock Against Contract */}
-                        <td className="py-3.5 px-3 text-xs text-foreground border-r border-b border-border last:border-r-0 text-right">
-                          {item.stockAgainstContract || "-"}
-                        </td>
+                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                          <input
+                            key={item.id + "-stockAgainstContract-" + (item.stockAgainstContract || "")}
+                            type="text"
+                            defaultValue={item.stockAgainstContract || ""}
+                          onBlur={(e) => {
+                            if (e.target.value !== (item.stockAgainstContract || "")) {
+                              handleItemFieldChange(item.id, "stockAgainstContract", e.target.value);
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          placeholder="-"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                        />
+                      </td>
 
                       {/* Discount */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
@@ -4488,6 +4673,34 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               onClick={() => handleItemFieldChange(item.id, "validation", item.validation === "No" ? "" : "No")}
                               className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                                 item.validation === "No"
+                                  ? "bg-rose-500 text-white "
+                                  : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
+                              }`}
+                            >
+                              No
+                            </button>
+                          </div>
+                        </td>
+
+                      {/* APM */}
+                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleItemFieldChange(item.id, "apm", (item as any).apm === "Yes" ? "" : "Yes")}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                                (item as any).apm === "Yes"
+                                  ? "bg-emerald-500 text-white "
+                                  : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950/50"
+                              }`}
+                            >
+                              Yes
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleItemFieldChange(item.id, "apm", (item as any).apm === "No" ? "" : "No")}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                                (item as any).apm === "No"
                                   ? "bg-rose-500 text-white "
                                   : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
                               }`}

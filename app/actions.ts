@@ -41,6 +41,9 @@ export async function createNewEnquiryAction(formData: {
     costRefCode?: string | null;
     cost?: number | null;
     stockStatus?: string | null;
+    stockQuantity?: string | null;
+    availableStock?: string | null;
+    stockAgainstContract?: string | null;
     discount?: number | null;
     vaPercent?: number | null;
   }[];
@@ -146,6 +149,9 @@ export async function createNewEnquiryAction(formData: {
               costRefCode: item.costRefCode || null,
               cost: itemCost,
               stockStatus: item.stockStatus || null,
+              stockQuantity: (item as any).stockQuantity || null,
+              availableStock: (item as any).availableStock || null,
+              stockAgainstContract: (item as any).stockAgainstContract || null,
               discount: item.discount || null,
               vaPercent: itemVa !== null ? String(itemVa) : null,
               quotedRate: itemQR,
@@ -199,6 +205,9 @@ export async function addItemsAction(formData: {
     costRefCode?: string;
     cost?: number;
     stockStatus?: string;
+    stockQuantity?: string;
+    availableStock?: string;
+    stockAgainstContract?: string;
     discount?: number;
     vaPercent?: number;
   }[];
@@ -265,6 +274,9 @@ export async function addItemsAction(formData: {
           costRefCode: item.costRefCode || null,
           cost: itemCost,
           stockStatus: item.stockStatus || null,
+          stockQuantity: (item as any).stockQuantity || null,
+          availableStock: (item as any).availableStock || null,
+          stockAgainstContract: (item as any).stockAgainstContract || null,
           discount: item.discount || null,
           vaPercent: itemVa !== null ? String(itemVa) : null,
           quotedRate: itemQR,
@@ -313,6 +325,9 @@ export async function updateEnquiryItemAction(formData: {
   costRefCode?: string;
   cost?: number;
   stockStatus?: string;
+  stockQuantity?: string;
+  availableStock?: string;
+  stockAgainstContract?: string;
   discount?: number;
   enquiryType?: string;
   state?: string;
@@ -475,6 +490,9 @@ export async function updateEnquiryItemAction(formData: {
         costRefCode: formData.costRefCode || null,
         cost: formData.cost || null,
         stockStatus: formData.stockStatus || null,
+        stockQuantity: (formData as any).stockQuantity || null,
+        availableStock: (formData as any).availableStock || null,
+        stockAgainstContract: (formData as any).stockAgainstContract || null,
         discount: formData.discount || null,
         vaPercent: finalVa !== null ? String(finalVa) : null,
         quotedRate: finalQuotedRate,
@@ -2066,6 +2084,44 @@ export async function clearQuotedRatesAction(itemIds: string[]) {
   } catch (error: any) {
     console.error("Error clearing quoted rates:", error);
     return { success: false, error: error.message || "Failed to clear quoted rates." };
+  }
+}
+
+// Bulk update apm for many items (all pages, filtered scope). Allowed values: "Yes", "No", null/"" for clear.
+export async function bulkUpdateApmAction(itemIds: string[], apm: string | null) {
+  try {
+    if (!itemIds || itemIds.length === 0) {
+      return { success: false, error: "No items selected." };
+    }
+    const uniqueIds = [...new Set(itemIds)];
+    const normalized = apm === "" ? null : apm;
+    if (normalized !== null && normalized !== "Yes" && normalized !== "No") {
+      return { success: false, error: "APM must be Yes, No, or blank." };
+    }
+
+    const existing = await prisma.enquiryItem.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true },
+    });
+    if (existing.length !== uniqueIds.length) {
+      return { success: false, error: "Some items not found. Please refresh and try again." };
+    }
+
+    console.log(`[Server] bulkApm ids=${uniqueIds.length} set="${normalized ?? ""}"`);
+
+    await prisma.enquiryItem.updateMany({
+      where: { id: { in: uniqueIds } },
+      data: { apm: normalized },
+    });
+
+    const updatedItems = await prisma.enquiryItem.findMany({
+      where: { id: { in: uniqueIds } },
+    });
+
+    return { success: true, data: { items: updatedItems.map(serializeItem), updated: updatedItems.length, apm: normalized } };
+  } catch (error: any) {
+    console.error("Error bulk updating apm:", error);
+    return { success: false, error: error.message || "Failed to update APM." };
   }
 }
 
