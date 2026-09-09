@@ -47,7 +47,7 @@ export const CONTRACT_REVIEW_HEADERS = [
   "BAL BILL AG MC",
   "ic qty",
   "BOM ID",
-  "NO USE",
+  "RM AVAIL",
 ] as const;
 
 export const CONTRACTS_SHEET_COLUMNS = [
@@ -87,7 +87,7 @@ export const CONTRACTS_SHEET_COLUMNS = [
   "Issuing bank name",
   "bom formula trial",
   "ERP PARTY NAME FROM GMD SUPPLY HISTORY",
-  "ITEM TYPE",
+  "BOM NATURE",
 ] as const;
 
 export const DUMP_SHEET_COLUMNS = [
@@ -102,6 +102,10 @@ export const DUMP_SHEET_COLUMNS = [
   "DI VAL",
   "ic qty",
   "BAL BILL AG MC",
+  "DI QTY",
+  "MC QTY",
+  "BILLED QTY",
+  "ORDER QTY",
 ] as const;
 
 function normalizeHeader(h: string): string {
@@ -142,25 +146,32 @@ export function mapContractReviewRow(
 
   const itemTypeVal = field(36);
 
+  const dumpVal = (
+    name: (typeof DUMP_SHEET_COLUMNS)[number],
+  ): string | null => {
+    const idx = dumpColumnMap[DUMP_SHEET_COLUMNS.indexOf(name)];
+    return dumpRow ? getVal(dumpRow, idx) : null;
+  };
+
   return {
     contractNo: field(0) ?? "",
-    itemCode: field(2) ?? "",
-    mcNo: field(1),
+    itemCode: field(1) ?? "",
+    mcNo: field(2),
     itemName: field(3),
     partyItemName: field(4),
     rate: field(5),
     cv: field(6),
     vaPercent: field(7),
-    orderQty: field(8),
+    orderQty: field(8) ?? dumpVal("ORDER QTY"),
     freeStock: field(9),
     finalReq: field(10),
-    mcQty: field(11),
+    mcQty: field(11) ?? dumpVal("MC QTY"),
     balanceMc: field(12),
     prodOrdQty: field(13),
     balanceToProdOrd: field(14),
     balanceToProdEnt: field(15),
-    diQty: field(16),
-    billedQty: field(17),
+    diQty: field(16) ?? dumpVal("DI QTY"),
+    billedQty: field(17) ?? dumpVal("BILLED QTY"),
     balBillAgCont: field(19),
     item: field(20),
     value: field(21),
@@ -319,5 +330,5 @@ export const CONTRACT_REVIEW_HEADER_TO_DB_FIELD: Record<string, string> = {
   "DI VAL": "diVal",
   "ic qty": "icQty",
   "BOM ID": "bomId",
-  "NO USE": "noUse",
+  "RM AVAIL": "noUse",
 };

@@ -291,15 +291,122 @@ export default function Home() {
   );
 
   const [firstFilteredRows, setFirstFilteredRows] = useState<unknown[][]>([]);
-  const [scope, setScope] = useState<"all" | "indian" | "imported">("all");
+  // Table filter lift (controlled like contract_review) for true cascading
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [multiFilters, setMultiFilters] = useState<Record<string, string[]>>({});
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const filterState = useMemo(
+    () => ({
+      columnFilters,
+      multiFilters,
+      dateFrom,
+      dateTo,
+      globalSearch,
+      currentPage,
+      pageSize,
+    }),
+    [columnFilters, multiFilters, dateFrom, dateTo, globalSearch, currentPage, pageSize],
+  );
+
+  const filterActions = useMemo(
+    () => ({
+      onColumnFilter: (header: string, value: string) =>
+        setColumnFilters((prev) => ({ ...prev, [header]: value })),
+      onMultiFilter: (header: string, values: string[]) =>
+        setMultiFilters((prev) => {
+          const next = { ...prev };
+          if (values.length) next[header] = values;
+          else delete next[header];
+          return next;
+        }),
+      onDateFrom: setDateFrom,
+      onDateTo: setDateTo,
+      onGlobalSearch: setGlobalSearch,
+      onResetFilters: () => {
+        setColumnFilters({});
+        setMultiFilters({});
+        setGlobalSearch("");
+        setDateFrom("");
+        setDateTo("");
+      },
+      onPageChange: setCurrentPage,
+      onPageSizeChange: setPageSize,
+    }),
+    [],
+  );
+
+  function matchesTableFilters(
+    row: unknown[],
+    hdrs: string[],
+    colFilters: Record<string, string>,
+    mFilters: Record<string, string[]>,
+    gSearch: string,
+  ): boolean {
+    if (gSearch.trim()) {
+      const q = gSearch.toLowerCase();
+      const hay = hdrs.map((_, i) => String(row[i] ?? "").toLowerCase()).join(" ");
+      if (!hay.includes(q)) return false;
+    }
+    for (const [colName, filterVal] of Object.entries(colFilters)) {
+      if (!filterVal || filterVal === "All") continue;
+      const colIdx = hdrs.indexOf(colName);
+      if (colIdx === -1) continue;
+      const cellVal = String(row[colIdx] ?? "");
+      if (filterVal === "(Blank)") {
+        if (cellVal !== "") return false;
+      } else if (!cellVal.toLowerCase().includes(filterVal.toLowerCase())) {
+        return false;
+      }
+    }
+    for (const [colName, selected] of Object.entries(mFilters)) {
+      if (!selected.length) continue;
+      const colIdx = hdrs.indexOf(colName);
+      if (colIdx === -1) continue;
+      const cellVal = String(row[colIdx] ?? "").trim();
+      const matchesBlank = selected.includes("(Blank)") && cellVal === "";
+      if (!(matchesBlank || selected.includes(cellVal))) return false;
+    }
+    return true;
+  }
+
+  // Dual cascading sidebar filters (Indian/Imported + Major/Minor)
+  const [indianImported, setIndianImported] = useState<"all" | "indian" | "imported">("all");
+  const [majorFilter, setMajorFilter] = useState<"all" | "major" | "minor">("all");
+
+  function matchesSidebarNew(
+    row: unknown[],
+    indianImp: "all" | "indian" | "imported",
+    major: "all" | "major" | "minor",
+    hdrs: string[],
+    exclude?: "indian" | "major",
+  ): boolean {
+    if (exclude !== "indian" && indianImp !== "all") {
+      const imp = String(row[hdrs.indexOf("INDIAN/IMPORTED")] ?? "").trim().toLowerCase();
+      if (imp !== indianImp) return false;
+    }
+    if (exclude !== "major" && major !== "all") {
+      const m = String(row[hdrs.indexOf("MAJOR MARKING")] ?? "").trim().toLowerCase();
+      const isMajor = m === "true";
+      const isMinor = m === "false";
+      if (major === "major" && !isMajor) return false;
+      if (major === "minor" && !isMinor) return false;
+    }
+    return true;
+  }
 
   const scopedNewItems = useMemo(() => {
-    if (scope === "all") return newItems;
-    const target = scope;
-    return newItems.filter((item) =>
-      (item.indianImported ?? "").trim().toLowerCase() === target,
-    );
-  }, [newItems, scope]);
+    return newItems.filter((item) => {
+      if (indianImported !== "all" && (item.indianImported ?? "").trim().toLowerCase() !== indianImported) return false;
+      if (majorFilter === "major" && String(item.majorMarking ?? "").trim().toLowerCase() !== "true") return false;
+      if (majorFilter === "minor" && String(item.majorMarking ?? "").trim().toLowerCase() !== "false") return false;
+      return true;
+    });
+  }, [newItems, indianImported, majorFilter]);
 
   const scopedNewCost = useMemo(
     () => applyCastingCost(scopedNewItems, castingRates),
@@ -319,24 +426,29 @@ export default function Home() {
     [scopedNewCost, processedCost],
   );
 
-  const cardStats = useMemo(() => {
-    const baseRows = firstFilteredRows.length
-      ? firstFilteredRows
-      : newItems.map(dbItemToRow);
+  // Base rows for sidebar = table-filtered newItems (respects column/multi/global filters)
+  const sidebarBaseRows = useMemo(() => {
+    const allRows = newItems.map(dbItemToRow);
+    if (!headers.length) return allRows;
+    return allRows.filter((row) =>
+      matchesTableFilters(row, headers, columnFilters, multiFilters, globalSearch),
+    );
+  }, [newItems, headers, columnFilters, multiFilters, globalSearch]);
 
+  const cardStats = useMemo(() => {
     const empty = { count: 0, sum: 0 };
     const stats = {
       indian: { ...empty },
       imported: { ...empty },
       major: { ...empty },
       minor: { ...empty },
-      indianMajor: { ...empty },
-      indianMinor: { ...empty },
-      importedMajor: { ...empty },
-      importedMinor: { ...empty },
     };
 
-    for (const row of baseRows) {
+    // Cascading: Indian/Imported counts exclude indian filter (respect major + table)
+    const baseForIndian = sidebarBaseRows.filter((row) =>
+      matchesSidebarNew(row, "all", majorFilter, headers, "indian"),
+    );
+    for (const row of baseForIndian) {
       const stockStr = String(row[11] ?? "").trim();
       const costStr = String(row[15] ?? "").trim();
       if (stockStr === "" || costStr === "") continue;
@@ -344,21 +456,32 @@ export default function Home() {
       const cost = parseFloat(costStr.replace(/,/g, ""));
       if (isNaN(stock) || isNaN(cost)) continue;
       const value = stock * cost;
-
-      const imp = String(row[24] ?? "").trim().toLowerCase();
-      const isIndian = imp === "indian";
-      const isImported = imp === "imported";
-      const isMajor = String(row[20] ?? "") === "true";
-      const isMinor = String(row[20] ?? "") === "false";
-
-      if (isIndian) {
+      const imp = String(row[headers.indexOf("INDIAN/IMPORTED")] ?? row[24] ?? "").trim().toLowerCase();
+      if (imp === "indian") {
         stats.indian.count++;
         stats.indian.sum += value;
       }
-      if (isImported) {
+      if (imp === "imported") {
         stats.imported.count++;
         stats.imported.sum += value;
       }
+    }
+
+    // Cascading: Major/Minor counts exclude major filter (respect indian + table)
+    const baseForMajor = sidebarBaseRows.filter((row) =>
+      matchesSidebarNew(row, indianImported, "all", headers, "major"),
+    );
+    for (const row of baseForMajor) {
+      const stockStr = String(row[11] ?? "").trim();
+      const costStr = String(row[15] ?? "").trim();
+      if (stockStr === "" || costStr === "") continue;
+      const stock = parseFloat(stockStr.replace(/,/g, ""));
+      const cost = parseFloat(costStr.replace(/,/g, ""));
+      if (isNaN(stock) || isNaN(cost)) continue;
+      const value = stock * cost;
+      const m = String(row[headers.indexOf("MAJOR MARKING")] ?? row[20] ?? "").trim().toLowerCase();
+      const isMajor = m === "true";
+      const isMinor = m === "false";
       if (isMajor) {
         stats.major.count++;
         stats.major.sum += value;
@@ -367,39 +490,10 @@ export default function Home() {
         stats.minor.count++;
         stats.minor.sum += value;
       }
-      if (isIndian && isMajor) {
-        stats.indianMajor.count++;
-        stats.indianMajor.sum += value;
-      }
-      if (isIndian && isMinor) {
-        stats.indianMinor.count++;
-        stats.indianMinor.sum += value;
-      }
-      if (isImported && isMajor) {
-        stats.importedMajor.count++;
-        stats.importedMajor.sum += value;
-      }
-      if (isImported && isMinor) {
-        stats.importedMinor.count++;
-        stats.importedMinor.sum += value;
-      }
     }
 
     return stats;
-  }, [firstFilteredRows, newItems]);
-
-  const majorStat =
-    scope === "indian"
-      ? cardStats.indianMajor
-      : scope === "imported"
-        ? cardStats.importedMajor
-        : cardStats.major;
-  const minorStat =
-    scope === "indian"
-      ? cardStats.indianMinor
-      : scope === "imported"
-        ? cardStats.importedMinor
-        : cardStats.minor;
+  }, [sidebarBaseRows, headers, indianImported, majorFilter]);
 
   const fmt = (n: number) =>
     n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
@@ -437,10 +531,10 @@ export default function Home() {
           <button
             type="button"
             onClick={() =>
-              setScope((s) => (s === "indian" ? "all" : "indian"))
+              setIndianImported((s) => (s === "indian" ? "all" : "indian"))
             }
             className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
-              scope === "indian"
+              indianImported === "indian"
                 ? "border-[#38ef7d] bg-white/10"
                 : "border-white/10 hover:border-white/25"
             }`}
@@ -460,10 +554,10 @@ export default function Home() {
           <button
             type="button"
             onClick={() =>
-              setScope((s) => (s === "imported" ? "all" : "imported"))
+              setIndianImported((s) => (s === "imported" ? "all" : "imported"))
             }
             className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
-              scope === "imported"
+              indianImported === "imported"
                 ? "border-[#38ef7d] bg-white/10"
                 : "border-white/10 hover:border-white/25"
             }`}
@@ -480,31 +574,51 @@ export default function Home() {
             </span>
           </button>
 
-          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+          <button
+            type="button"
+            onClick={() =>
+              setMajorFilter((s) => (s === "major" ? "all" : "major"))
+            }
+            className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
+              majorFilter === "major"
+                ? "border-[#38ef7d] bg-white/10"
+                : "border-white/10 hover:border-white/25"
+            }`}
+          >
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
               Major
             </span>
             <span className="block text-lg font-bold text-white mt-1">
-              {fmt(majorStat.sum)}
+              {fmt(cardStats.major.sum)}
             </span>
             <span className="block text-[10px] font-medium text-white/50 mt-0.5">
-              {majorStat.count} item
-              {majorStat.count === 1 ? "" : "s"}
+              {cardStats.major.count} item
+              {cardStats.major.count === 1 ? "" : "s"}
             </span>
-          </div>
+          </button>
 
-          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+          <button
+            type="button"
+            onClick={() =>
+              setMajorFilter((s) => (s === "minor" ? "all" : "minor"))
+            }
+            className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
+              majorFilter === "minor"
+                ? "border-[#38ef7d] bg-white/10"
+                : "border-white/10 hover:border-white/25"
+            }`}
+          >
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
               Minor
             </span>
             <span className="block text-lg font-bold text-white mt-1">
-              {fmt(minorStat.sum)}
+              {fmt(cardStats.minor.sum)}
             </span>
             <span className="block text-[10px] font-medium text-white/50 mt-0.5">
-              {minorStat.count} item
-              {minorStat.count === 1 ? "" : "s"}
+              {cardStats.minor.count} item
+              {cardStats.minor.count === 1 ? "" : "s"}
             </span>
-          </div>
+          </button>
         </aside>
 
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
@@ -525,8 +639,13 @@ export default function Home() {
               editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD cost","HSN CODE","HSN Code Validation", "MAJOR MARKING", "RM TYPE", "NEW ITEM STATUS"]}
               uniqueKeyColumns={["ERP ITEM CODE"]}
               onFilteredRowsChange={setFirstFilteredRows}
-              onReset={() => setScope("all")}
-              externalFiltersActive={scope !== "all"}
+              filterState={filterState}
+              filterActions={filterActions}
+              onReset={() => {
+                setIndianImported("all");
+                setMajorFilter("all");
+              }}
+              externalFiltersActive={indianImported !== "all" || majorFilter !== "all"}
               castingRateInputs={castingRateInputs}
               lockedCostIds={lockedCostIds}
               bomIdOptionsById={bomIdOptionsById}

@@ -10,6 +10,7 @@ import {
   selectContractReviewBomIdAction,
   updateContractReviewFieldAction,
   backfillContractReviewNoUseBatchAction,
+  autoAssignContractReviewBomIdFromActuator,
 } from "@/app/actions";
 import {
   CONTRACT_REVIEW_HEADER_TO_DB_FIELD,
@@ -27,6 +28,16 @@ interface ContractReviewData {
 }
 
 type BalBillFilter = "all" | "yes" | "no";
+
+const STATUS_OPTIONS = [
+  "Blanks",
+  "Closed",
+  "Completed",
+  "Duplicate",
+  "Hold",
+  "Shortclosed",
+  "To be closed",
+] as const;
 
 function isZeroBal(value: unknown): boolean {
   let s = String(value ?? "").trim();
@@ -49,7 +60,8 @@ const PN_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PN RATING");
 const RATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RATE");
 const MC_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC QTY");
 const BOM_ID_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BOM ID");
-const NO_USE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("NO USE");
+const NO_USE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RM AVAIL");
+const ACTUATOR_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Actuator");
 const ORDER_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER QTY");
 const DI_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("DI QTY");
 const BILLED_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BILLED QTY");
@@ -83,12 +95,13 @@ function matchesSidebar(
   row: unknown[],
   balBill: BalBillFilter,
   status: string,
+  clearance: string[],
   item: string,
   size: string,
   pn: string,
   balBillIdx: number,
   clearanceIdx: number,
-  exclude?: "balBill" | "status" | "item" | "size" | "pn",
+  exclude?: "balBill" | "status" | "clearance" | "item" | "size" | "pn",
 ): boolean {
   if (exclude !== "balBill" && balBill !== "all") {
     const isYes = isZeroBal(row[balBillIdx]);
@@ -98,11 +111,19 @@ function matchesSidebar(
   if (exclude !== "status" && status !== "all") {
     if (status === "Completed") {
       if (!isZeroBal(row[balBillIdx])) return false;
+    } else if (status === "Blanks") {
+      if (String(row[balBillIdx] ?? "").trim() !== "") return false;
     } else {
       const cell = String(row[clearanceIdx] ?? "").trim();
-      const ok = status === "Blanks" ? cell === "" : cell === status;
-      if (!ok) return false;
+      if (cell !== status) return false;
     }
+  }
+  if (exclude !== "clearance" && clearance.length > 0) {
+    const cell = String(row[clearanceIdx] ?? "").trim();
+    const isBlank = cell === "";
+    const matchesBlank = clearance.includes("(Blank)") && isBlank;
+    const matchesVal = clearance.includes(cell);
+    if (!(matchesBlank || matchesVal)) return false;
   }
   if (
     exclude !== "item" &&
@@ -124,12 +145,39 @@ function matchesSidebar(
   return true;
 }
 
+function parseDateCR(str: string): Date | null {
+  if (!str || typeof str !== "string") return null;
+  const s = str.trim();
+  const m = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
+  if (m) {
+    const months: Record<string, number> = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    };
+    const mon = months[m[2].toLowerCase()];
+    if (mon !== undefined) {
+      const day = parseInt(m[1], 10);
+      let year = parseInt(m[3], 10);
+      if (year < 100) year += 2000;
+      if (!isNaN(day) && day >= 1 && day <= 31 && !isNaN(year)) {
+        return new Date(year, mon, day);
+      }
+    }
+  }
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  return null;
+}
+
 function matchesTableFilters(
   row: unknown[],
   headers: string[],
   columnFilters: Record<string, string>,
   multiFilters: Record<string, string[]>,
   globalSearch: string,
+  dateFrom?: string,
+  dateTo?: string,
+  excludeHeader?: string,
 ): boolean {
   if (globalSearch.trim()) {
     const q = globalSearch.toLowerCase();
@@ -139,6 +187,7 @@ function matchesTableFilters(
     if (!hay.includes(q)) return false;
   }
   for (const [colName, filterVal] of Object.entries(columnFilters)) {
+    if (excludeHeader && colName === excludeHeader) continue;
     if (!filterVal || filterVal === "All") continue;
     const colIdx = headers.indexOf(colName);
     if (colIdx === -1) continue;
@@ -150,12 +199,33 @@ function matchesTableFilters(
     }
   }
   for (const [colName, selected] of Object.entries(multiFilters)) {
+    if (excludeHeader && colName === excludeHeader) continue;
     if (!selected.length) continue;
     const colIdx = headers.indexOf(colName);
     if (colIdx === -1) continue;
     const cellVal = String(row[colIdx] ?? "").trim();
     const matchesBlank = selected.includes("(Blank)") && cellVal === "";
     if (!(matchesBlank || selected.includes(cellVal))) return false;
+  }
+  if (dateFrom || dateTo) {
+    const dateColIdx = (() => {
+      const candidates = new Set(["Date", "expiryDate"]);
+      for (const cand of candidates) {
+        const idx = headers.indexOf(cand);
+        if (idx !== -1) return idx;
+      }
+      return headers.findIndex((h) => h.toLowerCase().includes("date"));
+    })();
+    if (dateColIdx !== -1) {
+      const fromDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
+      const toEnd = dateTo ? new Date(dateTo + "T23:59:59") : null;
+      const dateStr = String(row[dateColIdx] ?? "");
+      if (!dateStr) return false;
+      const date = parseDateCR(dateStr);
+      if (!date) return false;
+      if (fromDate && date < fromDate) return false;
+      if (toEnd && date > toEnd) return false;
+    }
   }
   return true;
 }
@@ -168,6 +238,8 @@ export default function ContractReviewPage() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [balBillFilter, setBalBillFilter] = useState<BalBillFilter>("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [clearanceOpen, setClearanceOpen] = useState(false);
+  const clearanceRef = useRef<HTMLDivElement>(null);
   const [tileItem, setTileItem] = useState("");
   const [tileSize, setTileSize] = useState("");
   const [tilePn, setTilePn] = useState("");
@@ -235,16 +307,6 @@ export default function ContractReviewPage() {
     [],
   );
 
-  const STATUS_OPTIONS = [
-    "Blanks",
-    "Closed",
-    "Completed",
-    "Duplicate",
-    "Hold",
-    "Shortclosed",
-    "To be closed",
-  ] as const;
-
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -289,6 +351,22 @@ export default function ContractReviewPage() {
   const headers = data?.headers ?? [];
   const balBillIdx = data ? headers.indexOf("BAL BILL AG CONT") : -1;
   const clearanceIdx = data ? headers.indexOf("CLEARANCE STATUS") : -1;
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (
+        clearanceRef.current &&
+        !clearanceRef.current.contains(e.target as Node)
+      ) {
+        setClearanceOpen(false);
+      }
+    }
+    if (clearanceOpen) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [clearanceOpen]);
+
+  // Single source of truth: sidebar CLEARANCE STATUS mirrors column multiFilters["CLEARANCE STATUS"]
+  const clearanceFilter = multiFilters["CLEARANCE STATUS"] ?? [];
 
   const handleSelectBomId = useCallback(
     (id: string, bomId: string | null) => {
@@ -363,14 +441,23 @@ export default function ContractReviewPage() {
   useEffect(() => {
     if (!data) return;
     const pending: { id: string; bomId: string }[] = [];
+    const pendingActuator: string[] = [];
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
       if (!id || autoSavedBomIdsRef.current.has(id)) return;
       if (String(row[BOM_ID_IDX] ?? "").trim() !== "") return;
       const options = bomIdOptionsById[id];
-      if (!options || options.length !== 1) return;
-      autoSavedBomIdsRef.current.add(id);
-      pending.push({ id, bomId: options[0] });
+      if (!options || options.length === 0) return;
+      if (options.length === 1) {
+        autoSavedBomIdsRef.current.add(id);
+        pending.push({ id, bomId: options[0] });
+        return;
+      }
+      const actuator = ACTUATOR_IDX !== -1 ? String(row[ACTUATOR_IDX] ?? "") : "";
+      if (actuator.includes("@")) {
+        autoSavedBomIdsRef.current.add(id);
+        pendingActuator.push(id);
+      }
     });
     const itemTypeIdx = headers.indexOf("ITEM TYPE");
     for (const { id, bomId } of pending) {
@@ -396,6 +483,29 @@ export default function ContractReviewPage() {
         });
       });
     }
+    if (pendingActuator.length > 0) {
+      autoAssignContractReviewBomIdFromActuator(pendingActuator).then((res) => {
+        if (!res?.success) return;
+        setData((prev) => {
+          if (!prev) return prev;
+          const map = new Map(
+            (res.data ?? []).map((d) => [d.id, d]),
+          );
+          return {
+            ...prev,
+            rows: prev.rows.map((row, i) => {
+              const d = map.get(prev.ids[i]);
+              if (!d) return row;
+              const next = [...row];
+              next[BOM_ID_IDX] = d.bomId;
+              if (itemTypeIdx !== -1) next[itemTypeIdx] = d.itemType;
+              if (NO_USE_IDX !== -1) next[NO_USE_IDX] = d.noUse ?? "";
+              return next;
+            }),
+          };
+        });
+      });
+    }
   }, [data, bomIdOptionsById, headers]);
 
   const autoNoUseRef = useRef<Set<string>>(new Set());
@@ -407,8 +517,6 @@ export default function ContractReviewPage() {
       const id = data.ids[i];
       if (!id || autoNoUseRef.current.has(id)) return;
       if (String(row[BOM_ID_IDX] ?? "").trim() === "") return;
-      const v = row[NO_USE_IDX];
-      if (v === "" || v === "USE" || v === "NO USE") return;
       autoNoUseRef.current.add(id);
       pending.push(id);
     });
@@ -443,13 +551,11 @@ export default function ContractReviewPage() {
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     const result: Record<string, string[]> = {};
     if (items.length) result.Item = items;
+    // Pure row-value distinct for CLEARANCE STATUS (plus (Blank) handled by MultiSelect)
     result["CLEARANCE STATUS"] = [
-      ...new Set([
-        ...STATUS_OPTIONS.filter((o) => o !== "Blanks" && o !== "Completed"),
-        ...data.rows
-          .map((r) => String(r[clearanceIdx] ?? "").trim())
-          .filter(Boolean),
-      ]),
+      ...new Set(
+        data.rows.map((r) => String(r[clearanceIdx] ?? "").trim()).filter(Boolean),
+      ),
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return result;
   }, [data, clearanceIdx]);
@@ -465,9 +571,11 @@ export default function ContractReviewPage() {
           columnFilters,
           multiFilters,
           globalSearch,
+          dateFrom,
+          dateTo,
         ),
       ),
-    [allRows, headers, columnFilters, multiFilters, globalSearch],
+    [allRows, headers, columnFilters, multiFilters, globalSearch, dateFrom, dateTo],
   );
 
   const balBillCounts = useMemo(() => {
@@ -480,6 +588,7 @@ export default function ContractReviewPage() {
           row,
           "all",
           statusFilter,
+          clearanceFilter,
           tileItem,
           tileSize,
           tilePn,
@@ -496,6 +605,7 @@ export default function ContractReviewPage() {
   }, [
     sidebarBaseRows,
     statusFilter,
+    clearanceFilter,
     tileItem,
     tileSize,
     tilePn,
@@ -520,6 +630,7 @@ export default function ContractReviewPage() {
           row,
           balBillFilter,
           "all",
+          clearanceFilter,
           tileItem,
           tileSize,
           tilePn,
@@ -534,20 +645,84 @@ export default function ContractReviewPage() {
         counts.Completed++;
         continue;
       }
+      const balBlank = String(row[balBillIdx] ?? "").trim() === "";
       const cell = String(row[clearanceIdx] ?? "").trim();
-      const key = cell === "" ? "Blanks" : cell;
+      const key = balBlank ? "Blanks" : cell;
       if (key in counts) counts[key]++;
     }
     return counts;
   }, [
     sidebarBaseRows,
     balBillFilter,
+    clearanceFilter,
     tileItem,
     tileSize,
     tilePn,
     balBillIdx,
     clearanceIdx,
   ]);
+
+  // Cascading multi-select clearance filter: counts exclude own selection (exclude-self)
+  // like item/size/pn/balBill/status. "(Blank)" represents empty string.
+  // Bidirectional: also exclude column's CLEARANCE STATUS filter (same logical filter synced)
+  const clearanceCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: 0 };
+    const baseForClearance = allRows.filter((row) =>
+      matchesTableFilters(row, headers, columnFilters, multiFilters, globalSearch, dateFrom, dateTo, "CLEARANCE STATUS"),
+    );
+    for (const row of baseForClearance) {
+      if (
+        !matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          [],
+          tileItem,
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          "clearance",
+        )
+      )
+        continue;
+      counts.all++;
+      const cell = String(row[clearanceIdx] ?? "").trim();
+      const key = cell === "" ? "(Blank)" : cell;
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }, [
+    allRows,
+    headers,
+    columnFilters,
+    multiFilters,
+    globalSearch,
+    dateFrom,
+    dateTo,
+    balBillFilter,
+    statusFilter,
+    tileItem,
+    tileSize,
+    tilePn,
+    balBillIdx,
+    clearanceIdx,
+  ]);
+
+  const clearanceOptions = useMemo(() => {
+    const keys = Object.keys(clearanceCounts).filter((k) => k !== "all");
+    // Always include (Blank) like table column filter does, even if count 0 (cascading still shows 0)
+    if (!keys.includes("(Blank)")) keys.push("(Blank)");
+    // Keep selected values visible even if count 0 (bidirectional cascading keep-selected)
+    for (const s of clearanceFilter) {
+      if (s !== "(Blank)" && !keys.includes(s)) keys.push(s);
+    }
+    return keys.sort((a, b) => {
+      if (a === "(Blank)") return 1;
+      if (b === "(Blank)") return -1;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+  }, [clearanceCounts, clearanceFilter]);
 
   const itemOptions = useMemo(
     () =>
@@ -556,6 +731,7 @@ export default function ContractReviewPage() {
           row,
           balBillFilter,
           statusFilter,
+          clearanceFilter,
           "",
           tileSize,
           tilePn,
@@ -568,6 +744,7 @@ export default function ContractReviewPage() {
       sidebarBaseRows,
       balBillFilter,
       statusFilter,
+      clearanceFilter,
       tileSize,
       tilePn,
       balBillIdx,
@@ -582,6 +759,7 @@ export default function ContractReviewPage() {
           row,
           balBillFilter,
           statusFilter,
+          clearanceFilter,
           tileItem,
           "",
           tilePn,
@@ -594,6 +772,7 @@ export default function ContractReviewPage() {
       sidebarBaseRows,
       balBillFilter,
       statusFilter,
+      clearanceFilter,
       tileItem,
       tilePn,
       balBillIdx,
@@ -608,6 +787,7 @@ export default function ContractReviewPage() {
           row,
           balBillFilter,
           statusFilter,
+          clearanceFilter,
           tileItem,
           tileSize,
           "",
@@ -620,6 +800,7 @@ export default function ContractReviewPage() {
       sidebarBaseRows,
       balBillFilter,
       statusFilter,
+      clearanceFilter,
       tileItem,
       tileSize,
       balBillIdx,
@@ -636,6 +817,7 @@ export default function ContractReviewPage() {
           row,
           balBillFilter,
           statusFilter,
+          clearanceFilter,
           tileItem,
           tileSize,
           tilePn,
@@ -656,6 +838,7 @@ export default function ContractReviewPage() {
     sidebarBaseRows,
     balBillFilter,
     statusFilter,
+    clearanceFilter,
     tileItem,
     tileSize,
     tilePn,
@@ -673,6 +856,7 @@ export default function ContractReviewPage() {
             row,
             balBillFilter,
             statusFilter,
+            clearanceFilter,
             tileItem,
             tileSize,
             tilePn,
@@ -700,6 +884,7 @@ export default function ContractReviewPage() {
       sidebarBaseRows,
       balBillFilter,
       statusFilter,
+      clearanceFilter,
       tileItem,
       tileSize,
       tilePn,
@@ -737,6 +922,7 @@ export default function ContractReviewPage() {
             row,
             balBillFilter,
             statusFilter,
+            clearanceFilter,
             tileItem,
             tileSize,
             tilePn,
@@ -752,6 +938,7 @@ export default function ContractReviewPage() {
       sidebarBaseRows,
       balBillFilter,
       statusFilter,
+      clearanceFilter,
       tileItem,
       tileSize,
       tilePn,
@@ -765,7 +952,10 @@ export default function ContractReviewPage() {
   const filteredData = useMemo(() => {
     if (
       !data ||
-      (!hasTileFilter && balBillFilter === "all" && statusFilter === "all")
+      (!hasTileFilter &&
+        balBillFilter === "all" &&
+        statusFilter === "all" &&
+        clearanceFilter.length === 0)
     ) {
       return data;
     }
@@ -777,6 +967,7 @@ export default function ContractReviewPage() {
           row,
           balBillFilter,
           statusFilter,
+          clearanceFilter,
           tileItem,
           tileSize,
           tilePn,
@@ -795,6 +986,7 @@ export default function ContractReviewPage() {
     hasTileFilter,
     balBillFilter,
     statusFilter,
+    clearanceFilter,
     balBillIdx,
     clearanceIdx,
     tileItem,
@@ -814,6 +1006,7 @@ export default function ContractReviewPage() {
             r,
             balBillFilter,
             statusFilter,
+            clearanceFilter,
             "",
             tileSize,
             tilePn,
@@ -832,6 +1025,7 @@ export default function ContractReviewPage() {
             r,
             balBillFilter,
             statusFilter,
+            clearanceFilter,
             tileItem,
             "",
             tilePn,
@@ -850,6 +1044,7 @@ export default function ContractReviewPage() {
             r,
             balBillFilter,
             statusFilter,
+            clearanceFilter,
             tileItem,
             tileSize,
             "",
@@ -866,6 +1061,7 @@ export default function ContractReviewPage() {
       sidebarBaseRows,
       balBillFilter,
       statusFilter,
+      clearanceFilter,
       tileItem,
       tileSize,
       tilePn,
@@ -903,7 +1099,7 @@ export default function ContractReviewPage() {
           <span className="text-xs font-bold uppercase tracking-wider text-white">
             Filters
           </span>
-          <div className="flex flex-col gap-1.5">
+          {/* <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold text-white/60">
               BAL BILL AG CONT
             </span>
@@ -918,7 +1114,7 @@ export default function ContractReviewPage() {
               <option value="yes">Yes (0) ({balBillCounts.yes})</option>
               <option value="no">No ({balBillCounts.no})</option>
             </select>
-          </div>
+          </div> */}
           <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold text-white/60">
               STATUS
@@ -935,6 +1131,89 @@ export default function ContractReviewPage() {
                 </option>
               ))}
             </select>
+          </div>
+          <div className="flex flex-col gap-1.5" ref={clearanceRef}>
+            <span className="text-[11px] font-semibold text-white/60">
+              CLEARANCE STATUS
+            </span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setClearanceOpen((v) => !v)}
+                className="w-full text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-2 py-1.5 text-left outline-none cursor-pointer flex items-center justify-between gap-1"
+              >
+                <span className="truncate">
+                  {clearanceFilter.length === 0
+                    ? `All (${clearanceCounts.all ?? 0})`
+                    : `${clearanceFilter.length} selected`}
+                </span>
+                <span className="text-[10px] text-[#0a2540]/60 shrink-0">
+                  {clearanceOpen ? "▲" : "▼"}
+                </span>
+              </button>
+              {clearanceOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-[#e1e6eb] rounded shadow-lg overflow-hidden">
+                  <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-[#e1e6eb] bg-[#f8f9fa]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        filterActions.onMultiFilter("CLEARANCE STATUS", [
+                          ...clearanceOptions,
+                        ])
+                      }
+                      className="text-blue-600 font-bold hover:underline cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        filterActions.onMultiFilter("CLEARANCE STATUS", [])
+                      }
+                      className="text-red-600 font-semibold hover:underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto py-1">
+                    {clearanceOptions.length === 0 ? (
+                      <div className="px-2 py-2 text-[11px] text-muted-foreground">
+                        No options
+                      </div>
+                    ) : (
+                      clearanceOptions.map((opt) => (
+                        <label
+                          key={opt}
+                          className="flex items-center gap-1.5 px-2 py-1 hover:bg-gray-50 cursor-pointer text-[11px] text-[#0a2540]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={clearanceFilter.includes(opt)}
+                            onChange={() => {
+                              filterActions.onMultiFilter(
+                                "CLEARANCE STATUS",
+                                clearanceFilter.includes(opt)
+                                  ? clearanceFilter.filter((v) => v !== opt)
+                                  : [...clearanceFilter, opt],
+                              );
+                            }}
+                            className="accent-blue-600 shrink-0"
+                          />
+                          <span
+                            className={`truncate flex-1 ${opt === "(Blank)" ? "italic text-gray-400" : ""}`}
+                          >
+                            {opt}
+                          </span>
+                          <span className="text-[10px] text-[#0a2540]/50 shrink-0">
+                            ({clearanceCounts[opt] ?? 0})
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <span className="text-xs font-bold uppercase tracking-wider text-white mt-2">
@@ -1086,7 +1365,8 @@ export default function ContractReviewPage() {
               externalFiltersActive={
                 hasTileFilter ||
                 balBillFilter !== "all" ||
-                statusFilter !== "all"
+                statusFilter !== "all" ||
+                clearanceFilter.length > 0
               }
               filterState={filterState}
               filterActions={filterActions}
@@ -1099,6 +1379,7 @@ export default function ContractReviewPage() {
                 setTilePn("");
                 setBalBillFilter("all");
                 setStatusFilter("all");
+                filterActions.onMultiFilter("CLEARANCE STATUS", []);
               }}
               hiddenColumns={[
                 "VA %",
@@ -1124,7 +1405,6 @@ export default function ContractReviewPage() {
                 "BAL BILL AG MC",
                 "ic qty",
                 "bom formula trial",
-                "NO USE",
               ]}
             />
           </div>

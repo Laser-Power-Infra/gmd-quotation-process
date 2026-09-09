@@ -8,7 +8,7 @@ export async function POST() {
       select: {
         id: true,
         bomId: true,
-        itemCode: true,
+        rmItemCode: true,
         noUse: true,
         availableStock: true,
       },
@@ -20,7 +20,9 @@ export async function POST() {
     const statusMap = await getBomUseStatusBatch(bomIds);
 
     const codes = [
-      ...new Set(items.map((i) => i.itemCode).filter((c): c is string => !!c)),
+      ...new Set(
+        items.map((i) => i.rmItemCode).filter((c): c is string => !!c),
+      ),
     ];
     const rawItems = await prisma.gMDUpdateItem.findMany({
       where: { erpItemCode: { in: codes } },
@@ -37,8 +39,8 @@ export async function POST() {
     const updates = items
       .map((item) => {
         const noUse = item.bomId ? (statusMap.get(item.bomId) ?? "") : null;
-        const stock = item.itemCode
-          ? (stockMap.get(item.itemCode) ?? "")
+        const stock = item.rmItemCode
+          ? (stockMap.get(item.rmItemCode) ?? "")
           : null;
         return {
           id: item.id,

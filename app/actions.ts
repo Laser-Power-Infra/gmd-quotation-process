@@ -10,7 +10,7 @@ import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
 import { update2to1CostForItems } from "@/lib/gmd2to1CostLookup";
-import { getDistinctBomIds, getBatchDistinctBomIds, getBomUseStatus, getBomUseStatusBatch } from "@/lib/verifyBomLookup";
+import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, type BomRmAvail } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 
@@ -1594,10 +1594,16 @@ export async function selectContractReviewBomIdAction(
       const itemType = (vbRow?.bomIdType ?? "").trim()
         ? vbRow!.bomIdType!
         : "no itemtype present";
-      const noUse = await getBomUseStatus(value);
+      const groupRows = await prisma.contractReview.findMany({
+        where: { bomId: value },
+        select: { id: true, bomId: true, orderQty: true },
+      });
+      const bomAvail = await getBomRmAvailBatch([value]);
+      const availMap = computeContractReviewRmAvail(groupRows, bomAvail);
+      const noUse = availMap.get(id) ?? "";
       await prisma.contractReview.update({
         where: { id },
-        data: { bomId: value, itemType, noUse: noUse ?? "" },
+        data: { bomId: value, itemType, noUse: noUse || null },
       });
       return { success: true, data: { id, bomId: value, itemType, noUse } };
     }
@@ -1612,6 +1618,91 @@ export async function selectContractReviewBomIdAction(
   }
 }
 
+export async function autoAssignContractReviewBomIdFromActuator(ids: string[]) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+    const rows = await prisma.contractReview.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, itemCode: true, actuator: true, bomId: true, orderQty: true },
+    });
+    const unresolved = rows.filter((r) => !r.bomId && r.actuator?.includes("@"));
+    const bomIdByRow = await resolveContractReviewBomIdsFromActuator(unresolved);
+
+    const results: { id: string; bomId: string; itemType: string; noUse: string | null }[] = [];
+    for (const row of unresolved) {
+      const bomId = bomIdByRow.get(row.id);
+      if (!bomId) continue;
+      const vbRow = await prisma.verifyBom.findFirst({
+        where: { itemCode: row.itemCode, bomId },
+        select: { bomIdType: true },
+      });
+      const itemType = (vbRow?.bomIdType ?? "").trim()
+        ? vbRow!.bomIdType!
+        : "no itemtype present";
+      const groupRows = await prisma.contractReview.findMany({
+        where: { bomId },
+        select: { id: true, bomId: true, orderQty: true },
+      });
+      if (!groupRows.some((g) => g.id === row.id)) {
+        groupRows.push({ id: row.id, bomId, orderQty: row.orderQty });
+      }
+      const bomAvail = await getBomRmAvailBatch([bomId]);
+      const availMap = computeContractReviewRmAvail(groupRows, bomAvail);
+      const noUse = availMap.get(row.id) ?? null;
+      await prisma.contractReview.update({
+        where: { id: row.id },
+        data: { bomId, itemType, noUse: noUse || null },
+      });
+      results.push({ id: row.id, bomId, itemType, noUse });
+    }
+    return { success: true, data: results };
+  } catch (error: any) {
+    console.error("Error auto-assigning ContractReview BOM ID from actuator:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to auto-assign BOM ID from actuator.",
+    };
+  }
+}
+
+type RmAvailRow = { id: string; bomId: string | null; orderQty: string | null };
+
+function computeContractReviewRmAvail(
+  rows: RmAvailRow[],
+  bomAvail: Map<string, BomRmAvail>,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  const groups = new Map<string, RmAvailRow[]>();
+  for (const r of rows) {
+    if (!r.bomId) continue;
+    if (!groups.has(r.bomId)) groups.set(r.bomId, []);
+    groups.get(r.bomId)!.push(r);
+  }
+  for (const [bomId, group] of groups) {
+    const avail = bomAvail.get(bomId);
+    if (!avail || !avail.qualifies) continue;
+    let remaining = avail.stock;
+    const sorted = [...group].sort((a, b) => {
+      const qa = parseFloat(String(a.orderQty ?? "").replace(/,/g, ""));
+      const qb = parseFloat(String(b.orderQty ?? "").replace(/,/g, ""));
+      return (isNaN(qa) ? 0 : qa) - (isNaN(qb) ? 0 : qb);
+    });
+    for (const r of sorted) {
+      const qty = parseFloat(String(r.orderQty ?? "").replace(/,/g, ""));
+      const n = isNaN(qty) ? 0 : qty;
+      if (n <= remaining) {
+        result.set(r.id, "SA");
+        remaining -= n;
+      } else {
+        result.set(r.id, "Not available");
+      }
+    }
+  }
+  return result;
+}
+
 export async function backfillContractReviewNoUseBatchAction(ids: string[]) {
   "use server";
   try {
@@ -1619,34 +1710,40 @@ export async function backfillContractReviewNoUseBatchAction(ids: string[]) {
     if (unique.length === 0) return { success: true, data: [] };
     const items = await prisma.contractReview.findMany({
       where: { id: { in: unique } },
-      select: { id: true, bomId: true },
+      select: { id: true, bomId: true, orderQty: true },
     });
     const bomIds = [
       ...new Set(
         items.map((i) => i.bomId).filter((b): b is string => !!b),
       ),
     ];
-    const statusMap = await getBomUseStatusBatch(bomIds);
-    await prisma.$transaction(
-      items.map((i) =>
+    const bomAvail = await getBomRmAvailBatch(bomIds);
+    const availMap = computeContractReviewRmAvail(items, bomAvail);
+    const updates = items
+      .filter((i) => availMap.has(i.id))
+      .map((i) =>
         prisma.contractReview.update({
           where: { id: i.id },
-          data: { noUse: i.bomId ? (statusMap.get(i.bomId) ?? "") : null },
+          data: { noUse: availMap.get(i.id) ?? null },
         }),
-      ),
-    );
+      );
+    if (updates.length > 0) {
+      await prisma.$transaction(updates);
+    }
     return {
       success: true,
-      data: items.map((i) => ({
-        id: i.id,
-        noUse: i.bomId ? (statusMap.get(i.bomId) ?? null) : null,
-      })),
+      data: items
+        .filter((i) => availMap.has(i.id))
+        .map((i) => ({
+          id: i.id,
+          noUse: availMap.get(i.id) ?? null,
+        })),
     };
   } catch (error: any) {
-    console.error("Error backfilling ContractReview NO USE:", error);
+    console.error("Error backfilling ContractReview RM AVAIL:", error);
     return {
       success: false,
-      error: error.message || "Failed to backfill NO USE.",
+      error: error.message || "Failed to backfill RM AVAIL.",
     };
   }
 }
