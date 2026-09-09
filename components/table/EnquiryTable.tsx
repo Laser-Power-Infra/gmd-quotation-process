@@ -3905,10 +3905,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       )}
                     </td>
 
-                    {/* Attachment - self scrollable, does not expand row */}
+                    {/* Attachment - like Item Name, self scrollable */}
                     <td className="py-2 px-2 text-xs border-r border-b border-border last:border-r-0 align-top overflow-hidden">
                       <div className="flex flex-col gap-1 w-full min-w-0">
-                        <div className="flex flex-col gap-1 max-h-20 overflow-y-auto overflow-x-hidden cell-scrollable pr-1 min-w-0">
+                        <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable wrap-break-word whitespace-normal leading-normal flex flex-col gap-1 min-w-0">
                           {enquiry.attachments && enquiry.attachments.length > 0 ? (
                             enquiry.attachments.map((att) => (
                               <a
@@ -3917,14 +3917,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 title={att.name}
-                                className="flex items-center gap-1.5 text-xs font-semibold text-[#0f62fe] dark:text-blue-400 hover:underline truncate min-w-0"
+                                className="flex items-start gap-1.5 text-xs font-semibold text-[#0f62fe] dark:text-blue-400 hover:underline wrap-break-word whitespace-normal leading-normal break-all min-w-0"
                               >
-                                <FileText className="h-3.5 w-3.5 text-[#0f62fe] dark:text-blue-400 stroke-2 shrink-0" />
-                                <span className="truncate min-w-0">{att.name}</span>
+                                <FileText className="h-3.5 w-3.5 text-[#0f62fe] dark:text-blue-400 stroke-2 shrink-0 mt-0.5" />
+                                <span className="wrap-break-word whitespace-normal break-all min-w-0">{att.name}</span>
                               </a>
                             ))
                           ) : (
-                            <span className="text-muted-foreground">-</span>
+                            <span className="text-muted-foreground text-xs">-</span>
                           )}
                         </div>
                         <button
