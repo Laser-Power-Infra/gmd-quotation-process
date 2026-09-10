@@ -173,6 +173,115 @@ export async function getBomRmAvailBatch(
   return out;
 }
 
+export async function recomputeVerifyBomValues(): Promise<{
+  updated: number;
+  statusMap: Map<string, BomUseStatus>;
+  stockMap: Map<string, string>;
+}> {
+  const items = await prisma.verifyBom.findMany({
+    select: {
+      id: true,
+      bomId: true,
+      rmItemCode: true,
+      noUse: true,
+      availableStock: true,
+    },
+  });
+
+  const bomIds = [
+    ...new Set(items.map((i) => i.bomId).filter((b): b is string => !!b)),
+  ];
+  const statusMap = await getBomUseStatusBatch(bomIds);
+
+  const codes = [
+    ...new Set(
+      items.map((i) => i.rmItemCode).filter((c): c is string => !!c),
+    ),
+  ];
+  const rawItems = await prisma.gMDUpdateItem.findMany({
+    where: { erpItemCode: { in: codes } },
+    select: { erpItemCode: true, availableStock: true },
+  });
+  const stockMap = new Map<string, string>();
+  for (const r of rawItems) {
+    if (!r.erpItemCode) continue;
+    if (!stockMap.has(r.erpItemCode)) {
+      stockMap.set(r.erpItemCode, r.availableStock ?? "");
+    }
+  }
+
+  const updates = items
+    .map((item) => {
+      const noUse = item.bomId ? (statusMap.get(item.bomId) ?? "") : null;
+      const stock = item.rmItemCode
+        ? (stockMap.get(item.rmItemCode) ?? "")
+        : null;
+      return {
+        id: item.id,
+        noUse,
+        stock,
+        oldNoUse: item.noUse,
+        oldStock: item.availableStock ?? null,
+      };
+    })
+    .filter(
+      ({ noUse, stock, oldNoUse, oldStock }) =>
+        oldNoUse !== noUse || oldStock !== stock,
+    )
+    .map(({ id, noUse, stock }) =>
+      prisma.verifyBom.update({
+        where: { id },
+        data: { noUse, availableStock: stock },
+      }),
+    );
+
+  if (updates.length > 0) {
+    await prisma.$transaction(updates, { timeout: 20000 });
+  }
+
+  return { updated: updates.length, statusMap, stockMap };
+}
+
+export type RmAvailRow = {
+  id: string;
+  bomId: string | null;
+  orderQty: string | null;
+};
+
+export function computeContractReviewRmAvail(
+  rows: RmAvailRow[],
+  bomAvail: Map<string, BomRmAvail>,
+): Map<string, string> {
+  const result = new Map<string, string>();
+  const groups = new Map<string, RmAvailRow[]>();
+  for (const r of rows) {
+    if (!r.bomId) continue;
+    if (!groups.has(r.bomId)) groups.set(r.bomId, []);
+    groups.get(r.bomId)!.push(r);
+  }
+  for (const [bomId, group] of groups) {
+    const avail = bomAvail.get(bomId);
+    if (!avail || !avail.qualifies) continue;
+    let remaining = avail.stock;
+    const sorted = [...group].sort((a, b) => {
+      const qa = parseFloat(String(a.orderQty ?? "").replace(/,/g, ""));
+      const qb = parseFloat(String(b.orderQty ?? "").replace(/,/g, ""));
+      return (isNaN(qa) ? 0 : qa) - (isNaN(qb) ? 0 : qb);
+    });
+    for (const r of sorted) {
+      const qty = parseFloat(String(r.orderQty ?? "").replace(/,/g, ""));
+      const n = isNaN(qty) ? 0 : qty;
+      if (n <= remaining) {
+        result.set(r.id, "SA");
+        remaining -= n;
+      } else {
+        result.set(r.id, "Not available");
+      }
+    }
+  }
+  return result;
+}
+
 export async function populateAvailableBomIdsForItemId(itemId: string): Promise<string[]> {
   const item = await prisma.enquiryItem.findUnique({
     where: { id: itemId },

@@ -990,6 +990,8 @@ export default function ContractReviewPage() {
   const fmt = (n: number) =>
     n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
+  const fmtLakhs = (n: number) => `${(n / 100000).toFixed(1)} lakhs`;
+
   // Per-contract meta for the CONTRACT NO column filter dropdown
   // (party name, row count, and RATE × BAL BILL AG CONT sum). Excludes the
   // CONTRACT NO filter itself (exclude-self cascading), respects all other filters.
@@ -1039,7 +1041,7 @@ export default function ContractReviewPage() {
       "CONTRACT NO": Object.fromEntries(
         Object.entries(contractNoMeta).map(([cn, m]) => [
           cn,
-          { count: m.count, sumLabel: fmt(m.sum), partyName: m.partyName },
+          { count: m.count, sumLabel: fmtLakhs(m.sum), partyName: m.partyName },
         ]),
       ),
     }),
