@@ -28,7 +28,6 @@ export interface EnquiryItemData {
   itemTypeSource?: string | null;
   mocSource?: string | null;
   validation?: string | null;
-  apm?: string | null;
   erpItemCode?: string | null;
   bomId?: string | null;
   bomType?: string | null;
@@ -66,6 +65,7 @@ export interface EnquiryData {
   orderStatus: string | null;
   closureStatus: string | null;
   projectReference: string | null;
+  apm?: string | null;
   attachments: AttachmentData[];
   items: EnquiryItemData[];
 }

@@ -140,12 +140,12 @@ function matchesText(filterVal: string, actual: unknown): boolean {
 }
 
 const ALL_DROPDOWN_FIELDS = [
-  "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus",
+  "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass",
-  "validation", "apm", "vaPercent", "erpItemCode", "bomId", "productCost", "cost", "contractReviewRate", "pdcostValidation", "availableStock",
+  "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "cost", "contractReviewRate", "pdcostValidation", "availableStock",
 ] as const;
 
-const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus"]);
+const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm"]);
 
 export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const dispatch = useAppDispatch();
@@ -383,19 +383,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
   const [bulkApmRunning, setBulkApmRunning] = useState<"Yes" | "No" | "Clear" | null>(null);
   const handleBulkApm = async (val: "Yes" | "No" | "") => {
-    const allFiltered = filteredEnquiries.flatMap((e) => getFilteredItems(e));
-    if (allFiltered.length === 0) {
-      toast.info("No items match current filters.");
+    if (filteredEnquiries.length === 0) {
+      toast.info("No enquiries match current filters.");
       return;
     }
     const label = val === "" ? "Blank" : val;
-    const differing = allFiltered.filter((i) => ((i as any).apm || "") !== (val || "")).length;
-    if (!confirm(`Set APM to "${label}" for ${allFiltered.length} filtered item(s) across all pages?${differing > 0 ? ` This will overwrite ${differing} differing value(s).` : ""}`)) return;
+    const differing = filteredEnquiries.filter((e) => ((e as any).apm || "") !== (val || "")).length;
+    if (!confirm(`Set APM to "${label}" for ${filteredEnquiries.length} filtered enquir${filteredEnquiries.length === 1 ? "y" : "ies"} across all pages?${differing > 0 ? ` This will overwrite ${differing} differing value(s).` : ""}`)) return;
     const runKey = val === "" ? "Clear" : val;
     setBulkApmRunning(runKey as any);
     try {
-      const result: any = await dispatch(bulkUpdateApm({ itemIds: allFiltered.map((i) => i.id), apm: val === "" ? null : val })).unwrap();
-      toast.success(`APM set to "${label}" for ${result.updated} item(s).`);
+      const result: any = await dispatch(bulkUpdateApm({ enquiryIds: filteredEnquiries.map((e) => e.id), apm: val === "" ? null : val })).unwrap();
+      toast.success(`APM set to "${label}" for ${result.updated} enquir${result.updated === 1 ? "y" : "ies"}.`);
     } catch (err: any) {
       const msg = typeof err === "string" ? err : err?.message || "Failed to update APM.";
       toast.error(msg);
@@ -740,11 +739,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           return false;
         }
       }
-      if (filters.apm.length > 0) {
-        if (!matchesMulti(filters.apm, (item as any).apm)) {
-          return false;
-        }
-      }
       return true;
     });
   };
@@ -1050,6 +1044,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     if (!matchesMultiCI(filters.closureStatus, enquiry.closureStatus)) {
       return false;
     }
+    if (!matchesMulti(filters.apm, (enquiry as any).apm)) {
+      return false;
+    }
 
     // 11. Project Reference (Text Search)
     if (
@@ -1237,11 +1234,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           return false;
         }
       }
-      if (filters.apm.length > 0) {
-        if (!matchesMulti(filters.apm, (item as any).apm)) {
-          return false;
-        }
-      }
       return true;
     });
 
@@ -1262,7 +1254,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const getSortValue = (enquiry: EnquiryData, field: string): string | number | Date | null | undefined => {
     const enquiryFields = [
       "enquiryDate", "docketNumber", "partyName", "enquiryType", "state", 
-      "paymentTerms", "inspection", "pbg", "utility", "orderStatus"
+      "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "apm"
     ];
     
     if (enquiryFields.includes(field)) {
@@ -1443,12 +1435,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             "Item Name Merge": "",
             "Total Value": "",
             "Itemwise Total Value": "",
-            "Delivery Schedule": "",
-            "Validation": "",
-            "APM": "",
-            "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
-            "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
-          });
+              "Delivery Schedule": "",
+              "Validation": "",
+              "APM": (enquiry as any).apm || "",
+              "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
+              "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
+           });
         } else {
           enquiry.items.forEach((item) => {
             rows.push({
@@ -1493,7 +1485,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               "Itemwise Total Value": item.itemWiseTotalValue || "",
               "Delivery Schedule": item.deliverySchedule || "",
               "Validation": item.validation || "",
-              "APM": (item as any).apm || "",
+              "APM": (enquiry as any).apm || "",
               "Attachments": enquiry.attachments ? enquiry.attachments.map(a => a.name).join(", ") : "",
               "Attachment Links": enquiry.attachments ? enquiry.attachments.map(a => a.url).join(" ; ") : "",
             });
@@ -3014,7 +3006,46 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 41. APM */}
+            {/* 41. Attachment */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Attachment</span>
+                {renderSortArrow("attachment")}
+              </div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={filterAttachment}
+                onChange={(e) => setFilterAttachment(e.target.value)}
+                className={inputClass}
+              />
+              <div
+                onMouseDown={(e) => handleMouseDown(41, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 42. Delivery Schedule */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Delivery Schedule</span>
+              </div>
+              <div className="h-7 mt-1.5" />
+              <div
+                onMouseDown={(e) => handleMouseDown(42, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 43. APM - beside Offer PDF (enquiry-based) */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>APM</span>
@@ -3037,7 +3068,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                   onClick={() => handleBulkApm("Yes")}
                   disabled={bulkApmRunning !== null}
                   className="px-1.5 py-1 text-[9px] font-bold rounded border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer"
-                  title="Set all filtered items (all pages) to Yes"
+                  title="Set all filtered enquiries (all pages) to Yes"
                 >
                   {bulkApmRunning === "Yes" ? "..." : "All Yes"}
                 </button>
@@ -3046,7 +3077,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                   onClick={() => handleBulkApm("No")}
                   disabled={bulkApmRunning !== null}
                   className="px-1.5 py-1 text-[9px] font-bold rounded border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50 cursor-pointer"
-                  title="Set all filtered items (all pages) to No"
+                  title="Set all filtered enquiries (all pages) to No"
                 >
                   {bulkApmRunning === "No" ? "..." : "All No"}
                 </button>
@@ -3055,50 +3086,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                   onClick={() => handleBulkApm("")}
                   disabled={bulkApmRunning !== null}
                   className="px-1.5 py-1 text-[9px] font-bold rounded border border-border bg-background text-muted-foreground hover:bg-muted disabled:opacity-50 cursor-pointer"
-                  title="Clear APM for all filtered items (all pages)"
+                  title="Clear APM for all filtered enquiries (all pages)"
                 >
                   {bulkApmRunning === "Clear" ? "..." : "Clear"}
                 </button>
               </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(41, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 42. Attachment */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Attachment</span>
-                {renderSortArrow("attachment")}
-              </div>
-              <input
-                type="text"
-                placeholder="Search..."
-                value={filterAttachment}
-                onChange={(e) => setFilterAttachment(e.target.value)}
-                className={inputClass}
-              />
-              <div
-                onMouseDown={(e) => handleMouseDown(42, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 43. Delivery Schedule */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Delivery Schedule</span>
-              </div>
-              <div className="h-7 mt-1.5" />
               <div
                 onMouseDown={(e) => handleMouseDown(43, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -4029,38 +4021,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       )}
                     </td>
 
-                    {/* APM */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                      {firstItem ? (
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleItemFieldChange(firstItem.id, "apm", (firstItem as any).apm === "Yes" ? "" : "Yes")}
-                            className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
-                              (firstItem as any).apm === "Yes"
-                                ? "bg-emerald-500 text-white "
-                                : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950/50"
-                            }`}
-                          >
-                            Yes
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleItemFieldChange(firstItem.id, "apm", (firstItem as any).apm === "No" ? "" : "No")}
-                            className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
-                              (firstItem as any).apm === "No"
-                                ? "bg-rose-500 text-white "
-                                : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
-                            }`}
-                          >
-                            No
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-
                     {/* Attachment - like Item Name, self scrollable */}
                     <td className="py-2 px-2 text-xs border-r border-b border-border last:border-r-0 align-top overflow-hidden">
                       <div className="flex flex-col gap-1 w-full min-w-0">
@@ -4122,6 +4082,34 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
                         />
                       ) : "-"}
+                    </td>
+
+                    {/* APM - beside Offer PDF (enquiry-based) */}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleEnquiryFieldChange(enquiry.id, "apm", (enquiry as any).apm === "Yes" ? "" : "Yes")}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                            (enquiry as any).apm === "Yes"
+                              ? "bg-emerald-500 text-white "
+                              : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950/50"
+                          }`}
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEnquiryFieldChange(enquiry.id, "apm", (enquiry as any).apm === "No" ? "" : "No")}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                            (enquiry as any).apm === "No"
+                              ? "bg-rose-500 text-white "
+                              : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
+                          }`}
+                        >
+                          No
+                        </button>
+                      </div>
                     </td>
 
                     {/* Offer PDF */}
@@ -4682,35 +4670,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           </div>
                         </td>
 
-                      {/* APM */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => handleItemFieldChange(item.id, "apm", (item as any).apm === "Yes" ? "" : "Yes")}
-                              className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
-                                (item as any).apm === "Yes"
-                                  ? "bg-emerald-500 text-white "
-                                  : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950/50"
-                              }`}
-                            >
-                              Yes
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleItemFieldChange(item.id, "apm", (item as any).apm === "No" ? "" : "No")}
-                              className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
-                                (item as any).apm === "No"
-                                  ? "bg-rose-500 text-white "
-                                  : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
-                              }`}
-                            >
-                              No
-                            </button>
-                          </div>
-                        </td>
-
-                      {/* Empty attachment column */}
+                      {/* Empty attachment column (enquiry-level) */}
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
 
                         {/* Delivery Schedule */}
@@ -4731,6 +4691,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
                         />
                       </td>
+
+                      {/* Empty APM column - enquiry-based, only parent row has controls */}
+                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
 
                       {/* Empty Offer PDF column */}
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
