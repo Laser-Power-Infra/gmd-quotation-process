@@ -25,6 +25,8 @@ function isNullOrEmpty(value: unknown): boolean {
   return value === null || value === undefined || String(value).trim() === "";
 }
 
+const PRESERVE_UI_FIELDS = new Set(["bomFormulaTrial", "item", "clearanceStatus"]);
+
 export async function POST() {
   try {
     if (!SPREADSHEET_ID) {
@@ -111,13 +113,24 @@ export async function POST() {
         continue;
       }
 
-      // Strict Mode A: preserve any existing non-null/ non-empty value; only fill gaps from sheet
+      // Sheet is authoritative only when it has a value; a blank/null sheet
+      // value never clears the DB. UI-editable fields are gap-filled only.
       const filtered: Record<string, unknown> = { syncedAt };
       let hasDataChange = false;
       for (const [field, sheetVal] of Object.entries(mapped)) {
         if (field === "contractNo" || field === "itemCode") continue; // keys immutable
         const dbVal = (existing as unknown as Record<string, unknown>)[field];
-        if (isNullOrEmpty(dbVal) && !isNullOrEmpty(sheetVal)) {
+
+        if (PRESERVE_UI_FIELDS.has(field)) {
+          if (isNullOrEmpty(dbVal) && !isNullOrEmpty(sheetVal)) {
+            (filtered as Record<string, unknown>)[field] = sheetVal;
+            hasDataChange = true;
+          }
+          continue;
+        }
+
+        if (isNullOrEmpty(sheetVal)) continue;
+        if (String(dbVal ?? "").trim() !== String(sheetVal).trim()) {
           (filtered as Record<string, unknown>)[field] = sheetVal;
           hasDataChange = true;
         }

@@ -48,7 +48,7 @@ export default function GMDUpdateHeader({
           </span>
         )}
       </div>
-      {(onSync || onRecompute) && (
+      {/* {(onSync || onRecompute) && (
         <div className="flex items-center gap-2">
           {onSync && (
             <button
@@ -79,7 +79,7 @@ export default function GMDUpdateHeader({
             </button>
           )}
         </div>
-      )}
+      )} */}
     </div>
   );
 }
