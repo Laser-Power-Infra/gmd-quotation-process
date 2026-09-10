@@ -11,7 +11,7 @@ import { getBomRmAvailBatch } from "@/lib/verifyBomLookup";
 
 const SPREADSHEET_ID = process.env.CONTRACT_SHEET_SPREADSHEET_ID;
 const DUMP_GID = 0;
-const CONTRACTS_GID = 451626558;
+const CONTRACTS_GID = 79716340;
 
 function getAuth() {
   return getOAuthClient();
