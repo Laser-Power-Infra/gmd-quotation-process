@@ -24,6 +24,7 @@ model Enquiry {
   orderStatus      String?
   closureStatus    String?
   projectReference String?
+  apm              String?
 
   attachments      Attachment[]
   items            EnquiryItem[]
@@ -88,7 +89,6 @@ model EnquiryItem {
   costLogic       String?
   availableStock   String?
   stockAgainstContract   String?
-  apm                String?
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
