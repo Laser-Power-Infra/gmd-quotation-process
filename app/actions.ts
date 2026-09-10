@@ -9,7 +9,7 @@ import { roundUp } from "@/lib/rounding";
 import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
-import { update2to1CostForItems } from "@/lib/gmd2to1CostLookup";
+import { update2to1CostForItems, buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
 import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, type BomRmAvail } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
@@ -993,10 +993,17 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
     }
     if (candidateIds.length === 1) {
       // Single candidate path: try VerifyBom row for cost, fallback to sheet BOM
+      // PRIORITY: Raw Materials (GMDUpdateItem.cost) wins; SupplyHistory is fallback
       const vbRow = await prisma.verifyBom.findFirst({ where: { itemCode: newCode, bomId: candidateIds[0] }, select: { bomId: true, rmItemCode: true, bomIdType: true } });
       if (vbRow?.rmItemCode) {
-        const costMap = await buildRmCostMap([vbRow.rmItemCode]);
-        const cost = costMap.get(vbRow.rmItemCode);
+        // Try Raw Materials first, then SupplyHistory fallback
+        let cost: number | undefined;
+        const rawMap = await buildRawMaterialsCostMap([vbRow.rmItemCode]);
+        cost = rawMap.get(vbRow.rmItemCode);
+        if (cost === undefined) {
+          const supplyMap = await buildRmCostMap([vbRow.rmItemCode]);
+          cost = supplyMap.get(vbRow.rmItemCode);
+        }
         if (cost !== undefined && cost !== null) {
           await recalculateItem(itemId, { productCost: cost });
         }
@@ -1015,10 +1022,18 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
       }
     }
     // Zero or single but VerifyBom miss → fallback to sheet DIRECT_M2M BOM
+    // PRIORITY: Raw Materials wins; SupplyHistory fallback
     const bom = await getBomEntry(newCode);
     if (!bom) return;
-    const costMap = await buildRmCostMap([bom.rmItemCode]);
-    const cost = costMap.get(bom.rmItemCode);
+    let cost: number | undefined;
+    {
+      const rawMap = await buildRawMaterialsCostMap([bom.rmItemCode]);
+      cost = rawMap.get(bom.rmItemCode);
+      if (cost === undefined) {
+        const supplyMap = await buildRmCostMap([bom.rmItemCode]);
+        cost = supplyMap.get(bom.rmItemCode);
+      }
+    }
     if (cost !== undefined && cost !== null) {
       await recalculateItem(itemId, { productCost: cost });
     }
@@ -1064,9 +1079,15 @@ export async function selectBomIdAction(itemId: string, bomId: string | null) {
       data: dataToUpdate,
     });
     // Auto-fill productCost if blank
+    // PRIORITY: Raw Materials wins; SupplyHistory fallback
     if (item.productCost === null && vbRow.rmItemCode) {
-      const costMap = await buildRmCostMap([vbRow.rmItemCode]);
-      const cost = costMap.get(vbRow.rmItemCode);
+      let cost: number | undefined;
+      const rawMap = await buildRawMaterialsCostMap([vbRow.rmItemCode]);
+      cost = rawMap.get(vbRow.rmItemCode);
+      if (cost === undefined) {
+        const supplyMap = await buildRmCostMap([vbRow.rmItemCode]);
+        cost = supplyMap.get(vbRow.rmItemCode);
+      }
       if (cost !== undefined && cost !== null) {
         const recalc = await recalculateItem(itemId, { productCost: cost });
         if (recalc) return { success: true, data: recalc };
@@ -1128,6 +1149,7 @@ export async function fetchErpItemCodesAction(itemIds: string[]) {
 }
 
 // Fill blank productCost from raw material (BOM DIRECT M2M) costs, triggered via UI button
+// PRIORITY: Raw Materials (GMDUpdateItem.cost) wins; SupplyHistory is fallback. Fixes FSD040002 -> RSD110023 (4900)
 export async function updateProductCostFromBomAction(itemIds: string[]) {
   try {
     const bomRows = await fetchBomRows();
@@ -1137,10 +1159,18 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     }
 
     const rmCodes = [...new Set(bomRows.map((r) => r.rmItemCode))];
-    const [costMap, stockMap] = await Promise.all([
-      buildRmCostMap(rmCodes),
-      getRmStockMap(rmCodes),
-    ]);
+    // Raw Materials primary, SupplyHistory fallback (commented out primary supply path per requirement)
+    const stockMap = await getRmStockMap(rmCodes);
+    const rawCostMap = await buildRawMaterialsCostMap(rmCodes);
+    let costMap = rawCostMap;
+    const missing = rmCodes.filter((c) => !rawCostMap.has(c));
+    if (missing.length > 0) {
+      // Fallback: SupplyHistory legacy path — only for codes missing in Raw Materials
+      const supplyMap = await buildRmCostMap(missing);
+      for (const [k, v] of supplyMap) {
+        if (!costMap.has(k)) costMap.set(k, v);
+      }
+    }
 
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
@@ -1204,7 +1234,7 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     if (updated === 0) {
       const errMsgs: string[] = [];
       if (noCostRmCodes.size > 0) {
-        errMsgs.push(`No price found in Supply History for RM Code(s): ${[...noCostRmCodes].join(", ")}.`);
+        errMsgs.push(`No cost found in Raw Materials or Supply History for RM Code(s): ${[...noCostRmCodes].join(", ")}.`);
       }
       if (noBomItemCodes.size > 0) {
         errMsgs.push(`No DIRECT M2M BOM recipe found for Item Code(s): ${[...noBomItemCodes].join(", ")}.`);
@@ -2087,38 +2117,40 @@ export async function clearQuotedRatesAction(itemIds: string[]) {
   }
 }
 
-// Bulk update apm for many items (all pages, filtered scope). Allowed values: "Yes", "No", null/"" for clear.
-export async function bulkUpdateApmAction(itemIds: string[], apm: string | null) {
+// Bulk update apm for many enquiries (all pages, filtered scope). Allowed values: "Yes", "No", null/"" for clear.
+// Now enquiry-based after migration add_apm_in_enquiry.
+export async function bulkUpdateApmAction(enquiryIds: string[], apm: string | null) {
   try {
-    if (!itemIds || itemIds.length === 0) {
-      return { success: false, error: "No items selected." };
+    if (!enquiryIds || enquiryIds.length === 0) {
+      return { success: false, error: "No enquiries selected." };
     }
-    const uniqueIds = [...new Set(itemIds)];
+    const uniqueIds = [...new Set(enquiryIds)];
     const normalized = apm === "" ? null : apm;
     if (normalized !== null && normalized !== "Yes" && normalized !== "No") {
       return { success: false, error: "APM must be Yes, No, or blank." };
     }
 
-    const existing = await prisma.enquiryItem.findMany({
+    const existing = await prisma.enquiry.findMany({
       where: { id: { in: uniqueIds } },
       select: { id: true },
     });
     if (existing.length !== uniqueIds.length) {
-      return { success: false, error: "Some items not found. Please refresh and try again." };
+      return { success: false, error: "Some enquiries not found. Please refresh and try again." };
     }
 
-    console.log(`[Server] bulkApm ids=${uniqueIds.length} set="${normalized ?? ""}"`);
+    console.log(`[Server] bulkApm enquiries=${uniqueIds.length} set="${normalized ?? ""}"`);
 
-    await prisma.enquiryItem.updateMany({
+    await prisma.enquiry.updateMany({
       where: { id: { in: uniqueIds } },
       data: { apm: normalized },
     });
 
-    const updatedItems = await prisma.enquiryItem.findMany({
+    const updatedEnquiries = await prisma.enquiry.findMany({
       where: { id: { in: uniqueIds } },
+      include: { items: { orderBy: { position: "asc" } }, attachments: true },
     });
 
-    return { success: true, data: { items: updatedItems.map(serializeItem), updated: updatedItems.length, apm: normalized } };
+    return { success: true, data: { enquiries: updatedEnquiries.map(serializeEnquiry), updated: updatedEnquiries.length, apm: normalized } };
   } catch (error: any) {
     console.error("Error bulk updating apm:", error);
     return { success: false, error: error.message || "Failed to update APM." };

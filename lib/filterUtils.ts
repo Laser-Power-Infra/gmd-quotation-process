@@ -56,6 +56,7 @@ export function enquiryPassesFilters(
   if (filters.pbg.length > 0 && !matchesMulti(filters.pbg, enquiry.pbg)) return false;
   if (filters.orderStatus.length > 0 && !matchesMulti(filters.orderStatus, enquiry.orderStatus)) return false;
   if (filters.closureStatus.length > 0 && !matchesMultiCI(filters.closureStatus, enquiry.closureStatus)) return false;
+  if (filters.apm.length > 0 && !matchesMulti(filters.apm, (enquiry as any).apm)) return false;
 
   if (filters.docketNumber && !matchesText(filters.docketNumber, enquiry.docketNumber)) return false;
   if (filters.enquiryDateFrom) {
@@ -120,7 +121,6 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState):
   if (filters.totalValue && !matchesText(filters.totalValue, item.totalValue || "")) return false;
   if (filters.itemWiseTotalValue && !matchesText(filters.itemWiseTotalValue, item.itemWiseTotalValue || "")) return false;
   if (filters.validation.length > 0 && !matchesMulti(filters.validation, item.validation)) return false;
-  if (filters.apm.length > 0 && !matchesMulti(filters.apm, (item as any).apm)) return false;
 
   return true;
 }
