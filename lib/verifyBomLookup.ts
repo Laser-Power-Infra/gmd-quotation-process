@@ -44,6 +44,32 @@ export async function getCandidates(itemCode: string): Promise<VerifyBomCandidat
   return rows;
 }
 
+/**
+ * Fallback helper: treat costRefCode as ephemeral bomId when primary VerifyBom/sheet has zero candidates.
+ * Only used when EnquiryItem.bomId IS NULL and erpItemCode IS NOT NULL.
+ * Returns VerifyBom row where bomId == costRefCode.trim() (ignores itemCode), or null.
+ * Keep bomId null on EnquiryItem - only productCost/availableStock/bomType are derived.
+ */
+export async function getFallbackBomRowByCostRef(costRefCode: string | null | undefined): Promise<VerifyBomCandidate | null> {
+  const bomId = costRefCode?.trim();
+  if (!bomId) return null;
+  const row = await prisma.verifyBom.findFirst({ where: { bomId } });
+  return row as VerifyBomCandidate | null;
+}
+
+export async function getFallbackRowsByCostRefs(costRefCodes: string[]): Promise<Map<string, VerifyBomCandidate>> {
+  const normalized = [...new Set(costRefCodes.map((c) => c?.trim()).filter(Boolean) as string[])];
+  if (normalized.length === 0) return new Map();
+  const rows = await prisma.verifyBom.findMany({ where: { bomId: { in: normalized } } });
+  const map = new Map<string, VerifyBomCandidate>();
+  for (const r of rows) {
+    if (!r.bomId) continue;
+    // keep first row per bomId
+    if (!map.has(r.bomId)) map.set(r.bomId, r as VerifyBomCandidate);
+  }
+  return map;
+}
+
 export async function getBatchDistinctBomIds(itemCodes: string[]): Promise<Map<string, string[]>> {
   const unique = [...new Set(itemCodes.filter(Boolean))];
   if (unique.length === 0) return new Map();

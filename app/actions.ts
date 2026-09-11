@@ -10,7 +10,7 @@ import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
 import { update2to1CostForItems, buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
-import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail } from "@/lib/verifyBomLookup";
+import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail, getFallbackBomRowByCostRef, getFallbackRowsByCostRefs } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 
@@ -37,6 +37,7 @@ export async function createNewEnquiryAction(formData: {
     operationType?: string | null;
     extension?: string | null;
     bypass?: string | null;
+    others?: string[] | null;
     productCost?: number | null;
     costRefCode?: string | null;
     cost?: number | null;
@@ -145,6 +146,7 @@ export async function createNewEnquiryAction(formData: {
               operationType: item.operationType || null,
               extension: item.extension || null,
               bypass: item.bypass || null,
+              others: Array.isArray((item as any).others) ? (item as any).others : ((item as any).others ? [String((item as any).others)] : []),
               productCost: item.productCost || null,
               costRefCode: item.costRefCode || null,
               cost: itemCost,
@@ -201,6 +203,7 @@ export async function addItemsAction(formData: {
     operationType?: string;
     extension?: string;
     bypass?: string;
+    others?: string[] | null;
     productCost?: number;
     costRefCode?: string;
     cost?: number;
@@ -270,6 +273,7 @@ export async function addItemsAction(formData: {
           operationType: item.operationType || null,
           extension: item.extension || null,
           bypass: item.bypass || null,
+          others: Array.isArray((item as any).others) ? (item as any).others : ((item as any).others ? [String((item as any).others)] : []),
           productCost: item.productCost || null,
           costRefCode: item.costRefCode || null,
           cost: itemCost,
@@ -321,6 +325,7 @@ export async function updateEnquiryItemAction(formData: {
   operationType?: string;
   extension?: string;
   bypass?: string;
+  others?: string[] | string;
   productCost?: number;
   costRefCode?: string;
   cost?: number;
@@ -486,6 +491,7 @@ export async function updateEnquiryItemAction(formData: {
         operationType: finalOperationType,
         extension: formData.extension || null,
         bypass: formData.bypass || null,
+        others: (()=>{ const v=(formData as any).others ?? (formData as any).other ?? null; if(Array.isArray(v)) return v; if(typeof v==="string" && v.trim()!=="") return [v.trim()]; if(v==null) return []; return []; })(),
         productCost: formData.productCost || null,
         costRefCode: formData.costRefCode || null,
         cost: formData.cost || null,
@@ -815,8 +821,17 @@ export async function updateItemFieldAction(
     const oldProductCost = prevFull?.productCost ?? null;
     console.log(`[Server] updateItemField item=${itemId} field=${field} old="${oldVal}" new="${value}"`);
 
-    let parsedVal = value;
-    if (field === "vaPercent" && value !== null) {
+    let parsedVal: any = value;
+    if (field === "others") {
+      if (value === null || value === "") parsedVal = [];
+      else if (Array.isArray(value)) parsedVal = value;
+      else if (typeof value === "string") {
+        try {
+          const parsed = JSON.parse(value);
+          parsedVal = Array.isArray(parsed) ? parsed : [String(value)];
+        } catch { parsedVal = [String(value)]; }
+      } else parsedVal = [];
+    } else if (field === "vaPercent" && value !== null) {
       const num = parseFloat(String(value).replace(/%/g, ""));
       parsedVal = !isNaN(num) ? String(num) : null;
     } else if (["quantity", "productCost", "cost", "discount"].includes(field) && value !== null) {
@@ -993,9 +1008,19 @@ async function syncAvailableBomIds(itemId: string, erpItemCode: string | null) {
 
 // Helper: if itemCode changes and productCost is null, auto-fill productCost from BOM
 // Now respects availableBomIds: if VerifyBom has multiple BOMs, defer until user selects one
+// Fallback: when bomId IS NULL, erpItemCode IS NOT NULL, and primary has zero candidates,
+//           costRefCode is treated as ephemeral bomId to derive productCost/availableStock/bomType (bomId stays NULL)
+// Non-override: if productCost/availableStock already present, do not override (fill only missing)
 async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string | null, currentProductCost: any) {
   if (!newCode) return;
-  if (currentProductCost !== null && currentProductCost !== undefined) return; // only if null per requirement
+  // Do not early-return on productCost alone - we still need to fill availableStock/bomType via fallback if missing
+  // Fetch meta for fallback gates (includes present-value checks)
+  const preMeta = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { bomId: true, costRefCode: true, productCost: true, availableStock: true, bomType: true } });
+  const needProductCost = preMeta?.productCost == null;
+  const needStock = !preMeta?.availableStock || preMeta.availableStock.trim() === "";
+  const needBomType = !preMeta?.bomType;
+  // "0" is present per requirement (trim() === "0" is non-empty)
+  if (!needProductCost && !needStock && !needBomType) return;
   try {
     // Always populate availableBomIds from VerifyBom first
     const candidateIds = await syncAvailableBomIds(itemId, newCode);
@@ -1006,57 +1031,110 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
     if (candidateIds.length === 1) {
       // Single candidate path: try VerifyBom row for cost, fallback to sheet BOM
       // PRIORITY: Raw Materials (GMDUpdateItem.cost) wins; SupplyHistory is fallback
+      // Non-override: only set productCost if needProductCost, but bomId/bomType/rmItemCode/availableStock still respect present checks
       const vbRow = await prisma.verifyBom.findFirst({ where: { itemCode: newCode, bomId: candidateIds[0] }, select: { bomId: true, rmItemCode: true, bomIdType: true } });
       if (vbRow?.rmItemCode) {
         // Try Raw Materials first, then SupplyHistory fallback
         let cost: number | undefined;
-        const rawMap = await buildRawMaterialsCostMap([vbRow.rmItemCode]);
-        cost = rawMap.get(vbRow.rmItemCode);
-        if (cost === undefined) {
-          const supplyMap = await buildRmCostMap([vbRow.rmItemCode]);
-          cost = supplyMap.get(vbRow.rmItemCode);
+        if (needProductCost) {
+          const rawMap = await buildRawMaterialsCostMap([vbRow.rmItemCode]);
+          cost = rawMap.get(vbRow.rmItemCode);
+          if (cost === undefined) {
+            const supplyMap = await buildRmCostMap([vbRow.rmItemCode]);
+            cost = supplyMap.get(vbRow.rmItemCode);
+          }
+          if (cost !== undefined && cost !== null) {
+            await recalculateItem(itemId, { productCost: cost });
+          }
         }
-        if (cost !== undefined && cost !== null) {
-          await recalculateItem(itemId, { productCost: cost });
-        }
+        // Primary path sets bomId/bomType/rmItemCode; stock guarded by needStock (don't override present stock)
         const bomType = vbRow.bomIdType || DIRECT_M2M;
-        const dataToUpdate: any = { bomId: vbRow.bomId, bomType, rmItemCode: vbRow.rmItemCode };
-        if (bomType === DIRECT_M2M) {
+        const dataToUpdate: any = { bomId: vbRow.bomId, rmItemCode: vbRow.rmItemCode, bomType };
+        if (bomType === DIRECT_M2M && needStock) {
           const stockMap = await getRmStockMap([vbRow.rmItemCode]);
           const stock = stockMap.get(vbRow.rmItemCode);
-          if (stock !== undefined) dataToUpdate.availableStock = stock;
+          if (stock !== undefined && stock.trim() !== "") dataToUpdate.availableStock = stock;
         }
-        await prisma.enquiryItem.update({
-          where: { id: itemId },
-          data: dataToUpdate,
-        });
+        // Only update if something to set or productCost was set
+        if (Object.keys(dataToUpdate).length > 0) {
+          await prisma.enquiryItem.update({
+            where: { id: itemId },
+            data: dataToUpdate,
+          });
+        }
         return;
       }
     }
     // Zero or single but VerifyBom miss → fallback to sheet DIRECT_M2M BOM
     // PRIORITY: Raw Materials wins; SupplyHistory fallback
-    const bom = await getBomEntry(newCode);
-    if (!bom) return;
-    let cost: number | undefined;
+    // Non-override: only fill missing productCost/availableStock/bomType
     {
-      const rawMap = await buildRawMaterialsCostMap([bom.rmItemCode]);
-      cost = rawMap.get(bom.rmItemCode);
-      if (cost === undefined) {
-        const supplyMap = await buildRmCostMap([bom.rmItemCode]);
-        cost = supplyMap.get(bom.rmItemCode);
+      const bom = await getBomEntry(newCode);
+      if (bom) {
+        let cost: number | undefined;
+        if (needProductCost) {
+          const rawMap = await buildRawMaterialsCostMap([bom.rmItemCode]);
+          cost = rawMap.get(bom.rmItemCode);
+          if (cost === undefined) {
+            const supplyMap = await buildRmCostMap([bom.rmItemCode]);
+            cost = supplyMap.get(bom.rmItemCode);
+          }
+          if (cost !== undefined && cost !== null) {
+            await recalculateItem(itemId, { productCost: cost });
+          }
+        }
+        const dataToUpdate: any = { bomId: bom.bomId, rmItemCode: bom.rmItemCode, bomType: DIRECT_M2M };
+        if (needStock) {
+          const stockMap = await getRmStockMap([bom.rmItemCode]);
+          const stock = stockMap.get(bom.rmItemCode);
+          if (stock !== undefined && stock.trim() !== "") dataToUpdate.availableStock = stock;
+          else delete dataToUpdate.availableStock;
+        }
+        // For primary sheet, bomId/bomType/rmItemCode are required to persist even if needBomType false (primary sets bomType)
+        // but availableStock is guarded by needStock
+        if (!needStock) delete dataToUpdate.availableStock;
+        if (Object.keys(dataToUpdate).length > 0) {
+          await prisma.enquiryItem.update({
+            where: { id: itemId },
+            data: dataToUpdate,
+          });
+        }
+        return;
       }
     }
-    if (cost !== undefined && cost !== null) {
-      await recalculateItem(itemId, { productCost: cost });
+    // Zero fallback also requires checking candidateIds==0 - if we have 1 candidate we already returned; if bom exists we returned
+    if (candidateIds.length !== 0) return;
+    // Primary has zero candidates (candidateIds==0 && sheet miss) -> costRefCode fallback (bomId stays NULL)
+    // Fetch fresh bomId gate and costRefCode - only when bomId IS NULL, and fill only missing fields
+    const fallbackMeta = preMeta; // reuse pre-fetched meta (already has bomId,costRefCode,productCost,availableStock,bomType)
+    if (fallbackMeta?.bomId) return; // bomId already present, do not fallback
+    const fallbackBomId = fallbackMeta?.costRefCode?.trim();
+    if (!fallbackBomId) return;
+    const vbFallback = await getFallbackBomRowByCostRef(fallbackBomId);
+    if (!vbFallback?.rmItemCode) return;
+    let fallbackCost: number | undefined;
+    if (needProductCost) {
+      const rawMap = await buildRawMaterialsCostMap([vbFallback.rmItemCode]);
+      fallbackCost = rawMap.get(vbFallback.rmItemCode);
+      if (fallbackCost === undefined) {
+        const supplyMap = await buildRmCostMap([vbFallback.rmItemCode]);
+        fallbackCost = supplyMap.get(vbFallback.rmItemCode);
+      }
+      if (fallbackCost !== undefined && fallbackCost !== null) {
+        await recalculateItem(itemId, { productCost: fallbackCost });
+      }
     }
-    const dataToUpdate: any = { bomId: bom.bomId, bomType: DIRECT_M2M, rmItemCode: bom.rmItemCode };
-    const stockMap = await getRmStockMap([bom.rmItemCode]);
-    const stock = stockMap.get(bom.rmItemCode);
-    if (stock !== undefined) dataToUpdate.availableStock = stock;
-    await prisma.enquiryItem.update({
-      where: { id: itemId },
-      data: dataToUpdate,
-    });
+    const fallbackBomType = vbFallback.bomIdType || DIRECT_M2M;
+    const fallbackData: any = {}; // keep bomId null, rmItemCode null, availableBomIds [] per requirement
+    if (needBomType && fallbackBomType) fallbackData.bomType = fallbackBomType;
+    if (needStock && fallbackBomType === DIRECT_M2M) {
+      const stockMap = await getRmStockMap([vbFallback.rmItemCode]);
+      const stock = stockMap.get(vbFallback.rmItemCode);
+      if (stock !== undefined && stock.trim() !== "") fallbackData.availableStock = stock;
+    }
+    if (Object.keys(fallbackData).length > 0) {
+      await prisma.enquiryItem.update({ where: { id: itemId }, data: fallbackData });
+    }
   } catch (e) {
     console.warn(`[maybeUpdateProductCost] failed for ${itemId} code=${newCode}:`, e);
   }
@@ -1186,7 +1264,7 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
 
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
-      select: { id: true, erpItemCode: true, productCost: true },
+      select: { id: true, erpItemCode: true, productCost: true, bomId: true, costRefCode: true, availableStock: true, bomType: true },
     });
 
     const updatedItems: ReturnType<typeof serializeItem>[] = [];
@@ -1194,45 +1272,73 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     let lastError: string | null = null;
     const noCostRmCodes = new Set<string>();
     const noBomItemCodes = new Set<string>();
+    // Collect items that missed primary sheet but may qualify for costRefCode fallback (zero candidates, bomId null)
+    // Fallback should also fill availableStock/bomType even when productCost already present (per requirement: dont override present, fill missing)
+    const fallbackCandidates: typeof items = [];
 
     for (const item of items) {
-      if (item.productCost !== null) continue;
       if (!item.erpItemCode) continue;
+      const needProductCost = item.productCost == null;
+      const needStock = !item.availableStock || item.availableStock.trim() === "";
+      const needBomType = !item.bomType;
+      // If nothing needed, skip entirely
+      if (!needProductCost && !needStock && !needBomType) continue;
+      // Primary sheet path only when needProductCost (to avoid overriding); but still need to handle stock-only fallback later
       const bom = bomMap.get(item.erpItemCode);
       if (!bom) {
-        noBomItemCodes.add(item.erpItemCode);
+        // Check if qualifies for ephemeral costRefCode fallback (bomId null, costRefCode present)
+        if (!item.bomId && item.costRefCode?.trim()) {
+          fallbackCandidates.push(item);
+        } else {
+          // Only count as noBom if we actually needed something and couldn't fulfill
+          if (needProductCost) noBomItemCodes.add(item.erpItemCode);
+        }
         continue;
       }
-
+      // Primary sheet has candidate - handle productCost only if needed, stock/bomType respect present checks
       const cost = costMap.get(bom.rmItemCode);
       try {
-        if (cost !== undefined && cost !== null) {
+        let didCostUpdate = false;
+        if (needProductCost && cost !== undefined && cost !== null) {
           await recalculateItem(item.id, { productCost: cost });
-        } else {
+          didCostUpdate = true;
+        } else if (needProductCost) {
           noCostRmCodes.add(bom.rmItemCode);
         }
 
         const dataToUpdate: any = {
           bomId: bom.bomId,
-          bomType: DIRECT_M2M,
           rmItemCode: bom.rmItemCode,
         };
-        const stock = stockMap.get(bom.rmItemCode);
-        if (stock !== undefined) {
-          dataToUpdate.availableStock = stock;
+        if (needBomType) dataToUpdate.bomType = DIRECT_M2M;
+        else dataToUpdate.bomType = DIRECT_M2M; // primary always ensures bomType, but guarded above for fallback only
+        if (needStock) {
+          const stock = stockMap.get(bom.rmItemCode);
+          if (stock !== undefined && stock.trim() !== "") {
+            dataToUpdate.availableStock = stock;
+          }
+        } else {
+          // stock already present -> do not override, remove from update
+          // keep dataToUpdate without availableStock
         }
 
-        await prisma.enquiryItem.update({
-          where: { id: item.id },
-          data: dataToUpdate,
-        });
+        // Only update if we have something to persist or we did cost update
+        if (Object.keys(dataToUpdate).length > 0) {
+          await prisma.enquiryItem.update({
+            where: { id: item.id },
+            data: dataToUpdate,
+          });
+        }
 
         const refreshed = await prisma.enquiryItem.findUnique({
           where: { id: item.id },
         });
         if (refreshed) {
           updatedItems.push(serializeItem(refreshed));
-          if (cost !== undefined && cost !== null) {
+          if (didCostUpdate) {
+            updated++;
+          } else if (needStock && dataToUpdate.availableStock !== undefined) {
+            // Count stock-only updates as updated for feedback
             updated++;
           }
         }
@@ -1240,6 +1346,82 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
         const message = error instanceof Error ? error.message : "Failed to update product cost.";
         lastError = message;
         console.error(`Error updating product cost for item ${item.id}:`, error);
+      }
+    }
+
+    // Fallback pass: costRefCode as ephemeral bomId (bomId stays NULL, only bomType/availableStock/productCost)
+    // Primary has zero candidates (bomMap miss) -> verify VerifyBom also has zero candidates
+    // Non-override: only fill missing productCost/availableStock/bomType
+    if (fallbackCandidates.length > 0) {
+      const erpCodes = [...new Set(fallbackCandidates.map((i) => i.erpItemCode).filter(Boolean) as string[])];
+      // Confirm VerifyBom also zero - if VerifyBom has candidates, do not fallback (respect zero-candidates gate)
+      const vbDistinctMap = await getBatchDistinctBomIds(erpCodes);
+      const trueFallback = fallbackCandidates.filter((it) => {
+        const v = vbDistinctMap.get(it.erpItemCode!);
+        return !v || v.length === 0;
+      });
+      if (trueFallback.length > 0) {
+        const costRefCodes = [...new Set(trueFallback.map((i) => i.costRefCode!.trim()).filter(Boolean))];
+        const fallbackMap = await getFallbackRowsByCostRefs(costRefCodes);
+        // Collect rm codes from fallback rows for batch cost/stock fetch
+        const fbRmCodes = [...new Set([...fallbackMap.values()].map((r) => r.rmItemCode).filter(Boolean) as string[])];
+        const fbStockMap = await getRmStockMap(fbRmCodes);
+        const fbRawMap = await buildRawMaterialsCostMap(fbRmCodes);
+        const fbCostMap = new Map<string, number>(fbRawMap);
+        const fbMissing = fbRmCodes.filter((c) => !fbRawMap.has(c));
+        if (fbMissing.length > 0) {
+          const fbSupply = await buildRmCostMap(fbMissing);
+          for (const [k, v] of fbSupply) if (!fbCostMap.has(k)) fbCostMap.set(k, v);
+        }
+        for (const item of trueFallback) {
+          const fbKey = item.costRefCode!.trim();
+          const vbRow = fallbackMap.get(fbKey);
+          if (!vbRow?.rmItemCode) {
+            if (item.productCost == null) noBomItemCodes.add(item.erpItemCode!);
+            continue;
+          }
+          const needProductCost = item.productCost == null;
+          const needStock = !item.availableStock || item.availableStock.trim() === "";
+          const needBomType = !item.bomType;
+          if (!needProductCost && !needStock && !needBomType) continue;
+          const cost = fbCostMap.get(vbRow.rmItemCode);
+          try {
+            let didCostUpdate = false;
+            if (needProductCost && cost !== undefined && cost !== null) {
+              await recalculateItem(item.id, { productCost: cost });
+              didCostUpdate = true;
+            } else if (needProductCost) {
+              noCostRmCodes.add(vbRow.rmItemCode);
+            }
+            const bomType = (vbRow as any).bomIdType || DIRECT_M2M;
+            const dataToUpdate: any = {}; // keep bomId null, rmItemCode null, availableBomIds [] per requirement
+            if (needBomType && bomType) dataToUpdate.bomType = bomType;
+            if (needStock) {
+              const stock = fbStockMap.get(vbRow.rmItemCode);
+              if (stock !== undefined && stock.trim() !== "") dataToUpdate.availableStock = stock;
+            }
+            if (Object.keys(dataToUpdate).length > 0) {
+              await prisma.enquiryItem.update({ where: { id: item.id }, data: dataToUpdate });
+            }
+            const refreshed = await prisma.enquiryItem.findUnique({ where: { id: item.id } });
+            if (refreshed) {
+              updatedItems.push(serializeItem(refreshed));
+              if (didCostUpdate) updated++;
+              else if (needStock && dataToUpdate.availableStock !== undefined) updated++;
+              else if (needBomType && dataToUpdate.bomType !== undefined) updated++;
+            }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : "Failed to update product cost (fallback).";
+            lastError = message;
+            console.error(`Error updating product cost (fallback) for item ${item.id}:`, error);
+          }
+        }
+      } else {
+        // Those not in trueFallback had VerifyBom candidates -> keep as noBom? they will be handled via maybeUpdate which defers; mark as noBom for message only if productCost needed
+        for (const it of fallbackCandidates) {
+          const v = vbDistinctMap.get(it.erpItemCode!);
+          if (v && v.length > 0 && it.productCost == null) noBomItemCodes.add(it.erpItemCode!);
+        }
       }
     }
 

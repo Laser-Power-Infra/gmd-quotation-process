@@ -235,6 +235,8 @@ const STATIC_PBGS = [
 
 const STATIC_ORDER_STATUSES = ["PENDING", "LOST", "ORDER RECVD"];
 
+const STATIC_OTHERS = ["flange", "gasket", "nut and bolt"];
+
 const lists: Record<string, string[]> = {
   PARTY: PARTY_NAMES,
   UTILITY: UTILITIES,
@@ -251,6 +253,7 @@ const lists: Record<string, string[]> = {
   OPERATION_TYPE: [...ALLOWED_OPERATION_TYPES],
   EXTENSION: [...ALLOWED_EXTENSIONS],
   BYPASS: [...ALLOWED_BYPASSES],
+  OTHERS: [...STATIC_OTHERS],
 };
 
 async function main() {

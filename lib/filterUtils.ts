@@ -25,8 +25,18 @@ export function getPdCostValidation(item: EnquiryItemData): string | null {
 
 export function matchesMulti(values: string[], actual: unknown, blankCheck: (v: unknown) => boolean = isBlankValue): boolean {
   if (!values || values.length === 0) return true;
+  // Handle array actual (e.g., others: string[])
+  if (Array.isArray(actual)) {
+    if (values.includes(BLANK) && (actual.length === 0 || actual.every((v) => blankCheck(v)))) return true;
+    return actual.some((v) => values.includes(String(v)));
+  }
   if (values.includes(BLANK) && blankCheck(actual)) return true;
   return values.includes(actual as string);
+}
+
+export function isBlankOthers(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length === 0;
+  return isBlankValue(value);
 }
 
 export function matchesMultiCI(values: string[], actual: unknown, blankCheck: (v: unknown) => boolean = isBlankValue): boolean {
@@ -104,6 +114,8 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState):
   if (!matchesMulti(filters.operationType, item.operationType)) return false;
   if (!matchesMulti(filters.extension, item.extension)) return false;
   if (!matchesMulti(filters.bypass, item.bypass)) return false;
+  if (!matchesMulti(filters.others, (item as any).others, isBlankOthers)) return false;
+  if (filters.othersSearch && !matchesText(filters.othersSearch, Array.isArray((item as any).others) ? (item as any).others.join(", ") : (item as any).others || "")) return false;
   if (!matchesMulti(filters.erpItemCode, item.erpItemCode)) return false;
   if (filters.erpItemCodeSearch && !matchesText(filters.erpItemCodeSearch, item.erpItemCode || "")) return false;
   if (!matchesMulti(filters.bomId as any, (item as any).bomId)) return false;
@@ -113,7 +125,8 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState):
   if (!matchesMulti(filters.pdcostValidation, getPdCostValidation(item))) return false;
   if (filters.pdcostValidationSearch && !matchesText(filters.pdcostValidationSearch, getPdCostValidation(item) || "")) return false;
   if (filters.productCost.length > 0 && !matchesMulti(filters.productCost, item.productCost != null ? String(item.productCost) : null)) return false;
-  if (filters.costRefCode && !matchesText(filters.costRefCode, item.costRefCode || "")) return false;
+  if (!matchesMulti(filters.costRefCode, item.costRefCode)) return false;
+  if (filters.costRefCodeSearch && !matchesText(filters.costRefCodeSearch, item.costRefCode || "")) return false;
   if (filters.cost.length > 0 && !matchesMulti(filters.cost, item.cost != null ? String(item.cost) : null)) return false;
   if (filters.costLogic && !matchesText(filters.costLogic, item.costLogic || "")) return false;
   if (filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;

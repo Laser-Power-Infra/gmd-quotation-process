@@ -13,6 +13,7 @@ export interface EnquiryItemData {
   operationType: string | null;
   extension: string | null;
   bypass: string | null;
+  others: string[];
   productCost: number | null;
   costRefCode: string | null;
   cost: number | null;
@@ -89,6 +90,7 @@ export interface DropdownOptions {
   operationTypes: string[];
   extensions: string[];
   bypasses: string[];
+  others: string[];
 }
 
 export interface FiltersState {
@@ -117,8 +119,11 @@ export interface FiltersState {
   operationType: string[];
   extension: string[];
   bypass: string[];
+  others: string[];
+  othersSearch: string;
   productCost: string[];
-  costRefCode: string;
+  costRefCode: string[];
+  costRefCodeSearch: string;
   cost: string[];
   stockStatus: string;
   discount: string;

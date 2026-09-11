@@ -132,6 +132,7 @@ export default function DashboardContainer({
       operationTypes: mergeArrays(dropdownOptions.operationTypes, extractUniqueStringValues(allItems, "operationType")),
       extensions: mergeArrays(dropdownOptions.extensions, extractUniqueStringValues(allItems, "extension")),
       bypasses: mergeArrays(dropdownOptions.bypasses, extractUniqueStringValues(allItems, "bypass")),
+      others: mergeArrays((dropdownOptions as any).others ?? [], allItems.flatMap((i:any)=>Array.isArray(i.others)?i.others:[])),
       vaPercents: mergeArrays(dropdownOptions.vaPercents, extractUniqueStringValues(allItems, "vaPercent")),
     };
   }, [enquiries, dropdownOptions]);
