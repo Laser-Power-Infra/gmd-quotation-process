@@ -1,9 +1,12 @@
 import React from "react";
 import { Bell } from "lucide-react";
-import { redirect } from "next/navigation";
 import Link from "next/link";
+import { auth } from "@/auth";
+import { LogoutButton } from "./LogoutButton";
 
-export default function Navbar() {
+export default async function Navbar() {
+  const session = await auth();
+  const role = (session?.user as any)?.role as string | undefined;
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border bg-background px-6 py-3">
       <div className="flex h-10 items-center justify-between">
@@ -66,7 +69,20 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {session ? (
+              <>
+                <span className="text-xs font-medium px-2 py-1 rounded bg-muted border text-foreground">
+                  {session.user?.email} {role ? `· ${role}` : ""}
+                </span>
+                <LogoutButton />
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="inline-flex h-8 items-center px-3 text-sm font-semibold rounded-md border bg-white hover:bg-muted">Login</Link>
+                <Link href="/register" className="inline-flex h-8 items-center px-3 text-sm font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700">Register</Link>
+              </>
+            )}
             <button className="relative p-1 text-muted-foreground hover:text-foreground">
               <Bell className="h-5 w-5 stroke-[1.75]" />
               <span className="absolute top-1 right-1 flex h-2 w-2">

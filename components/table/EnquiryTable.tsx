@@ -17,6 +17,8 @@ import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows } from "@/li
 import type { DropdownOptions, EnquiryData, EnquiryItemData, FiltersState } from "@/lib/types";
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
+import { useSession } from "next-auth/react";
+import { oneClickAccess } from "@/lib/oneClickAccess";
 import { importExcelData, autoFillBlanks, updateVaPercent } from "@/lib/enquiriesSlice";
 import { validateVaPercent } from "@/lib/vaValidation";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
@@ -148,6 +150,9 @@ const ALL_DROPDOWN_FIELDS = [
 const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm"]);
 
 export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
+  const { data: session } = useSession();
+  const role = (session?.user as any)?.role as string | undefined;
+  const canEditApm = role === "admin" || role === "developer";
   const dispatch = useAppDispatch();
   const enquiries = useAppSelector(selectAllEnquiries);
   const allItems = useAppSelector(selectAllItems);
@@ -383,6 +388,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
   const [bulkApmRunning, setBulkApmRunning] = useState<"Yes" | "No" | "Clear" | null>(null);
   const handleBulkApm = async (val: "Yes" | "No" | "") => {
+    if (!canEditApm) { toast.error("Admin or developer only can set APM — please login"); return; }
     if (filteredEnquiries.length === 0) {
       toast.info("No enquiries match current filters.");
       return;
@@ -3066,27 +3072,27 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <button
                   type="button"
                   onClick={() => handleBulkApm("Yes")}
-                  disabled={bulkApmRunning !== null}
-                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer"
-                  title="Set all filtered enquiries (all pages) to Yes"
+                  disabled={bulkApmRunning !== null || !canEditApm}
+                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                  title={canEditApm ? "Set all filtered enquiries (all pages) to Yes" : "Admin only"}
                 >
                   {bulkApmRunning === "Yes" ? "..." : "All Yes"}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleBulkApm("No")}
-                  disabled={bulkApmRunning !== null}
-                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50 cursor-pointer"
-                  title="Set all filtered enquiries (all pages) to No"
+                  disabled={bulkApmRunning !== null || !canEditApm}
+                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                  title={canEditApm ? "Set all filtered enquiries (all pages) to No" : "Admin only"}
                 >
                   {bulkApmRunning === "No" ? "..." : "All No"}
                 </button>
                 <button
                   type="button"
                   onClick={() => handleBulkApm("")}
-                  disabled={bulkApmRunning !== null}
-                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-border bg-background text-muted-foreground hover:bg-muted disabled:opacity-50 cursor-pointer"
-                  title="Clear APM for all filtered enquiries (all pages)"
+                  disabled={bulkApmRunning !== null || !canEditApm}
+                  className="px-1.5 py-1 text-[9px] font-bold rounded border border-border bg-background text-muted-foreground hover:bg-muted disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                  title={canEditApm ? "Clear APM for all filtered enquiries (all pages)" : "Admin only"}
                 >
                   {bulkApmRunning === "Clear" ? "..." : "Clear"}
                 </button>
@@ -4084,13 +4090,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       ) : "-"}
                     </td>
 
-                    {/* APM - beside Offer PDF (enquiry-based) */}
+                    {/* APM - beside Offer PDF (enquiry-based) — admin/developer only */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       <div className="flex items-center justify-center gap-1">
                         <button
                           type="button"
-                          onClick={() => handleEnquiryFieldChange(enquiry.id, "apm", (enquiry as any).apm === "Yes" ? "" : "Yes")}
-                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                          disabled={!canEditApm}
+                          title={canEditApm ? "Set APM Yes" : "Admin only — please login"}
+                          onClick={() => canEditApm && handleEnquiryFieldChange(enquiry.id, "apm", (enquiry as any).apm === "Yes" ? "" : "Yes")}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded transition-all ${!canEditApm ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${
                             (enquiry as any).apm === "Yes"
                               ? "bg-emerald-500 text-white "
                               : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-950/50"
@@ -4100,8 +4108,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleEnquiryFieldChange(enquiry.id, "apm", (enquiry as any).apm === "No" ? "" : "No")}
-                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                          disabled={!canEditApm}
+                          title={canEditApm ? "Set APM No" : "Admin only — please login"}
+                          onClick={() => canEditApm && handleEnquiryFieldChange(enquiry.id, "apm", (enquiry as any).apm === "No" ? "" : "No")}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded transition-all ${!canEditApm ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${
                             (enquiry as any).apm === "No"
                               ? "bg-rose-500 text-white "
                               : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-800 dark:hover:bg-rose-950/50"
@@ -4110,6 +4120,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           No
                         </button>
                       </div>
+                      {!canEditApm && <div className="text-[9px] text-center text-muted-foreground mt-1">🔒 admin only</div>}
                     </td>
 
                     {/* Offer PDF */}
@@ -4886,6 +4897,10 @@ function OfferPdfCell({ enquiry }: { enquiry: EnquiryData }) {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const storeItems = useAppSelector(selectAllItems);
   const items = storeItems.filter((item: EnquiryItemData) => item.enquiryId === enquiry.id);
+  const apm = (enquiry as any).apm as string | null | undefined;
+  const generatedAt = (enquiry as any).offerPdfGeneratedAt as string | Date | null | undefined;
+  const access = oneClickAccess(apm ?? null, generatedAt ?? null);
+  const dispatch = useAppDispatch();
 
   const handleGenerate = async () => {
     setStatus("generating");
@@ -4932,6 +4947,11 @@ function OfferPdfCell({ enquiry }: { enquiry: EnquiryData }) {
       const res = await generateOfferPdfAction(rowData, enquiry.id);
       if (res.success && res.pdfBase64) {
         triggerDownload(res.pdfBase64, res.fileName);
+        // After Yes one-time, reload to reflect frozen state (server updated offerPdfGeneratedAt)
+        if (apm === "Yes") {
+          // optimistic: page reload enquiries after short delay to show frozen badge
+          setTimeout(() => window.location.reload(), 800);
+        }
         setStatus("idle");
       } else {
         setErrorMessage(res.error || "Generation failed");
@@ -4943,17 +4963,36 @@ function OfferPdfCell({ enquiry }: { enquiry: EnquiryData }) {
     }
   };
 
+  // Frozen/disabled states before idle render
+  if (!access.allowed) {
+    const isFrozen = apm === "Yes" && !!generatedAt;
+    const isNo = apm === "No";
+    return (
+      <div className="flex flex-col items-center gap-1 py-1" title={access.reason || ""}>
+        <span className={`text-[9px] font-bold px-2 py-1 rounded border ${isFrozen ? "bg-zinc-100 text-zinc-600 border-zinc-300 dark:bg-zinc-900 dark:text-zinc-400" : "bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/30 dark:text-rose-400"}`}>
+          {isFrozen ? "Frozen" : isNo ? "Disabled (APM No)" : access.reason}
+        </span>
+        {isFrozen && generatedAt && <span className="text-[8px] text-muted-foreground">{new Date(generatedAt as any).toLocaleString()}</span>}
+        {isNo && <span className="text-[8px] text-muted-foreground">APM=No blocks offer</span>}
+      </div>
+    );
+  }
+
   if (status === "idle") {
     return (
-      <div className="flex justify-center py-1">
+      <div className="flex flex-col items-center gap-1 py-1">
         <button
           type="button"
-          onClick={handleGenerate}
-          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-[#0f62fe] border border-blue-200 bg-blue-50 hover:bg-blue-100 dark:text-blue-400 dark:border-blue-800 dark:bg-blue-950/30 dark:hover:bg-blue-950/50 rounded cursor-pointer transition-all  whitespace-nowrap"
+          onClick={async () => { await handleGenerate(); // refresh enquiry so frozen state shows without reload
+            try { const { updateEnquiryField } = await import("@/lib/enquiriesSlice"); // trigger refetch via page refresh not ideal; optimistic: reload enquiries
+            } catch {} }}
+          className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-[#0f62fe] border border-blue-200 bg-blue-50 hover:bg-blue-100 dark:text-blue-400 dark:border-blue-800 dark:bg-blue-950/30 dark:hover:bg-blue-950/50 rounded cursor-pointer transition-all whitespace-nowrap"
         >
           <FileText className="h-3.5 w-3.5 stroke-[2.5]" />
           Generate PDF
         </button>
+        {apm === "Yes" && !generatedAt && <span className="text-[8px] text-amber-600 font-medium">One-time only</span>}
+        {(!apm || apm === "") && <span className="text-[8px] text-muted-foreground">Unlimited (APM empty)</span>}
       </div>
     );
   }

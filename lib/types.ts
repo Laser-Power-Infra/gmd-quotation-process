@@ -66,6 +66,8 @@ export interface EnquiryData {
   closureStatus: string | null;
   projectReference: string | null;
   apm?: string | null;
+  offerPdfGeneratedAt?: string | Date | null;
+  offerPdfGeneratedBy?: string | null;
   attachments: AttachmentData[];
   items: EnquiryItemData[];
 }
