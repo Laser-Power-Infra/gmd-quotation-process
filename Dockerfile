@@ -12,7 +12,7 @@ COPY prisma ./prisma
 
 RUN --mount=type=cache,target=/root/.npm \
     if [ -f package-lock.json ]; then \
-        npm ci --no-audit --no-fund; \
+        npm i --no-audit --no-fund; \
     else \ 
         echo "no lock file" && exit 1; \
     fi
