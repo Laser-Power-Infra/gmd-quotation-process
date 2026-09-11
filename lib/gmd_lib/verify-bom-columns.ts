@@ -1,7 +1,10 @@
 export const VERIFY_BOM_HEADERS = [
   "BOM ID",
   "ITEM CODE",
+  "ITEM NAME",
+  "ITEM SCHEDULE NAME",
   "RM ITEM CODE",
+  "RM ITEM NAME",
   "BOM ID TYPE",
   "BOM ITEM QTY",
   "USE/NO USE",
@@ -9,7 +12,15 @@ export const VERIFY_BOM_HEADERS = [
 ] as const;
 
 function normalizeHeader(h: string): string {
-  return h.trim().toUpperCase().replace(/\s+/g, " ");
+  return h.trim().toUpperCase().replace(/[\s_]+/g, " ").trim();
+}
+
+export function findVerifyBomColumnIndex(
+  sheetHeaders: string[],
+  header: string,
+): number {
+  const normalized = sheetHeaders.map(normalizeHeader);
+  return normalized.findIndex((h) => h === normalizeHeader(header));
 }
 
 export function buildVerifyBomColumnMap(sheetHeaders: string[]): number[] {
@@ -39,9 +50,12 @@ export function mapVerifyBomRow(
   return {
     bomId: getRequired(0),
     itemCode: getRequired(1),
-    rmItemCode: getRequired(2),
-    bomIdType: getVal(3),
-    bomItemQty: getVal(4),
+    itemName: getVal(2),
+    itemScheduleName: getVal(3),
+    rmItemCode: getRequired(4),
+    rmItemName: getVal(5),
+    bomIdType: getVal(6),
+    bomItemQty: getVal(7),
     syncedAt,
   };
 }
@@ -54,11 +68,17 @@ export function dbVerifyBomToRow(item: {
   bomItemQty: string | null;
   noUse: string | null;
   availableStock: string | null;
+  itemName: string | null;
+  itemScheduleName: string | null;
+  rmItemName: string | null;
 }): unknown[] {
   return [
     item.bomId,
     item.itemCode,
+    item.itemName,
+    item.itemScheduleName,
     item.rmItemCode,
+    item.rmItemName,
     item.bomIdType,
     item.bomItemQty,
     item.noUse,
@@ -72,4 +92,9 @@ export const VERIFY_BOM_HEADER_TO_DB_FIELD: Record<string, string> = {
   "RM ITEM CODE": "rmItemCode",
   "BOM ID TYPE": "bomIdType",
   "BOM ITEM QTY": "bomItemQty",
+  "USE/NO USE": "noUse",
+  "AVAILABLE STOCK": "availableStock",
+  "ITEM NAME": "itemName",
+  "ITEM SCHEDULE NAME": "itemScheduleName",
+  "RM ITEM NAME": "rmItemName",
 };

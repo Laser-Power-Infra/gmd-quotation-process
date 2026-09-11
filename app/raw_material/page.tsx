@@ -14,8 +14,22 @@ import {
 } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
 import { FIXED_DROPDOWN_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
-import { getUsdInrRateAction, getGMDCastingRatesAction, saveGMDCastingRateAction } from "@/app/actions";
+import { getUsdInrRateAction, getGMDCastingRatesAction, saveGMDCastingRateAction, setGMDUpdateTransferredAction } from "@/app/actions";
 import { toast } from "sonner";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { useDefaultLayout } from "react-resizable-panels";
+
+const layoutStorage = {
+  getItem: (key: string) =>
+    typeof window === "undefined" ? null : window.localStorage.getItem(key),
+  setItem: (key: string, value: string) => {
+    if (typeof window !== "undefined") window.localStorage.setItem(key, value);
+  },
+};
 
 interface SheetData {
   headers: string[];
@@ -23,6 +37,7 @@ interface SheetData {
   ids: string[];
   syncedAt: string | null;
   bomIdOptions?: Record<string, string[]>;
+  transferredIds?: string[];
 }
 
 const NEW_STATUS_COL = "NEW ITEM STATUS";
@@ -107,6 +122,7 @@ function rowToGMDUpdateItem(id: string, row: unknown[]): GMDUpdateRow {
     rmType:         String(row[23] ?? ""),
     indianImported: String(row[24] ?? ""),
     bomId:          String(row[25] ?? ""),
+    vendorReference: String(row[26] ?? ""),
   };
 }
 
@@ -131,6 +147,24 @@ export default function Home() {
     Bronze: "",
   });
   const saveRateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [transferredIds, setTransferredIds] = useState<string[]>([]);
+  const [pasteDraft, setPasteDraft] = useState("");
+
+  const {
+    defaultLayout: horizontalLayout,
+    onLayoutChanged: onHorizontalLayoutChanged,
+  } = useDefaultLayout({
+    id: "raw-material-horizontal",
+    storage: layoutStorage,
+  });
+  const {
+    defaultLayout: verticalLayout,
+    onLayoutChanged: onVerticalLayoutChanged,
+  } = useDefaultLayout({
+    id: "raw-material-vertical",
+    panelIds: ["new-items", "filtered-items", "transferred-items"],
+    storage: layoutStorage,
+  });
 
   const handleCastingRateChange = useCallback((key: string, value: string) => {
     setCastingRates((prev) => ({ ...prev, [key]: value }));
@@ -198,6 +232,17 @@ export default function Home() {
     [categoryOptions],
   );
 
+  const clearMoved = useCallback(async () => {
+    if (!transferredIds.length) return;
+    const res = await setGMDUpdateTransferredAction(transferredIds, false);
+    if (res.success) {
+      setTransferredIds([]);
+      toast.success("All moved items returned to Filtered Items");
+    } else {
+      toast.error(res.error || "Failed to clear moved items");
+    }
+  }, [transferredIds]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -209,6 +254,7 @@ export default function Home() {
       }
       const json = await res.json();
       setData(json);
+      setTransferredIds(json.transferredIds ?? []);
       if (json.bomIdOptions) setBomIdOptionsById(json.bomIdOptions);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -261,20 +307,36 @@ export default function Home() {
   const headers = data?.headers ?? [];
   const syncedAt = data?.syncedAt ?? null;
 
+  const transferredSet = useMemo(
+    () => new Set(transferredIds),
+    [transferredIds],
+  );
+
   const newItems = useMemo(
     () =>
       allItems.filter(
-        (item) => !item.newItemStatus || item.newItemStatus === "-" || item.newItemStatus === "Updated",
+        (item) =>
+          (!item.newItemStatus || item.newItemStatus === "-" || item.newItemStatus === "Updated") &&
+          !transferredSet.has(item.id),
       ),
-    [allItems],
+    [allItems, transferredSet],
   );
 
   const processedItems = useMemo(
     () =>
       allItems.filter(
-        (item) => item.newItemStatus && item.newItemStatus !== "-" && item.newItemStatus !== "Updated",
+        (item) =>
+          item.newItemStatus &&
+          item.newItemStatus !== "-" &&
+          item.newItemStatus !== "Updated" &&
+          !transferredSet.has(item.id),
       ),
-    [allItems],
+    [allItems, transferredSet],
+  );
+
+  const transferredItems = useMemo(
+    () => allItems.filter((item) => transferredSet.has(item.id)),
+    [allItems, transferredSet],
   );
 
   const totalRows = allItems.length;
@@ -290,6 +352,92 @@ export default function Home() {
   const processedItemIds = useMemo(
     () => processedCost.items.map((i) => i.id),
     [processedCost],
+  );
+
+  const transferredItemRows = useMemo(
+    () => transferredItems.map(dbItemToRow),
+    [transferredItems],
+  );
+  const transferredItemIds = useMemo(
+    () => transferredItems.map((i) => i.id),
+    [transferredItems],
+  );
+
+  const transferredHeaders = useMemo(() => {
+    const out: string[] = [];
+    for (const h of headers) {
+      if (h === "Vendor Reference") continue;
+      out.push(h === "Available Stock" ? "Vendor Reference" : h);
+    }
+    return out;
+  }, [headers]);
+
+  const transferredRows = useMemo(() => {
+    const vendorIdx = headers.indexOf("Vendor Reference");
+    return transferredItemRows.map((row) => {
+      const out: unknown[] = [];
+      for (let i = 0; i < headers.length; i++) {
+        const h = headers[i];
+        if (h === "Vendor Reference") continue;
+        if (h === "Available Stock") {
+          out.push(vendorIdx >= 0 ? (row[vendorIdx] ?? "") : "");
+        } else {
+          out.push(row[i]);
+        }
+      }
+      return out;
+    });
+  }, [headers, transferredItemRows]);
+
+  const moveErpCodes = useCallback(
+    async (raw: string) => {
+      const codes = raw
+        .split(/[\n,;\t]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (!codes.length) return;
+      const next = new Set(transferredIds);
+      const matchedIds: string[] = [];
+      let matched = 0;
+      const unmatched: string[] = [];
+      for (const code of codes) {
+        const key = code.trim().toLowerCase();
+        const item = allItems.find(
+          (it) => String(it.erpItemCode ?? "").trim().toLowerCase() === key,
+        );
+        if (!item) {
+          unmatched.push(code);
+          continue;
+        }
+        if (next.has(item.id)) continue;
+        const isProcessed =
+          item.newItemStatus &&
+          item.newItemStatus !== "-" &&
+          item.newItemStatus !== "Updated";
+        if (!isProcessed) {
+          unmatched.push(code);
+          continue;
+        }
+        next.add(item.id);
+        matchedIds.push(item.id);
+        matched++;
+      }
+      if (matched > 0) {
+        const res = await setGMDUpdateTransferredAction(matchedIds, true);
+        if (res.success) {
+          setTransferredIds([...next]);
+          toast.success(
+            `${matched} item${matched === 1 ? "" : "s"} moved to Transferred Items`,
+          );
+        } else {
+          toast.error(res.error || "Failed to move items");
+        }
+      }
+      if (unmatched.length) {
+        toast.error(`Not found in Filtered Items: ${unmatched.join(", ")}`);
+      }
+    },
+    [transferredIds, allItems],
   );
 
   const [firstFilteredRows, setFirstFilteredRows] = useState<unknown[][]>([]);
@@ -524,8 +672,20 @@ export default function Home() {
 
   return (
     <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
-      <div className="flex-1 flex p-4 min-h-0 gap-4 overflow-hidden">
-        <aside className="w-60 shrink-0 h-full bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-3 overflow-y-auto">
+      <ResizablePanelGroup
+        orientation="horizontal"
+        id="raw-material-horizontal"
+        defaultLayout={horizontalLayout}
+        onLayoutChanged={onHorizontalLayoutChanged}
+        className="flex-1 min-h-0 p-4"
+      >
+        <ResizablePanel
+          id="stock-value"
+          defaultSize={240}
+          minSize={180}
+          maxSize={420}
+        >
+          <aside className="h-full w-full bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-3 overflow-y-auto">
           <span className="text-xs font-bold uppercase tracking-wider text-white">
             STOCK VALUE
           </span>
@@ -622,11 +782,22 @@ export default function Home() {
             </span>
           </button>
         </aside>
+        </ResizablePanel>
 
-        <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          <GMDUpdateHeader totalRows={totalRows} syncedAt={syncedAt} onSync={handleSync} syncing={syncing} />
+        <ResizableHandle withHandle className="mx-2 bg-[#e1e6eb]" />
 
-          <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4 pr-1 mt-4">
+        <ResizablePanel id="content" minSize="40%">
+          <div className="flex h-full flex-col min-h-0 min-w-0">
+            <GMDUpdateHeader totalRows={totalRows} syncedAt={syncedAt} onSync={handleSync} syncing={syncing} />
+
+            <ResizablePanelGroup
+              orientation="vertical"
+              id="raw-material-vertical"
+              defaultLayout={verticalLayout}
+              onLayoutChanged={onVerticalLayoutChanged}
+              className="flex-1 min-h-0 mt-4"
+            >
+            <ResizablePanel id="new-items" defaultSize="40" minSize="10">
             <GMDUpdateTable
               headers={headers}
               rows={scopedNewItemRows}
@@ -654,8 +825,14 @@ export default function Home() {
               onSelectBomId={handleSelectBomId}
               usdInrRate={usdInrRate}
               onRefreshRate={refreshRate}
-              hiddenColumns={["BOM ID"]}
+              hiddenColumns={["BOM ID", "Vendor Reference"]}
+              fullHeight
             />
+            </ResizablePanel>
+
+            <ResizableHandle withHandle className="my-2 bg-[#e1e6eb]" />
+
+            <ResizablePanel id="filtered-items" defaultSize="20" minSize="10">
             <GMDUpdateTable
               headers={headers}
               rows={processedItemRows}
@@ -671,10 +848,52 @@ export default function Home() {
               onSelectBomId={handleSelectBomId}
               usdInrRate={usdInrRate}
               onRefreshRate={refreshRate}
+              hiddenColumns={["Vendor Reference"]}
+              fullHeight
             />
+            </ResizablePanel>
+
+            <ResizableHandle withHandle className="my-2 bg-[#e1e6eb]" />
+
+            <ResizablePanel id="transferred-items" defaultSize="40" minSize="10">
+            <GMDUpdateTable
+              headers={transferredHeaders}
+              rows={transferredRows}
+              ids={transferredItemIds}
+              selectedIndex={selectedIndex}
+              onSelect={setSelectedIndex}
+              title="Transferred Items"
+              editable
+              categoryOptions={enhancedCategoryOptions}
+              fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
+              uniqueKeyColumns={["ERP ITEM CODE"]}
+              lockedCostIds={lockedCostIds}
+              bomIdOptionsById={bomIdOptionsById}
+              onSelectBomId={handleSelectBomId}
+              usdInrRate={usdInrRate}
+              onRefreshRate={refreshRate}
+              hiddenColumns={["BOM ID"]}
+              fieldOverride={{ "Vendor Reference": "vendorReference" }}
+              pasteErpCodes={{
+                draft: pasteDraft,
+                setDraft: setPasteDraft,
+                onAdd: () => {
+                  moveErpCodes(pasteDraft);
+                  setPasteDraft("");
+                },
+                onPaste: (text) => {
+                  moveErpCodes(text);
+                  setPasteDraft("");
+                },
+              }}
+              onClearMoved={clearMoved}
+              fullHeight
+            />
+            </ResizablePanel>
+            </ResizablePanelGroup>
           </div>
-        </div>
-      </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </main>
   );
 }

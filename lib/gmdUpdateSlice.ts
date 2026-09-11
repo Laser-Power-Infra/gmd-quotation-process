@@ -38,6 +38,7 @@ export interface GMDUpdateRow {
   rmType: string | null;
   indianImported: string | null;
   bomId: string | null;
+  vendorReference: string | null;
 }
 
 const adapter = createEntityAdapter<GMDUpdateRow>();

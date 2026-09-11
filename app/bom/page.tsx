@@ -176,6 +176,7 @@ export default function BomPage() {
             editableColumns={["BOM ID TYPE"]}
             fixedDropdownOptions={{ "BOM ID TYPE": ["2:1", "3:1", "DIRECT M2M", "CREATE BOM"] }}
             onCellUpdate={handleCellUpdate}
+            hiddenColumns={["ITEM SCHEDULE NAME"]}
           />
         </div>
       </div>

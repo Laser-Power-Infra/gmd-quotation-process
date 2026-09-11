@@ -13,9 +13,11 @@ import {
   computeContractReviewRmAvail,
 } from "@/lib/verifyBomLookup";
 
-const SPREADSHEET_ID = process.env.CONTRACT_SHEET_SPREADSHEET_ID;
-const DUMP_GID = 0;
-const CONTRACTS_GID = 79716340;
+const SPREADSHEET_ID =
+  process.env.CONTRACT_REVIEW_SPREADSHEET_ID
+  
+const DUMP_GID = 1604813523;
+const CONTRACTS_GID = 734728893;
 
 function getAuth() {
   return getOAuthClient();
@@ -34,7 +36,9 @@ const PRESERVE_UI_FIELDS = new Set(["bomFormulaTrial", "item", "clearanceStatus"
 export async function POST() {
   try {
     if (!SPREADSHEET_ID) {
-      throw new Error("CONTRACT_SHEET_SPREADSHEET_ID not configured");
+      throw new Error(
+        "CONTRACT_REVIEW_SPREADSHEET_ID (or CONTRACT_SHEET_SPREADSHEET_ID) not configured",
+      );
     }
 
     const auth = getAuth();
