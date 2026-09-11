@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { hydrateFromServer, selectAllEnquiries, selectAllItems } from "@/lib/enquiriesSlice";
 import { setFilter } from "@/lib/filtersSlice";
@@ -42,8 +41,7 @@ export default function DashboardContainer({
   const storeEnquiries = useAppSelector(selectAllEnquiries);
   const storeItems = useAppSelector(selectAllItems);
   const filters = useAppSelector((s) => s.filters);
-  const searchParams = useSearchParams();
-  const globalSearch = (searchParams.get("search") || "").trim();
+  const globalSearch = filters.globalSearch.trim();
 
   // Sidebar filter values synced with Redux filtersSlice
   const selectedPartyNames = filters.partyNames;
@@ -134,6 +132,7 @@ export default function DashboardContainer({
       operationTypes: mergeArrays(dropdownOptions.operationTypes, extractUniqueStringValues(allItems, "operationType")),
       extensions: mergeArrays(dropdownOptions.extensions, extractUniqueStringValues(allItems, "extension")),
       bypasses: mergeArrays(dropdownOptions.bypasses, extractUniqueStringValues(allItems, "bypass")),
+      others: mergeArrays((dropdownOptions as any).others ?? [], allItems.flatMap((i:any)=>Array.isArray(i.others)?i.others:[])),
       vaPercents: mergeArrays(dropdownOptions.vaPercents, extractUniqueStringValues(allItems, "vaPercent")),
     };
   }, [enquiries, dropdownOptions]);

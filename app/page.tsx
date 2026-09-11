@@ -3,44 +3,15 @@ import DashboardContainer from "./DashboardContainer";
 import { prisma } from "@/lib/prisma";
 import { getActiveLookupValuesByType } from "@/lib/lookup";
 
-interface PageProps {
-  searchParams: Promise<{
-    page?: string;
-    search?: string;
-  }>;
-}
+// The dashboard reads live data on every request. It used to be dynamic implicitly because
+// it awaited searchParams for ?search=; search is client-side now, so say it explicitly.
+export const dynamic = "force-dynamic";
 
-export default async function Page({ searchParams }: PageProps) {
-  const resolvedSearchParams = await searchParams;
-  const search = resolvedSearchParams.search;
-
-  const searchQuery = search || "";
-
-  // Build filter conditions
-  const whereClause = searchQuery
-    ? {
-        OR: [
-          {
-            docketNumber: { contains: searchQuery, mode: "insensitive" as const },
-          },
-          {
-            partyName: { contains: searchQuery, mode: "insensitive" as const },
-          },
-          {
-            items: {
-              some: {
-                itemName: { contains: searchQuery, mode: "insensitive" as const },
-              },
-            },
-          },
-        ],
-      }
-    : {};
-
-  // Fetch all matching enquiries (pagination is handled client-side inside the table for smooth filtering)
+export default async function Page() {
+  // Fetch every enquiry once. Search, filtering and pagination all run client-side inside
+  // the table, so searching no longer re-runs this query or re-hydrates the store.
   const enquiriesList = (
     await prisma.enquiry.findMany({
-      where: whereClause,
       include: {
         items: {
           orderBy: {
@@ -134,6 +105,7 @@ export default async function Page({ searchParams }: PageProps) {
     operationTypes: sortOptions(lookup.OPERATION_TYPE ?? []),
     extensions: sortOptions(lookup.EXTENSION ?? []),
     bypasses: sortOptions(lookup.BYPASS ?? []),
+    others: sortOptions(lookup.OTHERS ?? ["flange", "gasket", "nut and bolt"]),
   };
 
   return (
