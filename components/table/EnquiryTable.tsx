@@ -210,6 +210,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
   // Debounced filter inputs
   const [filterProjectReference, setFilterProjectReference] = useState("");
+  const [filterAttachment, setFilterAttachment] = useState("");
   const [editingItemNameId, setEditingItemNameId] = useState<string | null>(null);
   const [autoFillStatus, setAutoFillStatus] = useState<"idle" | "running">("idle");
   const [vaStatus, setVaStatus] = useState<"idle" | "running">("idle");
