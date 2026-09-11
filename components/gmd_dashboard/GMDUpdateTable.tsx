@@ -445,6 +445,15 @@ interface GMDUpdateTableProps {
     Record<string, { count: number; sumLabel: string; partyName?: string }>
   >;
   fullHeight?: boolean;
+  maxHeight?: string;
+  pasteErpCodes?: {
+    draft: string;
+    setDraft: (value: string) => void;
+    onAdd: () => void;
+    onPaste: (text: string) => void;
+  };
+  onClearMoved?: () => void;
+  fieldOverride?: Record<string, string>;
 }
 
 export default function GMDUpdateTable({
@@ -477,6 +486,10 @@ castingRateInputs,
   onSelectBomId,
   bomIdCategoryFilter,
   fullHeight,
+  maxHeight,
+  pasteErpCodes,
+  onClearMoved,
+  fieldOverride,
   filterState,
   filterActions,
   columnOptionMeta,
@@ -925,7 +938,7 @@ castingRateInputs,
       return;
     }
 
-    const field = COL_INDEX_TO_DB_FIELD[colIndex];
+    const field = fieldOverride?.[header] ?? COL_INDEX_TO_DB_FIELD[colIndex];
     if (!field) return;
 
     const savedValue = value || null;
@@ -1019,6 +1032,58 @@ castingRateInputs,
           )}
         </div>
         <div className="flex items-center gap-2">
+          {pasteErpCodes && (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={pasteErpCodes.draft}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  pasteErpCodes.setDraft(e.target.value);
+                }}
+                onPaste={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  pasteErpCodes.onPaste(e.clipboardData.getData("text"));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    pasteErpCodes.onAdd();
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+                placeholder="Paste ERP item code..."
+                className="w-52 px-2 py-1.5 text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] outline-none focus:border-[#0070f3] placeholder:text-[#0a2540]/30"
+                title="Paste ERP item code(s) — matching rows move from Filtered Items to this table"
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  pasteErpCodes.onAdd();
+                }}
+                className="flex items-center gap-1 text-xs font-semibold text-[#0f62fe] hover:text-[#0a2540] px-2 py-1.5 rounded hover:bg-white/80 border border-[#e1e6eb]"
+              >
+                Add
+              </button>
+              {onClearMoved && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClearMoved();
+                  }}
+                  className="flex items-center gap-1 text-xs font-semibold text-red-800 hover:text-[#0a2540] px-2 py-1.5 rounded hover:bg-white/80 border border-[#e1e6eb]"
+                  title="Move all rows back to Filtered Items"
+                >
+                  <RotateCcw size={12} />
+                  Clear moved
+                </button>
+              )}
+            </div>
+          )}
           <div className="relative">
             <Search
               size={13}
@@ -1070,7 +1135,12 @@ castingRateInputs,
       </div>
 
       {/* Scrollable Table */}
-      <div className={`w-full min-w-0 ${fullHeight ? "flex-1 min-h-0 overflow-auto" : "overflow-x-auto overflow-y-auto max-h-[50vh]"}`}>
+      <div
+        className={`w-full min-w-0 ${
+          fullHeight ? "flex-1 min-h-0 overflow-auto" : "overflow-x-auto overflow-y-auto"
+        }`}
+        style={fullHeight ? undefined : { maxHeight: maxHeight || "50vh" }}
+      >
         {" "}
         <table
           className="w-full text-left"
@@ -1481,6 +1551,14 @@ castingRateInputs,
                         categoryOptions?.[header] ||
                         fixedDropdownOptions?.[header]
                       ) {
+                        const options = (
+                          fixedDropdownOptions?.[header] ||
+                          categoryOptions?.[header] ||
+                          columnUniqueVals[header] ||
+                          []
+                        ).filter(Boolean) as string[];
+                        const showCurrent =
+                          display.trim() !== "" && !options.includes(display);
                         cellContent = (
                           <select
                             key={display + "-" + idx + "-" + cellIdx}
@@ -1492,12 +1570,10 @@ castingRateInputs,
                             className="w-full text-xs bg-transparent border-none outline-none cursor-pointer"
                           >
                             <option value="">-</option>
-                            {(
-                              fixedDropdownOptions?.[header] ||
-                              categoryOptions?.[header] ||
-                              columnUniqueVals[header] ||
-                              []
-                            ).map((v) => (
+                            {showCurrent && (
+                              <option value={display}>{display}</option>
+                            )}
+                            {options.map((v) => (
                               <option key={v} value={v}>
                                 {v}
                               </option>

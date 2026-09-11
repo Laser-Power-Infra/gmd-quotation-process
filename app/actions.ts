@@ -1537,6 +1537,30 @@ export async function updateVaPercentAction(itemIds: string[]) {
   }
 }
 
+export async function setGMDUpdateTransferredAction(
+  ids: string[],
+  transferred: boolean,
+) {
+  "use server";
+  try {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (uniqueIds.length === 0) {
+      return { success: true, data: { count: 0 } };
+    }
+    const res = await prisma.gMDUpdateItem.updateMany({
+      where: { id: { in: uniqueIds } },
+      data: { transferred },
+    });
+    return { success: true, data: { count: res.count } };
+  } catch (error: any) {
+    console.error("Error updating GMD transfer status:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to update transfer status.",
+    };
+  }
+}
+
 export async function updateGMDUpdateFieldAction(
   id: string,
   field: string,

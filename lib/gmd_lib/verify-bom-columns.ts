@@ -12,7 +12,15 @@ export const VERIFY_BOM_HEADERS = [
 ] as const;
 
 function normalizeHeader(h: string): string {
-  return h.trim().toUpperCase().replace(/\s+/g, " ");
+  return h.trim().toUpperCase().replace(/[\s_]+/g, " ").trim();
+}
+
+export function findVerifyBomColumnIndex(
+  sheetHeaders: string[],
+  header: string,
+): number {
+  const normalized = sheetHeaders.map(normalizeHeader);
+  return normalized.findIndex((h) => h === normalizeHeader(header));
 }
 
 export function buildVerifyBomColumnMap(sheetHeaders: string[]): number[] {

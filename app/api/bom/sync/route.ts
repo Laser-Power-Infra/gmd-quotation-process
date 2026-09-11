@@ -5,9 +5,11 @@ import { getOAuthClient } from "@/lib/googleAuth";
 import {
   buildVerifyBomColumnMap,
   mapVerifyBomRow,
+  findVerifyBomColumnIndex,
 } from "@/lib/gmd_lib/verify-bom-columns";
 
-const SPREADSHEET_ID = process.env.CONTRACT_SHEET_SPREADSHEET_ID;
+const SPREADSHEET_ID =
+  process.env.BOM_SHEET_SPREADSHEET_ID 
 const SHEET_NAME = "VERIFY BOM";
 
 function getAuth() {
@@ -17,7 +19,9 @@ function getAuth() {
 export async function POST() {
   try {
     if (!SPREADSHEET_ID) {
-      throw new Error("CONTRACT_SHEET_SPREADSHEET_ID not configured");
+      throw new Error(
+        "BOM_SHEET_SPREADSHEET_ID (or CONTRACT_SHEET_SPREADSHEET_ID) not configured",
+      );
     }
 
     const auth = getAuth();
@@ -46,11 +50,16 @@ export async function POST() {
 
     const sheetHeaders = allRows[0].map(String);
     const columnMap = buildVerifyBomColumnMap(sheetHeaders);
+    const statusIdx = findVerifyBomColumnIndex(sheetHeaders, "STATUS OF BOM");
 
     const syncedAt = new Date();
-    const rawRows = allRows.slice(1).filter((r) =>
-      r.some((c) => c !== null && c !== ""),
-    );
+    const rawRows = allRows
+      .slice(1)
+      .filter((r) => r.some((c) => c !== null && c !== ""))
+      .filter((r) => {
+        if (statusIdx < 0) return true;
+        return String(r[statusIdx] ?? "").trim().toLowerCase() !== "closed";
+      });
 
     let upserted = 0;
     for (const rawRow of rawRows) {
@@ -75,6 +84,8 @@ export async function POST() {
       });
       upserted++;
     }
+
+    console.log(`Upserted ${upserted} rows into verify_bom table from sheet "${SHEET_NAME}"`);
 
     return NextResponse.json({
       count: upserted,

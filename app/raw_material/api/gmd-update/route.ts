@@ -36,6 +36,8 @@ export async function GET() {
         rmType: true,
         indianImported: true,
         bomId: true,
+        transferred: true,
+        vendorReference: true,
         syncedAt: true,
       },
     });
@@ -54,11 +56,14 @@ export async function GET() {
     }
 
     const syncedAt = items.length > 0 ? items[0].syncedAt : null;
-    const headers = [...CANONICAL_COLUMNS, "BOM ID"];
+    const headers = [...CANONICAL_COLUMNS, "BOM ID", "Vendor Reference"];
     const rows = items.map(dbItemToRow);
     const ids = items.map((item) => item.id);
+    const transferredIds = items
+      .filter((item) => item.transferred)
+      .map((item) => item.id);
 
-    return NextResponse.json({ headers, rows, ids, syncedAt, bomIdOptions });
+    return NextResponse.json({ headers, rows, ids, syncedAt, bomIdOptions, transferredIds });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
