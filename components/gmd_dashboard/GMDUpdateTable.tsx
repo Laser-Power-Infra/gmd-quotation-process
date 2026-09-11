@@ -536,7 +536,9 @@ castingRateInputs,
               ? 300
               : h === "ORDER LIST"
                 ? 160
-                : 180;
+                : h === "CONTRACT NO"
+                  ? 360
+                  : 180;
       });
       return widths;
     },

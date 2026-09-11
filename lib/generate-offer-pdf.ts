@@ -7,6 +7,7 @@ import { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { uploadFileToDrive } from "./gdrive";
 import { prisma } from "@/lib/prisma";
 import { getItemNameMerge } from "./costCalculator";
+import { oneClickAccess } from "./oneClickAccess";
 
 export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, enquiryId?: string) {
   try {
@@ -24,6 +25,14 @@ export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, e
         where: { docketNumber: rowData.docketNo },
         include: { items: { orderBy: { position: "asc" } } },
       });
+    }
+
+    // Apply oneClickAccess rules
+    if (dbEnquiry) {
+      const check = oneClickAccess((dbEnquiry as any).apm, (dbEnquiry as any).offerPdfGeneratedAt)
+      if (!check.allowed) {
+        return { success: false, error: check.reason }
+      }
     }
 
     if (dbEnquiry) {
@@ -101,6 +110,29 @@ export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, e
       await uploadFileToDrive(fileName, "application/pdf", pdfBuffer.toString("base64"));
     } catch (e) {
       console.error("Failed to upload generated PDF to Google Drive:", e);
+    }
+
+    // If apm === "Yes", freeze after first successful generation (one-time)
+    if (dbEnquiry && (dbEnquiry as any).apm === "Yes" && !(dbEnquiry as any).offerPdfGeneratedAt) {
+      try {
+        const { auth } = await import("@/auth")
+        const session = await auth()
+        const userId = (session?.user as any)?.id ?? null
+        // Atomic update: only if still null (prevents double-click race)
+        const updated = await prisma.enquiry.updateMany({
+          where: { id: (dbEnquiry as any).id, offerPdfGeneratedAt: null },
+          data: { offerPdfGeneratedAt: new Date(), offerPdfGeneratedBy: userId },
+        })
+        if (updated.count === 0) {
+          // Another request already consumed the one-time access
+          const fresh = await prisma.enquiry.findUnique({ where: { id: (dbEnquiry as any).id }, select: { offerPdfGeneratedAt: true } })
+          if (fresh?.offerPdfGeneratedAt) {
+            // PDF already generated concurrently; we still return success for this caller but freeze stands
+          }
+        }
+      } catch (e) {
+        console.error("Failed to freeze offer PDF one-time flag:", e)
+      }
     }
 
     return {

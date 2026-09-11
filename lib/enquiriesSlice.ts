@@ -290,10 +290,10 @@ export const bulkUpdateValidation = createAsyncThunk(
 export const bulkUpdateApm = createAsyncThunk(
   "enquiries/bulkUpdateApm",
   async (
-    payload: { itemIds: string[]; apm: string | null },
+    payload: { enquiryIds: string[]; apm: string | null },
     { rejectWithValue }
   ) => {
-    const result = await bulkUpdateApmAction(payload.itemIds, payload.apm);
+    const result = await bulkUpdateApmAction(payload.enquiryIds, payload.apm);
     if (!result.success) {
       return rejectWithValue(result.error || "Failed to update APM");
     }
@@ -886,25 +886,13 @@ const enquiriesSlice = createSlice({
         state.updateError = null;
       })
       .addCase(bulkUpdateApm.fulfilled, (state, action) => {
-        const { items } = action.payload as { items: EnquiryItemData[] };
-        if (items && items.length > 0) {
-          itemsAdapter.upsertMany(state.items, items);
-          const updatedByEnquiry = new Map<string, EnquiryItemData[]>();
-          for (const item of items) {
-            const existing = updatedByEnquiry.get(item.enquiryId) || [];
-            existing.push(item);
-            updatedByEnquiry.set(item.enquiryId, existing);
-          }
-          for (const [enqId, updatedItems] of updatedByEnquiry) {
-            const storedEnquiry = state.enquiries.entities[enqId];
-            if (storedEnquiry) {
-              for (const updatedItem of updatedItems) {
-                const idx = storedEnquiry.items.findIndex((i) => i.id === updatedItem.id);
-                if (idx !== -1) {
-                  storedEnquiry.items[idx] = updatedItem;
-                }
-              }
-            }
+        const { enquiries } = action.payload as { enquiries: EnquiryData[] };
+        if (enquiries && enquiries.length > 0) {
+          enquiriesAdapter.upsertMany(state.enquiries, enquiries);
+          // items inside enquiries are already the source of truth; also sync itemsAdapter for consistency
+          const allItems = enquiries.flatMap((e) => e.items);
+          if (allItems.length > 0) {
+            itemsAdapter.upsertMany(state.items, allItems);
           }
         }
         state.updateStatus = "succeeded";

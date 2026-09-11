@@ -168,7 +168,9 @@ export async function fetchStockPhysicalSheet(): Promise<Record<string, string>>
   const sheetTitles =
     meta.data.sheets?.map((s) => s.properties?.title).filter(Boolean) ?? [];
 
-  if (!sheetTitles.includes("stock-phys")) return {"iii":"eue"};
+  if (!sheetTitles.includes("stock-phys")) {
+    throw new Error('Sheet "stock-phys" not found in the spreadsheet');
+  }
 
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId,
@@ -180,23 +182,23 @@ export async function fetchStockPhysicalSheet(): Promise<Record<string, string>>
   if (allRows.length < 2) return {};
 
   const headers = allRows[1].map(String);
-  console.log(headers)
   const dataRows = allRows.slice(2);
 
-  const erpIdx = headers.findIndex(
-    (h) => normalizeHeader(h) === "ERP CODE",
-  );
-  const stockIdx = headers.findIndex(
-    (h) => normalizeHeader(h) === "SUM OF PHYSICAL STOCK",
-  );
-  if (erpIdx === -1 || stockIdx === -1) return {"erp":erpIdx.toString(), "stock":stockIdx.toString()};
+  const headerKey = (h: string) => normalizeHeader(h).replace(/\.+$/, "");
+  const erpIdx = headers.findIndex((h) => headerKey(h) === "ERP CODE");
+  const stockIdx = headers.findIndex((h) => headerKey(h) === "AVAILABLE QTY");
+  if (erpIdx === -1 || stockIdx === -1) {
+    throw new Error(
+      `"stock-phys" sheet is missing required column(s): ` +
+        `${erpIdx === -1 ? "ERP CODE " : ""}${stockIdx === -1 ? "AVAILABLE QTY" : ""}`.trim(),
+    );
+  }
 
   const result: Record<string, string> = {};
   for (const row of dataRows) {
     const erp = String(row[erpIdx] ?? "").trim();
     const stock = String(row[stockIdx] ?? "").trim();
-    if (erp && stock) result[erp] = stock;
+    if (erp) result[erp] = stock;
   }
-  // console.log(".....................result", result )
   return result;
 }

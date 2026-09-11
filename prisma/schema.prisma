@@ -7,6 +7,17 @@ datasource db {
   provider = "postgresql"
 }
 
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  password      String    // bcrypt hash
+  role          String    @default("user") // "user" | "admin" | "developer"
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
 model Enquiry {
   id               String   @id @default(cuid())
 
@@ -24,6 +35,9 @@ model Enquiry {
   orderStatus      String?
   closureStatus    String?
   projectReference String?
+  apm              String?
+  offerPdfGeneratedAt DateTime?
+  offerPdfGeneratedBy String?
 
   attachments      Attachment[]
   items            EnquiryItem[]
@@ -88,7 +102,6 @@ model EnquiryItem {
   costLogic       String?
   availableStock   String?
   stockAgainstContract   String?
-  apm                String?
 
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

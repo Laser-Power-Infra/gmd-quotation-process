@@ -4,6 +4,7 @@ import "./globals.css";
 import StoreProvider from "./StoreProvider";
 import Navbar from "@/components/layout/Navbar";
 import { Toaster } from "@/components/ui/sonner";
+import { SessionProvider } from "next-auth/react";
 
 const poppins = Poppins({
   variable: "--font-poppins",
@@ -33,11 +34,13 @@ export default function RootLayout({
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block"
         />
-        <StoreProvider>
-          <Navbar />
-          {children}
-          <Toaster position="top-right" richColors theme="light"/>
-        </StoreProvider>
+        <SessionProvider>
+          <StoreProvider>
+            <Navbar />
+            {children}
+            <Toaster position="top-right" richColors theme="light"/>
+          </StoreProvider>
+        </SessionProvider>
       </body>
     </html>
   );
