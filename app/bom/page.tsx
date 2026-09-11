@@ -21,7 +21,6 @@ export default function BomPage() {
   const [data, setData] = useState<BomData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [recomputing, setRecomputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
@@ -57,26 +56,6 @@ export default function BomPage() {
       setError(err instanceof Error ? err.message : "Sync failed");
     } finally {
       setSyncing(false);
-    }
-  }, [fetchData]);
-
-  const handleRecompute = useCallback(async () => {
-    setRecomputing(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/bom/recompute", { method: "POST" });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body.error ?? "Recompute failed");
-      }
-      await fetchData();
-      toast.success(`Recomputed ${body.verifyUpdated ?? 0} rows`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Recompute failed";
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setRecomputing(false);
     }
   }, [fetchData]);
 
@@ -172,8 +151,6 @@ export default function BomPage() {
           syncedAt={data?.syncedAt ?? undefined}
           onSync={handleSync}
           syncing={syncing}
-          onRecompute={handleRecompute}
-          recomputing={recomputing}
         />
         {error && (
           <div className="mt-2 text-sm text-red-600">{error}</div>

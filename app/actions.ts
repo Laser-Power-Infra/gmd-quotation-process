@@ -10,7 +10,7 @@ import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
 import { update2to1CostForItems, buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
-import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, type BomRmAvail } from "@/lib/verifyBomLookup";
+import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 
@@ -1725,42 +1725,6 @@ export async function autoAssignContractReviewBomIdFromActuator(ids: string[]) {
       error: error.message || "Failed to auto-assign BOM ID from actuator.",
     };
   }
-}
-
-type RmAvailRow = { id: string; bomId: string | null; orderQty: string | null };
-
-function computeContractReviewRmAvail(
-  rows: RmAvailRow[],
-  bomAvail: Map<string, BomRmAvail>,
-): Map<string, string> {
-  const result = new Map<string, string>();
-  const groups = new Map<string, RmAvailRow[]>();
-  for (const r of rows) {
-    if (!r.bomId) continue;
-    if (!groups.has(r.bomId)) groups.set(r.bomId, []);
-    groups.get(r.bomId)!.push(r);
-  }
-  for (const [bomId, group] of groups) {
-    const avail = bomAvail.get(bomId);
-    if (!avail || !avail.qualifies) continue;
-    let remaining = avail.stock;
-    const sorted = [...group].sort((a, b) => {
-      const qa = parseFloat(String(a.orderQty ?? "").replace(/,/g, ""));
-      const qb = parseFloat(String(b.orderQty ?? "").replace(/,/g, ""));
-      return (isNaN(qa) ? 0 : qa) - (isNaN(qb) ? 0 : qb);
-    });
-    for (const r of sorted) {
-      const qty = parseFloat(String(r.orderQty ?? "").replace(/,/g, ""));
-      const n = isNaN(qty) ? 0 : qty;
-      if (n <= remaining) {
-        result.set(r.id, "SA");
-        remaining -= n;
-      } else {
-        result.set(r.id, "Not available");
-      }
-    }
-  }
-  return result;
 }
 
 export async function backfillContractReviewNoUseBatchAction(ids: string[]) {

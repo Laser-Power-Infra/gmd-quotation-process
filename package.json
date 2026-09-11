@@ -11,7 +11,9 @@
     "seed:lookups": "tsx scripts/seed-lookup-options.ts",
     "bom:cost": "tsx scripts/update-product-cost-from-bom.ts",
     "round:qr": "tsx scripts/round-qr.ts",
-    "round:qr:apply": "tsx scripts/round-qr.ts --apply"
+    "round:qr:apply": "tsx scripts/round-qr.ts --apply",
+    "stock:sync": "tsx scripts/sync-available-stock-from-stock-phys.ts",
+    "stock:sync:apply": "tsx scripts/sync-available-stock-from-stock-phys.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",
