@@ -4,11 +4,16 @@ import {
   VERIFY_BOM_HEADERS,
   dbVerifyBomToRow,
 } from "@/lib/gmd_lib/verify-bom-columns";
-import { recomputeVerifyBomValues } from "@/lib/verifyBomLookup";
+import {
+  recomputeVerifyBomValues,
+} from "@/lib/verifyBomLookup";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { statusMap, stockMap } = await recomputeVerifyBomValues();
+    const { statusMap, stockMap, rmNameMap, itemNameMap } =
+      await recomputeVerifyBomValues();
 
     const items = await prisma.verifyBom.findMany({
       orderBy: { syncedAt: "desc" },
@@ -30,6 +35,12 @@ export async function GET() {
         availableStock: item.rmItemCode
           ? (stockMap.get(item.rmItemCode) ?? "")
           : "",
+        rmItemName: item.rmItemCode
+          ? (rmNameMap.get(item.rmItemCode) ?? null)
+          : null,
+        itemName: item.itemCode
+          ? (itemNameMap.get(item.itemCode) ?? item.itemName)
+          : null,
       }),
     );
 

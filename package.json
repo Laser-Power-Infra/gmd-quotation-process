@@ -13,7 +13,8 @@
     "round:qr": "tsx scripts/round-qr.ts",
     "round:qr:apply": "tsx scripts/round-qr.ts --apply",
     "stock:sync": "tsx scripts/sync-available-stock-from-stock-phys.ts",
-    "stock:sync:apply": "tsx scripts/sync-available-stock-from-stock-phys.ts --apply"
+    "stock:sync:apply": "tsx scripts/sync-available-stock-from-stock-phys.ts --apply",
+    "bom:item-name": "tsx scripts/backfill-verify-bom-item-name.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",

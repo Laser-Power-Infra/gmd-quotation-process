@@ -177,14 +177,19 @@ export async function recomputeVerifyBomValues(): Promise<{
   updated: number;
   statusMap: Map<string, BomUseStatus>;
   stockMap: Map<string, string>;
+  rmNameMap: Map<string, string | null>;
+  itemNameMap: Map<string, string>;
 }> {
   const items = await prisma.verifyBom.findMany({
     select: {
       id: true,
       bomId: true,
+      itemCode: true,
       rmItemCode: true,
       noUse: true,
       availableStock: true,
+      itemName: true,
+      rmItemName: true,
     },
   });
 
@@ -193,6 +198,23 @@ export async function recomputeVerifyBomValues(): Promise<{
   ];
   const statusMap = await getBomUseStatusBatch(bomIds);
 
+  const itemCodes = [
+    ...new Set(items.map((i) => i.itemCode).filter((c): c is string => !!c)),
+  ];
+  const crRows = await prisma.contractReview.findMany({
+    where: { itemCode: { in: itemCodes }, itemName: { not: null } },
+    select: { itemCode: true, itemName: true, syncedAt: true },
+    orderBy: { syncedAt: "desc" },
+  });
+  const itemNameMap = new Map<string, string>();
+  for (const r of crRows) {
+    if (!r.itemCode) continue;
+    const name = (r.itemName ?? "").trim();
+    if (name && !itemNameMap.has(r.itemCode)) {
+      itemNameMap.set(r.itemCode, name);
+    }
+  }
+
   const codes = [
     ...new Set(
       items.map((i) => i.rmItemCode).filter((c): c is string => !!c),
@@ -200,13 +222,17 @@ export async function recomputeVerifyBomValues(): Promise<{
   ];
   const rawItems = await prisma.gMDUpdateItem.findMany({
     where: { erpItemCode: { in: codes } },
-    select: { erpItemCode: true, availableStock: true },
+    select: { erpItemCode: true, availableStock: true, itemNameAuto: true },
   });
   const stockMap = new Map<string, string>();
+  const rmNameMap = new Map<string, string | null>();
   for (const r of rawItems) {
     if (!r.erpItemCode) continue;
     if (!stockMap.has(r.erpItemCode)) {
       stockMap.set(r.erpItemCode, r.availableStock ?? "");
+    }
+    if (!rmNameMap.has(r.erpItemCode)) {
+      rmNameMap.set(r.erpItemCode, r.itemNameAuto ?? null);
     }
   }
 
@@ -216,22 +242,44 @@ export async function recomputeVerifyBomValues(): Promise<{
       const stock = item.rmItemCode
         ? (stockMap.get(item.rmItemCode) ?? "")
         : null;
+      const rmItemName = item.rmItemCode
+        ? (rmNameMap.get(item.rmItemCode) ?? null)
+        : null;
+      const itemName = item.itemCode
+        ? (itemNameMap.get(item.itemCode) ?? item.itemName)
+        : null;
       return {
         id: item.id,
         noUse,
         stock,
+        rmItemName,
+        itemName,
         oldNoUse: item.noUse,
         oldStock: item.availableStock ?? null,
+        oldRmItemName: item.rmItemName ?? null,
+        oldItemName: item.itemName ?? null,
       };
     })
     .filter(
-      ({ noUse, stock, oldNoUse, oldStock }) =>
-        oldNoUse !== noUse || oldStock !== stock,
+      ({
+        noUse,
+        stock,
+        rmItemName,
+        itemName,
+        oldNoUse,
+        oldStock,
+        oldRmItemName,
+        oldItemName,
+      }) =>
+        oldNoUse !== noUse ||
+        oldStock !== stock ||
+        oldRmItemName !== rmItemName ||
+        oldItemName !== itemName,
     )
-    .map(({ id, noUse, stock }) =>
+    .map(({ id, noUse, stock, rmItemName, itemName }) =>
       prisma.verifyBom.update({
         where: { id },
-        data: { noUse, availableStock: stock },
+        data: { noUse, availableStock: stock, rmItemName, itemName },
       }),
     );
 
@@ -239,7 +287,13 @@ export async function recomputeVerifyBomValues(): Promise<{
     await prisma.$transaction(updates, { timeout: 20000 });
   }
 
-  return { updated: updates.length, statusMap, stockMap };
+  return {
+    updated: updates.length,
+    statusMap,
+    stockMap,
+    rmNameMap,
+    itemNameMap,
+  };
 }
 
 export type RmAvailRow = {
