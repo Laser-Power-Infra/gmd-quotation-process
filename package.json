@@ -24,6 +24,7 @@
     "@tanstack/react-table": "^8.21.3",
     "@types/pg": "^8.20.0",
     "ai": "^7.0.22",
+    "bcrypt": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
@@ -31,6 +32,7 @@
     "handlebars": "^4.7.9",
     "lucide-react": "^1.23.0",
     "next": "16.2.10",
+    "next-auth": "^5.0.0-beta.32",
     "next-themes": "^0.4.6",
     "open": "^11.0.1",
     "p-limit": "^7.3.1",
@@ -54,6 +56,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
+    "@types/bcrypt": "^6.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

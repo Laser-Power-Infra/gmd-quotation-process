@@ -43,6 +43,28 @@ export function getItemNameMerge(item: any) {
     .join("-");
 }
 
+export function normalizeStateName(raw: string | null | undefined): string | null {
+  if (!raw || raw.trim() === "" || raw.trim() === "-") return null;
+  let s = raw.trim().toUpperCase().replace(/\s+/g, " ");
+
+  // Strip "FOR (SITE IN ...)" prefix if present
+  const prefixMatch = s.match(/^FOR\s*\(\s*SITE\s+IN\s+(.+?)\s*\)$/i);
+  if (prefixMatch) {
+    s = prefixMatch[1].trim();
+  } else if (s === "FOR (SITE)") {
+    return "FOR (Site)";
+  }
+
+  // Common spelling variants / aliases
+  if (s === "CHATTISGARH") return "CHHATTISGARH";
+  if (s === "UTTRAKHAND") return "UTTARAKHAND";
+  if (s === "PONDICHERRY") return "PUDUCHERRY";
+  if (s === "JAMMU & KASHMIR" || s === "JAMMU AND KASHMIR") return "J&K";
+  if (s === "ANDAMAN & NICOBAR" || s === "ANDAMAN AND NICOBAR") return "ANDAMAN";
+
+  return s;
+}
+
 export async function recalculateItem(
   itemId: string,
   updates?: {
@@ -120,7 +142,19 @@ export async function recalculateItem(
     // 2.6. Transportation Cost (%)
     let transPct = 0;
     if (item.enquiry.state && item.enquiry.state !== "-") {
-      const transMapping = await prisma.transportationCost.findUnique({ where: { state: item.enquiry.state } });
+      const stateRaw = item.enquiry.state.trim();
+      let transMapping = await prisma.transportationCost.findUnique({ where: { state: stateRaw } });
+
+      if (!transMapping) {
+        const normalized = normalizeStateName(stateRaw);
+        if (normalized) {
+          transMapping = await prisma.transportationCost.findUnique({ where: { state: normalized } });
+          if (!transMapping) {
+            transMapping = await prisma.transportationCost.findUnique({ where: { state: `FOR (Site In ${normalized})` } });
+          }
+        }
+      }
+
       if (transMapping) {
         const isFullLoad = productCost >= 5000000;
         const pctStr = (isFullLoad ? transMapping.fullLoad : transMapping.partLoad).replace(/%/g, "").trim();

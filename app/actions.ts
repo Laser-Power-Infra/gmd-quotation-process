@@ -739,6 +739,18 @@ export async function updateEnquiryFieldAction(
   value: any
 ) {
   try {
+    // APM is gated to admin/developer only
+    if (field === "apm") {
+      const { auth } = await import("@/auth")
+      const session = await auth()
+      const role = (session?.user as any)?.role
+      if (!session || !["admin", "developer"].includes(role)) {
+        return { success: false, error: "Unauthorized: admin or developer only can set APM" }
+      }
+      if (value !== null && value !== "" && value !== "Yes" && value !== "No") {
+        return { success: false, error: "APM must be Yes, No, or blank." }
+      }
+    }
     const prev = await prisma.enquiry.findUnique({
       where: { id: enquiryId },
       select: { [field]: true },
@@ -2118,9 +2130,15 @@ export async function clearQuotedRatesAction(itemIds: string[]) {
 }
 
 // Bulk update apm for many enquiries (all pages, filtered scope). Allowed values: "Yes", "No", null/"" for clear.
-// Now enquiry-based after migration add_apm_in_enquiry.
+// Now enquiry-based after migration add_apm_in_enquiry. Gated to admin/developer.
 export async function bulkUpdateApmAction(enquiryIds: string[], apm: string | null) {
   try {
+    const { auth } = await import("@/auth")
+    const session = await auth()
+    const role = (session?.user as any)?.role
+    if (!session || !["admin", "developer"].includes(role)) {
+      return { success: false, error: "Unauthorized: admin or developer only can set APM" }
+    }
     if (!enquiryIds || enquiryIds.length === 0) {
       return { success: false, error: "No enquiries selected." };
     }
