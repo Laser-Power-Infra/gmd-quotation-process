@@ -887,30 +887,28 @@ castingRateInputs,
 
     const savedValue = value || null;
 
-    toast.promise(
-      dispatch(
+    const toastId = toast.loading(`Updating ${header}...`);
+    try {
+      await dispatch(
         updateGMDUpdateField({ id, field, value: savedValue }),
-      ).unwrap(),
-      {
-        loading: `Updating ${header}...`,
-        success: `${header} updated`,
-        error: (err) => err || `Failed to update ${header}`,
-      },
-    );
+      ).unwrap();
+      toast.success(`${header} updated`, { id: toastId });
+    } catch (err: any) {
+      toast.error(err?.message || err || `Failed to update ${header}`, { id: toastId });
+    }
   };
 
   const handleUsdCostUpdate = async (rowIndex: number, value: string) => {
     const entry = paginatedWithIds[rowIndex];
     const id = entry?.id;
     if (!id) return;
-    toast.promise(
-      dispatch(updateGMDUsdCost({ id, usdCost: value })).unwrap(),
-      {
-        loading: "Converting USD cost...",
-        success: "USD cost converted to INR",
-        error: (err) => err || "Failed to update USD cost",
-      },
-    );
+    const toastId = toast.loading("Converting USD cost...");
+    try {
+      await dispatch(updateGMDUsdCost({ id, usdCost: value })).unwrap();
+      toast.success("USD cost converted to INR", { id: toastId });
+    } catch (err: any) {
+      toast.error(err?.message || err || "Failed to update USD cost", { id: toastId });
+    }
   };
 
   if (visibleCols.length === 0) {

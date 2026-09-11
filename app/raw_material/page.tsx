@@ -156,12 +156,14 @@ export default function Home() {
   );
 
   const handleSelectBomId = useCallback(
-    (id: string, bomId: string | null) => {
-      toast.promise(dispatch(selectGMDUpdateBomId({ id, bomId })).unwrap(), {
-        loading: "Saving BOM ID...",
-        success: "BOM ID saved",
-        error: (err) => err || "Failed to save BOM ID",
-      });
+    async (id: string, bomId: string | null) => {
+      const toastId = toast.loading("Saving BOM ID...");
+      try {
+        await dispatch(selectGMDUpdateBomId({ id, bomId })).unwrap();
+        toast.success("BOM ID saved", { id: toastId });
+      } catch (err: any) {
+        toast.error(err?.message || err || "Failed to save BOM ID", { id: toastId });
+      }
     },
     [dispatch],
   );

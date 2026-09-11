@@ -81,14 +81,13 @@ export default function SupplyHistoryPage() {
       const field = SUPPLY_HEADER_TO_DB_FIELD[header];
       if (!field) return;
 
-      toast.promise(
-        updateSupplyHistoryFieldAction(id, field, value || null),
-        {
-          loading: `Updating ${header}...`,
-          success: `${header} updated`,
-          error: (err) => err || `Failed to update ${header}`,
-        },
-      );
+      const toastId = toast.loading(`Updating ${header}...`);
+      try {
+        await updateSupplyHistoryFieldAction(id, field, value || null);
+        toast.success(`${header} updated`, { id: toastId });
+      } catch (err: any) {
+        toast.error(err?.message || err || `Failed to update ${header}`, { id: toastId });
+      }
     },
     [data?.headers],
   );
