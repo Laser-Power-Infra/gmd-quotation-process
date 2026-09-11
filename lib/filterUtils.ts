@@ -75,16 +75,21 @@ export function enquiryPassesFilters(
     if (!match) return false;
   }
 
-  if (globalSearch && globalSearch.trim()) {
-    const q = globalSearch.trim().toLowerCase();
-    const matches =
-      enquiry.docketNumber.toLowerCase().includes(q) ||
-      enquiry.partyName.toLowerCase().includes(q) ||
-      enquiry.items.some((it) => it.itemName.toLowerCase().includes(q));
-    if (!matches) return false;
-  }
+  if (!matchesGlobalSearch(enquiry, globalSearch)) return false;
 
   return true;
+}
+
+// Mirrors the case-insensitive OR of docketNumber / partyName / any item name that the
+// dashboard search used to run as a Prisma `where` clause. An empty query matches everything.
+export function matchesGlobalSearch(enquiry: EnquiryData, globalSearch?: string): boolean {
+  const q = (globalSearch || "").trim().toLowerCase();
+  if (!q) return true;
+  return (
+    enquiry.docketNumber.toLowerCase().includes(q) ||
+    enquiry.partyName.toLowerCase().includes(q) ||
+    enquiry.items.some((it) => it.itemName.toLowerCase().includes(q))
+  );
 }
 
 export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState): boolean {

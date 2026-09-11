@@ -23,7 +23,6 @@
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@reduxjs/toolkit": "^2.12.0",
-    "@tanstack/react-table": "^8.21.3",
     "@types/pg": "^8.20.0",
     "ai": "^7.0.22",
     "bcrypt": "^6.0.0",

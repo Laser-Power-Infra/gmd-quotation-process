@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { MoreVertical, Eye, Edit2, Trash2, FileText } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -63,6 +63,21 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
+interface ActionsDropdownEnquiry {
+  id: string;
+  docketNumber: string;
+  partyName: string;
+  enquiryDate: Date;
+  enquiryType: string | null;
+  state: string | null;
+  paymentTerms: string | null;
+  inspection: string | null;
+  pbg: string | null;
+  utility: string | null;
+  orderStatus: string | null;
+  attachments: Attachment[];
+}
+
 interface ActionsDropdownProps {
   item: {
     id: string;
@@ -85,27 +100,19 @@ interface ActionsDropdownProps {
     discount?: any | null;
     vaPercent?: any | null;
     quotedRate?: string | null;
-    enquiry: {
-      id: string;
-      docketNumber: string;
-      partyName: string;
-      enquiryDate: Date;
-      enquiryType: string | null;
-      state: string | null;
-      paymentTerms: string | null;
-      inspection: string | null;
-      pbg: string | null;
-      utility: string | null;
-      orderStatus: string | null;
-      attachments: Attachment[];
-    };
   };
+  enquiry: ActionsDropdownEnquiry;
   dropdownOptions: DropdownOptions;
 }
 
-export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdownProps) {
+// `item` and `enquiry` arrive as separate store references so React.memo can compare them.
+// The merged shape the rest of this file reads is rebuilt here instead of at the call site.
+function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDropdownProps) {
   const dispatch = useAppDispatch();
-  const dialogs = useAppSelector((s) => s.dialogs);
+  const item = useMemo(() => ({ ...itemProp, enquiry }), [itemProp, enquiry]);
+  const isViewOpen = useAppSelector((s) => s.dialogs.viewItemId === itemProp.id);
+  const isEditOpen = useAppSelector((s) => s.dialogs.editItemId === itemProp.id);
+  const isDeleteOpen = useAppSelector((s) => s.dialogs.deleteItemId === itemProp.id);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   // Edit form state
@@ -413,7 +420,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
       </DropdownMenu>
 
       {/* VIEW DETAILS DIALOG */}
-      <Dialog open={dialogs.viewItemId === item.id} onOpenChange={(v) => { if (!v) dispatch(closeViewDialog()); }}>
+      <Dialog open={isViewOpen} onOpenChange={(v) => { if (!v) dispatch(closeViewDialog()); }}>
         <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-foreground">
@@ -706,7 +713,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
       </Dialog>
 
       {/* EDIT ENQUIRY DIALOG */}
-      <Dialog open={dialogs.editItemId === item.id} onOpenChange={(v) => { if (!v) dispatch(closeEditDialog()); }}>
+      <Dialog open={isEditOpen} onOpenChange={(v) => { if (!v) dispatch(closeEditDialog()); }}>
         <DialogContent className="sm:max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-foreground">
@@ -1193,7 +1200,7 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
       </Dialog>
 
       {/* DELETE CONFIRM DIALOG */}
-      <Dialog open={dialogs.deleteItemId === item.id} onOpenChange={(v) => { if (!v) dispatch(closeDeleteDialog()); }}>
+      <Dialog open={isDeleteOpen} onOpenChange={(v) => { if (!v) dispatch(closeDeleteDialog()); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-lg font-bold text-foreground">
@@ -1227,3 +1234,5 @@ export default function ActionsDropdown({ item, dropdownOptions }: ActionsDropdo
     </>
   );
 }
+
+export default React.memo(ActionsDropdown);

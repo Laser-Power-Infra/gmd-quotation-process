@@ -37,12 +37,12 @@ export default function MultiSelectFilter({
   const [search, setSearch] = useState("");
 
   const visibleOptions = useMemo(() => {
-    return options
-      .filter(
-        (opt) =>
-          cascadedOptions.includes(opt) || selected.includes(opt)
-      )
-      .filter((opt) => opt.toLowerCase().includes(search.toLowerCase()));
+    const cascadedSet = new Set(cascadedOptions);
+    const selectedSet = new Set(selected);
+    const q = search.toLowerCase();
+    return options.filter(
+      (opt) => (cascadedSet.has(opt) || selectedSet.has(opt)) && opt.toLowerCase().includes(q)
+    );
   }, [options, cascadedOptions, selected, search]);
 
   const toggle = (opt: string) => {

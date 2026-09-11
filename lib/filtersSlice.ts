@@ -2,6 +2,7 @@ import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { FiltersState } from "./types";
 
 const initialState: FiltersState = {
+  globalSearch: "",
   enquiryDateFrom: "",
   enquiryDateTo: "",
   docketNumber: "",
@@ -61,8 +62,10 @@ const filtersSlice = createSlice({
       const { field, value } = action.payload;
       (state as unknown as Record<string, unknown>)[field] = value;
     },
-    resetFilters() {
-      return initialState;
+    // "Reset all filters" clears the column filters only. The header search box lived
+    // outside this slice before and was never cleared by the reset, so keep it.
+    resetFilters(state) {
+      return { ...initialState, globalSearch: state.globalSearch };
     },
   },
 });
