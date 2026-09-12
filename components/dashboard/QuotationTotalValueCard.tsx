@@ -1,10 +1,13 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { IndianRupee } from "lucide-react";
+import { IndianRupee, Percent } from "lucide-react";
 
 interface QuotationTotalValueCardProps {
   formattedSum: string;
+  formattedExclSum: string;
+  formattedTotalCost: string;
+  formattedTotalVa: string;
   filteredEnquiriesCount: number;
   analyticsItemsCount: number;
   hasActiveAnalyticsFilters: boolean;
@@ -14,43 +17,100 @@ interface QuotationTotalValueCardProps {
 
 export default function QuotationTotalValueCard({
   formattedSum,
+  formattedExclSum,
+  formattedTotalCost,
+  formattedTotalVa,
   filteredEnquiriesCount,
   analyticsItemsCount,
   hasActiveAnalyticsFilters,
   activeFilterCount,
   className,
 }: QuotationTotalValueCardProps) {
+  const cardClassName =
+    "shadow-sm bg-linear-to-br from-slate-50 to-white border-slate-200 shrink-0 w-full sm:w-72 py-1";
+
   return (
-    <Card size="sm" className={`shadow-sm bg-linear-to-br from-slate-50 to-white border-slate-200 shrink-0 w-full py-1 ${className ?? ""}`}>
-      <CardHeader className="py-1 pb-0.5">
-        <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
-          <IndianRupee className="h-3 w-3 text-emerald-600" />
-          Total Value (incl. GST)
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-row items-center justify-between gap-2 py-0.5">
-        <div className="flex items-center gap-3">
-          <span className="text-[15px] font-bold tracking-tight text-foreground">₹ {formattedSum}</span>
-          <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+    <div
+      className={`flex flex-wrap items-center gap-2 ${className ?? ""}`}
+    >
+      {/* 1. Total Value (incl. GST) */}
+      <Card size="sm" className={cardClassName}>
+        <CardHeader className="py-1 pb-0.5">
+          <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
+            <IndianRupee className="h-3 w-3 text-emerald-600" />
+            Total Value (incl. GST)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-row items-center gap-1.5 py-0.5">
+          <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
+            ₹ {formattedSum}
+          </span>
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-medium text-muted-foreground whitespace-nowrap">
             {filteredEnquiriesCount} dockets
           </span>
-          <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 text-[9.5px] font-medium text-muted-foreground whitespace-nowrap">
             {analyticsItemsCount} items
           </span>
           {hasActiveAnalyticsFilters && (
-            <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[10px] font-medium">
+            <span className="inline-flex items-center rounded-full bg-blue-50 text-blue-700 px-1.5 py-0.5 text-[9.5px] font-medium whitespace-nowrap">
               {activeFilterCount} filters
             </span>
           )}
-        </div>
-        <div className="hidden sm:block text-[10px] leading-none">
-          {!hasActiveAnalyticsFilters ? (
-            <span className="text-muted-foreground italic">All dockets — apply filters to narrow.</span>
-          ) : analyticsItemsCount === 0 ? (
-            <span className="text-amber-600">No items match.</span>
-          ) : null}
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      {/* 2. Total Value (excl. GST) */}
+      <Card size="sm" className={cardClassName}>
+        <CardHeader className="py-1 pb-0.5">
+          <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
+            <IndianRupee className="h-3 w-3 text-slate-500" />
+            Total Value (excl. GST)
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-row items-center gap-2 py-0.5">
+          <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
+            ₹ {formattedExclSum}
+          </span>
+        </CardContent>
+      </Card>
+
+      {/* 3. Total Cost */}
+      <Card size="sm" className={cardClassName}>
+        <CardHeader className="py-1 pb-0.5">
+          <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
+            <IndianRupee className="h-3 w-3 text-amber-600" />
+            Total Cost
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-row items-center gap-2 py-0.5">
+          <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
+            ₹ {formattedTotalCost}
+          </span>
+        </CardContent>
+      </Card>
+
+      {/* 4. Total VA% */}
+      <Card size="sm" className={cardClassName}>
+        <CardHeader className="py-1 pb-0.5">
+          <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
+            <Percent className="h-3 w-3 text-indigo-600" />
+            Total VA%
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-row items-center gap-2 py-0.5">
+          <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
+            {formattedTotalVa}
+          </span>
+        </CardContent>
+      </Card>
+
+      {/* <div className="hidden xl:flex items-center text-[10px] text-muted-foreground italic ml-auto pr-2">
+        {!hasActiveAnalyticsFilters ? (
+          <span>All dockets — apply filters to narrow.</span>
+        ) : analyticsItemsCount === 0 ? (
+          <span className="text-amber-600">No items match.</span>
+        ) : null}
+      </div> */}
+    </div>
   );
 }

@@ -112,6 +112,65 @@ export default function DashboardContainer({
     }).format(totalValueGstSum);
   }, [totalValueGstSum]);
 
+  const totalValueExclGstSum = useMemo(() => {
+    let sum = 0;
+    for (const item of analyticsItems) {
+      const raw = item.itemWiseTotalValue;
+      if (raw == null || raw === "" || raw === "0") continue;
+      const cleaned = raw.replace(/,/g, "").trim();
+      const n = parseFloat(cleaned);
+      if (!isNaN(n)) sum += n;
+    }
+    return sum;
+  }, [analyticsItems]);
+
+  const formattedExclSum = useMemo(() => {
+    return new Intl.NumberFormat("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(totalValueExclGstSum);
+  }, [totalValueExclGstSum]);
+
+  const totalCostSum = useMemo(() => {
+    let sum = 0;
+    for (const item of analyticsItems) {
+      const rawCost = item.cost;
+      if (rawCost == null || rawCost === 0) continue;
+      const cleaned =
+        typeof rawCost === "number"
+          ? rawCost
+          : parseFloat(String(rawCost).replace(/,/g, "").trim());
+      if (isNaN(cleaned) || cleaned <= 0) continue;
+
+      const rawQty = item.quantity;
+      const qty =
+        typeof rawQty === "number"
+          ? rawQty
+          : parseFloat(String(rawQty).replace(/,/g, "").trim());
+      const validQty = !isNaN(qty) && qty > 0 ? qty : 1;
+
+      sum += cleaned * validQty;
+    }
+    return sum;
+  }, [analyticsItems]);
+
+  const formattedTotalCost = useMemo(() => {
+    return new Intl.NumberFormat("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(totalCostSum);
+  }, [totalCostSum]);
+
+  const totalVaPercent = useMemo(() => {
+    if (totalCostSum <= 0) return 0;
+    return ((totalValueExclGstSum - totalCostSum) / totalCostSum) * 100;
+  }, [totalValueExclGstSum, totalCostSum]);
+
+  const formattedTotalVa = useMemo(() => {
+    if (totalCostSum <= 0) return "0.00%";
+    return `${totalVaPercent.toFixed(2)}%`;
+  }, [totalCostSum, totalVaPercent]);
+
   useEffect(() => {
     const allItems = enquiries.flatMap((e) => e.items as EnquiryItemData[]);
     dispatch(hydrateFromServer({ enquiries, items: allItems }));
@@ -155,6 +214,9 @@ export default function DashboardContainer({
         <div className="shrink-0">
           <QuotationTotalValueCard
             formattedSum={formattedSum}
+            formattedExclSum={formattedExclSum}
+            formattedTotalCost={formattedTotalCost}
+            formattedTotalVa={formattedTotalVa}
             filteredEnquiriesCount={filteredEnquiries.length}
             analyticsItemsCount={analyticsItems.length}
             hasActiveAnalyticsFilters={hasActiveAnalyticsFilters}
