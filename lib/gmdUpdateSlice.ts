@@ -87,6 +87,9 @@ const gmdUpdateSlice = createSlice({
     hydrateGMDUpdate(state, action) {
       adapter.setAll(state, action.payload);
     },
+    upsertGMDUpdateItems(state, action) {
+      adapter.upsertMany(state, action.payload);
+    },
   },
   extraReducers: (builder) => {
     builder.addCase(updateGMDUpdateField.fulfilled, (state, action) => {
@@ -107,7 +110,8 @@ const gmdUpdateSlice = createSlice({
   },
 });
 
-export const { hydrateGMDUpdate } = gmdUpdateSlice.actions;
+export const { hydrateGMDUpdate, upsertGMDUpdateItems } =
+  gmdUpdateSlice.actions;
 export const {
   selectAll: selectAllGMDUpdateRows,
   selectById: selectGMDUpdateRowById,

@@ -299,7 +299,7 @@ model ContractReview {
   balToProdOrdEntVal     String?
   balBillAgMcVal         String?
   balBillAgContVal       String?
-balDiVal               String?
+ balDiVal               String?
   diVal                  String?
   icQty                  String?
   bomId                  String?

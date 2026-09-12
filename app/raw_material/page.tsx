@@ -8,13 +8,21 @@ import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdat
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import {
   hydrateGMDUpdate,
+  upsertGMDUpdateItems,
   selectAllGMDUpdateRows,
   selectGMDUpdateBomId,
   type GMDUpdateRow,
 } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
 import { FIXED_DROPDOWN_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
-import { getUsdInrRateAction, getGMDCastingRatesAction, saveGMDCastingRateAction, setGMDUpdateTransferredAction, getTradingValveOptionsAction } from "@/app/actions";
+import {
+  getUsdInrRateAction,
+  getGMDCastingRatesAction,
+  saveGMDCastingRateAction,
+  setGMDUpdateTransferredAction,
+  addTransferredBlankItemsAction,
+  getTradingValveOptionsAction,
+} from "@/app/actions";
 import { toast } from "sonner";
 import {
   ResizableHandle,
@@ -89,10 +97,7 @@ function applyCastingCost(
 ): { items: GMDUpdateRow[]; lockedIds: Set<string> } {
   const lockedIds = new Set<string>();
   const out = items.map((item) => {
-    const key = getCastingKey(
-      item.l8ItemCategory ?? "",
-      item.l5Material ?? "",
-    );
+    const key = getCastingKey(item.l8ItemCategory ?? "", item.l5Material ?? "");
     if (!key) return item;
     const rateStr = (rates[key] ?? "").trim();
     if (!rateStr) return item;
@@ -108,33 +113,66 @@ function applyCastingCost(
 function rowToGMDUpdateItem(id: string, row: unknown[]): GMDUpdateRow {
   return {
     id,
-    erpItemCode:    String(row[0] ?? ""),
-    itemNameAuto:   String(row[1] ?? ""),
-    l1:             String(row[2] ?? ""),
-    l2ValveType:    String(row[3] ?? ""),
-    l3Dia:          String(row[4] ?? ""),
-    l7Dimension:    String(row[5] ?? ""),
-    l4Component:    String(row[6] ?? ""),
-    l5Material:     String(row[7] ?? ""),
-    l6Std:          String(row[8] ?? ""),
+    erpItemCode: String(row[0] ?? ""),
+    itemNameAuto: String(row[1] ?? ""),
+    l1: String(row[2] ?? ""),
+    l2ValveType: String(row[3] ?? ""),
+    l3Dia: String(row[4] ?? ""),
+    l7Dimension: String(row[5] ?? ""),
+    l4Component: String(row[6] ?? ""),
+    l5Material: String(row[7] ?? ""),
+    l6Std: String(row[8] ?? ""),
     l8ItemCategory: String(row[9] ?? ""),
-    um:             String(row[10] ?? ""),
+    um: String(row[10] ?? ""),
     availableStock: String(row[11] ?? ""),
-    conv1:          String(row[12] ?? ""),
-    pcsWgt:         String(row[13] ?? ""),
-    aum:            String(row[14] ?? ""),
-    cost:           String(row[15] ?? ""),
-    usdRateOption:  String(row[16] ?? ""),
-    hsnCode:        String(row[17] ?? ""),
+    conv1: String(row[12] ?? ""),
+    pcsWgt: String(row[13] ?? ""),
+    aum: String(row[14] ?? ""),
+    cost: String(row[15] ?? ""),
+    usdRateOption: String(row[16] ?? ""),
+    hsnCode: String(row[17] ?? ""),
     hsnCodeValidation: String(row[18] ?? ""),
-    conv2:          String(row[19] ?? ""),
-    majorMarking:   String(row[20] ?? ""),
-    newItemStatus:  String(row[21] ?? ""),
-    currentStatus:  String(row[22] ?? ""),
-    rmType:         String(row[23] ?? ""),
+    conv2: String(row[19] ?? ""),
+    majorMarking: String(row[20] ?? ""),
+    newItemStatus: String(row[21] ?? ""),
+    currentStatus: String(row[22] ?? ""),
+    rmType: String(row[23] ?? ""),
     indianImported: String(row[24] ?? ""),
-    bomId:          String(row[25] ?? ""),
+    bomId: String(row[25] ?? ""),
     vendorReference: String(row[26] ?? ""),
+  };
+}
+
+function blankGMDUpdateRow(id: string, erpItemCode: string): GMDUpdateRow {
+  return {
+    id,
+    erpItemCode,
+    itemNameAuto: null,
+    l1: null,
+    l2ValveType: null,
+    l3Dia: null,
+    l7Dimension: null,
+    l4Component: null,
+    l5Material: null,
+    l6Std: null,
+    l8ItemCategory: null,
+    um: null,
+    availableStock: null,
+    conv1: null,
+    pcsWgt: null,
+    aum: null,
+    cost: null,
+    usdRateOption: null,
+    hsnCode: null,
+    hsnCodeValidation: null,
+    conv2: null,
+    majorMarking: null,
+    newItemStatus: null,
+    currentStatus: null,
+    rmType: null,
+    indianImported: null,
+    bomId: null,
+    vendorReference: null,
   };
 }
 
@@ -146,7 +184,9 @@ export default function Home() {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [categoryOptions, setCategoryOptions] = useState<Record<string, string[]>>({});
+  const [categoryOptions, setCategoryOptions] = useState<
+    Record<string, string[]>
+  >({});
   const [usdInrRate, setUsdInrRate] = useState<number | null>(null);
   const [bomIdOptionsById, setBomIdOptionsById] = useState<
     Record<string, string[]>
@@ -211,7 +251,9 @@ export default function Home() {
         await dispatch(selectGMDUpdateBomId({ id, bomId })).unwrap();
         toast.success("BOM ID saved", { id: toastId });
       } catch (err: any) {
-        toast.error(err?.message || err || "Failed to save BOM ID", { id: toastId });
+        toast.error(err?.message || err || "Failed to save BOM ID", {
+          id: toastId,
+        });
       }
     },
     [dispatch],
@@ -242,7 +284,10 @@ export default function Home() {
   const enhancedCategoryOptions = useMemo(
     () => ({
       ...categoryOptions,
-      "INDIAN/IMPORTED": categoryOptions["INDIAN/IMPORTED"] || ["Indian", "Imported"],
+      "INDIAN/IMPORTED": categoryOptions["INDIAN/IMPORTED"] || [
+        "Indian",
+        "Imported",
+      ],
     }),
     [categoryOptions],
   );
@@ -315,7 +360,9 @@ export default function Home() {
     setSyncing(true);
     setError(null);
     try {
-      const res = await fetch("/raw_material/api/gmd-update/sync", { method: "POST" });
+      const res = await fetch("/raw_material/api/gmd-update/sync", {
+        method: "POST",
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Sync failed (${res.status})`);
@@ -364,7 +411,9 @@ export default function Home() {
     () =>
       allItems.filter(
         (item) =>
-          (!item.newItemStatus || item.newItemStatus === "-" || item.newItemStatus === "Updated") &&
+          (!item.newItemStatus ||
+            item.newItemStatus === "-" ||
+            item.newItemStatus === "Updated") &&
           !transferredSet.has(item.id),
       ),
     [allItems, transferredSet],
@@ -447,28 +496,28 @@ export default function Home() {
       const next = new Set(transferredIds);
       const matchedIds: string[] = [];
       let matched = 0;
-      const unmatched: string[] = [];
+      const newCodes: string[] = [];
       for (const code of codes) {
         const key = code.trim().toLowerCase();
         const item = allItems.find(
-          (it) => String(it.erpItemCode ?? "").trim().toLowerCase() === key,
+          (it) =>
+            String(it.erpItemCode ?? "")
+              .trim()
+              .toLowerCase() === key,
         );
-        if (!item) {
-          unmatched.push(code);
-          continue;
-        }
-        if (next.has(item.id)) continue;
+        if (item && next.has(item.id)) continue;
         const isProcessed =
+          item &&
           item.newItemStatus &&
           item.newItemStatus !== "-" &&
           item.newItemStatus !== "Updated";
-        if (!isProcessed) {
-          unmatched.push(code);
-          continue;
+        if (isProcessed) {
+          next.add(item.id);
+          matchedIds.push(item.id);
+          matched++;
+        } else {
+          newCodes.push(code);
         }
-        next.add(item.id);
-        matchedIds.push(item.id);
-        matched++;
       }
       if (matched > 0) {
         const res = await setGMDUpdateTransferredAction(matchedIds, true);
@@ -481,17 +530,45 @@ export default function Home() {
           toast.error(res.error || "Failed to move items");
         }
       }
-      if (unmatched.length) {
-        toast.error(`Not found in Filtered Items: ${unmatched.join(", ")}`);
+      if (newCodes.length) {
+        const res = await addTransferredBlankItemsAction(newCodes);
+        if (res.success && res.data) {
+          const { created, invalid } = res.data;
+          if (created.length) {
+            dispatch(
+              upsertGMDUpdateItems(
+                created.map((c) => blankGMDUpdateRow(c.id, c.code)),
+              ),
+            );
+            setTransferredIds((prev) => [
+              ...prev,
+              ...created.map((c) => c.id),
+            ]);
+            toast.success(
+              `${created.length} code${created.length === 1 ? "" : "s"} added as blank row${created.length === 1 ? "" : "s"}`,
+            );
+          }
+          if (invalid.length) {
+            toast.error(
+              `Invalid ERP Format${invalid.length === 1 ? "" : "s"} (3 caps letters + 6 digits): ${invalid.join(", ")}`,
+            );
+          }
+        } else {
+          toast.error(res.error || "Failed to add items");
+        }
       }
     },
-    [transferredIds, allItems],
+    [transferredIds, allItems, dispatch],
   );
 
   const [firstFilteredRows, setFirstFilteredRows] = useState<unknown[][]>([]);
   // Table filter lift (controlled like contract_review) for true cascading
-  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
-  const [multiFilters, setMultiFilters] = useState<Record<string, string[]>>({});
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
+    {},
+  );
+  const [multiFilters, setMultiFilters] = useState<Record<string, string[]>>(
+    {},
+  );
   const [globalSearch, setGlobalSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -508,7 +585,15 @@ export default function Home() {
       currentPage,
       pageSize,
     }),
-    [columnFilters, multiFilters, dateFrom, dateTo, globalSearch, currentPage, pageSize],
+    [
+      columnFilters,
+      multiFilters,
+      dateFrom,
+      dateTo,
+      globalSearch,
+      currentPage,
+      pageSize,
+    ],
   );
 
   const filterActions = useMemo(
@@ -547,7 +632,9 @@ export default function Home() {
   ): boolean {
     if (gSearch.trim()) {
       const q = gSearch.toLowerCase();
-      const hay = hdrs.map((_, i) => String(row[i] ?? "").toLowerCase()).join(" ");
+      const hay = hdrs
+        .map((_, i) => String(row[i] ?? "").toLowerCase())
+        .join(" ");
       if (!hay.includes(q)) return false;
     }
     for (const [colName, filterVal] of Object.entries(colFilters)) {
@@ -573,8 +660,12 @@ export default function Home() {
   }
 
   // Dual cascading sidebar filters (Indian/Imported + Major/Minor)
-  const [indianImported, setIndianImported] = useState<"all" | "indian" | "imported">("all");
-  const [majorFilter, setMajorFilter] = useState<"all" | "major" | "minor">("all");
+  const [indianImported, setIndianImported] = useState<
+    "all" | "indian" | "imported"
+  >("all");
+  const [majorFilter, setMajorFilter] = useState<"all" | "major" | "minor">(
+    "all",
+  );
 
   function matchesSidebarNew(
     row: unknown[],
@@ -584,11 +675,15 @@ export default function Home() {
     exclude?: "indian" | "major",
   ): boolean {
     if (exclude !== "indian" && indianImp !== "all") {
-      const imp = String(row[hdrs.indexOf("INDIAN/IMPORTED")] ?? "").trim().toLowerCase();
+      const imp = String(row[hdrs.indexOf("INDIAN/IMPORTED")] ?? "")
+        .trim()
+        .toLowerCase();
       if (imp !== indianImp) return false;
     }
     if (exclude !== "major" && major !== "all") {
-      const m = String(row[hdrs.indexOf("MAJOR MARKING")] ?? "").trim().toLowerCase();
+      const m = String(row[hdrs.indexOf("MAJOR MARKING")] ?? "")
+        .trim()
+        .toLowerCase();
       const isMajor = m === "true";
       const isMinor = m === "false";
       if (major === "major" && !isMajor) return false;
@@ -599,9 +694,25 @@ export default function Home() {
 
   const scopedNewItems = useMemo(() => {
     return newItems.filter((item) => {
-      if (indianImported !== "all" && (item.indianImported ?? "").trim().toLowerCase() !== indianImported) return false;
-      if (majorFilter === "major" && String(item.majorMarking ?? "").trim().toLowerCase() !== "true") return false;
-      if (majorFilter === "minor" && String(item.majorMarking ?? "").trim().toLowerCase() !== "false") return false;
+      if (
+        indianImported !== "all" &&
+        (item.indianImported ?? "").trim().toLowerCase() !== indianImported
+      )
+        return false;
+      if (
+        majorFilter === "major" &&
+        String(item.majorMarking ?? "")
+          .trim()
+          .toLowerCase() !== "true"
+      )
+        return false;
+      if (
+        majorFilter === "minor" &&
+        String(item.majorMarking ?? "")
+          .trim()
+          .toLowerCase() !== "false"
+      )
+        return false;
       return true;
     });
   }, [newItems, indianImported, majorFilter]);
@@ -629,7 +740,13 @@ export default function Home() {
     const allRows = newItems.map(dbItemToRow);
     if (!headers.length) return allRows;
     return allRows.filter((row) =>
-      matchesTableFilters(row, headers, columnFilters, multiFilters, globalSearch),
+      matchesTableFilters(
+        row,
+        headers,
+        columnFilters,
+        multiFilters,
+        globalSearch,
+      ),
     );
   }, [newItems, headers, columnFilters, multiFilters, globalSearch]);
 
@@ -654,7 +771,11 @@ export default function Home() {
       const cost = parseFloat(costStr.replace(/,/g, ""));
       if (isNaN(stock) || isNaN(cost)) continue;
       const value = stock * cost;
-      const imp = String(row[headers.indexOf("INDIAN/IMPORTED")] ?? row[24] ?? "").trim().toLowerCase();
+      const imp = String(
+        row[headers.indexOf("INDIAN/IMPORTED")] ?? row[24] ?? "",
+      )
+        .trim()
+        .toLowerCase();
       if (imp === "indian") {
         stats.indian.count++;
         stats.indian.sum += value;
@@ -677,7 +798,9 @@ export default function Home() {
       const cost = parseFloat(costStr.replace(/,/g, ""));
       if (isNaN(stock) || isNaN(cost)) continue;
       const value = stock * cost;
-      const m = String(row[headers.indexOf("MAJOR MARKING")] ?? row[20] ?? "").trim().toLowerCase();
+      const m = String(row[headers.indexOf("MAJOR MARKING")] ?? row[20] ?? "")
+        .trim()
+        .toLowerCase();
       const isMajor = m === "true";
       const isMinor = m === "false";
       if (isMajor) {
@@ -700,7 +823,12 @@ export default function Home() {
     return (
       <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
-          <GMDUpdateHeader totalRows={0} syncedAt={null} onSync={handleSync} syncing={false} />
+          <GMDUpdateHeader
+            totalRows={0}
+            syncedAt={null}
+            onSync={handleSync}
+            syncing={false}
+          />
           <GMDUpdateSkeleton />
         </div>
       </main>
@@ -711,7 +839,12 @@ export default function Home() {
     return (
       <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
-          <GMDUpdateHeader totalRows={0} syncedAt={null} onSync={handleSync} syncing={false} />
+          <GMDUpdateHeader
+            totalRows={0}
+            syncedAt={null}
+            onSync={handleSync}
+            syncing={false}
+          />
           <ErrorState message={error} onRetry={fetchData} />
         </div>
       </main>
@@ -720,12 +853,13 @@ export default function Home() {
 
   return (
     <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
+      <div className="flex-1 overflow-y-auto min-h-0 p-4 h-[calc(100vh-64px)]">
       <ResizablePanelGroup
         orientation="horizontal"
         id="raw-material-horizontal"
         defaultLayout={horizontalLayout}
         onLayoutChanged={onHorizontalLayoutChanged}
-        className="flex-1 min-h-0 p-4"
+        className="h-full min-h-[100vh]"
       >
         <ResizablePanel
           id="stock-value"
@@ -734,110 +868,116 @@ export default function Home() {
           maxSize={420}
         >
           <aside className="h-full w-full bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-3 overflow-y-auto">
-          <span className="text-xs font-bold uppercase tracking-wider text-white">
-            STOCK VALUE
-          </span>
+            <span className="text-xs font-bold uppercase tracking-wider text-white">
+              STOCK VALUE
+            </span>
 
-          <button
-            type="button"
-            onClick={() =>
-              setIndianImported((s) => (s === "indian" ? "all" : "indian"))
-            }
-            className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
-              indianImported === "indian"
-                ? "border-[#38ef7d] bg-white/10"
-                : "border-white/10 hover:border-white/25"
-            }`}
-          >
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-              Indian
-            </span>
-            <span className="block text-lg font-bold text-white mt-1">
-              {fmt(cardStats.indian.sum)}
-            </span>
-            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
-              {cardStats.indian.count} item
-              {cardStats.indian.count === 1 ? "" : "s"}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() =>
+                setIndianImported((s) => (s === "indian" ? "all" : "indian"))
+              }
+              className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
+                indianImported === "indian"
+                  ? "border-[#38ef7d] bg-white/10"
+                  : "border-white/10 hover:border-white/25"
+              }`}
+            >
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                Indian
+              </span>
+              <span className="block text-lg font-bold text-white mt-1">
+                {fmt(cardStats.indian.sum)}
+              </span>
+              <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+                {cardStats.indian.count} item
+                {cardStats.indian.count === 1 ? "" : "s"}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() =>
-              setIndianImported((s) => (s === "imported" ? "all" : "imported"))
-            }
-            className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
-              indianImported === "imported"
-                ? "border-[#38ef7d] bg-white/10"
-                : "border-white/10 hover:border-white/25"
-            }`}
-          >
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-              Imported
-            </span>
-            <span className="block text-lg font-bold text-white mt-1">
-              {fmt(cardStats.imported.sum)}
-            </span>
-            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
-              {cardStats.imported.count} item
-              {cardStats.imported.count === 1 ? "" : "s"}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() =>
+                setIndianImported((s) =>
+                  s === "imported" ? "all" : "imported",
+                )
+              }
+              className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
+                indianImported === "imported"
+                  ? "border-[#38ef7d] bg-white/10"
+                  : "border-white/10 hover:border-white/25"
+              }`}
+            >
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                Imported
+              </span>
+              <span className="block text-lg font-bold text-white mt-1">
+                {fmt(cardStats.imported.sum)}
+              </span>
+              <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+                {cardStats.imported.count} item
+                {cardStats.imported.count === 1 ? "" : "s"}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() =>
-              setMajorFilter((s) => (s === "major" ? "all" : "major"))
-            }
-            className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
-              majorFilter === "major"
-                ? "border-[#38ef7d] bg-white/10"
-                : "border-white/10 hover:border-white/25"
-            }`}
-          >
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-              Major
-            </span>
-            <span className="block text-lg font-bold text-white mt-1">
-              {fmt(cardStats.major.sum)}
-            </span>
-            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
-              {cardStats.major.count} item
-              {cardStats.major.count === 1 ? "" : "s"}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() =>
+                setMajorFilter((s) => (s === "major" ? "all" : "major"))
+              }
+              className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
+                majorFilter === "major"
+                  ? "border-[#38ef7d] bg-white/10"
+                  : "border-white/10 hover:border-white/25"
+              }`}
+            >
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                Major
+              </span>
+              <span className="block text-lg font-bold text-white mt-1">
+                {fmt(cardStats.major.sum)}
+              </span>
+              <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+                {cardStats.major.count} item
+                {cardStats.major.count === 1 ? "" : "s"}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() =>
-              setMajorFilter((s) => (s === "minor" ? "all" : "minor"))
-            }
-            className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
-              majorFilter === "minor"
-                ? "border-[#38ef7d] bg-white/10"
-                : "border-white/10 hover:border-white/25"
-            }`}
-          >
-            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-              Minor
-            </span>
-            <span className="block text-lg font-bold text-white mt-1">
-              {fmt(cardStats.minor.sum)}
-            </span>
-            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
-              {cardStats.minor.count} item
-              {cardStats.minor.count === 1 ? "" : "s"}
-            </span>
-          </button>
-        </aside>
+            <button
+              type="button"
+              onClick={() =>
+                setMajorFilter((s) => (s === "minor" ? "all" : "minor"))
+              }
+              className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
+                majorFilter === "minor"
+                  ? "border-[#38ef7d] bg-white/10"
+                  : "border-white/10 hover:border-white/25"
+              }`}
+            >
+              <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                Minor
+              </span>
+              <span className="block text-lg font-bold text-white mt-1">
+                {fmt(cardStats.minor.sum)}
+              </span>
+              <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+                {cardStats.minor.count} item
+                {cardStats.minor.count === 1 ? "" : "s"}
+              </span>
+            </button>
+          </aside>
         </ResizablePanel>
 
         <ResizableHandle withHandle className="mx-2 bg-[#e1e6eb]" />
 
         <ResizablePanel id="content" minSize="40%">
           <div className="flex h-full flex-col min-h-0 min-w-0">
-            <GMDUpdateHeader totalRows={totalRows} syncedAt={syncedAt} onSync={handleSync} syncing={syncing} />
-
+            <GMDUpdateHeader
+              totalRows={totalRows}
+              syncedAt={syncedAt}
+              onSync={handleSync}
+              syncing={syncing}
+            />
             <ResizablePanelGroup
               orientation="vertical"
               id="raw-material-vertical"
@@ -845,104 +985,122 @@ export default function Home() {
               onLayoutChanged={onVerticalLayoutChanged}
               className="flex-1 min-h-0 mt-4"
             >
-            <ResizablePanel id="new-items" defaultSize="40" minSize="10">
-            <GMDUpdateTable
-              headers={headers}
-              rows={scopedNewItemRows}
-              ids={scopedNewItemIds}
-              selectedIndex={selectedIndex}
-              onSelect={setSelectedIndex}
-              title={`New Items (Blank Status)`}
-              // hiddenFilters={["NEW ITEM STATUS"]}
-              categoryOptions={enhancedCategoryOptions}
-              editable
-              fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
-              editableColumns={["CONV", "AUM", "1 pcs wgt", "cost", "Available Stock","INDIAN/IMPORTED","USD cost","HSN CODE","HSN Code Validation", "MAJOR MARKING", "RM TYPE", "NEW ITEM STATUS"]}
-              uniqueKeyColumns={["ERP ITEM CODE"]}
-              onFilteredRowsChange={setFirstFilteredRows}
-              filterState={filterState}
-              filterActions={filterActions}
-              onReset={() => {
-                setIndianImported("all");
-                setMajorFilter("all");
-              }}
-              externalFiltersActive={indianImported !== "all" || majorFilter !== "all"}
-              castingRateInputs={castingRateInputs}
-              lockedCostIds={lockedCostIds}
-              bomIdOptionsById={bomIdOptionsById}
-              onSelectBomId={handleSelectBomId}
-              usdInrRate={usdInrRate}
-              onRefreshRate={refreshRate}
-              hiddenColumns={["BOM ID", "Vendor Reference"]}
-              fullHeight
-            />
-            </ResizablePanel>
+              <ResizablePanel id="new-items" defaultSize="50" minSize="12">
+                <GMDUpdateTable
+                  headers={headers}
+                  rows={scopedNewItemRows}
+                  ids={scopedNewItemIds}
+                  selectedIndex={selectedIndex}
+                  onSelect={setSelectedIndex}
+                  title={`New Items (Blank Status)`}
+                  // hiddenFilters={["NEW ITEM STATUS"]}
+                  categoryOptions={enhancedCategoryOptions}
+                  editable
+                  fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
+                  editableColumns={[
+                    "CONV",
+                    "AUM",
+                    "1 pcs wgt",
+                    "cost",
+                    "Available Stock",
+                    "INDIAN/IMPORTED",
+                    "USD cost",
+                    "HSN CODE",
+                    "HSN Code Validation",
+                    "MAJOR MARKING",
+                    "RM TYPE",
+                    "NEW ITEM STATUS",
+                  ]}
+                  uniqueKeyColumns={["ERP ITEM CODE"]}
+                  onFilteredRowsChange={setFirstFilteredRows}
+                  filterState={filterState}
+                  filterActions={filterActions}
+                  onReset={() => {
+                    setIndianImported("all");
+                    setMajorFilter("all");
+                  }}
+                  externalFiltersActive={
+                    indianImported !== "all" || majorFilter !== "all"
+                  }
+                  castingRateInputs={castingRateInputs}
+                  lockedCostIds={lockedCostIds}
+                  bomIdOptionsById={bomIdOptionsById}
+                  onSelectBomId={handleSelectBomId}
+                  usdInrRate={usdInrRate}
+                  onRefreshRate={refreshRate}
+                  hiddenColumns={["BOM ID", "Vendor Reference"]}
+                  fullHeight
+                />
+                </ResizablePanel>
 
-            <ResizableHandle withHandle className="my-2 bg-[#e1e6eb]" />
+                <ResizableHandle withHandle className="my-2 bg-[#e1e6eb]" />
 
-            <ResizablePanel id="filtered-items" defaultSize="20" minSize="10">
-            <GMDUpdateTable
-              headers={headers}
-              rows={processedItemRows}
-              ids={processedItemIds}
-              selectedIndex={selectedIndex}
-              onSelect={setSelectedIndex}
-              title="Filtered Items"
-              editable
-              categoryOptions={enhancedCategoryOptions}
-              uniqueKeyColumns={["ERP ITEM CODE"]}
-              lockedCostIds={lockedCostIds}
-              bomIdOptionsById={bomIdOptionsById}
-              onSelectBomId={handleSelectBomId}
-              usdInrRate={usdInrRate}
-              onRefreshRate={refreshRate}
-              hiddenColumns={["Vendor Reference"]}
-              fullHeight
-            />
-            </ResizablePanel>
+                <ResizablePanel id="filtered-items" defaultSize="25" minSize="12">
 
-            <ResizableHandle withHandle className="my-2 bg-[#e1e6eb]" />
+                <GMDUpdateTable
+                  headers={headers}
+                  rows={processedItemRows}
+                  ids={processedItemIds}
+                  selectedIndex={selectedIndex}
+                  onSelect={setSelectedIndex}
+                  title="Filtered Items"
+                  editable
+                  categoryOptions={enhancedCategoryOptions}
+                  uniqueKeyColumns={["ERP ITEM CODE"]}
+                  lockedCostIds={lockedCostIds}
+                  bomIdOptionsById={bomIdOptionsById}
+                  onSelectBomId={handleSelectBomId}
+                  usdInrRate={usdInrRate}
+                  onRefreshRate={refreshRate}
+                  hiddenColumns={["Vendor Reference"]}
+                  fullHeight
+                />
+                </ResizablePanel>
 
-            <ResizablePanel id="transferred-items" defaultSize="40" minSize="10">
-            <GMDUpdateTable
-              headers={transferredHeaders}
-              rows={transferredRows}
-              ids={transferredItemIds}
-              selectedIndex={selectedIndex}
-              onSelect={setSelectedIndex}
-              title="Transferred Items"
-              editable
-              categoryOptions={transferredCategoryOptions}
-              fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
-              filterOptionsOverride={transferredFilterOptions}
-              uniqueKeyColumns={["ERP ITEM CODE"]}
-              lockedCostIds={lockedCostIds}
-              bomIdOptionsById={bomIdOptionsById}
-              onSelectBomId={handleSelectBomId}
-              usdInrRate={usdInrRate}
-              onRefreshRate={refreshRate}
-              hiddenColumns={["BOM ID"]}
-              fieldOverride={{ "Vendor Reference": "vendorReference" }}
-              pasteErpCodes={{
-                draft: pasteDraft,
-                setDraft: setPasteDraft,
-                onAdd: () => {
-                  moveErpCodes(pasteDraft);
-                  setPasteDraft("");
-                },
-                onPaste: (text) => {
-                  moveErpCodes(text);
-                  setPasteDraft("");
-                },
-              }}
-              onClearMoved={clearMoved}
-              fullHeight
-            />
-            </ResizablePanel>
+                <ResizableHandle withHandle className="my-2 bg-[#e1e6eb]" />
+
+                <ResizablePanel id="transferred-items" defaultSize="25" minSize="12">
+
+                <GMDUpdateTable
+                  headers={transferredHeaders}
+                  rows={transferredRows}
+                  ids={transferredItemIds}
+                  selectedIndex={selectedIndex}
+                  onSelect={setSelectedIndex}
+                  title="Transferred Items"
+                  editable
+                  categoryOptions={transferredCategoryOptions}
+                  fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
+                  filterOptionsOverride={transferredFilterOptions}
+                  uniqueKeyColumns={["ERP ITEM CODE"]}
+                  lockedCostIds={lockedCostIds}
+                  bomIdOptionsById={bomIdOptionsById}
+                  onSelectBomId={handleSelectBomId}
+                  usdInrRate={usdInrRate}
+                  onRefreshRate={refreshRate}
+                  hiddenColumns={["BOM ID"]}
+                  fieldOverride={{ "Vendor Reference": "vendorReference" }}
+                  pasteErpCodes={{
+                    draft: pasteDraft,
+                    setDraft: setPasteDraft,
+                    onAdd: () => {
+                      moveErpCodes(pasteDraft);
+                      setPasteDraft("");
+                    },
+                    onPaste: (text) => {
+                      moveErpCodes(text);
+                      setPasteDraft("");
+                    },
+                  }}
+                  onClearMoved={clearMoved}
+                  fullHeight
+                />
+                </ResizablePanel>
             </ResizablePanelGroup>
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
+      </div>
     </main>
   );
 }

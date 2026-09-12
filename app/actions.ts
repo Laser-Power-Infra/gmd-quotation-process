@@ -1743,6 +1743,45 @@ export async function setGMDUpdateTransferredAction(
   }
 }
 
+export async function addTransferredBlankItemsAction(codes: string[]) {
+  "use server";
+  try {
+    const VALID_ERP_CODE = /^[A-Z]{3}[0-9]{6}$/;
+    const uniqueCodes = [
+      ...new Set(codes.map((c) => c.trim()).filter(Boolean)),
+    ];
+    const invalid: string[] = [];
+    const toCreate: string[] = [];
+    for (const code of uniqueCodes) {
+      if (!VALID_ERP_CODE.test(code)) {
+        invalid.push(code);
+        continue;
+      }
+      const existing = await prisma.gMDUpdateItem.findFirst({
+        where: { erpItemCode: code, transferred: true },
+        select: { id: true },
+      });
+      if (existing) continue;
+      toCreate.push(code);
+    }
+    const created: { code: string; id: string }[] = [];
+    for (const code of toCreate) {
+      const row = await prisma.gMDUpdateItem.create({
+        data: { erpItemCode: code, transferred: true },
+        select: { id: true },
+      });
+      created.push({ code, id: row.id });
+    }
+    return { success: true, data: { created, invalid } };
+  } catch (error: any) {
+    console.error("Error adding transferred blank items:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to add items.",
+    };
+  }
+}
+
 export async function getTradingValveOptionsAction() {
   "use server";
   try {
