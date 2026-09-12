@@ -1743,6 +1743,51 @@ export async function setGMDUpdateTransferredAction(
   }
 }
 
+export async function getTradingValveOptionsAction() {
+  "use server";
+  try {
+    const rows = await prisma.gMDUpdateItem.findMany({
+      where: {
+        l8ItemCategory: {
+          contains: "TRADING VALVE",
+          mode: "insensitive",
+        },
+      },
+      select: {
+        l1: true,
+        l2ValveType: true,
+        l3Dia: true,
+        l7Dimension: true,
+        l4Component: true,
+        l5Material: true,
+        l6Std: true,
+      },
+    });
+    const collect = (vals: (string | null)[]): string[] =>
+      [...new Set(vals.map((v) => (v ?? "").trim()).filter(Boolean))].sort(
+        (a, b) => a.localeCompare(b, undefined, { numeric: true }),
+      );
+    return {
+      success: true,
+      data: {
+        L1: collect(rows.map((r) => r.l1)),
+        "L2-VALVE TYPE": collect(rows.map((r) => r.l2ValveType)),
+        "L3-DIA": collect(rows.map((r) => r.l3Dia)),
+        "L7-DIMENSION": collect(rows.map((r) => r.l7Dimension)),
+        "L4-COMPONENT": collect(rows.map((r) => r.l4Component)),
+        "L5- MATERIAL": collect(rows.map((r) => r.l5Material)),
+        "L6-STD": collect(rows.map((r) => r.l6Std)),
+      },
+    };
+  } catch (error: any) {
+    console.error("Error fetching trading valve options:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to fetch trading valve options.",
+    };
+  }
+}
+
 export async function updateGMDUpdateFieldAction(
   id: string,
   field: string,

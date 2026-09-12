@@ -410,6 +410,7 @@ interface GMDUpdateTableProps {
   };
   onClearMoved?: () => void;
   fieldOverride?: Record<string, string>;
+  filterOptionsOverride?: Record<string, string[]>;
 }
 
 export default function GMDUpdateTable({
@@ -446,6 +447,7 @@ castingRateInputs,
   pasteErpCodes,
   onClearMoved,
   fieldOverride,
+  filterOptionsOverride,
   filterState,
   filterActions,
   columnOptionMeta,
@@ -768,12 +770,13 @@ castingRateInputs,
     for (const h of headers) {
       const idx = headers.indexOf(h);
       result[h] =
+        filterOptionsOverride?.[h] ||
         fixedDropdownOptions?.[h] ||
         categoryOptions?.[h] ||
         getUniqueColumnValues(idx);
     }
     return result;
-  }, [headers, categoryOptions, fixedDropdownOptions, rows]);
+  }, [headers, categoryOptions, fixedDropdownOptions, rows, filterOptionsOverride]);
 
   const cascadedFilterOptions = useMemo(() => {
     const result: Record<string, string[]> = {};
@@ -801,8 +804,11 @@ castingRateInputs,
       }
       result[h] = list;
     }
+    for (const [h, vals] of Object.entries(filterOptionsOverride ?? {})) {
+      result[h] = vals;
+    }
     return result;
-  }, [rows, ids, headers, categoryOptions, multiFilters, hasActiveFilters, rowPassesFilters, columnUniqueVals]);
+  }, [rows, ids, headers, categoryOptions, multiFilters, hasActiveFilters, rowPassesFilters, columnUniqueVals, filterOptionsOverride]);
 
   const paginatedWithIds = useMemo(() => {
     const start = (activePage - 1) * pageSize;

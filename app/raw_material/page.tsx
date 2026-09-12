@@ -14,7 +14,7 @@ import {
 } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
 import { FIXED_DROPDOWN_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
-import { getUsdInrRateAction, getGMDCastingRatesAction, saveGMDCastingRateAction, setGMDUpdateTransferredAction } from "@/app/actions";
+import { getUsdInrRateAction, getGMDCastingRatesAction, saveGMDCastingRateAction, setGMDUpdateTransferredAction, getTradingValveOptionsAction } from "@/app/actions";
 import { toast } from "sonner";
 import {
   ResizableHandle,
@@ -30,6 +30,18 @@ const layoutStorage = {
     if (typeof window !== "undefined") window.localStorage.setItem(key, value);
   },
 };
+
+const CASCADE_ROOT_HEADER = "L8 -ITEM CATEGORY";
+const CASCADE_ROOT_VALUES = ["TRADING VALVE"];
+const CASCADE_LEVEL_HEADERS = [
+  "L1",
+  "L2-VALVE TYPE",
+  "L3-DIA",
+  "L7-DIMENSION",
+  "L4-COMPONENT",
+  "L5- MATERIAL",
+  "L6-STD",
+];
 
 interface SheetData {
   headers: string[];
@@ -149,6 +161,9 @@ export default function Home() {
   const saveRateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [transferredIds, setTransferredIds] = useState<string[]>([]);
   const [pasteDraft, setPasteDraft] = useState("");
+  const [tradingValveOptions, setTradingValveOptions] = useState<
+    Record<string, string[]>
+  >({});
 
   const {
     defaultLayout: horizontalLayout,
@@ -230,6 +245,31 @@ export default function Home() {
     [categoryOptions],
   );
 
+  const transferredCategoryOptions = useMemo(
+    () => ({
+      ...enhancedCategoryOptions,
+      [CASCADE_ROOT_HEADER]: CASCADE_ROOT_VALUES,
+      ...Object.fromEntries(
+        CASCADE_LEVEL_HEADERS.filter(
+          (h) => (tradingValveOptions[h]?.length ?? 0) > 0,
+        ).map((h) => [h, tradingValveOptions[h]]),
+      ),
+    }),
+    [enhancedCategoryOptions, tradingValveOptions],
+  );
+
+  const transferredFilterOptions = useMemo(
+    () => ({
+      [CASCADE_ROOT_HEADER]: CASCADE_ROOT_VALUES,
+      ...Object.fromEntries(
+        CASCADE_LEVEL_HEADERS.filter(
+          (h) => (tradingValveOptions[h]?.length ?? 0) > 0,
+        ).map((h) => [h, tradingValveOptions[h]]),
+      ),
+    }),
+    [tradingValveOptions],
+  );
+
   const clearMoved = useCallback(async () => {
     if (!transferredIds.length) return;
     const res = await setGMDUpdateTransferredAction(transferredIds, false);
@@ -240,6 +280,13 @@ export default function Home() {
       toast.error(res.error || "Failed to clear moved items");
     }
   }, [transferredIds]);
+
+  const loadTradingValveOptions = useCallback(async () => {
+    const res = await getTradingValveOptionsAction();
+    if (res.success && res.data) {
+      setTradingValveOptions(res.data);
+    }
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -254,12 +301,13 @@ export default function Home() {
       setData(json);
       setTransferredIds(json.transferredIds ?? []);
       if (json.bomIdOptions) setBomIdOptionsById(json.bomIdOptions);
+      await loadTradingValveOptions();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadTradingValveOptions]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
@@ -862,8 +910,9 @@ export default function Home() {
               onSelect={setSelectedIndex}
               title="Transferred Items"
               editable
-              categoryOptions={enhancedCategoryOptions}
+              categoryOptions={transferredCategoryOptions}
               fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
+              filterOptionsOverride={transferredFilterOptions}
               uniqueKeyColumns={["ERP ITEM CODE"]}
               lockedCostIds={lockedCostIds}
               bomIdOptionsById={bomIdOptionsById}
