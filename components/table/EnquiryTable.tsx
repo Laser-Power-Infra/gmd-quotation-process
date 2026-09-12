@@ -12,7 +12,7 @@ import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { matchesGlobalSearch } from "@/lib/filterUtils";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
-import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows } from "@/lib/uiSlice";
+import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows, DEFAULT_COLUMN_WIDTHS } from "@/lib/uiSlice";
 import type { DropdownOptions, EnquiryData, EnquiryItemData, FiltersState } from "@/lib/types";
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
@@ -403,14 +403,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const handleClearQrConfirm = async () => {
     if (!clearQrPending) return;
     setClearQrRunning(true);
+    const toastId = toast.loading("Clearing quoted rates...");
     try {
       const result: any = await dispatch(clearQuotedRates(clearQrPending.ids)).unwrap();
-      toast.success(`Cleared ${result.cleared} Quoted Rate(s). VA% preserved.`);
+      toast.success(`Cleared ${result.cleared} Quoted Rate(s). VA% preserved.`, { id: toastId });
       setClearQrConfirmOpen(false);
       setClearQrPending(null);
     } catch (err: any) {
       const msg = typeof err === "string" ? err : err?.message || "Failed to clear quoted rates.";
-      toast.error(msg);
+      toast.error(msg, { id: toastId });
     } finally {
       setClearQrRunning(false);
     }
@@ -428,12 +429,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     if (!confirm(`Set validation to "${label}" for ${allFiltered.length} filtered item(s) across all pages?${differing > 0 ? ` This will overwrite ${differing} differing value(s).` : ""}`)) return;
     const runKey = val === "" ? "Clear" : val;
     setBulkValidationRunning(runKey as any);
+    const toastId = toast.loading(`Setting validation to "${label}"...`);
     try {
       const result: any = await dispatch(bulkUpdateValidation({ itemIds: allFiltered.map((i) => i.id), validation: val === "" ? null : val })).unwrap();
-      toast.success(`Validation set to "${label}" for ${result.updated} item(s).`);
+      toast.success(`Validation set to "${label}" for ${result.updated} item(s).`, { id: toastId });
     } catch (err: any) {
       const msg = typeof err === "string" ? err : err?.message || "Failed to update validation.";
-      toast.error(msg);
+      toast.error(msg, { id: toastId });
     } finally {
       setBulkValidationRunning(null);
     }
@@ -451,12 +453,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     if (!confirm(`Set APM to "${label}" for ${filteredEnquiries.length} filtered enquir${filteredEnquiries.length === 1 ? "y" : "ies"} across all pages?${differing > 0 ? ` This will overwrite ${differing} differing value(s).` : ""}`)) return;
     const runKey = val === "" ? "Clear" : val;
     setBulkApmRunning(runKey as any);
+    const toastId = toast.loading(`Setting APM to "${label}"...`);
     try {
       const result: any = await dispatch(bulkUpdateApm({ enquiryIds: filteredEnquiries.map((e) => e.id), apm: val === "" ? null : val })).unwrap();
-      toast.success(`APM set to "${label}" for ${result.updated} enquir${result.updated === 1 ? "y" : "ies"}.`);
+      toast.success(`APM set to "${label}" for ${result.updated} enquir${result.updated === 1 ? "y" : "ies"}.`, { id: toastId });
     } catch (err: any) {
       const msg = typeof err === "string" ? err : err?.message || "Failed to update APM.";
-      toast.error(msg);
+      toast.error(msg, { id: toastId });
     } finally {
       setBulkApmRunning(null);
     }
@@ -858,7 +861,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const handleMouseDown = (columnIndex: number, event: React.MouseEvent) => {
     event.preventDefault();
     const startX = event.clientX;
-    const startWidth = columnWidths[columnIndex];
+    const startWidth = columnWidths[columnIndex] ?? DEFAULT_COLUMN_WIDTHS[columnIndex] ?? 120;
     let latestWidth = startWidth;
 
     const table = tableRef.current;
@@ -891,14 +894,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const handleEnquiryFieldChange = async (enquiryId: string, field: string, val: string) => {
     const dbVal = val === "" ? null : val;
     console.log(`[Client] updateEnquiryField enquiry=${enquiryId} field=${field} val="${dbVal}"`);
-    toast.promise(
-      dispatch(updateEnquiryField({ enquiryId, field, value: dbVal })).unwrap(),
-      {
-        loading: `Saving ${field}...`,
-        success: `Saved successfully.`,
-        error: (err) => err || `Failed to save.`,
-      }
-    );
+    const toastId = toast.loading(`Saving ${field}...`);
+    try {
+      await dispatch(updateEnquiryField({ enquiryId, field, value: dbVal })).unwrap();
+      toast.success(`Saved successfully.`, { id: toastId });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : err ? String(err) : `Failed to save.`, { id: toastId });
+    }
   };
 
   const getItemNameMerge = (item: EnquiryItemData) => {
@@ -1817,8 +1819,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   }
 
+  const TOTAL_COLUMNS = 47;
   const SELECT_COL_WIDTH = 44;
-  const totalTableWidth = Object.values(columnWidths).reduce((a, b) => a + b, 0) + SELECT_COL_WIDTH;
+  const getColWidth = (idx: number) => columnWidths[idx] ?? DEFAULT_COLUMN_WIDTHS[idx] ?? 120;
+  const totalTableWidth =
+    Array.from({ length: TOTAL_COLUMNS }, (_, idx) => getColWidth(idx)).reduce((a, b) => a + b, 0) +
+    SELECT_COL_WIDTH;
 
   const inputClass =
     "mt-1.5 w-full h-7 rounded border border-input bg-background px-2 py-0.5 text-[10px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 normal-case";
@@ -1951,8 +1957,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       >
         <colgroup>
           <col style={{ width: SELECT_COL_WIDTH }} />
-          {Object.keys(columnWidths).map((_, idx) => (
-            <col key={idx} style={{ width: columnWidths[idx] }} />
+          {Array.from({ length: TOTAL_COLUMNS }, (_, idx) => (
+            <col key={idx} style={{ width: getColWidth(idx) }} />
           ))}
         </colgroup>
         <thead>
@@ -2599,7 +2605,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 21b. Other */}
+            {/* 23. Other */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Other</span>
@@ -3139,7 +3145,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 42. Delivery Schedule */}
+            {/* 43. Delivery Schedule */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Delivery Schedule</span>
@@ -3155,7 +3161,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 43. APM - beside Offer PDF (enquiry-based) */}
+            {/* 44. APM - beside Offer PDF (enquiry-based) */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>APM</span>
@@ -3211,7 +3217,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 44. Offer PDF */}
+            {/* 45. Offer PDF */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Offer PDF</span>
@@ -3227,17 +3233,25 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* Actions */}
-            <th className="sticky top-0 z-30 bg-muted/90 py-2.5 px-3 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-b border-border text-right">
+            {/* 46. Actions */}
+            <th className="relative sticky top-0 z-30 bg-muted/90 py-2.5 px-3 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-b border-border text-right">
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
+              <div
+                onMouseDown={(e) => handleMouseDown(46, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
             </th>
           </tr>
         </thead>
         <tbody className="bg-background">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={47} className="py-20 px-4 text-center border-b border-border">
+              <td colSpan={48} className="py-20 px-4 text-center border-b border-border">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground mb-4 border border-border">
                     <Search className="h-6 w-6 stroke-[1.5]" />

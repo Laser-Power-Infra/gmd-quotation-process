@@ -90,31 +90,36 @@ export default function BomPage() {
           .map((x) => x.id);
       }
 
-      const res = await updateVerifyBomFieldBatchAction(
-        groupIds,
-        field,
-        value || null,
-      );
-      if (res?.success) {
-        const idSet = new Set(groupIds);
-        setData((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            rows: prev.rows.map((row, i) =>
-              idSet.has(prev.ids[i])
-                ? (() => {
-                    const next = [...row];
-                    next[colIndex] = value;
-                    return next;
-                  })()
-                : row,
-            ),
-          };
-        });
-        toast.success(`Updated ${groupIds.length} row(s)`);
-      } else {
-        toast.error(res?.error || "Failed to update");
+      const toastId = toast.loading("Updating...");
+      try {
+        const res = await updateVerifyBomFieldBatchAction(
+          groupIds,
+          field,
+          value || null,
+        );
+        if (res?.success) {
+          const idSet = new Set(groupIds);
+          setData((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              rows: prev.rows.map((row, i) =>
+                idSet.has(prev.ids[i])
+                  ? (() => {
+                      const next = [...row];
+                      next[colIndex] = value;
+                      return next;
+                    })()
+                  : row,
+              ),
+            };
+          });
+          toast.success(`Updated ${groupIds.length} row(s)`, { id: toastId });
+        } else {
+          toast.error(res?.error || "Failed to update", { id: toastId });
+        }
+      } catch (err: any) {
+        toast.error(err?.message || "Failed to update", { id: toastId });
       }
     },
     [data, headers],

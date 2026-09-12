@@ -407,29 +407,27 @@ export default function ContractReviewPage() {
       if (!header) return;
       const field = CONTRACT_REVIEW_HEADER_TO_DB_FIELD[header];
       if (!field) return;
-      await toast.promise(
-        updateContractReviewFieldAction(id, field, value || null),
-        {
-          loading: `Updating ${header}...`,
-          success: (res) => {
-            if (res?.success) {
-              setData((prev) => {
-                if (!prev) return prev;
-                const rows = prev.rows.map((row, i) => {
-                  if (prev.ids[i] !== id) return row;
-                  const next = [...row];
-                  next[colIndex] = value;
-                  return next;
-                });
-                return { ...prev, rows };
-              });
-              return `${header} updated`;
-            }
-            return res?.error || `Failed to update ${header}`;
-          },
-          error: (err) => err || `Failed to update ${header}`,
-        },
-      );
+      const toastId = toast.loading(`Updating ${header}...`);
+      try {
+        const res = await updateContractReviewFieldAction(id, field, value || null);
+        if (res?.success) {
+          setData((prev) => {
+            if (!prev) return prev;
+            const rows = prev.rows.map((row, i) => {
+              if (prev.ids[i] !== id) return row;
+              const next = [...row];
+              next[colIndex] = value;
+              return next;
+            });
+            return { ...prev, rows };
+          });
+          toast.success(`${header} updated`, { id: toastId });
+        } else {
+          toast.error(res?.error || `Failed to update ${header}`, { id: toastId });
+        }
+      } catch (err: any) {
+        toast.error(err?.message || `Failed to update ${header}`, { id: toastId });
+      }
     },
     [headers],
   );

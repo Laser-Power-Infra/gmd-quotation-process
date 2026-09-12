@@ -65,22 +65,26 @@ export default function BisStatusPage() {
         toast.error(`Field ${header} is not editable`);
         return;
       }
-      const res: any = await updateBisStatusFieldAction(id, field, value || null);
-      if (res?.success === false) {
-        toast.error(res.error || `Failed to update ${header}`);
-        return;
+      const toastId = toast.loading(`Updating ${header}...`);
+      try {
+        const res: any = await updateBisStatusFieldAction(id, field, value || null);
+        if (res?.success === false) {
+          toast.error(res.error || `Failed to update ${header}`, { id: toastId });
+          return;
+        }
+        setData((prev) => {
+          if (!prev) return prev;
+          const colIdx = prev.headers.indexOf(header);
+          if (colIdx === -1) return prev;
+          const rowPos = prev.ids.indexOf(id);
+          if (rowPos === -1) return prev;
+          const nextRows = prev.rows.map((r, i) => (i === rowPos ? r.map((c, j) => (j === colIdx ? (value || null) : c)) : r));
+          return { ...prev, rows: nextRows };
+        });
+        toast.success(`${header} updated`, { id: toastId });
+      } catch (err: any) {
+        toast.error(err?.message || `Failed to update ${header}`, { id: toastId });
       }
-      toast.success(`${header} updated`);
-      // Optimistically patch local rows without full refetch for speed
-      setData((prev) => {
-        if (!prev) return prev;
-        const colIdx = prev.headers.indexOf(header);
-        if (colIdx === -1) return prev;
-        const rowPos = prev.ids.indexOf(id);
-        if (rowPos === -1) return prev;
-        const nextRows = prev.rows.map((r, i) => (i === rowPos ? r.map((c, j) => (j === colIdx ? (value || null) : c)) : r));
-        return { ...prev, rows: nextRows };
-      });
     },
     [data?.headers, data?.ids],
   );
