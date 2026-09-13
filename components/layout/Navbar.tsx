@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 import { Bell } from "lucide-react";
 import Link from "next/link";
 import { auth } from "@/auth";
@@ -12,9 +13,12 @@ export default async function Navbar() {
       <div className="flex h-10 items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2.5">
-            <img
+            <Image
               src="/logo.jpg"
               alt="Dalui Logo"
+              width={32}
+              height={32}
+              priority
               className="h-8 w-auto rounded object-contain bg-background p-0.5"
             />
          
