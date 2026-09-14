@@ -136,7 +136,7 @@ function matchesText(filterVal: string, actual: unknown): boolean {
 const ALL_DROPDOWN_FIELDS = [
   "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "others",
-  "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "costRefCode", "cost", "contractReviewRate", "pdcostValidation", "availableStock",
+  "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "costRefCode", "cost", "contractReviewRate", "pdcostValidation", "availableStock", "rmType",
 ] as const;
 
 const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm"]);
@@ -774,6 +774,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
+        filters.rmType.length > 0 &&
+        !matchesMulti(filters.rmType, item.rmType ?? null)
+      ) {
+        return false;
+      }
+      if (
         filters.stockAgainstContract &&
         !(item.stockAgainstContract || "").toLowerCase().includes(filters.stockAgainstContract.toLowerCase())
       ) {
@@ -1284,6 +1290,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
+        filters.rmType.length > 0 &&
+        !matchesMulti(filters.rmType, item.rmType ?? null)
+      ) {
+        return false;
+      }
+      if (
         filters.stockAgainstContract &&
         !(item.stockAgainstContract || "").toLowerCase().includes(filters.stockAgainstContract.toLowerCase())
       ) {
@@ -1531,6 +1543,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             "Stock Status": "",
             "Stock Quantity": "",
             "Available Stock": "",
+            "RM Type": "",
             "Stock Against Contract": "",
             "Discount": "",
             "Quotation Rate": "",
@@ -1580,6 +1593,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               "Stock Status": item.stockStatus || "",
               "Stock Quantity": item.stockQuantity || "",
               "Available Stock": item.availableStock || "",
+              "RM Type": item.rmType || "",
               "Stock Against Contract": item.stockAgainstContract || "",
               "Discount": item.discount ? `${Number(item.discount)}%` : "",
               "Quotation Rate": item.quotedRate || "",
@@ -1799,17 +1813,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   }
 
   const handleSyncAvailableStock = async () => {
-    if (!confirm("Sync available stock for ALL DIRECT M2M items from Raw Materials dashboard (GMDUpdateItem)? This will backfill availableStock wherever rmItemCode matches.")) return
+    if (!confirm("Sync available stock and RM Type for ALL items with a raw material code from Raw Materials dashboard (GMDUpdateItem)? This will backfill availableStock and rmType wherever rmItemCode matches.")) return
 
     setSyncStockStatus("running")
-    const toastId = toast.loading("Syncing available stock for all DIRECT M2M items...")
+    const toastId = toast.loading("Syncing available stock and RM Type for all items with an RM code...")
     try {
       const result: any = await dispatch(syncAvailableStock(undefined)).unwrap()
       const count = result.count ?? 0
       if (count === 0) {
-        toast.info("No available stock changes found.", { id: toastId })
+        toast.info("No available stock or RM Type changes found.", { id: toastId })
       } else {
-        toast.success(`Available stock synced for ${count} item(s).`, { id: toastId })
+        toast.success(`Available stock and RM Type synced for ${count} item(s).`, { id: toastId })
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to sync available stock."
@@ -1819,7 +1833,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   }
 
-  const TOTAL_COLUMNS = 47;
+  const TOTAL_COLUMNS = 48;
   const SELECT_COL_WIDTH = 44;
   const getColWidth = (idx: number) => columnWidths[idx] ?? DEFAULT_COLUMN_WIDTHS[idx] ?? 120;
   const totalTableWidth =
@@ -1941,7 +1955,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             onClick={handleSyncAvailableStock}
             disabled={syncStockStatus === "running" || updateCostStatus === "running"}
             className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
-            title="Backfill availableStock for all DIRECT M2M items from Raw Materials (GMDUpdateItem)"
+            title="Backfill availableStock and RM Type for all items with an RM code from Raw Materials (GMDUpdateItem)"
           >
             <PackageCheck className={`h-3.5 w-3.5 text-amber-700 dark:text-amber-400 stroke-2 ${syncStockStatus === "running" ? "animate-spin" : ""}`} />
             {syncStockStatus === "running" ? "Syncing Stock..." : "Sync Available Stock"}
@@ -2815,6 +2829,33 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
+            {/* RM Type */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>RM Type</span>
+                {renderSortArrow("rmType")}
+              </div>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="RM Type"
+                  allLabel="All RM Type"
+                  options={cascadedOptions.rmType ?? []}
+                  cascadedOptions={cascadedOptions.rmType ?? []}
+                  selected={filters.rmType}
+                  onChange={(v) => dispatch(setFilter({ field: "rmType", value: v }))}
+                  includeBlank
+                />
+              </div>
+              <div
+                onMouseDown={(e) => handleMouseDown(31, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
             {/* 30. Stock Against Contract */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
@@ -2827,7 +2868,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(31, e)}
+                onMouseDown={(e) => handleMouseDown(32, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2848,7 +2889,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(32, e)}
+                onMouseDown={(e) => handleMouseDown(33, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2875,7 +2916,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(33, e)}
+                onMouseDown={(e) => handleMouseDown(34, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2907,7 +2948,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(34, e)}
+                onMouseDown={(e) => handleMouseDown(35, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2940,7 +2981,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(35, e)}
+                onMouseDown={(e) => handleMouseDown(36, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2973,7 +3014,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(36, e)}
+                onMouseDown={(e) => handleMouseDown(37, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2994,7 +3035,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(37, e)}
+                onMouseDown={(e) => handleMouseDown(38, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3015,7 +3056,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(38, e)}
+                onMouseDown={(e) => handleMouseDown(39, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3036,7 +3077,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(39, e)}
+                onMouseDown={(e) => handleMouseDown(40, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3057,7 +3098,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(40, e)}
+                onMouseDown={(e) => handleMouseDown(41, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3113,7 +3154,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(41, e)}
+                onMouseDown={(e) => handleMouseDown(42, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3136,7 +3177,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(42, e)}
+                onMouseDown={(e) => handleMouseDown(43, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3152,7 +3193,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(43, e)}
+                onMouseDown={(e) => handleMouseDown(44, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3208,7 +3249,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(44, e)}
+                onMouseDown={(e) => handleMouseDown(45, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3224,7 +3265,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(45, e)}
+                onMouseDown={(e) => handleMouseDown(46, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3238,7 +3279,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(46, e)}
+                onMouseDown={(e) => handleMouseDown(47, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3251,7 +3292,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         <tbody className="bg-background">
           {filteredEnquiries.length === 0 ? (
             <tr>
-              <td colSpan={48} className="py-20 px-4 text-center border-b border-border">
+              <td colSpan={TOTAL_COLUMNS + 1} className="py-20 px-4 text-center border-b border-border">
                 <div className="flex flex-col items-center justify-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted text-muted-foreground mb-4 border border-border">
                     <Search className="h-6 w-6 stroke-[1.5]" />
@@ -3973,6 +4014,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       ) : "-"}
                     </td>
 
+                    {/* First Item RM Type */}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                      {firstItem ? (
+                        <span className="block text-xs text-foreground p-1 truncate" title={firstItem.rmType || ""}>
+                          {firstItem.rmType || "-"}
+                        </span>
+                      ) : "-"}
+                    </td>
+
                     {/* First Item Stock Against Contract */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
@@ -4643,6 +4693,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
                         />
                       </td>
+
+                      {/* RM Type */}
+                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                          <span className="block text-xs text-foreground p-1 truncate" title={item.rmType || ""}>
+                            {item.rmType || "-"}
+                          </span>
+                        </td>
 
                       {/* Stock Against Contract */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">

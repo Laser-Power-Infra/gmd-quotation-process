@@ -88,6 +88,7 @@ model EnquiryItem {
   bomId         String?
   bomType       String? //(stores "DIRECT M2M")
   rmItemCode    String? //(the CONSUMPTION-1 rm code, for traceability)
+  rmType String?  
   contractReviewRate String?
   pdcostValidation  String?
   quotedRateGst String?
@@ -354,4 +355,26 @@ model LookupOption {
   updatedAt DateTime @updatedAt
   @@unique([type, value])
   @@index([type, isActive])
+}
+model GeneratedImage {
+  id            String    @id @default(cuid())
+  itemType      String?
+  operationType String?
+  rmType        String?
+  imageKey      String    @unique
+  url           String?
+  driveFileId   String?
+  prompt        String?
+  promptVersion String    @default("v1")
+  model         String?
+  status        String    @default("pending") // pending | generating | ready | failed
+  error         String?
+  generatedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([itemType])
+  @@index([operationType])
+  @@index([rmType])
+  @@index([status])
 }
