@@ -1782,6 +1782,82 @@ export async function addTransferredBlankItemsAction(codes: string[]) {
   }
 }
 
+export async function transferFilteredByCodeAction(code: string) {
+  "use server";
+  try {
+    const trimmed = (code ?? "").trim();
+    if (!trimmed) return { success: true, data: { id: null } };
+    const target = await prisma.gMDUpdateItem.findFirst({
+      where: {
+        erpItemCode: trimmed,
+        transferred: false,
+        newItemStatus: { not: null },
+        NOT: [{ newItemStatus: "-" }, { newItemStatus: "Updated" }],
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    if (!target) return { success: true, data: { id: null } };
+    await prisma.gMDUpdateItem.update({
+      where: { id: target.id },
+      data: { transferred: true },
+    });
+    return { success: true, data: { id: target.id } };
+  } catch (error: any) {
+    console.error("Error transferring filtered item by code:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to transfer item.",
+    };
+  }
+}
+
+export async function importTransferredExcelAction(
+  rows: { erpItemCode: string; values: Record<string, string> }[],
+) {
+  "use server";
+  try {
+    const updated: { id: string; code: string }[] = [];
+    const created: { id: string; code: string }[] = [];
+    for (const row of rows) {
+      const code = (row.erpItemCode ?? "").trim();
+      if (!code) {
+        const rowCreated = await prisma.gMDUpdateItem.create({
+          data: { erpItemCode: "", transferred: true, ...row.values },
+          select: { id: true },
+        });
+        created.push({ id: rowCreated.id, code: "" });
+        continue;
+      }
+      const existing = await prisma.gMDUpdateItem.findFirst({
+        where: { erpItemCode: code },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      });
+      if (existing) {
+        await prisma.gMDUpdateItem.update({
+          where: { id: existing.id },
+          data: { ...row.values, transferred: true },
+        });
+        updated.push({ id: existing.id, code });
+      } else {
+        const rowCreated = await prisma.gMDUpdateItem.create({
+          data: { erpItemCode: code, transferred: true, ...row.values },
+          select: { id: true },
+        });
+        created.push({ id: rowCreated.id, code });
+      }
+    }
+    return { success: true, data: { updated, created } };
+  } catch (error: any) {
+    console.error("Error importing transferred Excel:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to import Excel.",
+    };
+  }
+}
+
 export async function getTradingValveOptionsAction() {
   "use server";
   try {

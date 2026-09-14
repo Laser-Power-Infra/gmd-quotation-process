@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { ChevronUp, ChevronDown, Search, RotateCcw, X, Download, Files, FileText, ExternalLink, Copy } from "lucide-react";
+import { ChevronUp, ChevronDown, Search, RotateCcw, X, Download, Files, FileText, ExternalLink, Copy, Upload } from "lucide-react";
 import GMDUpdateStatusBadge from "./GMDUpdateStatusBadge";
 import {
   STATUS_COLUMNS,
@@ -409,6 +409,8 @@ interface GMDUpdateTableProps {
     onPaste: (text: string) => void;
   };
   onClearMoved?: () => void;
+  onImportExcel?: (file: File) => void;
+  onErpCodeChange?: (id: string, code: string) => void;
   fieldOverride?: Record<string, string>;
   filterOptionsOverride?: Record<string, string[]>;
 }
@@ -446,6 +448,8 @@ castingRateInputs,
   maxHeight,
   pasteErpCodes,
   onClearMoved,
+  onImportExcel,
+  onErpCodeChange,
   fieldOverride,
   filterOptionsOverride,
   filterState,
@@ -563,6 +567,7 @@ castingRateInputs,
     startX: number;
     startWidth: number;
   } | null>(null);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
 
   const handleSort = (colIndex: number) => {
     if (sortColumn === colIndex) {
@@ -915,6 +920,10 @@ castingRateInputs,
     } catch (err: any) {
       toast.error(err?.message || err || `Failed to update ${header}`, { id: toastId });
     }
+
+    if (header === "ERP ITEM CODE" && value && onErpCodeChange) {
+      onErpCodeChange(id, value);
+    }
   };
 
   const handleUsdCostUpdate = async (rowIndex: number, value: string) => {
@@ -1043,6 +1052,33 @@ castingRateInputs,
                   Clear moved
                 </button>
               )}
+            </div>
+          )}
+          {onImportExcel && (
+            <div className="relative">
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onImportExcel(file);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  importFileRef.current?.click();
+                }}
+                className="flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-[#0a2540] px-2 py-1.5 rounded hover:bg-white/80 border border-[#e1e6eb]"
+                title="Import Excel to fill transferred rows"
+              >
+                <Upload size={12} />
+                Import Excel
+              </button>
             </div>
           )}
           <div className="relative">

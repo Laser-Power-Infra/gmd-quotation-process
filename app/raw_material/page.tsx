@@ -14,13 +14,19 @@ import {
   type GMDUpdateRow,
 } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
-import { FIXED_DROPDOWN_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
+import {
+  FIXED_DROPDOWN_OPTIONS,
+  CANONICAL_COLUMNS,
+  COL_INDEX_TO_DB_FIELD,
+} from "@/lib/gmd_lib/sheet-columns";
 import {
   getUsdInrRateAction,
   getGMDCastingRatesAction,
   saveGMDCastingRateAction,
   setGMDUpdateTransferredAction,
   addTransferredBlankItemsAction,
+  importTransferredExcelAction,
+  transferFilteredByCodeAction,
   getTradingValveOptionsAction,
 } from "@/app/actions";
 import { toast } from "sonner";
@@ -176,6 +182,22 @@ function blankGMDUpdateRow(id: string, erpItemCode: string): GMDUpdateRow {
   };
 }
 
+function normalizeImportHeader(h: string): string {
+  return h.trim().toUpperCase().replace(/\s+/g, " ");
+}
+
+const EXCEL_HEADER_TO_FIELD: Record<string, string> = {};
+CANONICAL_COLUMNS.forEach((h, i) => {
+  const field = COL_INDEX_TO_DB_FIELD[i];
+  const key = normalizeImportHeader(h);
+  if (field && !(key in EXCEL_HEADER_TO_FIELD)) {
+    EXCEL_HEADER_TO_FIELD[key] = field;
+  }
+});
+EXCEL_HEADER_TO_FIELD[normalizeImportHeader("BOM ID")] = "bomId";
+EXCEL_HEADER_TO_FIELD[normalizeImportHeader("Vendor Reference")] =
+  "vendorReference";
+
 export default function Home() {
   const dispatch = useAppDispatch();
   const allItems = useAppSelector(selectAllGMDUpdateRows);
@@ -306,15 +328,8 @@ export default function Home() {
   );
 
   const transferredFilterOptions = useMemo(
-    () => ({
-      [CASCADE_ROOT_HEADER]: CASCADE_ROOT_VALUES,
-      ...Object.fromEntries(
-        CASCADE_LEVEL_HEADERS.filter(
-          (h) => (tradingValveOptions[h]?.length ?? 0) > 0,
-        ).map((h) => [h, tradingValveOptions[h]]),
-      ),
-    }),
-    [tradingValveOptions],
+    () => ({ [CASCADE_ROOT_HEADER]: CASCADE_ROOT_VALUES }),
+    [],
   );
 
   const clearMoved = useCallback(async () => {
@@ -388,9 +403,14 @@ export default function Home() {
 
   useEffect(() => {
     if (data?.ids && data?.rows) {
+      const transferredIdSet = new Set(data.transferredIds ?? []);
       const validIndices = data.rows
         .map((row, i) => ({ row, i }))
-        .filter(({ row }) => String(row[0] ?? "").trim() !== "")
+        .filter(
+          ({ row, i }) =>
+            String(row[0] ?? "").trim() !== "" ||
+            transferredIdSet.has(data.ids[i]),
+        )
         .map(({ i }) => i);
       const items = validIndices.map((i) =>
         rowToGMDUpdateItem(data.ids[i], data.rows[i]),
@@ -559,6 +579,108 @@ export default function Home() {
       }
     },
     [transferredIds, allItems, dispatch],
+  );
+
+  const handleImportExcel = useCallback(
+    async (file: File) => {
+      try {
+        const XLSX = await import("xlsx");
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf);
+        const sheetName = wb.SheetNames[0];
+        const sheet = wb.Sheets[sheetName];
+        if (!sheet) {
+          toast.error("No sheet found in the file.");
+          return;
+        }
+        const jsonRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+          sheet,
+          { defval: null },
+        );
+        if (!jsonRows.length) {
+          toast.error("No data rows found in the sheet.");
+          return;
+        }
+        const parsed: {
+          erpItemCode: string;
+          values: Record<string, string>;
+        }[] = [];
+        for (const row of jsonRows) {
+          let code = "";
+          const values: Record<string, string> = {};
+          for (const key of Object.keys(row)) {
+            const field = EXCEL_HEADER_TO_FIELD[normalizeImportHeader(key)];
+            if (!field) continue;
+            const raw = row[key];
+            if (raw == null) continue;
+            const str = String(raw).trim();
+            if (field === "erpItemCode") {
+              code = str;
+              continue;
+            }
+            if (str !== "") values[field] = str;
+          }
+          parsed.push({ erpItemCode: code, values });
+        }
+        if (!parsed.length) {
+          toast.error("No data rows found in the sheet.");
+          return;
+        }
+        const res = await importTransferredExcelAction(parsed);
+        if (res.success && res.data) {
+          const { updated, created } = res.data;
+          const upserts: GMDUpdateRow[] = [];
+          for (const u of updated) {
+            const existing = allItems.find((i) => i.id === u.id);
+            const parsedRow = parsed.find((p) => p.erpItemCode === u.code);
+            upserts.push({
+              ...blankGMDUpdateRow(u.id, u.code),
+              ...existing,
+              ...(parsedRow?.values ?? {}),
+            });
+          }
+          for (const c of created) {
+            const parsedRow = parsed.find((p) => p.erpItemCode === c.code);
+            upserts.push({
+              ...blankGMDUpdateRow(c.id, c.code),
+              ...(parsedRow?.values ?? {}),
+            });
+          }
+          if (upserts.length) dispatch(upsertGMDUpdateItems(upserts));
+          const ids = [
+            ...updated.map((u) => u.id),
+            ...created.map((c) => c.id),
+          ];
+          if (ids.length) {
+            setTransferredIds((prev) => [...new Set([...prev, ...ids])]);
+          }
+          const parts: string[] = [];
+          if (updated.length) parts.push(`${updated.length} updated`);
+          if (created.length) parts.push(`${created.length} created`);
+          if (parts.length) toast.success(`Import complete: ${parts.join(", ")}`);
+        } else {
+          toast.error(res.error || "Failed to import Excel.");
+        }
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Failed to read Excel file.",
+        );
+      }
+    },
+    [allItems, dispatch],
+  );
+
+  const handleTransferredErpCodeChange = useCallback(
+    async (_id: string, code: string) => {
+      const trimmed = code.trim();
+      if (!trimmed) return;
+      const res = await transferFilteredByCodeAction(trimmed);
+      if (res.success && res.data && res.data.id) {
+        setTransferredIds((prev) => [...new Set([...prev, res.data.id!])]);
+        toast.success("Matching Filtered item moved to Transferred Items");
+      }
+    },
+    [],
   );
 
   const [firstFilteredRows, setFirstFilteredRows] = useState<unknown[][]>([]);
@@ -1093,6 +1215,8 @@ export default function Home() {
                     },
                   }}
                   onClearMoved={clearMoved}
+                  onImportExcel={handleImportExcel}
+                  onErpCodeChange={handleTransferredErpCodeChange}
                   fullHeight
                 />
                 </ResizablePanel>
