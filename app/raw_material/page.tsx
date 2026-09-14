@@ -11,6 +11,8 @@ import {
   upsertGMDUpdateItems,
   selectAllGMDUpdateRows,
   selectGMDUpdateBomId,
+  uploadGMDUpdateAttachment,
+  clearGMDUpdateAttachment,
   type GMDUpdateRow,
 } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
@@ -146,6 +148,7 @@ function rowToGMDUpdateItem(id: string, row: unknown[]): GMDUpdateRow {
     indianImported: String(row[24] ?? ""),
     bomId: String(row[25] ?? ""),
     vendorReference: String(row[26] ?? ""),
+    attachmentUrl: String(row[27] ?? ""),
   };
 }
 
@@ -179,6 +182,7 @@ function blankGMDUpdateRow(id: string, erpItemCode: string): GMDUpdateRow {
     indianImported: null,
     bomId: null,
     vendorReference: null,
+    attachmentUrl: null,
   };
 }
 
@@ -683,6 +687,38 @@ export default function Home() {
     [],
   );
 
+  const handleUploadAttachment = useCallback(
+    async (id: string, file: File) => {
+      const toastId = toast.loading("Uploading attachment...");
+      try {
+        await dispatch(uploadGMDUpdateAttachment({ id, file })).unwrap();
+        toast.success("Attachment uploaded", { id: toastId });
+      } catch (err: any) {
+        toast.error(
+          err?.message || err || "Failed to upload attachment.",
+          { id: toastId },
+        );
+      }
+    },
+    [dispatch],
+  );
+
+  const handleClearAttachment = useCallback(
+    async (id: string) => {
+      const toastId = toast.loading("Removing attachment...");
+      try {
+        await dispatch(clearGMDUpdateAttachment({ id })).unwrap();
+        toast.success("Attachment removed", { id: toastId });
+      } catch (err: any) {
+        toast.error(
+          err?.message || err || "Failed to remove attachment.",
+          { id: toastId },
+        );
+      }
+    },
+    [dispatch],
+  );
+
   const [firstFilteredRows, setFirstFilteredRows] = useState<unknown[][]>([]);
   // Table filter lift (controlled like contract_review) for true cascading
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
@@ -1150,7 +1186,7 @@ export default function Home() {
                   onSelectBomId={handleSelectBomId}
                   usdInrRate={usdInrRate}
                   onRefreshRate={refreshRate}
-                  hiddenColumns={["BOM ID", "Vendor Reference"]}
+                  hiddenColumns={["BOM ID", "Vendor Reference", "Attachment"]}
                   fullHeight
                 />
                 </ResizablePanel>
@@ -1174,7 +1210,7 @@ export default function Home() {
                   onSelectBomId={handleSelectBomId}
                   usdInrRate={usdInrRate}
                   onRefreshRate={refreshRate}
-                  hiddenColumns={["Vendor Reference"]}
+                  hiddenColumns={["Vendor Reference", "Attachment"]}
                   fullHeight
                 />
                 </ResizablePanel>
@@ -1217,6 +1253,9 @@ export default function Home() {
                   onClearMoved={clearMoved}
                   onImportExcel={handleImportExcel}
                   onErpCodeChange={handleTransferredErpCodeChange}
+                  attachmentColumn="Attachment"
+                  onUploadAttachment={handleUploadAttachment}
+                  onClearAttachment={handleClearAttachment}
                   fullHeight
                 />
                 </ResizablePanel>

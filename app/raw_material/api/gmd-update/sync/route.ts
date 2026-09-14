@@ -29,12 +29,56 @@ export async function POST() {
 
     const dbItems = mergedRows.map((row) => sheetRowToDbItem(row, syncedAt));
 
-    await prisma.$transaction([
-      // prisma.gMDUpdateItem.deleteMany(),
-      prisma.gMDUpdateItem.createMany({ data: dbItems }),
-    ]);
+    const existingCodes = new Set(
+      (
+        await prisma.gMDUpdateItem.findMany({
+          select: { erpItemCode: true },
+        })
+      )
+        .map((item) => (item.erpItemCode ?? "").trim())
+        .filter(Boolean),
+    );
 
-    return NextResponse.json({ syncedAt, count: data.rows.length });
+    const queued = new Set<string>();
+    const toCreate = dbItems.filter((item) => {
+      const code = (item.erpItemCode ?? "").trim();
+      if (!code) return false;
+      if (existingCodes.has(code) || queued.has(code)) return false;
+      queued.add(code);
+      return true;
+    });
+
+    if (toCreate.length > 0) {
+      await prisma.gMDUpdateItem.createMany({ data: toCreate });
+    }
+
+    const createdCodes = toCreate.map((item) =>
+      (item.erpItemCode ?? "").trim(),
+    );
+
+    console.log("\n===== [SYNC] GMD UPDATION SHEET → DB =====");
+    console.log(`[SYNC] Synced at      : ${syncedAt.toISOString()}`);
+    console.log(`[SYNC] Rows in sheet  : ${data.rows.length}`);
+    console.log(`[SYNC] Already in DB  : ${existingCodes.size}`);
+    console.log(`[SYNC] Created (new)  : ${toCreate.length}`);
+    console.log(`[SYNC] Skipped        : ${data.rows.length - toCreate.length} (already present / empty code)`);
+    if (createdCodes.length > 0) {
+      console.log(`[SYNC] New ERP codes  : ${createdCodes.length}`);
+      createdCodes.forEach((code, i) =>
+        console.log(`[SYNC]   ${i + 1}. ${code}`),
+      );
+    } else {
+      console.log("[SYNC] No new ERP codes — DB is up to date.");
+    }
+    console.log("===== [SYNC] DONE =====\n");
+
+    return NextResponse.json({
+      syncedAt,
+      created: toCreate.length,
+      skipped: data.rows.length - toCreate.length,
+      totalInSheet: data.rows.length,
+      createdCodes,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

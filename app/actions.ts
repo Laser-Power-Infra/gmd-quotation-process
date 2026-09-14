@@ -13,6 +13,12 @@ import { update2to1CostForItems, buildRawMaterialsCostMap } from "@/lib/gmd2to1C
 import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail, getFallbackBomRowByCostRef, getFallbackRowsByCostRefs } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
+import {
+  uploadToS3,
+  deleteFromS3,
+  validateAttachment,
+  buildAttachmentKey,
+} from "@/lib/s3";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -1854,6 +1860,77 @@ export async function importTransferredExcelAction(
     return {
       success: false,
       error: error.message || "Failed to import Excel.",
+    };
+  }
+}
+
+export async function uploadGMDUpdateAttachmentAction(
+  id: string,
+  file: File,
+) {
+  "use server";
+  try {
+    if (!id) {
+      return { success: false, error: "Missing item id." };
+    }
+    validateAttachment(file);
+    const existing = await prisma.gMDUpdateItem.findUnique({
+      where: { id },
+      select: { erpItemCode: true, attachmentUrl: true },
+    });
+    if (!existing) {
+      return { success: false, error: "Item not found." };
+    }
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const key = buildAttachmentKey(id, existing.erpItemCode, file.name);
+    const attachmentUrl = await uploadToS3({
+      key,
+      body: bytes,
+      contentType: file.type,
+    });
+    if (existing.attachmentUrl) {
+      await deleteFromS3(existing.attachmentUrl);
+    }
+    await prisma.gMDUpdateItem.update({
+      where: { id },
+      data: { attachmentUrl },
+    });
+    return { success: true, data: { id, attachmentUrl } };
+  } catch (error: any) {
+    console.error("Error uploading GMD attachment:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to upload attachment.",
+    };
+  }
+}
+
+export async function clearGMDUpdateAttachmentAction(id: string) {
+  "use server";
+  try {
+    if (!id) {
+      return { success: false, error: "Missing item id." };
+    }
+    const existing = await prisma.gMDUpdateItem.findUnique({
+      where: { id },
+      select: { attachmentUrl: true },
+    });
+    if (!existing) {
+      return { success: false, error: "Item not found." };
+    }
+    if (existing.attachmentUrl) {
+      await deleteFromS3(existing.attachmentUrl);
+    }
+    await prisma.gMDUpdateItem.update({
+      where: { id },
+      data: { attachmentUrl: null },
+    });
+    return { success: true, data: { id, attachmentUrl: null } };
+  } catch (error: any) {
+    console.error("Error clearing GMD attachment:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to clear attachment.",
     };
   }
 }
