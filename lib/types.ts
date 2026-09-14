@@ -33,6 +33,7 @@ export interface EnquiryItemData {
   bomId?: string | null;
   bomType?: string | null;
   rmItemCode?: string | null;
+  rmType?: string | null;
   contractReviewRate?: string | null;
   pdcostValidation?: string | null;
   availableBomIds?: string[] | null;
@@ -146,6 +147,7 @@ export interface FiltersState {
   stockQuantity: string;
   costLogic: string;
   availableStock: string[];
+  rmType: string[];
   stockAgainstContract: string;
 }
 

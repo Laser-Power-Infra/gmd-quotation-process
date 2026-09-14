@@ -12,7 +12,7 @@ import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows
 import { update2to1CostForItems, buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
 import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail, getFallbackBomRowByCostRef, getFallbackRowsByCostRefs } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
-import { getRmStockMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
+import { getRmStockMap, getRmTypeMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 import {
   uploadToS3,
   deleteFromS3,
@@ -1056,6 +1056,11 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
         // Primary path sets bomId/bomType/rmItemCode; stock guarded by needStock (don't override present stock)
         const bomType = vbRow.bomIdType || DIRECT_M2M;
         const dataToUpdate: any = { bomId: vbRow.bomId, rmItemCode: vbRow.rmItemCode, bomType };
+        {
+          const rmTypeMap = await getRmTypeMap([vbRow.rmItemCode]);
+          const rmTypeVal = rmTypeMap.get(vbRow.rmItemCode);
+          if (rmTypeVal !== undefined) dataToUpdate.rmType = rmTypeVal;
+        }
         if (bomType === DIRECT_M2M && needStock) {
           const stockMap = await getRmStockMap([vbRow.rmItemCode]);
           const stock = stockMap.get(vbRow.rmItemCode);
@@ -1090,6 +1095,11 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
           }
         }
         const dataToUpdate: any = { bomId: bom.bomId, rmItemCode: bom.rmItemCode, bomType: DIRECT_M2M };
+        {
+          const rmTypeMap = await getRmTypeMap([bom.rmItemCode]);
+          const rmTypeVal = rmTypeMap.get(bom.rmItemCode);
+          if (rmTypeVal !== undefined) dataToUpdate.rmType = rmTypeVal;
+        }
         if (needStock) {
           const stockMap = await getRmStockMap([bom.rmItemCode]);
           const stock = stockMap.get(bom.rmItemCode);
@@ -1133,6 +1143,11 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
     const fallbackBomType = vbFallback.bomIdType || DIRECT_M2M;
     const fallbackData: any = {}; // keep bomId null, rmItemCode null, availableBomIds [] per requirement
     if (needBomType && fallbackBomType) fallbackData.bomType = fallbackBomType;
+    {
+      const rmTypeMap = await getRmTypeMap([vbFallback.rmItemCode]);
+      const rmTypeVal = rmTypeMap.get(vbFallback.rmItemCode);
+      if (rmTypeVal !== undefined) fallbackData.rmType = rmTypeVal;
+    }
     if (needStock && fallbackBomType === DIRECT_M2M) {
       const stockMap = await getRmStockMap([vbFallback.rmItemCode]);
       const stock = stockMap.get(vbFallback.rmItemCode);
@@ -1157,7 +1172,7 @@ export async function selectBomIdAction(itemId: string, bomId: string | null) {
     }
     if (!bomId) {
       // Clear selection
-      const cleared = await prisma.enquiryItem.update({ where: { id: itemId }, data: { bomId: null, rmItemCode: null, bomType: null } });
+      const cleared = await prisma.enquiryItem.update({ where: { id: itemId }, data: { bomId: null, rmItemCode: null, rmType: null, bomType: null } });
       return { success: true, data: serializeItem(cleared) };
     }
     const vbRow = await prisma.verifyBom.findFirst({ where: { itemCode: item.erpItemCode, bomId }, select: { bomId: true, rmItemCode: true, bomIdType: true } });
@@ -1165,6 +1180,11 @@ export async function selectBomIdAction(itemId: string, bomId: string | null) {
     // Update bom linkage and available stock if DIRECT M2M
     const bomType = vbRow.bomIdType || DIRECT_M2M;
     const dataToUpdate: any = { bomId: vbRow.bomId, bomType, rmItemCode: vbRow.rmItemCode };
+    if (vbRow.rmItemCode) {
+      const rmTypeMap = await getRmTypeMap([vbRow.rmItemCode]);
+      const rmTypeVal = rmTypeMap.get(vbRow.rmItemCode);
+      if (rmTypeVal !== undefined) dataToUpdate.rmType = rmTypeVal;
+    }
     if (bomType === DIRECT_M2M && vbRow.rmItemCode) {
       const stockMap = await getRmStockMap([vbRow.rmItemCode]);
       const stock = stockMap.get(vbRow.rmItemCode);
@@ -1257,6 +1277,7 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     const rmCodes = [...new Set(bomRows.map((r) => r.rmItemCode))];
     // Raw Materials primary, SupplyHistory fallback (commented out primary supply path per requirement)
     const stockMap = await getRmStockMap(rmCodes);
+    const rmTypeMap = await getRmTypeMap(rmCodes);
     const rawCostMap = await buildRawMaterialsCostMap(rmCodes);
     let costMap = rawCostMap;
     const missing = rmCodes.filter((c) => !rawCostMap.has(c));
@@ -1316,6 +1337,10 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
           bomId: bom.bomId,
           rmItemCode: bom.rmItemCode,
         };
+        {
+          const rmTypeVal = rmTypeMap.get(bom.rmItemCode);
+          if (rmTypeVal !== undefined) dataToUpdate.rmType = rmTypeVal;
+        }
         if (needBomType) dataToUpdate.bomType = DIRECT_M2M;
         else dataToUpdate.bomType = DIRECT_M2M; // primary always ensures bomType, but guarded above for fallback only
         if (needStock) {
@@ -1372,6 +1397,7 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
         // Collect rm codes from fallback rows for batch cost/stock fetch
         const fbRmCodes = [...new Set([...fallbackMap.values()].map((r) => r.rmItemCode).filter(Boolean) as string[])];
         const fbStockMap = await getRmStockMap(fbRmCodes);
+        const fbRmTypeMap = await getRmTypeMap(fbRmCodes);
         const fbRawMap = await buildRawMaterialsCostMap(fbRmCodes);
         const fbCostMap = new Map<string, number>(fbRawMap);
         const fbMissing = fbRmCodes.filter((c) => !fbRawMap.has(c));
@@ -1402,6 +1428,10 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
             const bomType = (vbRow as any).bomIdType || DIRECT_M2M;
             const dataToUpdate: any = {}; // keep bomId null, rmItemCode null, availableBomIds [] per requirement
             if (needBomType && bomType) dataToUpdate.bomType = bomType;
+            {
+              const rmTypeVal = fbRmTypeMap.get(vbRow.rmItemCode);
+              if (rmTypeVal !== undefined) dataToUpdate.rmType = rmTypeVal;
+            }
             if (needStock) {
               const stock = fbStockMap.get(vbRow.rmItemCode);
               if (stock !== undefined && stock.trim() !== "") dataToUpdate.availableStock = stock;

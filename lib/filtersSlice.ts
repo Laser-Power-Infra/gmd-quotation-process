@@ -54,6 +54,7 @@ const initialState: FiltersState = {
   stockQuantity: "",
   costLogic: "",
   availableStock: [],
+  rmType: [],
   stockAgainstContract: "",
 };
 

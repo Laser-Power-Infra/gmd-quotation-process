@@ -33,22 +33,23 @@ export const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
   28: 120, // Stock Status
   29: 120, // Stock Quantity
   30: 140, // Available Stock
-  31: 100, // Stock Against Contract
-  32: 120, // Discount
-  33: 150, // VA%
-  34: 120, // Quoted Rate
-  35: 140, // Rate (Contract Review)
-  36: 140, // PD Cost Val
-  37: 140, // QR incl. GST
-  38: 240, // Item Name (Merge)
-  39: 140, // Total Value incl. GST
-  40: 140, // Itemwise Total Value
-  41: 170, // Validation
-  42: 180, // Attachment
-  43: 140, // Delivery Schedule
-  44: 170, // APM
-  45: 150, // Offer PDF
-  46: 80,  // Actions
+  31: 140, // RM Type
+  32: 100, // Stock Against Contract
+  33: 120, // Discount
+  34: 150, // VA%
+  35: 120, // Quoted Rate
+  36: 140, // Rate (Contract Review)
+  37: 140, // PD Cost Val
+  38: 140, // QR incl. GST
+  39: 240, // Item Name (Merge)
+  40: 140, // Total Value incl. GST
+  41: 140, // Itemwise Total Value
+  42: 170, // Validation
+  43: 180, // Attachment
+  44: 140, // Delivery Schedule
+  45: 170, // APM
+  46: 150, // Offer PDF
+  47: 80,  // Actions
 };
 
 const initialState: UiState = {
