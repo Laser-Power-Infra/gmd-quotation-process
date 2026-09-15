@@ -38,6 +38,7 @@ export async function GET() {
         bomId: true,
         transferred: true,
         vendorReference: true,
+        attachmentUrl: true,
         syncedAt: true,
       },
     });
@@ -56,7 +57,7 @@ export async function GET() {
     }
 
     const syncedAt = items.length > 0 ? items[0].syncedAt : null;
-    const headers = [...CANONICAL_COLUMNS, "BOM ID", "Vendor Reference"];
+    const headers = [...CANONICAL_COLUMNS, "BOM ID", "Vendor Reference", "Attachment"];
     const rows = items.map(dbItemToRow);
     const ids = items.map((item) => item.id);
     const transferredIds = items

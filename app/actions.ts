@@ -14,6 +14,12 @@ import { getDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromA
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, getRmTypeMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 import { makeImageKey } from "@/lib/imageKey";
+import {
+  uploadToS3,
+  deleteFromS3,
+  validateAttachment,
+  buildAttachmentKey,
+} from "@/lib/s3";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -1869,6 +1875,192 @@ export async function setGMDUpdateTransferredAction(
     return {
       success: false,
       error: error.message || "Failed to update transfer status.",
+    };
+  }
+}
+
+export async function addTransferredBlankItemsAction(codes: string[]) {
+  "use server";
+  try {
+    const VALID_ERP_CODE = /^[A-Z]{3}[0-9]{6}$/;
+    const uniqueCodes = [
+      ...new Set(codes.map((c) => c.trim()).filter(Boolean)),
+    ];
+    const invalid: string[] = [];
+    const toCreate: string[] = [];
+    for (const code of uniqueCodes) {
+      if (!VALID_ERP_CODE.test(code)) {
+        invalid.push(code);
+        continue;
+      }
+      const existing = await prisma.gMDUpdateItem.findFirst({
+        where: { erpItemCode: code, transferred: true },
+        select: { id: true },
+      });
+      if (existing) continue;
+      toCreate.push(code);
+    }
+    const created: { code: string; id: string }[] = [];
+    for (const code of toCreate) {
+      const row = await prisma.gMDUpdateItem.create({
+        data: { erpItemCode: code, transferred: true },
+        select: { id: true },
+      });
+      created.push({ code, id: row.id });
+    }
+    return { success: true, data: { created, invalid } };
+  } catch (error: any) {
+    console.error("Error adding transferred blank items:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to add items.",
+    };
+  }
+}
+
+export async function transferFilteredByCodeAction(code: string) {
+  "use server";
+  try {
+    const trimmed = (code ?? "").trim();
+    if (!trimmed) return { success: true, data: { id: null } };
+    const target = await prisma.gMDUpdateItem.findFirst({
+      where: {
+        erpItemCode: trimmed,
+        transferred: false,
+        newItemStatus: { not: null },
+        NOT: [{ newItemStatus: "-" }, { newItemStatus: "Updated" }],
+      },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    if (!target) return { success: true, data: { id: null } };
+    await prisma.gMDUpdateItem.update({
+      where: { id: target.id },
+      data: { transferred: true },
+    });
+    return { success: true, data: { id: target.id } };
+  } catch (error: any) {
+    console.error("Error transferring filtered item by code:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to transfer item.",
+    };
+  }
+}
+
+export async function importTransferredExcelAction(
+  rows: { erpItemCode: string; values: Record<string, string> }[],
+) {
+  "use server";
+  try {
+    const updated: { id: string; code: string }[] = [];
+    const created: { id: string; code: string }[] = [];
+    for (const row of rows) {
+      const code = (row.erpItemCode ?? "").trim();
+      if (!code) {
+        const rowCreated = await prisma.gMDUpdateItem.create({
+          data: { erpItemCode: "", transferred: true, ...row.values },
+          select: { id: true },
+        });
+        created.push({ id: rowCreated.id, code: "" });
+        continue;
+      }
+      const existing = await prisma.gMDUpdateItem.findFirst({
+        where: { erpItemCode: code },
+        orderBy: { createdAt: "asc" },
+        select: { id: true },
+      });
+      if (existing) {
+        await prisma.gMDUpdateItem.update({
+          where: { id: existing.id },
+          data: { ...row.values, transferred: true },
+        });
+        updated.push({ id: existing.id, code });
+      } else {
+        const rowCreated = await prisma.gMDUpdateItem.create({
+          data: { erpItemCode: code, transferred: true, ...row.values },
+          select: { id: true },
+        });
+        created.push({ id: rowCreated.id, code });
+      }
+    }
+    return { success: true, data: { updated, created } };
+  } catch (error: any) {
+    console.error("Error importing transferred Excel:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to import Excel.",
+    };
+  }
+}
+
+export async function uploadGMDUpdateAttachmentAction(
+  id: string,
+  file: File,
+) {
+  "use server";
+  try {
+    if (!id) {
+      return { success: false, error: "Missing item id." };
+    }
+    validateAttachment(file);
+    const existing = await prisma.gMDUpdateItem.findUnique({
+      where: { id },
+      select: { erpItemCode: true, attachmentUrl: true },
+    });
+    if (!existing) {
+      return { success: false, error: "Item not found." };
+    }
+    const bytes = Buffer.from(await file.arrayBuffer());
+    const key = buildAttachmentKey(id, existing.erpItemCode, file.name);
+    const attachmentUrl = await uploadToS3({
+      key,
+      body: bytes,
+      contentType: file.type,
+    });
+    if (existing.attachmentUrl) {
+      await deleteFromS3(existing.attachmentUrl);
+    }
+    await prisma.gMDUpdateItem.update({
+      where: { id },
+      data: { attachmentUrl },
+    });
+    return { success: true, data: { id, attachmentUrl } };
+  } catch (error: any) {
+    console.error("Error uploading GMD attachment:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to upload attachment.",
+    };
+  }
+}
+
+export async function clearGMDUpdateAttachmentAction(id: string) {
+  "use server";
+  try {
+    if (!id) {
+      return { success: false, error: "Missing item id." };
+    }
+    const existing = await prisma.gMDUpdateItem.findUnique({
+      where: { id },
+      select: { attachmentUrl: true },
+    });
+    if (!existing) {
+      return { success: false, error: "Item not found." };
+    }
+    if (existing.attachmentUrl) {
+      await deleteFromS3(existing.attachmentUrl);
+    }
+    await prisma.gMDUpdateItem.update({
+      where: { id },
+      data: { attachmentUrl: null },
+    });
+    return { success: true, data: { id, attachmentUrl: null } };
+  } catch (error: any) {
+    console.error("Error clearing GMD attachment:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to clear attachment.",
     };
   }
 }

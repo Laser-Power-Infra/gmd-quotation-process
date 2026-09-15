@@ -8,6 +8,8 @@ import {
   updateGMDUpdateFieldAction,
   updateGMDUsdCostAction,
   selectGMDUpdateBomIdAction,
+  uploadGMDUpdateAttachmentAction,
+  clearGMDUpdateAttachmentAction,
 } from "@/app/actions";
 
 export interface GMDUpdateRow {
@@ -39,6 +41,7 @@ export interface GMDUpdateRow {
   indianImported: string | null;
   bomId: string | null;
   vendorReference: string | null;
+  attachmentUrl: string | null;
 }
 
 const adapter = createEntityAdapter<GMDUpdateRow>();
@@ -80,12 +83,37 @@ export const selectGMDUpdateBomId = createAsyncThunk(
   },
 );
 
+export const uploadGMDUpdateAttachment = createAsyncThunk(
+  "gmdUpdate/uploadAttachment",
+  async ({ id, file }: { id: string; file: File }) => {
+    const result = await uploadGMDUpdateAttachmentAction(id, file);
+    if (!result.success) {
+      throw new Error(result.error || "Failed to upload attachment.");
+    }
+    return result.data!;
+  },
+);
+
+export const clearGMDUpdateAttachment = createAsyncThunk(
+  "gmdUpdate/clearAttachment",
+  async ({ id }: { id: string }) => {
+    const result = await clearGMDUpdateAttachmentAction(id);
+    if (!result.success) {
+      throw new Error(result.error || "Failed to clear attachment.");
+    }
+    return result.data!;
+  },
+);
+
 const gmdUpdateSlice = createSlice({
   name: "gmdUpdate",
   initialState: adapter.getInitialState(),
   reducers: {
     hydrateGMDUpdate(state, action) {
       adapter.setAll(state, action.payload);
+    },
+    upsertGMDUpdateItems(state, action) {
+      adapter.upsertMany(state, action.payload);
     },
   },
   extraReducers: (builder) => {
@@ -104,10 +132,19 @@ const gmdUpdateSlice = createSlice({
       const { id, bomId } = action.payload;
       adapter.updateOne(state, { id, changes: { bomId } });
     });
+    builder.addCase(uploadGMDUpdateAttachment.fulfilled, (state, action) => {
+      const { id, attachmentUrl } = action.payload;
+      adapter.updateOne(state, { id, changes: { attachmentUrl } });
+    });
+    builder.addCase(clearGMDUpdateAttachment.fulfilled, (state, action) => {
+      const { id, attachmentUrl } = action.payload;
+      adapter.updateOne(state, { id, changes: { attachmentUrl } });
+    });
   },
 });
 
-export const { hydrateGMDUpdate } = gmdUpdateSlice.actions;
+export const { hydrateGMDUpdate, upsertGMDUpdateItems } =
+  gmdUpdateSlice.actions;
 export const {
   selectAll: selectAllGMDUpdateRows,
   selectById: selectGMDUpdateRowById,

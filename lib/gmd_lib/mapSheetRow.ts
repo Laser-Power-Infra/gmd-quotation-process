@@ -57,6 +57,7 @@ currentStatus: string | null;
   indianImported: string | null;
   bomId: string | null;
   vendorReference: string | null;
+  attachmentUrl?: string | null;
 }): unknown[] {
   return [
     item.erpItemCode, item.itemNameAuto, item.l1, item.l2ValveType, item.l3Dia,
@@ -64,6 +65,6 @@ currentStatus: string | null;
     item.um, item.availableStock, item.conv1, item.pcsWgt, item.aum,
     item.cost, item.usdRateOption, item.hsnCode, item.hsnCodeValidation, item.conv2,
     item.majorMarking, item.newItemStatus, item.currentStatus, item.rmType, item.indianImported,
-    item.bomId, item.vendorReference,
+    item.bomId, item.vendorReference, item.attachmentUrl,
   ];
 }

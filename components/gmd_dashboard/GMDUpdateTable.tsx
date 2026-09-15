@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { ChevronUp, ChevronDown, Search, RotateCcw, X, Download, Files, FileText, ExternalLink, Copy } from "lucide-react";
+import { ChevronUp, ChevronDown, Search, RotateCcw, X, Download, Files, FileText, ExternalLink, Copy, Upload, Eye, Paperclip, Trash2 } from "lucide-react";
 import GMDUpdateStatusBadge from "./GMDUpdateStatusBadge";
 import {
   STATUS_COLUMNS,
@@ -156,6 +156,144 @@ function OrderListCell({ display, poNo }: { display: string; poNo?: string }) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+function AttachmentCell({
+  url,
+  onUpload,
+  onClear,
+}: {
+  url: string;
+  onUpload: (file: File) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const isPdf = /\.pdf($|\?)/i.test(url);
+
+  const buttonClass =
+    "flex items-center gap-1 px-1.5 py-1 text-[10px] font-semibold rounded border cursor-pointer transition-colors";
+
+  return (
+    <div className="flex items-center justify-center gap-1">
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onUpload(file);
+          e.target.value = "";
+        }}
+      />
+      {url ? (
+        <>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(true);
+            }}
+            className={`${buttonClass} border-[#0a2540]/15 bg-white text-[#0a2540] hover:bg-[#f4f6f8]`}
+            title="Preview attachment"
+          >
+            <Eye size={12} />
+            Preview
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              fileRef.current?.click();
+            }}
+            className={`${buttonClass} border-[#e1e6eb] bg-white text-[#0a2540]/70 hover:bg-[#f4f6f8]`}
+            title="Replace attachment"
+          >
+            <Upload size={11} />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClear();
+            }}
+            className={`${buttonClass} border-rose-200 bg-white text-rose-600 hover:bg-rose-50`}
+            title="Remove attachment"
+          >
+            <Trash2 size={11} />
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            fileRef.current?.click();
+          }}
+          className={`${buttonClass} border-[#0a2540]/15 bg-white text-[#0a2540] hover:bg-[#f4f6f8]`}
+          title="Upload PDF or image"
+        >
+          <Paperclip size={12} />
+          Upload
+        </button>
+      )}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-[720px] p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-4 pt-4 pb-3 border-b border-[#e1e6eb] bg-[#f8f9fa]">
+            <DialogTitle className="text-sm font-bold text-[#0a2540] flex items-center gap-2">
+              <FileText size={16} className="text-[#0a2540]/70" />
+              Attachment Preview
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              {isPdf ? "PDF document" : "Image"} stored in the S3 bucket
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[70vh] overflow-auto bg-[#f4f6f8]">
+            {isPdf ? (
+              <iframe
+                src={url}
+                className="w-full h-[65vh]"
+                title="Attachment preview"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={url}
+                alt="Attachment preview"
+                className="mx-auto max-h-[65vh] object-contain"
+              />
+            )}
+          </div>
+          <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[#e1e6eb]">
+            <Button
+              variant="ghost"
+              size="xs"
+              className="h-7 px-2 gap-1 text-[11px]"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(url);
+                toast.success("Link copied");
+              }}
+            >
+              <Copy size={12} /> Copy link
+            </Button>
+            <Button
+              variant="default"
+              size="xs"
+              className="h-7 px-2.5 gap-1 text-[11px]"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(url, "_blank", "noopener,noreferrer");
+              }}
+            >
+              <ExternalLink size={12} /> Open
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
@@ -409,8 +547,13 @@ interface GMDUpdateTableProps {
     onPaste: (text: string) => void;
   };
   onClearMoved?: () => void;
+  onImportExcel?: (file: File) => void;
+  onErpCodeChange?: (id: string, code: string) => void;
   fieldOverride?: Record<string, string>;
   filterOptionsOverride?: Record<string, string[]>;
+  attachmentColumn?: string;
+  onUploadAttachment?: (id: string, file: File) => Promise<void>;
+  onClearAttachment?: (id: string) => Promise<void>;
 }
 
 export default function GMDUpdateTable({
@@ -446,8 +589,13 @@ castingRateInputs,
   maxHeight,
   pasteErpCodes,
   onClearMoved,
+  onImportExcel,
+  onErpCodeChange,
   fieldOverride,
   filterOptionsOverride,
+  attachmentColumn,
+  onUploadAttachment,
+  onClearAttachment,
   filterState,
   filterActions,
   columnOptionMeta,
@@ -563,6 +711,7 @@ castingRateInputs,
     startX: number;
     startWidth: number;
   } | null>(null);
+  const importFileRef = useRef<HTMLInputElement | null>(null);
 
   const handleSort = (colIndex: number) => {
     if (sortColumn === colIndex) {
@@ -915,6 +1064,10 @@ castingRateInputs,
     } catch (err: any) {
       toast.error(err?.message || err || `Failed to update ${header}`, { id: toastId });
     }
+
+    if (header === "ERP ITEM CODE" && value && onErpCodeChange) {
+      onErpCodeChange(id, value);
+    }
   };
 
   const handleUsdCostUpdate = async (rowIndex: number, value: string) => {
@@ -1045,6 +1198,33 @@ castingRateInputs,
               )}
             </div>
           )}
+          {onImportExcel && (
+            <div className="relative">
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onImportExcel(file);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  importFileRef.current?.click();
+                }}
+                className="flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-[#0a2540] px-2 py-1.5 rounded hover:bg-white/80 border border-[#e1e6eb]"
+                title="Import Excel to fill transferred rows"
+              >
+                <Upload size={12} />
+                Import Excel
+              </button>
+            </div>
+          )}
           <div className="relative">
             <Search
               size={13}
@@ -1157,6 +1337,7 @@ castingRateInputs,
                     </div>
                     {/* Column filter */}
                     {!hiddenFilters?.includes(header) &&
+                      !(attachmentColumn && header === attachmentColumn && onUploadAttachment) &&
                       (isDateFilterHeader(header) ? (
                         <div className="flex flex-col gap-1 mt-1.5">
                           <div className="flex items-center gap-1">
@@ -1318,9 +1499,21 @@ castingRateInputs,
                     const isCellEditable =
                       editable &&
                       (!editableColumns || editableColumns.includes(header));
+                    const isAttachmentColumn =
+                      attachmentColumn &&
+                      header === attachmentColumn &&
+                      onUploadAttachment;
                     const isPnBlankDropdown =
                       header === "PN RATING" && !String(display).trim() && (fixedDropdownOptions?.[header]?.length ?? 0) > 0;
-                    if (header === "BOM ID" && onSelectBomId) {
+                    if (isAttachmentColumn) {
+                      cellContent = (
+                        <AttachmentCell
+                          url={display}
+                          onUpload={(file) => onUploadAttachment(id, file)}
+                          onClear={() => onClearAttachment?.(id)}
+                        />
+                      );
+                    } else if (header === "BOM ID" && onSelectBomId) {
                       const options = bomIdOptionsById?.[id] ?? [];
                       if (options.length === 0) {
                         cellContent = (
