@@ -23,8 +23,8 @@ test('matchItemType detects resilient seated sluice valve', () => {
   assert.equal(matchItemType('150 mm DI DF Resilient seated type Sluice Valve of PN 1.0 Mpa'), 'SLUICE VALVE-RESILIENT-NON-RISING')
 })
 
-test('matchItemType detects gate valve', () => {
-  assert.equal(matchItemType('Gate Valve 150mm PN16'), 'GATE VALVE')
+test('matchItemType maps gate valve to sluice valve resilient rising', () => {
+  assert.equal(matchItemType('Gate Valve 150mm PN16'), 'SLUICE VALVE-RESILIENT-RISING')
 })
 
 test('matchItemType detects ball valve', () => {
@@ -53,6 +53,14 @@ test('matchItemType detects gasket', () => {
 
 test('matchItemType detects TPAV', () => {
   assert.equal(matchItemType('TPAV 25mm'), 'TPAV')
+})
+
+test('matchItemType prioritises TPAV over sluice valve', () => {
+  assert.equal(matchItemType('TPAV Sluice valve 200mm,PN1.6'), 'TPAV')
+})
+
+test('matchItemType keeps knife gate valve distinct from gate/sluice valve', () => {
+  assert.equal(matchItemType('Knife Gate Valve 200mm'), 'KNIFE GATE VALVE')
 })
 
 test('matchItemType returns null for unknown', () => {
@@ -117,8 +125,8 @@ test('matchItemType detects air cushion valve', () => {
   assert.equal(matchItemType('Air Cushion Valve with Cast Iron Body 200 MM Size'), 'AIR CUSHION VALVE')
 })
 
-test('matchItemType detects gate valve via GV abbreviation', () => {
-  assert.equal(matchItemType('GV200mmPN16CI'), 'GATE VALVE')
+test('matchItemType maps GV abbreviation to sluice valve resilient rising', () => {
+  assert.equal(matchItemType('GV200mmPN16CI'), 'SLUICE VALVE-RESILIENT-RISING')
 })
 
 test('matchItemType detects butterfly valve via BFV abbreviation', () => {

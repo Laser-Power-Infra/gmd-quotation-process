@@ -842,6 +842,119 @@ export async function updateEnquiryFieldAction(
   }
 }
 
+/**
+ * Back-calculates and populates BOM ID from a selected rmType on an EnquiryItem.
+ * Matches candidate BOMs from VerifyBom whose raw material (rmItemCode) in GMDUpdateItem has matching rmType.
+ */
+async function maybeBackCalculateBomFromRmType(itemId: string, selectedRmType: string | null) {
+  if (!selectedRmType || !selectedRmType.trim()) return null;
+  const targetType = selectedRmType.trim().toUpperCase();
+
+  const current = await prisma.enquiryItem.findUnique({
+    where: { id: itemId },
+    select: {
+      id: true,
+      erpItemCode: true,
+      bomId: true,
+      productCost: true,
+      itemType: true,
+      moc: true,
+      size: true,
+      pnRating: true,
+      operationType: true,
+    },
+  });
+  if (!current) return null;
+
+  // Only proceed if bomId is currently blank
+  if (current.bomId && current.bomId.trim() !== "") return null;
+
+  let itemCode = current.erpItemCode;
+  // If erpItemCode is missing, try to resolve it from the 5 fields
+  if (!itemCode && (current.itemType || current.moc || current.size || current.pnRating || current.operationType)) {
+    const recomputed = await recomputeItemCodeForValues(
+      itemId,
+      {
+        itemType: current.itemType,
+        moc: current.moc,
+        size: current.size,
+        pnRating: current.pnRating,
+        operationType: current.operationType,
+      },
+      null
+    );
+    if (recomputed.newCode) {
+      itemCode = recomputed.newCode;
+      await syncAvailableBomIds(itemId, itemCode);
+    }
+  }
+
+  if (!itemCode) return null;
+
+  // Look up candidate BOMs for this item code from VerifyBom (excluding NO USE)
+  const candidates = await prisma.verifyBom.findMany({
+    where: {
+      itemCode,
+      noUse: { not: "NO USE" },
+    },
+    select: {
+      bomId: true,
+      rmItemCode: true,
+      bomIdType: true,
+    },
+    orderBy: { bomId: "asc" },
+  });
+  if (candidates.length === 0) return null;
+
+  const rmCodes = [...new Set(candidates.map((c) => c.rmItemCode).filter(Boolean))] as string[];
+  const rmTypeMap = await getRmTypeMap(rmCodes);
+
+  // Find the candidate whose raw material has the matching rmType
+  const match = candidates.find((c) => {
+    if (!c.rmItemCode) return false;
+    const typeVal = rmTypeMap.get(c.rmItemCode);
+    return typeVal && typeVal.trim().toUpperCase() === targetType;
+  });
+
+  if (!match) return null;
+
+  const bomType = match.bomIdType || DIRECT_M2M;
+  const dataToUpdate: any = {
+    bomId: match.bomId,
+    bomType,
+    rmItemCode: match.rmItemCode,
+  };
+
+  if (bomType === DIRECT_M2M && match.rmItemCode) {
+    const stockMap = await getRmStockMap([match.rmItemCode]);
+    const stock = stockMap.get(match.rmItemCode);
+    if (stock !== undefined) dataToUpdate.availableStock = stock;
+  }
+
+  await prisma.enquiryItem.update({
+    where: { id: itemId },
+    data: dataToUpdate,
+  });
+
+  // If productCost was null, auto-fill it and recalculate
+  if (current.productCost === null && match.rmItemCode) {
+    let cost: number | undefined;
+    const rawMap = await buildRawMaterialsCostMap([match.rmItemCode]);
+    cost = rawMap.get(match.rmItemCode);
+    if (cost === undefined) {
+      const supplyMap = await buildRmCostMap([match.rmItemCode]);
+      cost = supplyMap.get(match.rmItemCode);
+    }
+    if (cost !== undefined && cost !== null) {
+      const recalc = await recalculateItem(itemId, { productCost: cost });
+      if (recalc) return recalc;
+    }
+  }
+
+  const updated = await prisma.enquiryItem.findUnique({ where: { id: itemId } });
+  return updated ? serializeItem(updated) : null;
+}
+
 // Update a specific field of an enquiry item directly (for inline cell editing)
 export async function updateItemFieldAction(
   itemId: string,
@@ -861,6 +974,7 @@ export async function updateItemFieldAction(
         operationType: true,
         erpItemCode: true,
         productCost: true,
+        bomId: true,
         [field]: true,
       },
     });
@@ -949,6 +1063,18 @@ export async function updateItemFieldAction(
         where: { id: itemId },
         data: updateData,
       });
+
+      // If rmType changed and bomId is blank, back-calculate and fill bomId
+      if (field === "rmType" && parsedVal) {
+        try {
+          const backCalculated = await maybeBackCalculateBomFromRmType(itemId, parsedVal);
+          if (backCalculated) {
+            dbItem = (await prisma.enquiryItem.findUnique({ where: { id: itemId } })) as any;
+          }
+        } catch (e) {
+          console.warn(`[updateItemField] back-calculate bomId from rmType failed for ${itemId}:`, e);
+        }
+      }
 
       // If bypass changed via itemName gate, recalculate cost atomically
       if (updateData.bypass !== undefined) {

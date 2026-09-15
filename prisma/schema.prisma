@@ -23,6 +23,7 @@ model Enquiry {
 
   docketNumber     String   @unique
   partyName        String
+  contractNo       String[]  @default([])
   enquiryDate      DateTime
 
   enquiryType      String?
@@ -302,7 +303,10 @@ model ContractReview {
   balToProdOrdEntVal     String?
   balBillAgMcVal         String?
   balBillAgContVal       String?
-   balDiVal               String?
+  balDiVal               String?
+  state                  String?
+  utility                String?
+  projectReference       String?
   diVal                  String?
   icQty                  String?
   bomId                  String?

@@ -78,7 +78,7 @@ Function `extractSizeFromItemName(itemName)` `L44`:
 | `BUTTERFLY VALVE` | `/butter\s?fly/, /bfv/i` | `L2` | high priority |
 | `SLUICE VALVE- RESILIENT...-RISING/NON-RISING` | `/sluice.*resilient.*non[ -]?rising/`, `/sluice.*resilient.*rising/`, `/sluice/i` last | `L4-7` | More specific first, bare `/sluice/` last as catch-all |
 | `SLUICE VALVE- METAL SEATED` etc same | `...metal...` | `L8-12` | |
-| `GATE VALVE` | `/\bgate\s*valve/` | `L13` | |
+| `GATE VALVE` → mapped to `SLUICE VALVE-RESILIENT-RISING` | `/gate\s*valve/`, `/\bgv/` | `L5` | "gate valve" now resolves to `SLUICE VALVE-RESILIENT-RISING` (not `GATE VALVE`) |
 | `CHECK VALVE` | `/check.*valve/`, `/\bnrv\b/` | `L25` | |
 | `DPCV / PRESSURE RELIEF` | `dpcv`, `pressure.*relief` | `L26` | VA 15%/200% |
 | `AIR CUSHION VALVE`, `AIR VALVE` etc | `...air...cushion`, `air.*valve` | `L27-29` | |
@@ -184,7 +184,7 @@ Same table powers `getDefaultVaPercent(itemType,size)` and max check `validateVa
 |--------------------|----------------------------------------|-------|
 | **BUTTERFLY VALVE** | 0-450→50%, 451-1000→35%, >1000 or blank→65% | `L27-31/187-191` |
 | **SLUICE VALVE- RESILIENT (rising/non)** | 0-200→25%, 250-450→20%, 500-1000→30%, else 30% | `L38-44` |
-| **SLUICE VALVE- METAL / GATE VALVE** | 0-450→35%, 500-1200→40%, else 30% | `L50-54,118-122` |
+| **SLUICE VALVE- METAL** | 0-450→35%, 500-1200→40%, else 30% | `L50-54,118-122` |
 | Fixed 15%: `DPCV, COMPANION FLANGE, DISMANTLING JOINT, EXPANSION BELLOWS, FLOAT VALVE` | 15% | `L68-100` |
 | 20-35%: `TPAV 35%, AIR CUSHION 75%, AIR VALVE 35%` | | `L57-75` |
 | 200%: `PRESSURE RELIEF VALVE, CHECK VALVE, ALTITUDE VALVE` | | `L60, L-same` |
@@ -201,7 +201,7 @@ Same table powers `getDefaultVaPercent(itemType,size)` and max check `validateVa
 - **Why did my size 160 become 200?** Allowed list has no 160; rounding `roundToAllowedSize` rounds **up** to next allowed (160→200) `lib/sizeExtractor.ts:209`.
 - **Why was Item Type not detected?** Name didn't contain any regex substring; reword to include `butterfly`, `sluice`, `gate` etc. Check order — insertion point matters before catch-all.
 - **Why is PN blank?** Text has no `PN10`/`CLASS` pattern; add e.g., `PN10` to name or select PN dropdown manually (sets `source='sheet'`).
-- **Why is operation still not GB for 400mm?** Rule triggers only if `itemType` is exactly `SLUICE VALVE` or `BUTTERFLU VALVE` substring and parsed size number >350 — if detection gave `GATE VALVE`, rule doesn't apply.
+- **Why is operation still not GB for 400mm?** Rule triggers only if `itemType` is exactly `SLUICE VALVE` or `BUTTERFLY VALVE` substring and parsed size number >350. Since "gate valve" now auto-detects as `SLUICE VALVE-RESILIENT-RISING`, the GB rule applies to gate valves too. If detection gave a non-sluice/non-butterfly type, the rule doesn't apply.
 
 ## 10. Source Files
 

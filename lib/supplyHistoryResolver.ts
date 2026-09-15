@@ -6,9 +6,10 @@ const VALIDATION_ENABLED = process.env.AI_VALIDATION_ENABLED !== "false";
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
 const SUPPLY_ITEM_TYPE_PATTERNS = [
+  { category: "TPAV",             patterns: [/tpav/i, /tamper\s*proof\s*air\s*valve/i] },
+  { category: "KNIFE GATE VALVE", patterns: [/knife\s*gate\s*valve/i, /knife\s*gate/i, /knee\s*gate\s*valve/i, /knee\s*gate/i] },
   { category: "BUTTERFLY VALVE",  patterns: [/butter\s?fly\s*(valve)?/i, /butterfly\s*valve/i, /\bbfv/i] },
-  { category: "GATE VALVE",       patterns: [/gate\s*valve/i, /\bgv/i] },
-  { category: "SLUICE VALVE-RESILIENT-RISING",    patterns: [/sluice.*resilient.*rising/i, /resilient.*rising.*sluice/i] },
+  { category: "SLUICE VALVE-RESILIENT-RISING",    patterns: [/sluice.*resilient.*rising/i, /resilient.*rising.*sluice/i, /gate\s*valve/i, /\bgv/i] },
   { category: "SLUICE VALVE-METAL-RISING",        patterns: [/rising.*sluice/i, /sluice.*rising/i, /cast\s*steel.*sluice/i, /sluice.*cast\s*steel/i] },
   { category: "SLUICE VALVE-METAL-NON-RISING",    patterns: [/\b14846\b/i, /metal.*sluice/i, /sluice.*metal/i] },
   { category: "SLUICE VALVE-RESILIENT-NON-RISING", patterns: [/manual.*sluice/i, /resilient.*sluice/i, /sluice.*resilient/i, /sluice\s*valve/i, /sluice\/scoure\s*valve/i, /scoure\s*valve/i, /sluice/i] },
@@ -33,7 +34,6 @@ const SUPPLY_ITEM_TYPE_PATTERNS = [
   { category: "DPCV",             patterns: [/dual\s*plate/i, /dpcv/i] },
   { category: "AIR CUSHION VALVE", patterns: [/air\s*cushion\s*valve/i] },
   { category: "AIR VALVE",        patterns: [/air\s*valve/i] },
-  { category: "TPAV",             patterns: [/tpav/i, /tamper\s*proof\s*air\s*valve/i] },
   { category: "VACUM BREAKER VALVE", patterns: [/vacuum\s*breaker/i, /vacum\s*breaker/i] },
   { category: "SOLENOID VALVE",   patterns: [/solenoid\s*valve/i] },
   { category: "FOOT VALVE",       patterns: [/foot\s*valve/i] },
@@ -46,7 +46,6 @@ const SUPPLY_ITEM_TYPE_PATTERNS = [
   { category: "ALTITUDE CONTROL VALVE", patterns: [/altitude\s*control/i, /control\s*valve/i, /\bdiaphragm\b/i] },
   { category: "PRESSURE REDUCING VALVE", patterns: [/pressure\s*reducing\s*valve/i, /\bprds\b/i] },
   { category: "PRESSURE RELIEF VALVE", patterns: [/pressure\s*relief\s*valve/i, /\bprv\b/i, /\barv\b/i] },
-  { category: "KNIFE GATE VALVE", patterns: [/knife\s*gate\s*valve/i, /knife\s*gate/i, /knee\s*gate\s*valve/i, /knee\s*gate/i] },
   { category: "SLUICE GATE",      patterns: [/sluice\s*gate/i] },
   { category: "EXPANSION BELOWS", patterns: [/bellow[s]?/i, /expansion\s*bellow[s]?/i] },
   { category: "BOLTS OR NUTS",    patterns: [/bolts?\s*(and|&|or\s*)?\s*nuts?/i, /screw[s]?\b/i] },

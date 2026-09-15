@@ -15,6 +15,7 @@
     "stock:sync": "tsx scripts/sync-available-stock-from-stock-phys.ts",
     "stock:sync:apply": "tsx scripts/sync-available-stock-from-stock-phys.ts --apply",
     "bom:item-name": "tsx scripts/backfill-verify-bom-item-name.ts",
+    "contract:sync": "tsx scripts/sync-contract-numbers.ts",
     "bom:cleanup-no-use": "tsx scripts/remove-no-use-bom-ids.ts",
     "bom:cleanup-no-use:apply": "tsx scripts/remove-no-use-bom-ids.ts --write"
   },
