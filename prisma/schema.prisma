@@ -249,6 +249,7 @@ model GMDUpdateItem {
   bomId           String?
   transferred     Boolean  @default(false)
   vendorReference String?
+  orderDelivery   String?
   attachmentUrl   String?
   syncedAt        DateTime @default(now())
   createdAt       DateTime @default(now())
@@ -308,6 +309,9 @@ model ContractReview {
   noUse                  String?
   partyNameDump          String?
   status                 String?
+  mcReceivedPending      String?
+  inspection             String?
+  remarks                String?
   syncedAt               DateTime @default(now())
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
