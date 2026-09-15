@@ -2,6 +2,7 @@ import React, { Suspense } from "react";
 import DashboardContainer from "./DashboardContainer";
 import { prisma } from "@/lib/prisma";
 import { getActiveLookupValuesByType } from "@/lib/lookup";
+import { getBatchDistinctBomIds, getNoUseBomIdSet } from "@/lib/verifyBomLookup";
 
 // The dashboard reads live data on every request. It used to be dynamic implicitly because
 // it awaited searchParams for ?search=; search is client-side now, so say it explicitly.
@@ -10,31 +11,54 @@ export const dynamic = "force-dynamic";
 export default async function Page() {
   // Fetch every enquiry once. Search, filtering and pagination all run client-side inside
   // the table, so searching no longer re-runs this query or re-hydrates the store.
-  const enquiriesList = (
-    await prisma.enquiry.findMany({
-      include: {
-        items: {
-          orderBy: {
-            position: "asc"
-          }
-        },
-        attachments: true,
+  const rawEnquiries = await prisma.enquiry.findMany({
+    include: {
+      items: {
+        orderBy: {
+          position: "asc"
+        }
       },
-      orderBy: {
-        createdAt: "desc",
-      },
-    })
-  ).map((enquiry) => ({
+      attachments: true,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  // Read-time authoritative override: ensure every item with the same erpItemCode has identical
+  // availableBomIds (NO-USE filtered). This guarantees no blank-vs-dropdown divergence (e.g. FSD040074)
+  // even if stored data is stale, and never brings back NO-USE bomIds.
+  let bomMap: Map<string, string[]> = new Map();
+  let noUseSet: Set<string> = new Set();
+  try {
+    const allCodes = [...new Set(rawEnquiries.flatMap((e) => e.items.map((i) => (i as any).erpItemCode).filter(Boolean) as string[]))];
+    if (allCodes.length > 0) {
+      bomMap = await getBatchDistinctBomIds(allCodes);
+      const allBomIds = [...new Set([...bomMap.values()].flat())];
+      noUseSet = await getNoUseBomIdSet(allBomIds);
+    }
+  } catch (e) {
+    console.warn("[Page] bom availability batch failed, falling back to stored values:", e);
+  }
+
+  const enquiriesList = rawEnquiries.map((enquiry) => ({
     ...enquiry,
-    items: enquiry.items.map((item) => ({
-      ...item,
-      quantity: Number(item.quantity),
-      productCost: item.productCost ? Number(item.productCost) : null,
-      cost: item.cost ? Number(item.cost) : null,
-      discount: item.discount ? Number(item.discount) : null,
-      vaPercent: item.vaPercent !== null && item.vaPercent !== undefined ? Number(item.vaPercent) : null,
-      quotedRate: item.quotedRate || null,
-    })),
+    items: enquiry.items.map((item) => {
+      const code = (item as any).erpItemCode as string | null;
+      const filtered = code ? (bomMap.get(code) ?? []).filter((id) => !noUseSet.has(id)) : [];
+      // Use filtered when code is present (authoritative, NO-USE excluded); otherwise keep stored (null => blank)
+      const availableBomIds = code ? filtered : ((item as any).availableBomIds ?? []);
+      return {
+        ...item,
+        availableBomIds,
+        quantity: Number(item.quantity),
+        productCost: item.productCost ? Number(item.productCost) : null,
+        cost: item.cost ? Number(item.cost) : null,
+        discount: item.discount ? Number(item.discount) : null,
+        vaPercent: item.vaPercent !== null && item.vaPercent !== undefined ? Number(item.vaPercent) : null,
+        quotedRate: item.quotedRate || null,
+      };
+    }),
   }));
 
   // Fetch enquiries for the Add Items dropdown list
