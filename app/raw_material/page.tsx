@@ -9,10 +9,12 @@ import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import {
   hydrateGMDUpdate,
   upsertGMDUpdateItems,
+  applyTransferCostMatch,
   selectAllGMDUpdateRows,
   selectGMDUpdateBomId,
   uploadGMDUpdateAttachment,
   clearGMDUpdateAttachment,
+  deleteGMDUpdateTransferredItem,
   type GMDUpdateRow,
 } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
@@ -30,7 +32,11 @@ import {
   importTransferredExcelAction,
   transferFilteredByCodeAction,
   getTradingValveOptionsAction,
+  getTransferCostMatchProposalsAction,
+  applyTransferCostMatchAction,
+  type TransferCostMatchProposal,
 } from "@/app/actions";
+import TransferCostMatchDialog from "../../components/gmd_dashboard/TransferCostMatchDialog";
 import { toast } from "sonner";
 import {
   ResizableHandle,
@@ -632,7 +638,7 @@ export default function Home() {
         }
         const res = await importTransferredExcelAction(parsed);
         if (res.success && res.data) {
-          const { updated, created } = res.data;
+          const { updated, skipped } = res.data;
           const upserts: GMDUpdateRow[] = [];
           for (const u of updated) {
             const existing = allItems.find((i) => i.id === u.id);
@@ -643,24 +649,18 @@ export default function Home() {
               ...(parsedRow?.values ?? {}),
             });
           }
-          for (const c of created) {
-            const parsedRow = parsed.find((p) => p.erpItemCode === c.code);
-            upserts.push({
-              ...blankGMDUpdateRow(c.id, c.code),
-              ...(parsedRow?.values ?? {}),
-            });
-          }
           if (upserts.length) dispatch(upsertGMDUpdateItems(upserts));
-          const ids = [
-            ...updated.map((u) => u.id),
-            ...created.map((c) => c.id),
-          ];
+          const ids = updated.map((u) => u.id);
           if (ids.length) {
             setTransferredIds((prev) => [...new Set([...prev, ...ids])]);
           }
           const parts: string[] = [];
           if (updated.length) parts.push(`${updated.length} updated`);
-          if (created.length) parts.push(`${created.length} created`);
+          if (skipped) {
+            parts.push(
+              `${skipped} skipped (no code / not in Transferred)`,
+            );
+          }
           if (parts.length) toast.success(`Import complete: ${parts.join(", ")}`);
         } else {
           toast.error(res.error || "Failed to import Excel.");
@@ -718,6 +718,69 @@ export default function Home() {
     },
     [dispatch],
   );
+
+  const handleDeleteTransferredRow = useCallback(
+    async (id: string) => {
+      const toastId = toast.loading("Deleting row...");
+      try {
+        await dispatch(deleteGMDUpdateTransferredItem({ id })).unwrap();
+        setTransferredIds((prev) => prev.filter((x) => x !== id));
+        toast.success("Row deleted", { id: toastId });
+      } catch (err: any) {
+        toast.error(err?.message || err || "Failed to delete row.", { id: toastId });
+      }
+    },
+    [dispatch],
+  );
+
+  const [matchProposals, setMatchProposals] = useState<TransferCostMatchProposal[]>([]);
+  const [matchOpen, setMatchOpen] = useState(false);
+
+  const handleStartMatchCosts = useCallback(async () => {
+    const res = await getTransferCostMatchProposalsAction();
+    if (!res.success) {
+      toast.error(res.error || "Failed to scan matches.");
+      return;
+    }
+    const proposals = res.data?.proposals ?? [];
+    if (proposals.length === 0) {
+      toast.info("No L1–L8 matches found between Transferred and New Items.");
+      return;
+    }
+    setMatchProposals(proposals);
+    setMatchOpen(true);
+  }, []);
+
+  const handleApplyMatch = useCallback(
+    async (proposal: TransferCostMatchProposal) => {
+      const res = await applyTransferCostMatchAction(proposal.transferredRowId);
+      if (!res.success) {
+        toast.error(res.error || "Failed to apply cost match.");
+        return;
+      }
+      const data = res.data!;
+      dispatch(
+        applyTransferCostMatch({
+          transferredRowId: data.transferredRowId,
+          newItemIds: data.updatedNewItemIds,
+          cost: data.cost,
+        }),
+      );
+      setTransferredIds((prev) =>
+        prev.filter((x) => x !== data.transferredRowId),
+      );
+      toast.success(
+        `Updated ${data.updatedNewItemIds.length} new item${data.updatedNewItemIds.length === 1 ? "" : "s"} to cost ₹${data.cost}`,
+      );
+    },
+    [dispatch],
+  );
+
+  const handleMatchClose = useCallback(() => {
+    setMatchOpen(false);
+    setMatchProposals([]);
+    fetchData();
+  }, [fetchData]);
 
   const [firstFilteredRows, setFirstFilteredRows] = useState<unknown[][]>([]);
   // Table filter lift (controlled like contract_review) for true cascading
@@ -1256,6 +1319,8 @@ export default function Home() {
                   attachmentColumn="Attachment"
                   onUploadAttachment={handleUploadAttachment}
                   onClearAttachment={handleClearAttachment}
+                  onDeleteRow={handleDeleteTransferredRow}
+                  onMatchCosts={handleStartMatchCosts}
                   fullHeight
                 />
                 </ResizablePanel>
@@ -1264,6 +1329,12 @@ export default function Home() {
         </ResizablePanel>
       </ResizablePanelGroup>
       </div>
+      <TransferCostMatchDialog
+        open={matchOpen}
+        proposals={matchProposals}
+        onApply={handleApplyMatch}
+        onClose={handleMatchClose}
+      />
     </main>
   );
 }

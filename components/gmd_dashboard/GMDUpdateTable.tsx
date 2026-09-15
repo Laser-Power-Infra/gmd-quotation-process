@@ -554,6 +554,8 @@ interface GMDUpdateTableProps {
   attachmentColumn?: string;
   onUploadAttachment?: (id: string, file: File) => Promise<void>;
   onClearAttachment?: (id: string) => Promise<void>;
+  onDeleteRow?: (id: string) => Promise<void>;
+  onMatchCosts?: () => void;
 }
 
 export default function GMDUpdateTable({
@@ -596,6 +598,8 @@ castingRateInputs,
   attachmentColumn,
   onUploadAttachment,
   onClearAttachment,
+  onDeleteRow,
+  onMatchCosts,
   filterState,
   filterActions,
   columnOptionMeta,
@@ -712,6 +716,13 @@ castingRateInputs,
     startWidth: number;
   } | null>(null);
   const importFileRef = useRef<HTMLInputElement | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const confirmDeleteRow = useMemo(() => {
+    if (!confirmDeleteId) return null;
+    const idx = ids.indexOf(confirmDeleteId);
+    if (idx === -1) return null;
+    return { id: confirmDeleteId, erpCode: String(rows[idx]?.[0] ?? "").trim() };
+  }, [confirmDeleteId, ids, rows]);
 
   const handleSort = (colIndex: number) => {
     if (sortColumn === colIndex) {
@@ -1225,6 +1236,20 @@ castingRateInputs,
               </button>
             </div>
           )}
+          {onMatchCosts && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMatchCosts();
+              }}
+              className="flex items-center gap-1 text-xs font-semibold text-[#0f62fe] hover:text-[#0a2540] px-2 py-1.5 rounded hover:bg-white/80 border border-[#e1e6eb]"
+              title="Match transferred rows (full L1-L8) to New Items and apply their cost"
+            >
+              <FileText size={12} />
+              Match & Update Costs
+            </button>
+          )}
           <div className="relative">
             <Search
               size={13}
@@ -1295,6 +1320,7 @@ castingRateInputs,
             {visibleCols.map(({ idx }) => (
               <col key={idx} style={{ width: `${columnWidths[idx]}px` }} />
             ))}
+            {onDeleteRow && <col style={{ width: "84px" }} />}
           </colgroup>
           <thead className="sticky top-0 z-20">
             <tr className="bg-[#f4f6f8]">
@@ -1460,13 +1486,18 @@ castingRateInputs,
                   </th>
                 );
               })}
+              {onDeleteRow && (
+                <th className="relative bg-[#f4f6f8] text-[#0a2540] text-xs font-bold uppercase tracking-wider px-3 py-2 text-center border-b-2 border-[#e1e6eb] select-none align-top">
+                  Delete
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {paginatedWithIds.length === 0 ? (
               <tr>
                 <td
-                  colSpan={visibleCols.length}
+                  colSpan={visibleCols.length + (onDeleteRow ? 1 : 0)}
                   className="h-24 text-center text-xs text-muted-foreground"
                 >
                   No matching rows
@@ -1819,6 +1850,21 @@ castingRateInputs,
                       </td>
                     );
                   })}
+                  {onDeleteRow && (
+                    <td className="px-2 py-2 text-xs border-b border-[#e1e6eb] text-center bg-white">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfirmDeleteId(id);
+                        }}
+                        className="inline-flex items-center justify-center w-7 h-7 rounded border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
+                        title="Delete row"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))
             )}
@@ -1832,6 +1878,41 @@ castingRateInputs,
         onPageChange={setCurrentPage}
         onPageSizeChange={setPageSize}
       />
+      {onDeleteRow && (
+        <Dialog open={!!confirmDeleteId} onOpenChange={(o) => !o && setConfirmDeleteId(null)}>
+          <DialogContent className="sm:max-w-[420px] p-0 gap-0 overflow-hidden">
+            <DialogHeader className="px-4 pt-4 pb-3 border-b border-[#e1e6eb] bg-[#f8f9fa]">
+              <DialogTitle className="text-sm font-bold text-[#0a2540] flex items-center gap-2">
+                <Trash2 size={16} className="text-rose-600" />
+                Delete transferred row?
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                {confirmDeleteRow?.erpCode
+                  ? `ERP ${confirmDeleteRow.erpCode} — this will permanently remove the row and its S3 attachment (if any).`
+                  : "This will permanently remove the row and its S3 attachment (if any)."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex items-center justify-end gap-2 px-4 py-3">
+              <Button variant="outline" size="sm" onClick={() => setConfirmDeleteId(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="bg-rose-600 hover:bg-rose-700 text-white"
+                onClick={async () => {
+                  if (!confirmDeleteId) return;
+                  const targetId = confirmDeleteId;
+                  setConfirmDeleteId(null);
+                  await onDeleteRow(targetId);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

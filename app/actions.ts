@@ -1854,37 +1854,34 @@ export async function importTransferredExcelAction(
   "use server";
   try {
     const updated: { id: string; code: string }[] = [];
-    const created: { id: string; code: string }[] = [];
+    let skipped = 0;
     for (const row of rows) {
       const code = (row.erpItemCode ?? "").trim();
       if (!code) {
-        const rowCreated = await prisma.gMDUpdateItem.create({
-          data: { erpItemCode: "", transferred: true, ...row.values },
-          select: { id: true },
-        });
-        created.push({ id: rowCreated.id, code: "" });
+        skipped++;
         continue;
       }
+      const values: Record<string, string> = {};
+      for (const [field, v] of Object.entries(row.values ?? {})) {
+        const s = String(v ?? "").trim();
+        if (s !== "") values[field] = s;
+      }
       const existing = await prisma.gMDUpdateItem.findFirst({
-        where: { erpItemCode: code },
+        where: { erpItemCode: code, transferred: true },
         orderBy: { createdAt: "asc" },
         select: { id: true },
       });
-      if (existing) {
-        await prisma.gMDUpdateItem.update({
-          where: { id: existing.id },
-          data: { ...row.values, transferred: true },
-        });
-        updated.push({ id: existing.id, code });
-      } else {
-        const rowCreated = await prisma.gMDUpdateItem.create({
-          data: { erpItemCode: code, transferred: true, ...row.values },
-          select: { id: true },
-        });
-        created.push({ id: rowCreated.id, code });
+      if (!existing) {
+        skipped++;
+        continue;
       }
+      await prisma.gMDUpdateItem.update({
+        where: { id: existing.id },
+        data: { ...values, transferred: true },
+      });
+      updated.push({ id: existing.id, code });
     }
-    return { success: true, data: { updated, created } };
+    return { success: true, data: { updated, skipped } };
   } catch (error: any) {
     console.error("Error importing transferred Excel:", error);
     return {
@@ -1961,6 +1958,308 @@ export async function clearGMDUpdateAttachmentAction(id: string) {
     return {
       success: false,
       error: error.message || "Failed to clear attachment.",
+    };
+  }
+}
+
+export async function deleteGMDUpdateTransferredAction(id: string) {
+  "use server";
+  try {
+    if (!id) {
+      return { success: false, error: "Missing item id." };
+    }
+    const existing = await prisma.gMDUpdateItem.findUnique({
+      where: { id },
+      select: { transferred: true, attachmentUrl: true, erpItemCode: true },
+    });
+    if (!existing) {
+      return { success: false, error: "Item not found." };
+    }
+    if (!existing.transferred) {
+      return { success: false, error: "Only transferred items can be deleted." };
+    }
+    if (existing.attachmentUrl) {
+      try {
+        await deleteFromS3(existing.attachmentUrl);
+      } catch (e) {
+        console.warn("[deleteGMDUpdateTransferred] S3 delete failed, continuing:", e);
+      }
+    }
+    await prisma.gMDUpdateItem.delete({ where: { id } });
+    console.log(`[Server] Deleted transferred item id=${id} code=${existing.erpItemCode ?? ""}`);
+    return { success: true, data: { id } };
+  } catch (error: any) {
+    console.error("Error deleting transferred item:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to delete item.",
+    };
+  }
+}
+
+export interface TransferCostMatchProposal {
+  transferredRowId: string;
+  transferredErpCode: string;
+  cost: string;
+  tuple: {
+    l1: string;
+    l2ValveType: string;
+    l3Dia: string;
+    l7Dimension: string;
+    l4Component: string;
+    l5Material: string;
+    l6Std: string;
+    l8ItemCategory: string;
+  };
+  matchedNewItems: { id: string; erpItemCode: string; indianImported: string }[];
+  targetIds: string[];
+}
+
+interface LMatchRow {
+  l1: string | null;
+  l2ValveType: string | null;
+  l3Dia: string | null;
+  l7Dimension: string | null;
+  l4Component: string | null;
+  l5Material: string | null;
+  l6Std: string | null;
+  l8ItemCategory: string | null;
+}
+
+function lMatchKey(r: LMatchRow): string {
+  return [
+    r.l1,
+    r.l2ValveType,
+    r.l3Dia,
+    r.l7Dimension,
+    r.l4Component,
+    r.l5Material,
+    r.l6Std,
+    r.l8ItemCategory,
+  ]
+    .map((v) => (v ?? "").trim().toLowerCase())
+    .join("\u0001");
+}
+
+function lTupleComplete(r: LMatchRow): boolean {
+  return [
+    r.l1,
+    r.l2ValveType,
+    r.l3Dia,
+    r.l7Dimension,
+    r.l4Component,
+    r.l5Material,
+    r.l6Std,
+    r.l8ItemCategory,
+  ].every((v) => (v ?? "").trim() !== "");
+}
+
+const GMD_L_MATCH_SELECT = {
+  l1: true,
+  l2ValveType: true,
+  l3Dia: true,
+  l7Dimension: true,
+  l4Component: true,
+  l5Material: true,
+  l6Std: true,
+  l8ItemCategory: true,
+} as const;
+
+export async function getTransferCostMatchProposalsAction() {
+  "use server";
+  try {
+    const transferred = await prisma.gMDUpdateItem.findMany({
+      where: { transferred: true },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        erpItemCode: true,
+        cost: true,
+        indianImported: true,
+        ...GMD_L_MATCH_SELECT,
+      },
+    });
+    const newItems = await prisma.gMDUpdateItem.findMany({
+      where: {
+        transferred: false,
+        OR: [
+          { newItemStatus: null },
+          { newItemStatus: "" },
+          { newItemStatus: "-" },
+          { newItemStatus: "Updated" },
+        ],
+      },
+      select: {
+        id: true,
+        erpItemCode: true,
+        indianImported: true,
+        ...GMD_L_MATCH_SELECT,
+      },
+    });
+
+    const byKey = new Map<string, typeof newItems>();
+    for (const ni of newItems) {
+      if (!lTupleComplete(ni)) continue;
+      const key = lMatchKey(ni);
+      const arr = byKey.get(key) ?? [];
+      arr.push(ni);
+      byKey.set(key, arr);
+    }
+
+    const proposals: TransferCostMatchProposal[] = [];
+    for (const tr of transferred) {
+      if (!lTupleComplete(tr)) continue;
+      const cost = (tr.cost ?? "").trim();
+      if (!cost) continue;
+      const matches = byKey.get(lMatchKey(tr)) ?? [];
+      if (matches.length === 0) continue;
+
+      const matchedNewItems = matches.map((m) => ({
+        id: m.id,
+        erpItemCode: m.erpItemCode ?? "",
+        indianImported: m.indianImported ?? "",
+      }));
+
+      let targetIds: string[];
+      if (matches.length === 1) {
+        targetIds = [matches[0].id];
+      } else {
+        targetIds = matches
+          .filter((m) => (m.indianImported ?? "").trim().toLowerCase() === "indian")
+          .map((m) => m.id);
+        if (targetIds.length === 0) continue;
+      }
+
+      proposals.push({
+        transferredRowId: tr.id,
+        transferredErpCode: tr.erpItemCode ?? "",
+        cost,
+        tuple: {
+          l1: tr.l1 ?? "",
+          l2ValveType: tr.l2ValveType ?? "",
+          l3Dia: tr.l3Dia ?? "",
+          l7Dimension: tr.l7Dimension ?? "",
+          l4Component: tr.l4Component ?? "",
+          l5Material: tr.l5Material ?? "",
+          l6Std: tr.l6Std ?? "",
+          l8ItemCategory: tr.l8ItemCategory ?? "",
+        },
+        matchedNewItems,
+        targetIds,
+      });
+    }
+
+    console.log(
+      `[MATCH] Scan complete: ${proposals.length} candidate proposal(s) out of ${transferred.length} transferred row(s).`,
+    );
+    return { success: true, data: { proposals, total: proposals.length } };
+  } catch (error: any) {
+    console.error("Error scanning transfer cost matches:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to scan matches.",
+    };
+  }
+}
+
+export async function applyTransferCostMatchAction(transferredRowId: string) {
+  "use server";
+  try {
+    if (!transferredRowId) {
+      return { success: false, error: "Missing item id." };
+    }
+    const tr = await prisma.gMDUpdateItem.findUnique({
+      where: { id: transferredRowId },
+      select: {
+        id: true,
+        transferred: true,
+        erpItemCode: true,
+        cost: true,
+        indianImported: true,
+        ...GMD_L_MATCH_SELECT,
+      },
+    });
+    if (!tr) {
+      return { success: false, error: "Transferred row not found." };
+    }
+    if (!tr.transferred) {
+      return { success: false, error: "Row is no longer transferred." };
+    }
+    if (!lTupleComplete(tr)) {
+      return { success: false, error: "L1-L8 are not complete on this row." };
+    }
+    const cost = (tr.cost ?? "").trim();
+    if (!cost) {
+      return { success: false, error: "Row has no cost to apply." };
+    }
+
+    const newItems = await prisma.gMDUpdateItem.findMany({
+      where: {
+        transferred: false,
+        OR: [
+          { newItemStatus: null },
+          { newItemStatus: "" },
+          { newItemStatus: "-" },
+          { newItemStatus: "Updated" },
+        ],
+      },
+      select: { id: true, indianImported: true, ...GMD_L_MATCH_SELECT },
+    });
+    const key = lMatchKey(tr);
+    const matches = newItems.filter(
+      (ni) => lTupleComplete(ni) && lMatchKey(ni) === key,
+    );
+    if (matches.length === 0) {
+      return { success: false, error: "No matching New Items found." };
+    }
+
+    let targetIds: string[];
+    if (matches.length === 1) {
+      targetIds = [matches[0].id];
+    } else {
+      targetIds = matches
+        .filter((m) => (m.indianImported ?? "").trim().toLowerCase() === "indian")
+        .map((m) => m.id);
+      if (targetIds.length === 0) {
+        return {
+          success: false,
+          error: "Multiple matches exist but none are Indian — skipped.",
+        };
+      }
+    }
+
+    await prisma.gMDUpdateItem.updateMany({
+      where: { id: { in: targetIds } },
+      data: { cost },
+    });
+    await prisma.gMDUpdateItem.update({
+      where: { id: transferredRowId },
+      data: {
+        transferred: false,
+        l1: null,
+        l2ValveType: null,
+        l3Dia: null,
+        l7Dimension: null,
+        l4Component: null,
+        l5Material: null,
+        l6Std: null,
+        l8ItemCategory: null,
+      },
+    });
+
+    console.log(
+      `[MATCH] Applied cost ₹${cost} from transferred ${tr.erpItemCode ?? tr.id} to ${targetIds.length} new item(s) (${targetIds.join(", ")}); row moved out of Transferred.`,
+    );
+
+    return {
+      success: true,
+      data: { transferredRowId, updatedNewItemIds: targetIds, cost },
+    };
+  } catch (error: any) {
+    console.error("Error applying transfer cost match:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to apply cost match.",
     };
   }
 }

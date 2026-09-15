@@ -10,6 +10,7 @@ import {
   selectGMDUpdateBomIdAction,
   uploadGMDUpdateAttachmentAction,
   clearGMDUpdateAttachmentAction,
+  deleteGMDUpdateTransferredAction,
 } from "@/app/actions";
 
 export interface GMDUpdateRow {
@@ -105,6 +106,17 @@ export const clearGMDUpdateAttachment = createAsyncThunk(
   },
 );
 
+export const deleteGMDUpdateTransferredItem = createAsyncThunk(
+  "gmdUpdate/deleteTransferred",
+  async ({ id }: { id: string }) => {
+    const result = await deleteGMDUpdateTransferredAction(id);
+    if (!result.success) {
+      throw new Error(result.error || "Failed to delete item.");
+    }
+    return result.data!;
+  },
+);
+
 const gmdUpdateSlice = createSlice({
   name: "gmdUpdate",
   initialState: adapter.getInitialState(),
@@ -114,6 +126,35 @@ const gmdUpdateSlice = createSlice({
     },
     upsertGMDUpdateItems(state, action) {
       adapter.upsertMany(state, action.payload);
+    },
+    applyTransferCostMatch(
+      state,
+      action: {
+        payload: {
+          transferredRowId: string;
+          newItemIds: string[];
+          cost: string;
+        };
+        type: string;
+      },
+    ) {
+      const { transferredRowId, newItemIds, cost } = action.payload;
+      for (const id of newItemIds) {
+        adapter.updateOne(state, { id, changes: { cost } });
+      }
+      adapter.updateOne(state, {
+        id: transferredRowId,
+        changes: {
+          l1: null,
+          l2ValveType: null,
+          l3Dia: null,
+          l7Dimension: null,
+          l4Component: null,
+          l5Material: null,
+          l6Std: null,
+          l8ItemCategory: null,
+        },
+      });
     },
   },
   extraReducers: (builder) => {
@@ -140,10 +181,14 @@ const gmdUpdateSlice = createSlice({
       const { id, attachmentUrl } = action.payload;
       adapter.updateOne(state, { id, changes: { attachmentUrl } });
     });
+    builder.addCase(deleteGMDUpdateTransferredItem.fulfilled, (state, action) => {
+      const { id } = action.payload;
+      adapter.removeOne(state, id);
+    });
   },
 });
 
-export const { hydrateGMDUpdate, upsertGMDUpdateItems } =
+export const { hydrateGMDUpdate, upsertGMDUpdateItems, applyTransferCostMatch } =
   gmdUpdateSlice.actions;
 export const {
   selectAll: selectAllGMDUpdateRows,
