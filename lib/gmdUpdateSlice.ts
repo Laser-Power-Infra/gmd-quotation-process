@@ -40,6 +40,7 @@ export interface GMDUpdateRow {
   currentStatus: string | null;
   rmType: string | null;
   indianImported: string | null;
+  orderDelivery: string | null;
   bomId: string | null;
   vendorReference: string | null;
   attachmentUrl: string | null;

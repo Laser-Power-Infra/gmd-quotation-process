@@ -35,6 +35,7 @@ export async function GET() {
         currentStatus: true,
         rmType: true,
         indianImported: true,
+        orderDelivery: true,
         bomId: true,
         transferred: true,
         vendorReference: true,

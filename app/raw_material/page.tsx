@@ -152,9 +152,10 @@ function rowToGMDUpdateItem(id: string, row: unknown[]): GMDUpdateRow {
     currentStatus: String(row[22] ?? ""),
     rmType: String(row[23] ?? ""),
     indianImported: String(row[24] ?? ""),
-    bomId: String(row[25] ?? ""),
-    vendorReference: String(row[26] ?? ""),
-    attachmentUrl: String(row[27] ?? ""),
+    orderDelivery: String(row[25] ?? ""),
+    bomId: String(row[26] ?? ""),
+    vendorReference: String(row[27] ?? ""),
+    attachmentUrl: String(row[28] ?? ""),
   };
 }
 
@@ -186,6 +187,7 @@ function blankGMDUpdateRow(id: string, erpItemCode: string): GMDUpdateRow {
     currentStatus: null,
     rmType: null,
     indianImported: null,
+    orderDelivery: null,
     bomId: null,
     vendorReference: null,
     attachmentUrl: null,
@@ -320,6 +322,7 @@ export default function Home() {
         "Indian",
         "Imported",
       ],
+      "Order delivery": ["Done", "PENDING"],
     }),
     [categoryOptions],
   );
@@ -1231,6 +1234,7 @@ export default function Home() {
                     "MAJOR MARKING",
                     "RM TYPE",
                     "NEW ITEM STATUS",
+                    "Order delivery",
                   ]}
                   uniqueKeyColumns={["ERP ITEM CODE"]}
                   onFilteredRowsChange={setFirstFilteredRows}

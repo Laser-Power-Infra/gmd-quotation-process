@@ -1733,6 +1733,7 @@ castingRateInputs,
                         );
                       } else if (
                         STATUS_COLUMNS.has(header) ||
+                        // header === "Actuator"||
                         categoryOptions?.[header] ||
                         fixedDropdownOptions?.[header]
                       ) {

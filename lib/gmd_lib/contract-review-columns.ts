@@ -50,6 +50,9 @@ export const CONTRACT_REVIEW_HEADERS = [
   "BOM ID",
   "RM AVAIL",
   "STATUS",
+  "MC Received/Pending",
+  "Inspection",
+  "Remarks",
 ] as const;
 
 export const CONTRACTS_SHEET_COLUMNS = [
@@ -292,6 +295,9 @@ export function dbContractReviewToRow(item: {
   noUse: string | null;
   partyNameDump: string | null;
   status: string | null;
+  mcReceivedPending: string | null;
+  inspection: string | null;
+  remarks: string | null;
 }): unknown[] {
   return [
     item.contractNo,
@@ -319,6 +325,9 @@ export function dbContractReviewToRow(item: {
     item.bomId,
     item.noUse,
     item.status,
+    item.mcReceivedPending,
+    item.inspection,
+    item.remarks,
   ];
 }
 
@@ -374,4 +383,7 @@ export const CONTRACT_REVIEW_HEADER_TO_DB_FIELD: Record<string, string> = {
   "BOM ID": "bomId",
   "RM AVAIL": "noUse",
   "STATUS": "status",
+  "MC Received/Pending": "mcReceivedPending",
+  "Inspection": "inspection",
+  "Remarks": "remarks",
 };

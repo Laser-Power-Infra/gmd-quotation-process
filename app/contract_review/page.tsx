@@ -17,6 +17,28 @@ import {
   CONTRACT_REVIEW_HEADERS,
 } from "@/lib/gmd_lib/contract-review-columns";
 
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { useDefaultLayout } from "react-resizable-panels";
+import { FlowDiagram } from "@/components/graph_flow/FlowDiagram";
+import {
+  CONTRACT_REVIEW_TREES,
+  flatten,
+  pathTo,
+  type FlowFilter,
+} from "@/components/graph_flow/tree";
+
+const layoutStorage = {
+  getItem: (key: string) =>
+    typeof window === "undefined" ? null : window.localStorage.getItem(key),
+  setItem: (key: string, value: string) => {
+    if (typeof window !== "undefined") window.localStorage.setItem(key, value);
+  },
+};
+
 interface ContractReviewData {
   headers: string[];
   rows: unknown[][];
@@ -176,6 +198,7 @@ function matchesTableFilters(
   dateFrom?: string,
   dateTo?: string,
   excludeHeader?: string,
+  ignoreColumns?: Set<string>,
 ): boolean {
   if (globalSearch.trim()) {
     const q = globalSearch.toLowerCase();
@@ -186,6 +209,7 @@ function matchesTableFilters(
   }
   for (const [colName, filterVal] of Object.entries(columnFilters)) {
     if (excludeHeader && colName === excludeHeader) continue;
+    if (ignoreColumns?.has(colName)) continue;
     if (!filterVal || filterVal === "All") continue;
     const colIdx = headers.indexOf(colName);
     if (colIdx === -1) continue;
@@ -198,6 +222,7 @@ function matchesTableFilters(
   }
   for (const [colName, selected] of Object.entries(multiFilters)) {
     if (excludeHeader && colName === excludeHeader) continue;
+    if (ignoreColumns?.has(colName)) continue;
     if (!selected.length) continue;
     const colIdx = headers.indexOf(colName);
     if (colIdx === -1) continue;
@@ -228,6 +253,26 @@ function matchesTableFilters(
   return true;
 }
 
+/** Whether a row satisfies a single graph node filter (exact cell match). */
+function matchesGraphFilter(row: unknown[], filter: FlowFilter): boolean {
+  const colIdx = (CONTRACT_REVIEW_HEADERS as readonly string[]).indexOf(
+    filter.column,
+  );
+  if (colIdx === -1) return false;
+  const cell = String(row[colIdx] ?? "").trim();
+  const matchesBlank = filter.values.includes("(Blank)") && cell === "";
+  return matchesBlank || filter.values.includes(cell);
+}
+
+/** Reduce a node path to one constraint per column (last level wins). */
+function pathToColumnFilters(
+  path: { filter: FlowFilter }[],
+): Record<string, string[]> {
+  const byCol: Record<string, string[]> = {};
+  for (const node of path) byCol[node.filter.column] = node.filter.values;
+  return byCol;
+}
+
 export default function ContractReviewPage() {
   const [data, setData] = useState<ContractReviewData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -256,6 +301,16 @@ export default function ContractReviewPage() {
   const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [activePath, setActivePath] = useState<string[]>([]);
+
+  const {
+    defaultLayout: verticalLayout,
+    onLayoutChanged: onVerticalLayoutChanged,
+  } = useDefaultLayout({
+    id: "contract-review-vertical",
+    panelIds: ["graph", "table"],
+    storage: layoutStorage,
+  });
 
   const filterState = useMemo(
     () => ({
@@ -799,6 +854,20 @@ export default function ContractReviewPage() {
     ],
   );
 
+  const actuatorOptions = useMemo(
+    () =>
+      ACTUATOR_IDX !== -1
+        ? [
+            ...new Set(
+              (data?.rows ?? [])
+                .map((r) => String(r[ACTUATOR_IDX] ?? "").trim())
+                .filter(Boolean),
+            ),
+          ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+        : [],
+    [data, ACTUATOR_IDX],
+  );
+
   const rateMcCont = useMemo(() => {
     let sum = 0;
     let count = 0;
@@ -984,6 +1053,87 @@ export default function ContractReviewPage() {
     tileSize,
     tilePn,
   ]);
+
+  // Per-node row counts for the flow diagram. Respects every active filter
+  // except the graph's own columns (STATUS / CLEARANCE STATUS), so selecting
+  // one branch never collapses the sibling counts (exclude-self cascading,
+  // same convention as the sidebar aggregates).
+  const graphPathColumns = useMemo(
+    () => new Set(["STATUS", "CLEARANCE STATUS"]),
+    [],
+  );
+
+  const graphCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const { tree } of CONTRACT_REVIEW_TREES) {
+      for (const node of flatten(tree)) {
+        const path = pathTo(tree, node.id);
+        let n = 0;
+        for (const row of allRows) {
+          if (
+            !matchesTableFilters(
+              row,
+              headers,
+              columnFilters,
+              multiFilters,
+              globalSearch,
+              dateFrom,
+              dateTo,
+              undefined,
+              graphPathColumns,
+            )
+          )
+            continue;
+          if (!path.every((p) => matchesGraphFilter(row, p.filter))) continue;
+          n++;
+        }
+        counts[node.id] = n;
+      }
+    }
+    return counts;
+  }, [
+    allRows,
+    headers,
+    columnFilters,
+    multiFilters,
+    globalSearch,
+    dateFrom,
+    dateTo,
+    graphPathColumns,
+  ]);
+
+  const handleGraphToggle = useCallback(
+    (id: string) => {
+      for (const { tree } of CONTRACT_REVIEW_TREES) {
+        const node = flatten(tree).find((n) => n.id === id);
+        if (!node) continue;
+        if (activePath.includes(id)) {
+          const path = pathTo(tree, id);
+          for (const col of Object.keys(pathToColumnFilters(path))) {
+            filterActions.onMultiFilter(col, []);
+          }
+          if (path.some((p) => p.filter.column === "STATUS")) {
+            setStatusFilter("all");
+          }
+          setActivePath([]);
+        } else {
+          const path = pathTo(tree, id);
+          const byCol = pathToColumnFilters(path);
+          for (const [col, values] of Object.entries(byCol)) {
+            filterActions.onMultiFilter(col, values);
+          }
+          if (byCol["STATUS"]) {
+            setStatusFilter(
+              byCol["STATUS"].includes("(Blank)") ? "Blanks" : byCol["STATUS"][0],
+            );
+          }
+          setActivePath(path.map((p) => p.id));
+        }
+        return;
+      }
+    },
+    [activePath, filterActions],
+  );
 
   const fmt = (n: number) =>
     n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
@@ -1398,8 +1548,26 @@ export default function ContractReviewPage() {
             syncing={syncing}
           />
           {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden gap-4 pr-1 mt-4">
-            <GMDUpdateTable
+          <ResizablePanelGroup
+            orientation="vertical"
+            id="contract-review-vertical"
+            defaultLayout={verticalLayout}
+            onLayoutChanged={onVerticalLayoutChanged}
+            className="flex-1 min-h-0 mt-4"
+          >
+            <ResizablePanel id="graph" defaultSize="32" minSize="12">
+              <div className="h-full overflow-hidden rounded-lg border border-[#1e3d59] bg-[#0a2540]">
+                <FlowDiagram
+                  trees={CONTRACT_REVIEW_TREES}
+                  counts={graphCounts}
+                  activePath={activePath}
+                  onToggle={handleGraphToggle}
+                />
+              </div>
+            </ResizablePanel>
+            <ResizableHandle withHandle className="my-2 bg-[#e1e6eb]" />
+            <ResizablePanel id="table" defaultSize="68" minSize="25">
+              <GMDUpdateTable
               headers={headers}
               rows={filteredData?.rows ?? []}
               ids={filteredData?.ids ?? []}
@@ -1408,9 +1576,14 @@ export default function ContractReviewPage() {
               title="Contract Review"
               editable
               fullHeight
-              editableColumns={["bom formula trial", "Item", "BOM ID", "CLEARANCE STATUS"]}
+              editableColumns={["bom formula trial", "Item", "BOM ID", "CLEARANCE STATUS", "Actuator", "MC Received/Pending", "Inspection", "Remarks"]}
               categoryOptions={categoryOptions}
-              fixedDropdownOptions={pnRatingOptions.length ? { "PN RATING": pnRatingOptions } : undefined}
+              fixedDropdownOptions={{
+                "PN RATING": pnRatingOptions,
+                "MC Received/Pending": ["Received", "Pending"],
+                "Inspection": ["DONE", "PENDING"],
+                "Actuator": actuatorOptions,
+              }}
               onCellUpdate={handleCellUpdate}
               externalFiltersActive={
                 hasTileFilter ||
@@ -1430,7 +1603,9 @@ export default function ContractReviewPage() {
                 setTilePn("");
                 setBalBillFilter("all");
                 setStatusFilter("all");
+                setActivePath([]);
                 filterActions.onMultiFilter("CLEARANCE STATUS", []);
+                filterActions.onMultiFilter("STATUS", []);
               }}
               hiddenColumns={[
                 "VA %",
@@ -1459,7 +1634,8 @@ export default function ContractReviewPage() {
                 "STATUS",
               ]}
             />
-          </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
         </div>
       </div>
     </main>
