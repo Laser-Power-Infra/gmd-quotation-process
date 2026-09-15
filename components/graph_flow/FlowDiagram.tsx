@@ -15,6 +15,8 @@ interface FlowDiagramProps {
   trees: { tree: FlowNode; heading: string; tone: string }[];
   /** Row count per node id, keyed by FlowNode.id. */
   counts: Record<string, number>;
+  /** Optional pre-formatted display values per node id (e.g. summed amounts). */
+  values?: Record<string, string>;
   /** Node ids currently selected, root first (the active path). */
   activePath: string[];
   /** Toggle a node on/off; receives the node id. */
@@ -24,6 +26,7 @@ interface FlowDiagramProps {
 export function FlowDiagram({
   trees,
   counts,
+  values,
   activePath,
   onToggle,
 }: FlowDiagramProps) {
@@ -130,6 +133,7 @@ export function FlowDiagram({
                       mode={layout.mode}
                       count={count}
                       share={share}
+                      displayValue={values?.[node.id]}
                       active={activeIds.has(node.id)}
                       onSelect={() => onToggle(node.id)}
                       onHover={handleHover}

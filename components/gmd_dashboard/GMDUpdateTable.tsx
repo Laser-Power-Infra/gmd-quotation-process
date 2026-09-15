@@ -323,6 +323,28 @@ function parseDate(str: string): Date | null {
   return null;
 }
 
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const EMPTY_DATE_RANGES: Record<string, { from: string; to: string }> = {};
+
+function toDateInputValue(display: string): string {
+  const d = parseDate(display);
+  if (!d) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function fromDateInputValue(value: string): string {
+  if (!value) return "";
+  const d = new Date(`${value}T00:00:00`);
+  if (isNaN(d.getTime())) return "";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = MONTH_ABBR[d.getMonth()];
+  const yyyy = d.getFullYear();
+  return `${dd}-${mm}-${yyyy}`;
+}
+
 const DATE_SORT_HEADERS = new Set(["Date", "expiryDate", "PBG VALID TILL", "PBG CLAIM TILL"]);
 function isDateHeader(header: string): boolean {
   if (DATE_SORT_HEADERS.has(header)) return true;
@@ -518,8 +540,9 @@ interface GMDUpdateTableProps {
   filterState?: {
     columnFilters: Record<string, string>;
     multiFilters: Record<string, string[]>;
-    dateFrom: string;
-    dateTo: string;
+    dateFrom?: string;
+    dateTo?: string;
+    dateRanges?: Record<string, { from: string; to: string }>;
     globalSearch: string;
     currentPage: number;
     pageSize: number;
@@ -527,8 +550,9 @@ interface GMDUpdateTableProps {
   filterActions?: {
     onColumnFilter: (header: string, value: string) => void;
     onMultiFilter: (header: string, values: string[]) => void;
-    onDateFrom: (val: string) => void;
-    onDateTo: (val: string) => void;
+    onDateFrom?: (val: string) => void;
+    onDateTo?: (val: string) => void;
+    onDateRange?: (header: string, from: string, to: string) => void;
     onGlobalSearch: (val: string) => void;
     onResetFilters: () => void;
     onPageChange: (page: number) => void;
@@ -619,6 +643,9 @@ castingRateInputs,
   >({});
   const [localDateFrom, setLocalDateFrom] = useState("");
   const [localDateTo, setLocalDateTo] = useState("");
+  const [localDateRanges, setLocalDateRanges] = useState<
+    Record<string, { from: string; to: string }>
+  >({});
 
   const currentPage = isControlled
     ? filterState!.currentPage
@@ -633,8 +660,33 @@ castingRateInputs,
   const multiFilters = isControlled
     ? filterState!.multiFilters
     : localMultiFilters;
-  const dateFrom = isControlled ? filterState!.dateFrom : localDateFrom;
-  const dateTo = isControlled ? filterState!.dateTo : localDateTo;
+  const dateFrom = isControlled
+    ? (filterState!.dateFrom ?? "")
+    : localDateFrom;
+  const dateTo = isControlled ? (filterState!.dateTo ?? "") : localDateTo;
+  const dateRanges = isControlled
+    ? (filterState!.dateRanges ?? EMPTY_DATE_RANGES)
+    : localDateRanges;
+  const setDateRange = useCallback(
+    (header: string, from: string, to: string) => {
+      if (filterActions?.onDateRange) {
+        filterActions.onDateRange(header, from, to);
+      } else if (isControlled) {
+        filterActions?.onDateFrom?.(from);
+        filterActions?.onDateTo?.(to);
+      } else {
+        setLocalDateRanges((prev) => {
+          const next = { ...prev };
+          if (from || to) next[header] = { from, to };
+          else delete next[header];
+          return next;
+        });
+        setLocalDateFrom(from);
+        setLocalDateTo(to);
+      }
+    },
+    [filterActions, isControlled],
+  );
   const setCurrentPage = isControlled
     ? filterActions!.onPageChange
     : setLocalCurrentPage;
@@ -642,7 +694,7 @@ castingRateInputs,
     ? filterActions!.onPageSizeChange
     : setLocalPageSize;
 
-  const DATE_FILTER_CANDIDATES = useMemo(() => new Set(["Date", "expiryDate"]), []);
+  const DATE_FILTER_CANDIDATES = useMemo(() => new Set(["Date", "expiryDate", "DATE OF CONTRACT", "LC DATE/RTGS DATE", "LAST DATE OF SHIPMENT/DATE OF LC"]), []);
   const dateColIdx = useMemo(() => {
     for (const cand of DATE_FILTER_CANDIDATES) {
       const idx = headers.indexOf(cand);
@@ -786,6 +838,7 @@ castingRateInputs,
       setLocalGlobalSearch("");
       setLocalDateFrom("");
       setLocalDateTo("");
+      setLocalDateRanges({});
     }
     setCurrentPage(1);
     onReset?.();
@@ -796,7 +849,8 @@ castingRateInputs,
     Object.values(multiFilters).some((v) => v.length > 0) ||
     globalSearch.trim() !== "" ||
     dateFrom !== "" ||
-    dateTo !== "";
+    dateTo !== "" ||
+    Object.values(dateRanges).some((r) => r.from || r.to);
 
   const showResetFilters = hasActiveFilters || !!externalFiltersActive;
 
@@ -870,6 +924,21 @@ castingRateInputs,
         if (!(matchesBlank || selected.includes(cellVal))) return false;
       }
 
+      for (const [colName, r] of Object.entries(dateRanges)) {
+        if (colName === opts.excludeHeader) continue;
+        if (!r.from && !r.to) continue;
+        const colIdx = headers.indexOf(colName);
+        if (colIdx === -1) continue;
+        const dateStr = String(row[colIdx] ?? "");
+        if (!dateStr) return false;
+        const date = parseDate(dateStr);
+        if (!date) return false;
+        const fromDate = r.from ? new Date(r.from + "T00:00:00") : null;
+        const toEnd = r.to ? new Date(r.to + "T23:59:59") : null;
+        if (fromDate && date < fromDate) return false;
+        if (toEnd && date > toEnd) return false;
+      }
+
       if (dateColIdx !== -1 && (dateFrom || dateTo)) {
         const fromDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
         const toEnd = dateTo ? new Date(dateTo + "T23:59:59") : null;
@@ -889,6 +958,7 @@ castingRateInputs,
       columnFilters,
       multiFilters,
       headers,
+      dateRanges,
       dateColIdx,
       dateFrom,
       dateTo,
@@ -1369,23 +1439,33 @@ castingRateInputs,
                           <div className="flex items-center gap-1">
                             <input
                               type="date"
-                              value={dateFrom}
-                              onChange={(e) => {
-                                if (isControlled)
-                                  filterActions!.onDateFrom(e.target.value);
-                                else setLocalDateFrom(e.target.value);
-                              }}
+                              value={
+                                dateRanges[header]?.from ??
+                                (dateFrom || "")
+                              }
+                              onChange={(e) =>
+                                setDateRange(
+                                  header,
+                                  e.target.value,
+                                  dateRanges[header]?.to ?? (dateTo || ""),
+                                )
+                              }
                               onClick={(e) => e.stopPropagation()}
                               className="flex-1 min-w-0 text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 outline-none"
                             />
                             <input
                               type="date"
-                              value={dateTo}
-                              onChange={(e) => {
-                                if (isControlled)
-                                  filterActions!.onDateTo(e.target.value);
-                                else setLocalDateTo(e.target.value);
-                              }}
+                              value={
+                                dateRanges[header]?.to ?? (dateTo || "")
+                              }
+                              onChange={(e) =>
+                                setDateRange(
+                                  header,
+                                  dateRanges[header]?.from ??
+                                    (dateFrom || ""),
+                                  e.target.value,
+                                )
+                              }
                               onClick={(e) => e.stopPropagation()}
                               className="flex-1 min-w-0 text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 outline-none"
                             />
@@ -1398,16 +1478,16 @@ castingRateInputs,
                               }
                               placeholder={`Search ${header}...`}
                             />
-                            {(columnFilters[header] || dateFrom || dateTo) && (
+                            {(columnFilters[header] ||
+                              dateFrom ||
+                              dateTo ||
+                              dateRanges[header]?.from ||
+                              dateRanges[header]?.to) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleColumnFilter(header, "");
-                                  if (isControlled)
-                                    filterActions!.onDateFrom("");
-                                  else setLocalDateFrom("");
-                                  if (isControlled) filterActions!.onDateTo("");
-                                  else setLocalDateTo("");
+                                  setDateRange(header, "", "");
                                 }}
                                 className="shrink-0 w-4 h-4 flex items-center justify-center rounded hover:bg-[#e1e6eb] text-[#0a2540]/50 hover:text-[#0a2540] transition-colors"
                                 title="Clear filter"
@@ -1621,32 +1701,6 @@ castingRateInputs,
                             </span>
                           );
                         }
-                      } else if (header === "PN RATING" && !String(display).trim()) {
-                        const pnOpts = fixedDropdownOptions?.[header] ?? categoryOptions?.[header] ?? [];
-                        if (pnOpts.length > 0) {
-                          cellContent = (
-                            <select
-                              key={`pn-${id}-${idx}-${cellIdx}`}
-                              value={display}
-                              onChange={(e) => handleCellUpdate(idx, cellIdx, e.target.value)}
-                              onClick={(e) => e.stopPropagation()}
-                              className="w-full text-xs bg-white border border-[#e1e6eb] rounded px-1 py-0.5 outline-none cursor-pointer"
-                            >
-                              <option value="">Select PN rating</option>
-                              {pnOpts.map((v) => (
-                                <option key={v} value={v}>
-                                  {v}
-                                </option>
-                              ))}
-                            </select>
-                          );
-                        } else {
-                          cellContent = (
-                            <span className="truncate block text-gray-400" title="No PN options">
-                              —
-                            </span>
-                          );
-                        }
                       } else if (isCellEditable) {
                       if (header === "USD cost") {
                         cellContent = (
@@ -1730,6 +1784,22 @@ castingRateInputs,
                               No
                             </button>
                           </div>
+                        );
+                      } else if (isDateHeader(header)) {
+                        cellContent = (
+                          <input
+                            key={display + "-" + idx + "-" + cellIdx}
+                            type="date"
+                            value={toDateInputValue(display)}
+                            onChange={(e) => {
+                              const next = fromDateInputValue(e.target.value);
+                              if (next !== display) {
+                                handleCellUpdate(idx, cellIdx, next);
+                              }
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="w-full text-xs bg-transparent border-none outline-none"
+                          />
                         );
                       } else if (
                         STATUS_COLUMNS.has(header) ||

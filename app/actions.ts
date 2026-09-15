@@ -10,7 +10,7 @@ import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
 import { update2to1CostForItems, buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
-import { getDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail, getNoUseBomIdSet } from "@/lib/verifyBomLookup";
+import { getDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail, getNoUseBomIdSet, normalizeActuatorPart } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, getRmTypeMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 import { makeImageKey } from "@/lib/imageKey";
@@ -2405,6 +2405,119 @@ export async function getTradingValveOptionsAction() {
     return {
       success: false,
       error: error.message || "Failed to fetch trading valve options.",
+    };
+  }
+}
+
+export async function getActuatorOptionsAction() {
+  "use server";
+  try {
+    const rows = await prisma.gMDUpdateItem.findMany({
+      where: {
+        l8ItemCategory: { contains: "ACTUATORS", mode: "insensitive" },
+        transferred: false,
+        OR: [
+          { newItemStatus: null },
+          { newItemStatus: "" },
+          { newItemStatus: "-" },
+          { newItemStatus: "Updated" },
+        ],
+      },
+      select: {
+        l7Dimension: true,
+        l6Std: true,
+      },
+    });
+    const set = new Set<string>();
+    for (const r of rows) {
+      const l7 = (r.l7Dimension ?? "").trim();
+      const l6 = (r.l6Std ?? "").trim();
+      if (!l7 || !l6) continue;
+      set.add(`${normalizeActuatorPart(l7)}@${normalizeActuatorPart(l6)}`);
+    }
+    const data = [...set].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true }),
+    );
+    return { success: true, data };
+  } catch (error: unknown) {
+    console.error("Error fetching actuator options:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to fetch actuator options.",
+    };
+  }
+}
+
+export async function saveActuatorWithRmCodeAction(
+  id: string,
+  actuator: string | null,
+) {
+  "use server";
+  try {
+    const value = actuator?.trim() || null;
+    if (!value) {
+      await prisma.contractReview.update({
+        where: { id },
+        data: { actuator: null, rmCodeForActuator: null },
+      });
+      return {
+        success: true,
+        data: { id, actuator: null, rmCodeForActuator: null },
+      };
+    }
+    const [aRaw, bRaw] = value.split("@");
+    const a = normalizeActuatorPart(aRaw ?? "");
+    const b = normalizeActuatorPart(bRaw ?? "");
+    if (!a || !b) {
+      return {
+        success: false,
+        error: "Invalid actuator format. Expected L7@L6.",
+      };
+    }
+    const rows = await prisma.gMDUpdateItem.findMany({
+      where: {
+        l8ItemCategory: { contains: "ACTUATORS", mode: "insensitive" },
+        transferred: false,
+        OR: [
+          { newItemStatus: null },
+          { newItemStatus: "" },
+          { newItemStatus: "-" },
+          { newItemStatus: "Updated" },
+        ],
+      },
+      select: {
+        erpItemCode: true,
+        l7Dimension: true,
+        l6Std: true,
+      },
+    });
+    const codes = new Set<string>();
+    for (const r of rows) {
+      const l7 = normalizeActuatorPart(r.l7Dimension ?? "");
+      const l6 = normalizeActuatorPart(r.l6Std ?? "");
+      if (!l7 || !l6) continue;
+      if (l7 === a && l6 === b) {
+        const code = (r.erpItemCode ?? "").trim();
+        if (code) codes.add(code);
+      }
+    }
+    const rmCodeForActuator = [...codes].join(",");
+    await prisma.contractReview.update({
+      where: { id },
+      data: { actuator: value, rmCodeForActuator },
+    });
+    return {
+      success: true,
+      data: { id, actuator: value, rmCodeForActuator },
+    };
+  } catch (error: unknown) {
+    console.error("Error saving actuator with RM codes:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to save actuator.",
     };
   }
 }

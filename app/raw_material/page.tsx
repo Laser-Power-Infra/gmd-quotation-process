@@ -322,7 +322,6 @@ export default function Home() {
         "Indian",
         "Imported",
       ],
-      "Order delivery": ["Done", "PENDING"],
     }),
     [categoryOptions],
   );
@@ -1234,7 +1233,7 @@ export default function Home() {
                     "MAJOR MARKING",
                     "RM TYPE",
                     "NEW ITEM STATUS",
-                    "Order delivery",
+                    "Order Qty",
                   ]}
                   uniqueKeyColumns={["ERP ITEM CODE"]}
                   onFilteredRowsChange={setFirstFilteredRows}

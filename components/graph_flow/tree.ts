@@ -21,6 +21,12 @@ export interface FlowNode {
   accent: string;
   /** Stroke colour used for this node's incoming edge when the path is live. */
   edge: string;
+  /**
+   * Optional display metric computed by the page for this node (e.g. a summed
+   * amount). The node's `filter` still drives counting/filtering; the metric is
+   * shown as the node's big number instead of the raw row count.
+   */
+  metric?: "diBalance";
   children?: FlowNode[];
 }
 
@@ -58,8 +64,56 @@ export const LIVE_TREE: FlowNode = {
                   label: "Inspection Done",
                   accent: "text-emerald-300",
                   edge: "rgb(110 231 183)",
+                  children: [{
+                    id: "DI Received",
+                    filter: { column: "DI Received", values: ["YES"] },
+                    label: "DI Received",
+                    accent: "text-emerald-300",
+                    edge: "rgb(110 231 183)",
+                    children: [
+                      {
+                        id:"dispatchDone",
+                        filter: { column: "Dispatch", values: ["YES"] },
+                        label: "Dispatch Done",
+                        accent: "text-emerald-300",
+                        edge: "rgb(110 231 183)",
+                      },
+                      {
+                        id:"dispatchPending",
+                        filter: { column: "Dispatch", values: ["NO"] },
+                        label: "Dispatch Pending",
+                        accent: "text-rose-300",
+                        edge: "rgb(253 164 175)",
+                        children: [
+                          {id :"bal di",
+                            filter: { column: "DI Balance", values: ["YES"] },
+                            label: "Balance DI",
+                            accent: "text-rose-300",
+                            edge: "rgb(253 164 175)",
+                            metric: "diBalance",
+                          }
+                        ]
+                      },
+                    ]
+                  },
+                  {
+                    id: "DI pending",
+                    filter: { column: "DI Received", values: ["NO"] },
+                    label: "DI Pending",
+                    accent: "text-rose-300",
+                    edge: "rgb(253 164 175)",
+                    
+                  }
+                  ],
                 },
-              ]
+                {
+                  id: "inspectionPending",
+                  filter: { column: "Inspection", values: ["PENDING"] },
+                  label: "Inspection Pending",
+                  accent: "text-amber-300",
+                  edge: "rgb(252 211 77)",
+                },
+              ],
             },
             {
               id: "mcreceivedRmna",
@@ -91,10 +145,11 @@ export const LIVE_TREE: FlowNode = {
               accent: "text-rose-300",
               edge: "rgb(253 164 175)",
             },
-          ]
+          ],
         },
       ],
     },
+
     {
       id: "livePending",
       filter: { column: "CLEARANCE STATUS", values: ["PENDING", ""] },

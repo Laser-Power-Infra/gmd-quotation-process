@@ -8,6 +8,8 @@ interface FlowNodeCardProps {
   count: number;
   /** Share of the parent's count, or null for a branch root. */
   share: number | null;
+  /** Optional pre-formatted value shown instead of the raw count. */
+  displayValue?: string;
   active: boolean;
   onSelect: () => void;
   onHover: (id: string | null) => void;
@@ -23,12 +25,20 @@ export function FlowNodeCard({
   mode,
   count,
   share,
+  displayValue,
   active,
   onSelect,
   onHover,
 }: FlowNodeCardProps) {
   const { node, x, y, width, height } = positioned;
   const isEmpty = count === 0;
+  const bigNumber = displayValue !== undefined ? displayValue : count;
+  const secondary =
+    displayValue !== undefined
+      ? count.toLocaleString()
+      : share !== null
+        ? `${share}%`
+        : null;
 
   const surface = active
     ? "bg-blue-500/20 border-blue-400/50"
@@ -43,7 +53,7 @@ export function FlowNodeCard({
       onFocus={() => onHover(node.id)}
       onBlur={() => onHover(null)}
       aria-pressed={active}
-      title={`${node.label} — ${count.toLocaleString()}`}
+      title={`${node.label} — ${displayValue !== undefined ? `${displayValue} (${count.toLocaleString()} rows)` : count.toLocaleString()}`}
       style={{ left: x, top: y, width, height }}
       className={[
         "absolute flex rounded-lg border text-left transition-colors duration-150",
@@ -62,15 +72,15 @@ export function FlowNodeCard({
             {node.label}
           </span>
           <span className="flex shrink-0 items-baseline gap-1.5">
-            {share !== null && (
+            {secondary !== null && (
               <span className="text-[9px] font-medium tabular-nums text-white/35">
-                {share}%
+                {secondary}
               </span>
             )}
             <span
               className={`text-sm font-bold tabular-nums leading-none ${node.accent}`}
             >
-              {count}
+              {bigNumber}
             </span>
           </span>
         </>
@@ -83,11 +93,11 @@ export function FlowNodeCard({
             <span
               className={`text-lg font-bold tabular-nums leading-none ${node.accent}`}
             >
-              {count}
+              {bigNumber}
             </span>
-            {share !== null && (
+            {secondary !== null && (
               <span className="text-[9px] font-medium tabular-nums text-white/35">
-                {share}%
+                {secondary}
               </span>
             )}
           </span>
