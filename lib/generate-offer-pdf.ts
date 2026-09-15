@@ -7,7 +7,23 @@ import { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { uploadFileToDrive } from "./gdrive";
 import { prisma } from "@/lib/prisma";
 import { getItemNameMerge } from "./costCalculator";
+import { makeImageKey } from "./imageKey";
 import { oneClickAccess } from "./oneClickAccess";
+
+function extractDriveFileId(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    // Handles: https://drive.google.com/file/d/{id}/view , https://drive.google.com/open?id={id}, https://drive.google.com/uc?id={id}, webViewLink
+    const u = new URL(url);
+    const byPath = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (byPath) return byPath[1];
+    const idParam = u.searchParams.get("id");
+    if (idParam) return idParam;
+  } catch {}
+  // Fallback: treat whole string as id if it looks like a drive id (no slashes)
+  if (url && !url.includes("/") && url.length >= 20) return url;
+  return null;
+}
 
 export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, enquiryId?: string) {
   try {
@@ -45,8 +61,15 @@ export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, e
         }
       }
 
-      const items = (dbEnquiry.items || []).map((item) => {
+      // Build base items with itemType/operationType/rmType kept for image lookup (not exposed directly in template except via rowspan grouping)
+      const rawItems = dbEnquiry.items || [];
+      const baseItems = rawItems.map((item: any) => {
         const mergedName = getItemNameMerge(item) || item.itemNameMerge || "";
+        const itemType = (item.itemType || "").trim();
+        const operationType = (item.operationType || "").trim();
+        const rmType = (item.rmType || "").trim();
+        const hasKeyParts = !!(itemType && operationType && rmType);
+        const imageKey = hasKeyParts ? makeImageKey(itemType, operationType, rmType) : `__no_key__${item.id}`;
         return {
           itemName: item.itemName,
           partyItemName: mergedName,
@@ -56,10 +79,102 @@ export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, e
           totalValue: item.totalValue ? parseFloat(item.totalValue) : 0,
           unit: "Nos." as const,
           deliverySchedule: item.deliverySchedule || "2-3 weeks",
+          // internal grouping key
+          __imageKey: imageKey,
+          __hasKeyParts: hasKeyParts,
         };
       });
 
-      const totalItemwiseValue = items.reduce((sum, item) => sum + item.quantity * item.quotationRate, 0);
+      // Fetch manually uploaded images for the distinct keys present in this enquiry
+      const distinctKeys = [...new Set(baseItems.filter((b: any) => b.__hasKeyParts).map((b: any) => b.__imageKey as string))];
+      const imageByKey = new Map<string, string | null>();
+      if (distinctKeys.length) {
+        try {
+          const genImages = await prisma.generatedImage.findMany({
+            where: { imageKey: { in: distinctKeys } },
+            select: { imageKey: true, driveFileId: true, url: true, status: true },
+          });
+          // Only consider uploaded images (manual uploads have driveFileId; status ready, but we accept any that has driveFileId or url)
+          for (const g of genImages) {
+            const hasUploadedImage = !!(g.driveFileId || g.url);
+            if (!hasUploadedImage) {
+              imageByKey.set(g.imageKey, null);
+              continue;
+            }
+            const driveFileId = g.driveFileId || extractDriveFileId(g.url);
+            if (!driveFileId) {
+              imageByKey.set(g.imageKey, null);
+              continue;
+            }
+            // Small thumbnail; public "anyone with link" files only
+            const thumbUrl = `https://drive.google.com/thumbnail?id=${driveFileId}&sz=w300`;
+            try {
+              const resp = await fetch(thumbUrl, { cache: "no-store" } as any);
+              if (!resp.ok) {
+                console.warn(`[PDF] thumbnail fetch failed for ${g.imageKey} id=${driveFileId} status=${resp.status}`);
+                imageByKey.set(g.imageKey, null);
+                continue;
+              }
+              const ct = resp.headers.get("content-type") || "image/jpeg";
+              // Reject HTML (Drive viewer page) — indicates permission or wrong url
+              if (ct.includes("text/html")) {
+                console.warn(`[PDF] thumbnail returned HTML for ${g.imageKey} id=${driveFileId}`);
+                imageByKey.set(g.imageKey, null);
+                continue;
+              }
+              const buf = Buffer.from(await resp.arrayBuffer());
+              const b64 = buf.toString("base64");
+              const dataUrl = `data:${ct};base64,${b64}`;
+              imageByKey.set(g.imageKey, dataUrl);
+            } catch (e) {
+              console.warn(`[PDF] thumbnail fetch error for ${g.imageKey} id=${driveFileId}:`, e);
+              imageByKey.set(g.imageKey, null);
+            }
+          }
+          // Ensure every distinct key has an entry (null if no uploaded image)
+          for (const k of distinctKeys) if (!imageByKey.has(k)) imageByKey.set(k, null);
+        } catch (e) {
+          console.error("[PDF] failed to load generated images for enquiry", dbEnquiry.id, e);
+          for (const k of distinctKeys) imageByKey.set(k, null);
+        }
+      }
+
+      // Compute rowspan groups: consecutive rows sharing the same non-empty imageKey are merged.
+      // Each group: first row gets rowspan = group length for BOTH name and image; continuation rows get 0 (skipped in template).
+      const items: any[] = [];
+      let idx = 0;
+      while (idx < baseItems.length) {
+        const curKey = baseItems[idx].__imageKey as string;
+        const curHasParts = baseItems[idx].__hasKeyParts as boolean;
+        let groupEnd = idx + 1;
+        if (curHasParts) {
+          while (groupEnd < baseItems.length && baseItems[groupEnd].__imageKey === curKey && baseItems[groupEnd].__hasKeyParts) {
+            groupEnd++;
+          }
+        }
+        const groupLen = groupEnd - idx;
+        const groupImageDataUrl = curHasParts ? (imageByKey.get(curKey) ?? null) : null;
+        for (let j = idx; j < groupEnd; j++) {
+          const b = baseItems[j];
+          const isFirst = j === idx;
+          items.push({
+            itemName: b.itemName,
+            partyItemName: b.partyItemName,
+            quantity: b.quantity,
+            quotationRate: b.quotationRate,
+            quotedRateGst: b.quotedRateGst,
+            totalValue: b.totalValue,
+            unit: b.unit,
+            deliverySchedule: b.deliverySchedule,
+            imageDataUrl: isFirst ? groupImageDataUrl : null,
+            nameRowspan: isFirst ? groupLen : 0,
+            imageRowspan: isFirst ? groupLen : 0,
+          });
+        }
+        idx = groupEnd;
+      }
+
+      const totalItemwiseValue = items.reduce((sum: number, item: any) => sum + item.quantity * item.quotationRate, 0);
 
       finalRowData = {
         ...finalRowData,

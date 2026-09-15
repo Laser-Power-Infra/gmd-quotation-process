@@ -57,6 +57,7 @@ export interface EnquiryData {
   updatedAt: Date;
   docketNumber: string;
   partyName: string;
+  contractNo: string[];
   enquiryDate: Date;
   enquiryType: string | null;
   state: string | null;

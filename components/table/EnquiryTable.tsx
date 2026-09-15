@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X, PackageCheck } from "lucide-react";
+import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X, PackageCheck, ExternalLink, ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
 import Pagination from "./Pagination";
@@ -20,6 +20,8 @@ import { useSession } from "next-auth/react";
 import { oneClickAccess, FROZEN_ITEM_FIELD_SET, isEnquiryFrozen } from "@/lib/oneClickAccess";
 import { importExcelData, autoFillBlanks, updateVaPercent } from "@/lib/enquiriesSlice";
 import { validateVaPercent } from "@/lib/vaValidation";
+import { makeImageKey } from "@/lib/imageKey";
+import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
@@ -223,6 +225,59 @@ function OthersInlineMultiSelect({
   );
 }
 
+function ItemImageCells({
+  item,
+  image,
+}: {
+  item: EnquiryItemData | null;
+  image: { url: string | null; driveFileId: string | null } | null;
+}) {
+  return (
+    <>
+      {/* View Image */}
+      <td className="py-2 px-2 border-r border-b border-border last:border-r-0 align-top">
+        {item ? (
+          image ? (
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-10 h-10 rounded border border-border bg-muted overflow-hidden flex items-center justify-center shrink-0">
+                {image.driveFileId ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`https://drive.google.com/thumbnail?id=${image.driveFileId}&sz=w400`}
+                    alt={item.itemName || "item"}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.display = "none";
+                    }}
+                  />
+                ) : (
+                  <ImageIcon size={14} className="text-muted-foreground" />
+                )}
+              </div>
+              {image.url ? (
+                <a
+                  href={image.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline shrink-0"
+                >
+                  View <ExternalLink size={10} />
+                </a>
+              ) : null}
+            </div>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-[10px] text-muted-foreground italic">
+              <ImageIcon size={12} /> No image
+            </span>
+          )
+        ) : (
+          "-"
+        )}
+      </td>
+    </>
+  );
+}
+
 export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role as string | undefined;
@@ -288,6 +343,35 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+
+  // Image lookup: GeneratedImage rows keyed by imageKey (itemType__operationType__rmType).
+  // Fetched once from the same endpoint the Upload Image dashboard uses.
+  const [imageMap, setImageMap] = useState<Record<string, { url: string | null; driveFileId: string | null }>>({});
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/generated-images", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((json) => {
+        if (cancelled) return;
+        const map: Record<string, { url: string | null; driveFileId: string | null }> = {};
+        for (const it of json.items ?? []) {
+          map[it.imageKey] = { url: it.url ?? null, driveFileId: it.driveFileId ?? null };
+        }
+        setImageMap(map);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const getItemImage = useCallback(
+    (item: EnquiryItemData) => {
+      if (!item.itemType || !item.operationType || !item.rmType) return null;
+      return imageMap[makeImageKey(item.itemType, item.operationType, item.rmType)] ?? null;
+    },
+    [imageMap]
+  );
 
   // Reset pagination to first page when filters change
   useEffect(() => {
@@ -1881,7 +1965,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   }
 
-  const TOTAL_COLUMNS = 48;
+  const TOTAL_COLUMNS = 50;
   const SELECT_COL_WIDTH = 44;
   const getColWidth = (idx: number) => columnWidths[idx] ?? DEFAULT_COLUMN_WIDTHS[idx] ?? 120;
   const totalTableWidth =
@@ -2118,7 +2202,22 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 3. Enquiry Type Dropdown */}
+            {/* 3. Contract Review (matched from ContractReview by party name) */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Contract Review</span>
+              </div>
+              <div
+                onMouseDown={(e) => handleMouseDown(3, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 4. Enquiry Type Dropdown */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Enquiry Type</span>
@@ -2136,7 +2235,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(3, e)}
+                onMouseDown={(e) => handleMouseDown(4, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2163,7 +2262,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(4, e)}
+                onMouseDown={(e) => handleMouseDown(5, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2190,7 +2289,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(5, e)}
+                onMouseDown={(e) => handleMouseDown(6, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2217,7 +2316,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(6, e)}
+                onMouseDown={(e) => handleMouseDown(7, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2244,7 +2343,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(7, e)}
+                onMouseDown={(e) => handleMouseDown(8, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2271,7 +2370,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(8, e)}
+                onMouseDown={(e) => handleMouseDown(9, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2300,7 +2399,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(9, e)}
+                onMouseDown={(e) => handleMouseDown(10, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2328,7 +2427,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(10, e)}
+                onMouseDown={(e) => handleMouseDown(11, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2351,7 +2450,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(11, e)}
+                onMouseDown={(e) => handleMouseDown(12, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2372,7 +2471,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(12, e)}
+                onMouseDown={(e) => handleMouseDown(13, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2393,7 +2492,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(13, e)}
+                onMouseDown={(e) => handleMouseDown(14, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2425,7 +2524,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(14, e)}
+                onMouseDown={(e) => handleMouseDown(15, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2457,7 +2556,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(15, e)}
+                onMouseDown={(e) => handleMouseDown(16, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2484,7 +2583,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(16, e)}
+                onMouseDown={(e) => handleMouseDown(17, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2511,7 +2610,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(17, e)}
+                onMouseDown={(e) => handleMouseDown(18, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2544,7 +2643,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(18, e)}
+                onMouseDown={(e) => handleMouseDown(19, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2577,7 +2676,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(19, e)}
+                onMouseDown={(e) => handleMouseDown(20, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2604,7 +2703,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(20, e)}
+                onMouseDown={(e) => handleMouseDown(21, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2631,7 +2730,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(21, e)}
+                onMouseDown={(e) => handleMouseDown(22, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2658,7 +2757,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(22, e)}
+                onMouseDown={(e) => handleMouseDown(23, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2691,7 +2790,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(23, e)}
+                onMouseDown={(e) => handleMouseDown(24, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2718,7 +2817,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(24, e)}
+                onMouseDown={(e) => handleMouseDown(25, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2751,7 +2850,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(25, e)}
+                onMouseDown={(e) => handleMouseDown(26, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2778,7 +2877,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 panelClassName="w-56 z-80"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(26, e)}
+                onMouseDown={(e) => handleMouseDown(27, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2799,7 +2898,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(27, e)}
+                onMouseDown={(e) => handleMouseDown(28, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2820,7 +2919,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(28, e)}
+                onMouseDown={(e) => handleMouseDown(29, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2841,7 +2940,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(29, e)}
+                onMouseDown={(e) => handleMouseDown(30, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2868,7 +2967,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(30, e)}
+                onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2895,7 +2994,22 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(31, e)}
+                onMouseDown={(e) => handleMouseDown(32, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* View Image */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>View Image</span>
+              </div>
+              <div
+                onMouseDown={(e) => handleMouseDown(33, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2916,7 +3030,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(32, e)}
+                onMouseDown={(e) => handleMouseDown(34, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2937,7 +3051,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(33, e)}
+                onMouseDown={(e) => handleMouseDown(35, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2964,7 +3078,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(34, e)}
+                onMouseDown={(e) => handleMouseDown(36, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2996,7 +3110,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(35, e)}
+                onMouseDown={(e) => handleMouseDown(37, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3029,7 +3143,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(36, e)}
+                onMouseDown={(e) => handleMouseDown(38, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3062,7 +3176,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(37, e)}
+                onMouseDown={(e) => handleMouseDown(39, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3083,7 +3197,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(38, e)}
+                onMouseDown={(e) => handleMouseDown(40, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3104,7 +3218,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(39, e)}
+                onMouseDown={(e) => handleMouseDown(41, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3125,7 +3239,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(40, e)}
+                onMouseDown={(e) => handleMouseDown(42, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3146,7 +3260,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(41, e)}
+                onMouseDown={(e) => handleMouseDown(43, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3202,7 +3316,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(42, e)}
+                onMouseDown={(e) => handleMouseDown(44, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3225,7 +3339,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(43, e)}
+                onMouseDown={(e) => handleMouseDown(45, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3241,7 +3355,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(44, e)}
+                onMouseDown={(e) => handleMouseDown(46, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3297,7 +3411,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(45, e)}
+                onMouseDown={(e) => handleMouseDown(47, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3313,7 +3427,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(46, e)}
+                onMouseDown={(e) => handleMouseDown(48, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3327,7 +3441,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(47, e)}
+                onMouseDown={(e) => handleMouseDown(49, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3520,7 +3634,21 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       )}
                     </td>
 
-                    {/* 3. Enquiry Type Inline Select */}
+                    {/* 3. Contract Review (matched from ContractReview by party name) */}
+                    <td className="py-1 px-1 border-r border-b border-border last:border-r-0 align-top">
+                      {enquiry.contractNo && enquiry.contractNo.length > 0 ? (
+                        <div
+                          className="max-h-12 overflow-y-auto cell-scrollable whitespace-normal break-words leading-normal p-1 text-[10px] font-medium text-foreground"
+                          title={enquiry.contractNo.join(", ")}
+                        >
+                          {enquiry.contractNo.join(", ")}
+                        </div>
+                      ) : (
+                        <span className="block p-1 text-[10px] text-muted-foreground">-</span>
+                      )}
+                    </td>
+
+                    {/* 4. Enquiry Type Inline Select */}
                     <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
                       <select
                         value={enquiry.enquiryType || ""}
@@ -4076,13 +4204,27 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     </td>
 
                     {/* First Item RM Type */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
-                        <span className="block text-xs text-foreground p-1 truncate" title={firstItem.rmType || ""}>
-                          {firstItem.rmType || "-"}
-                        </span>
+                        <select
+                          value={firstItem.rmType || ""}
+                          disabled={isFrozen}
+                          onChange={(e) => handleItemFieldChange(firstItem.id, "rmType", e.target.value)}
+                          className={cellItemSelectClass}
+                        >
+                          <option value="">-</option>
+                          {firstItem.rmType && !RM_TYPE_OPTIONS.includes(firstItem.rmType) && (
+                            <option value={firstItem.rmType}>{firstItem.rmType}</option>
+                          )}
+                          {RM_TYPE_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
                       ) : "-"}
                     </td>
+
+                    {/* First Item View Image */}
+                    <ItemImageCells item={firstItem ?? null} image={firstItem ? getItemImage(firstItem) : null} />
 
                     {/* First Item Stock Against Contract */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
@@ -4413,6 +4555,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             title={isItemSelected(item.id) ? "Deselect item" : "Select item"}
                           />
                         </td>
+                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
@@ -4778,11 +4921,25 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       </td>
 
                       {/* RM Type */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                          <span className="block text-xs text-foreground p-1 truncate" title={item.rmType || ""}>
-                            {item.rmType || "-"}
-                          </span>
+                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
+                          <select
+                            value={item.rmType || ""}
+                            disabled={isFrozen}
+                            onChange={(e) => handleItemFieldChange(item.id, "rmType", e.target.value)}
+                            className={cellItemSelectClass}
+                          >
+                            <option value="">-</option>
+                            {item.rmType && !RM_TYPE_OPTIONS.includes(item.rmType) && (
+                              <option value={item.rmType}>{item.rmType}</option>
+                            )}
+                            {RM_TYPE_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
                         </td>
+
+                      {/* View Image */}
+                      <ItemImageCells item={item} image={getItemImage(item)} />
 
                       {/* Stock Against Contract */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">

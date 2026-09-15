@@ -156,6 +156,17 @@
   table.price-table td.item-name {
     text-align: left;
   }
+  table.price-table td.item-img {
+    text-align: center;
+    vertical-align: middle;
+    padding: 4px;
+  }
+  table.price-table td.item-img img {
+    width: 55px;
+    height: auto;
+    display: inline-block;
+    object-fit: contain;
+  }
 </style>
 </head>
 <body>
@@ -228,14 +239,15 @@
   <table class="price-table">
     <thead>
       <tr>
-        <th style="width:6%;">SL NO</th>
-        <th style="width:22%;">PARTY ITEM NAME</th>
-        <th style="width:22%;">OUR ITEM NAME</th>
+        <th style="width:5%;">SL NO</th>
+        <th style="width:18%;">PARTY ITEM NAME</th>
+        <th style="width:20%;">OUR ITEM NAME</th>
+        <th style="width:9%;">IMAGE</th>
         <th style="width:9%;">RATE/UNIT</th>
-        <th style="width:7%;">QTY</th>
-        <th style="width:7%;">UNIT</th>
-        <th style="width:10%;">QR with GST</th>
-        <th style="width:10%;">Total Val. Incld. GST</th>
+        <th style="width:6%;">QTY</th>
+        <th style="width:6%;">UNIT</th>
+        <th style="width:9%;">QR with GST</th>
+        <th style="width:11%;">Total Val. Incld. GST</th>
         <th style="width:7%;">Delivery Schedule</th>
       </tr>
     </thead>
@@ -244,7 +256,8 @@
       <tr>
         <td>{{inc @index}}</td>
         <td class="item-name">{{this.itemName}}</td>
-        <td class="item-name">{{this.partyItemName}}</td>
+        {{#if this.nameRowspan}}<td class="item-name" rowspan="{{this.nameRowspan}}">{{this.partyItemName}}</td>{{/if}}
+        {{#if this.imageRowspan}}<td class="item-img" rowspan="{{this.imageRowspan}}">{{#if this.imageDataUrl}}<img src="{{this.imageDataUrl}}" alt="Item image" />{{/if}}</td>{{/if}}
         <td>{{this.quotationRate}}</td>
         <td>{{this.quantity}}</td>
         <td>Nos.</td>
@@ -254,7 +267,7 @@
       </tr>
       {{/each}}
       <tr style="font-weight: bold; border-top: 2px solid #7a1f1f;">
-        <td colspan="3" style="text-align: right;">Total</td>
+        <td colspan="4" style="text-align: right;">Total</td>
         <td>{{totalItemwise items}}</td>
         <td>{{totalQuantity items}}</td>
         <td></td>

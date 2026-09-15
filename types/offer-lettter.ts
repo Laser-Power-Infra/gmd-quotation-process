@@ -22,6 +22,15 @@ export interface OfferLetterItem {
 
   /** Delivery Schedule column. Left blank for now. */
   deliverySchedule?: string;
+
+  /** Base64 data URL of the uploaded image for this item (matched by itemType/operationType/rmType). Small thumbnail beside OUR ITEM NAME. */
+  imageDataUrl?: string | null;
+
+  /** Rowspan for the merged OUR ITEM NAME cell (consecutive rows sharing itemType+operationType+rmType). 0 = skip cell on continuation rows. */
+  nameRowspan?: number;
+
+  /** Rowspan for the merged IMAGE cell. 0 = skip cell on continuation rows. */
+  imageRowspan?: number;
 }
 
 export interface OfferLetterTemplateData {
