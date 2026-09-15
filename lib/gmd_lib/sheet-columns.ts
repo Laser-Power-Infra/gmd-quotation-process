@@ -25,6 +25,7 @@ export const CANONICAL_COLUMNS = [
   "CURRENT STATUS",
   "RM TYPE",
   "INDIAN/IMPORTED",
+  "Order Qty",
 ];
 
 export const STATUS_COLUMNS = new Set(["NEW ITEM STATUS", "CURRENT STATUS", "RM TYPE","INDIAN/IMPORTED" ]);
@@ -78,4 +79,5 @@ export const COL_INDEX_TO_DB_FIELD: Record<number, string> = {
   22: "currentStatus",
   23: "rmType",
   24: "indianImported",
+  25: "orderDelivery",
 };

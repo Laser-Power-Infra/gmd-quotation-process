@@ -1,5 +1,6 @@
 export const CONTRACT_REVIEW_HEADERS = [
   "CONTRACT NO",
+  "DATE OF CONTRACT",
   "PARTY NAME",
   "ITEM_CODE",
   "MC NO",
@@ -31,7 +32,6 @@ export const CONTRACT_REVIEW_HEADERS = [
   "VALUE",
   "SIZE",
   "PN RATING",
-  "DATE OF CONTRACT",
   "CLEARANCE STATUS",
   "Actuator",
   "RM CODE FOR ACTUATOR",
@@ -50,6 +50,9 @@ export const CONTRACT_REVIEW_HEADERS = [
   "BOM ID",
   "RM AVAIL",
   "STATUS",
+  "MC Received/Pending",
+  "Inspection",
+  "Remarks",
 ] as const;
 
 export const CONTRACTS_SHEET_COLUMNS = [
@@ -292,9 +295,13 @@ export function dbContractReviewToRow(item: {
   noUse: string | null;
   partyNameDump: string | null;
   status: string | null;
+  mcReceivedPending: string | null;
+  inspection: string | null;
+  remarks: string | null;
 }): unknown[] {
   return [
     item.contractNo,
+    item.dateOfContract,
     item.partyNameDump,
     item.itemCode, item.mcNo,
     item.itemName, item.partyItemName, item.rate,
@@ -309,7 +316,7 @@ export function dbContractReviewToRow(item: {
     item.balToProdOrdEntVal, item.balBillAgContVal, item.balBillAgMcVal,
     item.balDiVal, item.diVal,
     item.item, item.value, item.size, item.pnRating,
-    item.dateOfContract, item.clearanceStatus, item.actuator,
+    item.clearanceStatus, item.actuator,
     item.rmCodeForActuator, item.rmCodeForGb, item.paymentTerms,
     item.lcRtgsRefNo, item.lcDateRtgsDate, item.lastDateOfShipmentDateOfLc,
     item.issuingBankName, item.bomFormulaTrial,
@@ -319,6 +326,9 @@ export function dbContractReviewToRow(item: {
     item.bomId,
     item.noUse,
     item.status,
+    item.mcReceivedPending,
+    item.inspection,
+    item.remarks,
   ];
 }
 
@@ -374,4 +384,7 @@ export const CONTRACT_REVIEW_HEADER_TO_DB_FIELD: Record<string, string> = {
   "BOM ID": "bomId",
   "RM AVAIL": "noUse",
   "STATUS": "status",
+  "MC Received/Pending": "mcReceivedPending",
+  "Inspection": "inspection",
+  "Remarks": "remarks",
 };

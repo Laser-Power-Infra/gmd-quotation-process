@@ -390,7 +390,7 @@ export type ActuatorResolveRow = {
   actuator: string | null;
 };
 
-function normalizeActuatorPart(value: string): string {
+export function normalizeActuatorPart(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, " ");
 }
 

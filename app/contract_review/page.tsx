@@ -11,11 +11,35 @@ import {
   updateContractReviewFieldAction,
   backfillContractReviewNoUseBatchAction,
   autoAssignContractReviewBomIdFromActuator,
+  getActuatorOptionsAction,
+  saveActuatorWithRmCodeAction,
 } from "@/app/actions";
 import {
   CONTRACT_REVIEW_HEADER_TO_DB_FIELD,
   CONTRACT_REVIEW_HEADERS,
 } from "@/lib/gmd_lib/contract-review-columns";
+
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { useDefaultLayout } from "react-resizable-panels";
+import { FlowDiagram } from "@/components/graph_flow/FlowDiagram";
+import {
+  CONTRACT_REVIEW_TREES,
+  flatten,
+  pathTo,
+  type FlowFilter,
+} from "@/components/graph_flow/tree";
+
+const layoutStorage = {
+  getItem: (key: string) =>
+    typeof window === "undefined" ? null : window.localStorage.getItem(key),
+  setItem: (key: string, value: string) => {
+    if (typeof window !== "undefined") window.localStorage.setItem(key, value);
+  },
+};
 
 interface ContractReviewData {
   headers: string[];
@@ -61,10 +85,14 @@ const MC_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC QTY");
 const BOM_ID_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BOM ID");
 const NO_USE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RM AVAIL");
 const ACTUATOR_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Actuator");
+const RM_CODE_FOR_ACTUATOR_IDX = CONTRACT_REVIEW_HEADERS.indexOf(
+  "RM CODE FOR ACTUATOR",
+);
 const ORDER_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER QTY");
 const DI_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("DI QTY");
 const BILLED_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BILLED QTY");
-const BAL_BILL_AG_CONT_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BAL BILL AG CONT");
+const BAL_BILL_AG_CONT_IDX =
+  CONTRACT_REVIEW_HEADERS.indexOf("BAL BILL AG CONT");
 const STATUS_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATUS");
 
 interface TileOption {
@@ -149,8 +177,18 @@ function parseDateCR(str: string): Date | null {
   const m = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
   if (m) {
     const months: Record<string, number> = {
-      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+      jan: 0,
+      feb: 1,
+      mar: 2,
+      apr: 3,
+      may: 4,
+      jun: 5,
+      jul: 6,
+      aug: 7,
+      sep: 8,
+      oct: 9,
+      nov: 10,
+      dec: 11,
     };
     const mon = months[m[2].toLowerCase()];
     if (mon !== undefined) {
@@ -173,9 +211,9 @@ function matchesTableFilters(
   columnFilters: Record<string, string>,
   multiFilters: Record<string, string[]>,
   globalSearch: string,
-  dateFrom?: string,
-  dateTo?: string,
+  dateRanges?: Record<string, { from: string; to: string }>,
   excludeHeader?: string,
+  ignoreColumns?: Set<string>,
 ): boolean {
   if (globalSearch.trim()) {
     const q = globalSearch.toLowerCase();
@@ -186,6 +224,7 @@ function matchesTableFilters(
   }
   for (const [colName, filterVal] of Object.entries(columnFilters)) {
     if (excludeHeader && colName === excludeHeader) continue;
+    if (ignoreColumns?.has(colName)) continue;
     if (!filterVal || filterVal === "All") continue;
     const colIdx = headers.indexOf(colName);
     if (colIdx === -1) continue;
@@ -198,6 +237,7 @@ function matchesTableFilters(
   }
   for (const [colName, selected] of Object.entries(multiFilters)) {
     if (excludeHeader && colName === excludeHeader) continue;
+    if (ignoreColumns?.has(colName)) continue;
     if (!selected.length) continue;
     const colIdx = headers.indexOf(colName);
     if (colIdx === -1) continue;
@@ -205,27 +245,55 @@ function matchesTableFilters(
     const matchesBlank = selected.includes("(Blank)") && cellVal === "";
     if (!(matchesBlank || selected.includes(cellVal))) return false;
   }
-  if (dateFrom || dateTo) {
-    const dateColIdx = (() => {
-      const candidates = new Set(["Date", "expiryDate"]);
-      for (const cand of candidates) {
-        const idx = headers.indexOf(cand);
-        if (idx !== -1) return idx;
-      }
-      return headers.findIndex((h) => h.toLowerCase().includes("date"));
-    })();
-    if (dateColIdx !== -1) {
-      const fromDate = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
-      const toEnd = dateTo ? new Date(dateTo + "T23:59:59") : null;
-      const dateStr = String(row[dateColIdx] ?? "");
+  if (dateRanges) {
+    for (const [colName, r] of Object.entries(dateRanges)) {
+      if (excludeHeader && colName === excludeHeader) continue;
+      if (ignoreColumns?.has(colName)) continue;
+      if (!r.from && !r.to) continue;
+      const colIdx = headers.indexOf(colName);
+      if (colIdx === -1) continue;
+      const dateStr = String(row[colIdx] ?? "");
       if (!dateStr) return false;
       const date = parseDateCR(dateStr);
       if (!date) return false;
+      const fromDate = r.from ? new Date(r.from + "T00:00:00") : null;
+      const toEnd = r.to ? new Date(r.to + "T23:59:59") : null;
       if (fromDate && date < fromDate) return false;
       if (toEnd && date > toEnd) return false;
     }
   }
   return true;
+}
+
+/** Whether a row satisfies a single graph node filter (exact cell match). */
+function matchesGraphFilter(row: unknown[], filter: FlowFilter): boolean {
+  const colIdx = (CONTRACT_REVIEW_HEADERS as readonly string[]).indexOf(
+    filter.column,
+  );
+  // Column not in the data yet (e.g. DI Received / Dispatch / DI Balance):
+  // pass through so partially-built tree levels don't zero out the subtree.
+  if (colIdx === -1) return true;
+  const cell = String(row[colIdx] ?? "").trim();
+  const matchesBlank = filter.values.includes("(Blank)") && cell === "";
+  return matchesBlank || filter.values.includes(cell);
+}
+
+/** Reduce a node path to one constraint per column (last level wins). */
+function pathToColumnFilters(
+  path: { filter: FlowFilter }[],
+): Record<string, string[]> {
+  const byCol: Record<string, string[]> = {};
+  for (const node of path) {
+    // Skip columns that don't exist yet — they can't filter the table.
+    if (
+      !(CONTRACT_REVIEW_HEADERS as readonly string[]).includes(
+        node.filter.column,
+      )
+    )
+      continue;
+    byCol[node.filter.column] = node.filter.values;
+  }
+  return byCol;
 }
 
 export default function ContractReviewPage() {
@@ -245,6 +313,7 @@ export default function ContractReviewPage() {
     Record<string, string[]>
   >({});
   const [pnRatingOptions, setPnRatingOptions] = useState<string[]>([]);
+  const [actuatorOptions, setActuatorOptions] = useState<string[]>([]);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
     {},
   );
@@ -252,17 +321,27 @@ export default function ContractReviewPage() {
     {},
   );
   const [globalSearch, setGlobalSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateRanges, setDateRanges] = useState<
+    Record<string, { from: string; to: string }>
+  >({});
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [activePath, setActivePath] = useState<string[]>([]);
+
+  const {
+    defaultLayout: verticalLayout,
+    onLayoutChanged: onVerticalLayoutChanged,
+  } = useDefaultLayout({
+    id: "contract-review-vertical",
+    panelIds: ["graph", "table"],
+    storage: layoutStorage,
+  });
 
   const filterState = useMemo(
     () => ({
       columnFilters,
       multiFilters,
-      dateFrom,
-      dateTo,
+      dateRanges,
       globalSearch,
       currentPage,
       pageSize,
@@ -270,8 +349,7 @@ export default function ContractReviewPage() {
     [
       columnFilters,
       multiFilters,
-      dateFrom,
-      dateTo,
+      dateRanges,
       globalSearch,
       currentPage,
       pageSize,
@@ -289,15 +367,19 @@ export default function ContractReviewPage() {
           else delete next[header];
           return next;
         }),
-      onDateFrom: setDateFrom,
-      onDateTo: setDateTo,
+      onDateRange: (header: string, from: string, to: string) =>
+        setDateRanges((prev) => {
+          const next = { ...prev };
+          if (from || to) next[header] = { from, to };
+          else delete next[header];
+          return next;
+        }),
       onGlobalSearch: setGlobalSearch,
       onResetFilters: () => {
         setColumnFilters({});
         setMultiFilters({});
         setGlobalSearch("");
-        setDateFrom("");
-        setDateTo("");
+        setDateRanges({});
       },
       onPageChange: setCurrentPage,
       onPageSizeChange: setPageSize,
@@ -346,6 +428,12 @@ export default function ContractReviewPage() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => {
+    getActuatorOptionsAction().then((res) => {
+      if (res.success && res.data) setActuatorOptions(res.data);
+    });
+  }, []);
+
   const headers = data?.headers ?? [];
   const balBillIdx = data ? headers.indexOf("BAL BILL AG CONT") : -1;
   const clearanceIdx = data ? headers.indexOf("CLEARANCE STATUS") : -1;
@@ -359,7 +447,8 @@ export default function ContractReviewPage() {
         setClearanceOpen(false);
       }
     }
-    if (clearanceOpen) document.addEventListener("mousedown", handleClickOutside);
+    if (clearanceOpen)
+      document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [clearanceOpen]);
 
@@ -409,7 +498,38 @@ export default function ContractReviewPage() {
       if (!field) return;
       const toastId = toast.loading(`Updating ${header}...`);
       try {
-        const res = await updateContractReviewFieldAction(id, field, value || null);
+        if (header === "Actuator") {
+          const res = await saveActuatorWithRmCodeAction(id, value || null);
+          if (res?.success && res.data) {
+            const d = res.data;
+            setData((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                rows: prev.rows.map((row, i) => {
+                  if (prev.ids[i] !== id) return row;
+                  const next = [...row];
+                  if (ACTUATOR_IDX !== -1)
+                    next[ACTUATOR_IDX] = d.actuator ?? "";
+                  if (RM_CODE_FOR_ACTUATOR_IDX !== -1)
+                    next[RM_CODE_FOR_ACTUATOR_IDX] = d.rmCodeForActuator ?? "";
+                  return next;
+                }),
+              };
+            });
+            toast.success(`${header} updated`, { id: toastId });
+          } else {
+            toast.error(res?.error || `Failed to update ${header}`, {
+              id: toastId,
+            });
+          }
+          return;
+        }
+        const res = await updateContractReviewFieldAction(
+          id,
+          field,
+          value || null,
+        );
         if (res?.success) {
           setData((prev) => {
             if (!prev) return prev;
@@ -423,10 +543,14 @@ export default function ContractReviewPage() {
           });
           toast.success(`${header} updated`, { id: toastId });
         } else {
-          toast.error(res?.error || `Failed to update ${header}`, { id: toastId });
+          toast.error(res?.error || `Failed to update ${header}`, {
+            id: toastId,
+          });
         }
       } catch (err: any) {
-        toast.error(err?.message || `Failed to update ${header}`, { id: toastId });
+        toast.error(err?.message || `Failed to update ${header}`, {
+          id: toastId,
+        });
       }
     },
     [headers],
@@ -449,7 +573,8 @@ export default function ContractReviewPage() {
         pending.push({ id, bomId: options[0] });
         return;
       }
-      const actuator = ACTUATOR_IDX !== -1 ? String(row[ACTUATOR_IDX] ?? "") : "";
+      const actuator =
+        ACTUATOR_IDX !== -1 ? String(row[ACTUATOR_IDX] ?? "") : "";
       if (actuator.includes("@")) {
         autoSavedBomIdsRef.current.add(id);
         pendingActuator.push(id);
@@ -484,9 +609,7 @@ export default function ContractReviewPage() {
         if (!res?.success) return;
         setData((prev) => {
           if (!prev) return prev;
-          const map = new Map(
-            (res.data ?? []).map((d) => [d.id, d]),
-          );
+          const map = new Map((res.data ?? []).map((d) => [d.id, d]));
           return {
             ...prev,
             rows: prev.rows.map((row, i) => {
@@ -521,9 +644,7 @@ export default function ContractReviewPage() {
       if (!res?.success) return;
       setData((prev) => {
         if (!prev) return prev;
-        const map = new Map(
-          (res.data ?? []).map((d) => [d.id, d.noUse ?? ""]),
-        );
+        const map = new Map((res.data ?? []).map((d) => [d.id, d.noUse ?? ""]));
         return {
           ...prev,
           rows: prev.rows.map((row, i) => {
@@ -550,7 +671,9 @@ export default function ContractReviewPage() {
     // Pure row-value distinct for CLEARANCE STATUS (plus (Blank) handled by MultiSelect)
     result["CLEARANCE STATUS"] = [
       ...new Set(
-        data.rows.map((r) => String(r[clearanceIdx] ?? "").trim()).filter(Boolean),
+        data.rows
+          .map((r) => String(r[clearanceIdx] ?? "").trim())
+          .filter(Boolean),
       ),
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return result;
@@ -567,11 +690,17 @@ export default function ContractReviewPage() {
           columnFilters,
           multiFilters,
           globalSearch,
-          dateFrom,
-          dateTo,
+          dateRanges,
         ),
       ),
-    [allRows, headers, columnFilters, multiFilters, globalSearch, dateFrom, dateTo],
+    [
+      allRows,
+      headers,
+      columnFilters,
+      multiFilters,
+      globalSearch,
+      dateRanges,
+    ],
   );
 
   const balBillCounts = useMemo(() => {
@@ -649,7 +778,11 @@ export default function ContractReviewPage() {
     return Object.keys(statusCounts)
       .filter((k) => k !== "all")
       .sort((a, b) =>
-        a === "Blanks" ? -1 : b === "Blanks" ? 1 : a.localeCompare(b, undefined, { numeric: true }),
+        a === "Blanks"
+          ? -1
+          : b === "Blanks"
+            ? 1
+            : a.localeCompare(b, undefined, { numeric: true }),
       );
   }, [statusCounts]);
 
@@ -659,7 +792,15 @@ export default function ContractReviewPage() {
   const clearanceCounts = useMemo(() => {
     const counts: Record<string, number> = { all: 0 };
     const baseForClearance = allRows.filter((row) =>
-      matchesTableFilters(row, headers, columnFilters, multiFilters, globalSearch, dateFrom, dateTo, "CLEARANCE STATUS"),
+      matchesTableFilters(
+        row,
+        headers,
+        columnFilters,
+        multiFilters,
+        globalSearch,
+        dateRanges,
+        "CLEARANCE STATUS",
+      ),
     );
     for (const row of baseForClearance) {
       if (
@@ -689,8 +830,7 @@ export default function ContractReviewPage() {
     columnFilters,
     multiFilters,
     globalSearch,
-    dateFrom,
-    dateTo,
+    dateRanges,
     balBillFilter,
     statusFilter,
     tileItem,
@@ -985,8 +1125,134 @@ export default function ContractReviewPage() {
     tilePn,
   ]);
 
+  // Per-node row counts for the flow diagram. Respects every active filter
+  // except the graph's own columns (STATUS / CLEARANCE STATUS), so selecting
+  // one branch never collapses the sibling counts (exclude-self cascading,
+  // same convention as the sidebar aggregates).
+  const graphPathColumns = useMemo(
+    () => new Set(["STATUS", "CLEARANCE STATUS"]),
+    [],
+  );
+
+  const graphCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const { tree } of CONTRACT_REVIEW_TREES) {
+      for (const node of flatten(tree)) {
+        const path = pathTo(tree, node.id);
+        let n = 0;
+        for (const row of allRows) {
+          if (
+            !matchesTableFilters(
+              row,
+              headers,
+              columnFilters,
+              multiFilters,
+              globalSearch,
+              dateRanges,
+              undefined,
+              graphPathColumns,
+            )
+          )
+            continue;
+          if (!path.every((p) => matchesGraphFilter(row, p.filter))) continue;
+          n++;
+        }
+        counts[node.id] = n;
+      }
+    }
+    return counts;
+  }, [
+    allRows,
+    headers,
+    columnFilters,
+    multiFilters,
+    globalSearch,
+    dateRanges,
+    graphPathColumns,
+  ]);
+
+  const handleGraphToggle = useCallback(
+    (id: string) => {
+      for (const { tree } of CONTRACT_REVIEW_TREES) {
+        const node = flatten(tree).find((n) => n.id === id);
+        if (!node) continue;
+        if (activePath.includes(id)) {
+          const path = pathTo(tree, id);
+          for (const col of Object.keys(pathToColumnFilters(path))) {
+            filterActions.onMultiFilter(col, []);
+          }
+          if (path.some((p) => p.filter.column === "STATUS")) {
+            setStatusFilter("all");
+          }
+          setActivePath([]);
+        } else {
+          const path = pathTo(tree, id);
+          const byCol = pathToColumnFilters(path);
+          for (const [col, values] of Object.entries(byCol)) {
+            filterActions.onMultiFilter(col, values);
+          }
+          if (byCol["STATUS"]) {
+            setStatusFilter(
+              byCol["STATUS"].includes("(Blank)")
+                ? "Blanks"
+                : byCol["STATUS"][0],
+            );
+          }
+          setActivePath(path.map((p) => p.id));
+        }
+        return;
+      }
+    },
+    [activePath, filterActions],
+  );
+
   const fmt = (n: number) =>
     n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+  // Display metrics for nodes flagged with a metric (e.g. Balance DI).
+  // Summed over the same rows the node counts: whatever rate × (DI QTY − BILLED QTY)
+  // yields, formatted with the en-IN convention used by the sidebar tiles.
+  const graphValues = useMemo(() => {
+    const values: Record<string, string> = {};
+    for (const { tree } of CONTRACT_REVIEW_TREES) {
+      for (const node of flatten(tree)) {
+        if (node.metric !== "diBalance") continue;
+        const path = pathTo(tree, node.id);
+        let sum = 0;
+        for (const row of allRows) {
+          if (
+            !matchesTableFilters(
+              row,
+              headers,
+              columnFilters,
+              multiFilters,
+              globalSearch,
+              dateRanges,
+              undefined,
+              graphPathColumns,
+            )
+          )
+            continue;
+          if (!path.every((p) => matchesGraphFilter(row, p.filter))) continue;
+          const rate = parseNum(row[RATE_IDX]);
+          const di = parseNum(row[DI_QTY_IDX]);
+          const billed = parseNum(row[BILLED_QTY_IDX]);
+          if (isNaN(rate) || isNaN(di) || isNaN(billed)) continue;
+          sum += rate * (di - billed);
+        }
+        values[node.id] = fmt(sum);
+      }
+    }
+    return values;
+  }, [
+    allRows,
+    headers,
+    columnFilters,
+    multiFilters,
+    globalSearch,
+    dateRanges,
+    graphPathColumns,
+  ]);
 
   const fmtLakhs = (n: number) => `${(n / 100000).toFixed(1)} lakhs`;
 
@@ -997,8 +1263,10 @@ export default function ContractReviewPage() {
   const PARTY_NAME_IDX = headers.indexOf("PARTY NAME");
 
   const contractNoMeta = useMemo(() => {
-    const meta: Record<string, { count: number; sum: number; partyName: string }> =
-      {};
+    const meta: Record<
+      string,
+      { count: number; sum: number; partyName: string }
+    > = {};
     for (const row of filteredData?.rows ?? []) {
       if (
         !matchesTableFilters(
@@ -1007,16 +1275,14 @@ export default function ContractReviewPage() {
           columnFilters,
           multiFilters,
           globalSearch,
-          dateFrom,
-          dateTo,
+          dateRanges,
           "CONTRACT NO",
         )
       )
         continue;
       const cn = String(row[CONTRACT_NO_IDX] ?? "").trim();
       if (!cn) continue;
-      const e =
-        meta[cn] ?? (meta[cn] = { count: 0, sum: 0, partyName: "" });
+      const e = meta[cn] ?? (meta[cn] = { count: 0, sum: 0, partyName: "" });
       e.count++;
       const rate = parseNum(row[RATE_IDX]);
       const bal = parseNum(row[BAL_BILL_AG_CONT_IDX]);
@@ -1030,8 +1296,7 @@ export default function ContractReviewPage() {
     columnFilters,
     multiFilters,
     globalSearch,
-    dateFrom,
-    dateTo,
+    dateRanges,
   ]);
 
   const columnOptionMeta = useMemo(
@@ -1379,7 +1644,7 @@ export default function ContractReviewPage() {
               RATE × BAL MC QTY
             </span>
             <span className="block text-[10px] font-semibold text-white/40">
-             (MC QTY - DI QTY) 
+              (MC QTY - DI QTY)
             </span>
             <span className="block text-lg font-bold text-white mt-1">
               {fmt(rateBalMspQty.sum)}
@@ -1398,68 +1663,135 @@ export default function ContractReviewPage() {
             syncing={syncing}
           />
           {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden gap-4 pr-1 mt-4">
-            <GMDUpdateTable
-              headers={headers}
-              rows={filteredData?.rows ?? []}
-              ids={filteredData?.ids ?? []}
-              selectedIndex={selectedIndex}
-              onSelect={setSelectedIndex}
-              title="Contract Review"
-              editable
-              fullHeight
-              editableColumns={["bom formula trial", "Item", "BOM ID", "CLEARANCE STATUS"]}
-              categoryOptions={categoryOptions}
-              fixedDropdownOptions={pnRatingOptions.length ? { "PN RATING": pnRatingOptions } : undefined}
-              onCellUpdate={handleCellUpdate}
-              externalFiltersActive={
-                hasTileFilter ||
-                balBillFilter !== "all" ||
-                statusFilter !== "all" ||
-                clearanceFilter.length > 0
-              }
-              filterState={filterState}
-              filterActions={filterActions}
-              columnOptionMeta={columnOptionMeta}
-              bomIdOptionsById={bomIdOptionsById}
-              onSelectBomId={handleSelectBomId}
-              bomIdCategoryFilter
-              onReset={() => {
-                setTileItem("");
-                setTileSize("");
-                setTilePn("");
-                setBalBillFilter("all");
-                setStatusFilter("all");
-                filterActions.onMultiFilter("CLEARANCE STATUS", []);
-              }}
-              hiddenColumns={[
-                "VA %",
-                "CV",
-                "FREE STOCK",
-                "FINAL REQ",
-                // "MC QTY",
-                "Balance mc",
-                "PROD ORD QTY",
-                "BALANCE TO PROD ORD",
-                "BALANCE TO PROD ENT",
-                // "DI QTY",
-                "BAL DI QTY",
-                "BAL MC VAL",
-                "BAL PROD ORD VAL",
-                "BAL TO PROD ORD ENT VAL",
-                "BAL BILL AG CONT VAL",
-                "BAL BILL AG MC VAL",
-                "BAL DI VAL",
-                "DI VAL",
-                "ERP PARTY NAME FROM GMD SUPPLY HISTORY",
-                "JOB Code",
-                "BAL BILL AG MC",
-                "ic qty",
-                "bom formula trial",
-                "STATUS",
-              ]}
-            />
-          </div>
+          <ResizablePanelGroup
+            orientation="vertical"
+            id="contract-review-vertical"
+            defaultLayout={verticalLayout}
+            onLayoutChanged={onVerticalLayoutChanged}
+            className="flex-1 min-h-0 mt-4"
+          >
+            <ResizablePanel id="graph" defaultSize="32" minSize="12">
+              <div className="h-full overflow-hidden rounded-lg border border-[#1e3d59] bg-[#0a2540]">
+                <FlowDiagram
+                  trees={CONTRACT_REVIEW_TREES}
+                  counts={graphCounts}
+                  values={graphValues}
+                  activePath={activePath}
+                  onToggle={handleGraphToggle}
+                />
+              </div>
+            </ResizablePanel>
+            <ResizableHandle withHandle className="my-2 bg-[#e1e6eb]" />
+            <ResizablePanel id="table" defaultSize="68" minSize="25">
+              <GMDUpdateTable
+                headers={headers}
+                rows={filteredData?.rows ?? []}
+                ids={filteredData?.ids ?? []}
+                selectedIndex={selectedIndex}
+                onSelect={setSelectedIndex}
+                title="Contract Review"
+                editable
+                fullHeight
+                editableColumns={[
+                  "bom formula trial",
+                  "Item",
+                  "BOM ID",
+                  "CLEARANCE STATUS",
+                  "Actuator",
+                  "MC Received/Pending",
+                  "Inspection",
+                  "Remarks",
+                  "PN RATING",
+                  "LC/RTGS REF NO",
+                  "LC DATE/RTGS DATE",
+                  "LAST DATE OF SHIPMENT/DATE OF LC",
+                  "Issuing bank name",
+                   "PAYMENT TERMS",
+                ]}
+                categoryOptions={categoryOptions}
+                fixedDropdownOptions={{
+                  "PN RATING": pnRatingOptions,
+                  "MC Received/Pending": ["Received", "Pending"],
+                  Inspection: ["DONE", "PENDING"],
+                  Actuator: actuatorOptions,
+                  "PAYMENT TERMS": [
+                    "CREDIT 45",
+                    "CREDIT 30",
+                    "CREDIT 90",
+                    "CREDIT LC-30",
+                    "100% ADVANCE",
+                    "CREDIT LC-60",
+                    "CREDIT LC-90",
+                    "CREDIT 15",
+                    "CREDIT LC-45",
+                    "Credit 21",
+                    "PDC 45",
+                    "Credit 7",
+                    "CREDIT 60",
+                    "10 ADV, BAL DELIVERY",
+                    "20 ADV, BAL DELIVERY",
+                    "20 ADV, BAL BEFORE DELIVERY",
+                    "15 ADV, BAL BEFORE DELIVERY",
+                    "25 ADV, BAL BEFORE DELIVERY",
+                    "NA",
+                    "20 ADV, BAL 30 DAYS DELIVERY",
+                    "CREDIT LC-150",
+                    "AFTER GRN",
+                    "5 ADV, BAL LC 30",
+                  ],
+                }}
+                onCellUpdate={handleCellUpdate}
+                externalFiltersActive={
+                  hasTileFilter ||
+                  balBillFilter !== "all" ||
+                  statusFilter !== "all" ||
+                  clearanceFilter.length > 0
+                }
+                filterState={filterState}
+                filterActions={filterActions}
+                columnOptionMeta={columnOptionMeta}
+                bomIdOptionsById={bomIdOptionsById}
+                onSelectBomId={handleSelectBomId}
+                bomIdCategoryFilter
+                onReset={() => {
+                  setTileItem("");
+                  setTileSize("");
+                  setTilePn("");
+                  setBalBillFilter("all");
+                  setStatusFilter("all");
+                  setActivePath([]);
+                  filterActions.onMultiFilter("CLEARANCE STATUS", []);
+                  filterActions.onMultiFilter("STATUS", []);
+                }}
+                hiddenColumns={[
+                  "VA %",
+                  "CV",
+                  "FREE STOCK",
+                  "FINAL REQ",
+                  // "MC QTY",
+                  "Balance mc",
+                  "PROD ORD QTY",
+                  "BALANCE TO PROD ORD",
+                  "BALANCE TO PROD ENT",
+                  // "DI QTY",
+                  "BAL DI QTY",
+                  "BAL MC VAL",
+                  "BAL PROD ORD VAL",
+                  "BAL TO PROD ORD ENT VAL",
+                  "BAL BILL AG CONT VAL",
+                  "BAL BILL AG MC VAL",
+                  "BAL DI VAL",
+                  "DI VAL",
+                  "ERP PARTY NAME FROM GMD SUPPLY HISTORY",
+                  "JOB Code",
+                  "BAL BILL AG MC",
+                  "ic qty",
+                  "bom formula trial",
+                  "STATUS",
+                ]}
+              />
+            </ResizablePanel>
+          </ResizablePanelGroup>
         </div>
       </div>
     </main>
