@@ -17,7 +17,7 @@ import type { DropdownOptions, EnquiryData, EnquiryItemData, FiltersState } from
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { useSession } from "next-auth/react";
-import { oneClickAccess } from "@/lib/oneClickAccess";
+import { oneClickAccess, FROZEN_ITEM_FIELD_SET, isEnquiryFrozen } from "@/lib/oneClickAccess";
 import { importExcelData, autoFillBlanks, updateVaPercent } from "@/lib/enquiriesSlice";
 import { validateVaPercent } from "@/lib/vaValidation";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
@@ -392,12 +392,27 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       toast.info("No items match current filters.");
       return;
     }
-    const withQr = allFiltered.filter((i) => i.quotedRate != null && String(i.quotedRate).trim() !== "");
+    // Exclude frozen enquiries — rate & cost are frozen after one-time PDF
+    const frozenEnquiryIds = new Set(
+      filteredEnquiries
+        .filter((e) => isEnquiryFrozen((e as any).apm, (e as any).offerPdfGeneratedAt))
+        .map((e) => e.id)
+    );
+    const nonFrozenFiltered = allFiltered.filter((i) => !frozenEnquiryIds.has(i.enquiryId));
+    if (frozenEnquiryIds.size > 0) {
+      const frozenCount = allFiltered.length - nonFrozenFiltered.length;
+      if (nonFrozenFiltered.length === 0) {
+        toast.info(`Cannot clear rates: ${frozenCount} item(s) are frozen after one-time PDF generation — revert APM to edit.`);
+        return;
+      }
+      toast(`Skipping ${frozenCount} frozen item(s) (APM Yes + PDF generated).`, { duration: 3000 });
+    }
+    const withQr = nonFrozenFiltered.filter((i) => i.quotedRate != null && String(i.quotedRate).trim() !== "");
     if (withQr.length === 0) {
       toast.info("No Quoted Rates to clear for current filters.");
       return;
     }
-    setClearQrPending({ total: allFiltered.length, withQr: withQr.length, ids: withQr.map((i) => i.id) });
+    setClearQrPending({ total: nonFrozenFiltered.length, withQr: withQr.length, ids: withQr.map((i) => i.id) });
     setClearQrConfirmOpen(true);
   };
   const handleClearQrConfirm = async () => {
@@ -928,6 +943,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const handleItemFieldChange = async (itemId: string, field: string, val: string) => {
     const dbVal = val === "" ? null : val;
     console.log(`[Client] updateItemField item=${itemId} field=${field} val="${dbVal}"`);
+    // Client-side frozen guard: pricing columns (incl. quantity) are frozen after one-time PDF
+    if (FROZEN_ITEM_FIELD_SET.has(field)) {
+      const parentItem = allItems.find((i) => i.id === itemId) || null;
+      const parentEnquiry = parentItem ? enquiries.find((e) => e.id === parentItem.enquiryId) : null;
+      if (parentEnquiry && isEnquiryFrozen((parentEnquiry as any).apm, (parentEnquiry as any).offerPdfGeneratedAt)) {
+        toast.error("Rate & cost columns are frozen after one-time PDF generation — revert APM to edit.");
+        return;
+      }
+    }
     const toastId = toast.loading(`Saving ${field}...`);
     const prevItem = allItems.find((i) => i.id === itemId) || null;
     const prevQr = prevItem?.quotedRate ? parseFloat(String(prevItem.quotedRate)) : null;
@@ -970,6 +994,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     e: React.ClipboardEvent<HTMLInputElement>,
     startIndex: number
   ) => {
+    // Frozen guard: bulk paste mutates frozen pricing columns
+    if (isEnquiryFrozen((enquiry as any).apm, (enquiry as any).offerPdfGeneratedAt)) {
+      toast.error("Rate & cost columns are frozen after one-time PDF generation — revert APM to edit.");
+      e.preventDefault();
+      return;
+    }
     const clipboardData = e.clipboardData.getData("text");
     if (!clipboardData) return;
 
@@ -1692,11 +1722,20 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   }
 
   const handleUpdateAllBomCosts = async () => {
+    const frozenEnquiryIds = new Set(
+      paginatedEnquiries
+        .filter((e) => isEnquiryFrozen((e as any).apm, (e as any).offerPdfGeneratedAt))
+        .map((e) => e.id)
+    );
     const matchedItems: EnquiryItemData[] = []
     for (const enquiry of paginatedEnquiries) {
+      if (frozenEnquiryIds.has(enquiry.id)) continue;
       for (const item of getFilteredItems(enquiry)) {
         matchedItems.push(item)
       }
+    }
+    if (frozenEnquiryIds.size > 0) {
+      toast(`Skipping frozen enquiries (${frozenEnquiryIds.size}) — rate & cost are frozen after one-time PDF.`, { duration: 3000 });
     }
 
     const targetItems = matchedItems.filter(
@@ -1728,11 +1767,20 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   }
 
   const handleAutoFillVa = async () => {
+    const frozenEnquiryIds2 = new Set(
+      paginatedEnquiries
+        .filter((e) => isEnquiryFrozen((e as any).apm, (e as any).offerPdfGeneratedAt))
+        .map((e) => e.id)
+    );
     const matchedItems: EnquiryItemData[] = []
     for (const enquiry of paginatedEnquiries) {
+      if (frozenEnquiryIds2.has(enquiry.id)) continue;
       for (const item of getFilteredItems(enquiry)) {
         matchedItems.push(item)
       }
+    }
+    if (frozenEnquiryIds2.size > 0) {
+      toast(`Skipping frozen enquiries (${frozenEnquiryIds2.size}) — VA% is frozen after one-time PDF.`, { duration: 3000 });
     }
 
     const blankVaItems = matchedItems.filter((i: EnquiryItemData) => !i.vaPercent)
@@ -3318,6 +3366,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               const isAllSelected = displayItems.length > 0 && selectedCount === displayItems.length;
               const isSomeSelected = selectedCount > 0 && selectedCount < displayItems.length;
               const isThisEnquiryActive = selectedEnquiryId === enquiry.id;
+              const isFrozen = isEnquiryFrozen((enquiry as any).apm, (enquiry as any).offerPdfGeneratedAt);
 
               // Setup custom brand avatar styles
               let badgeBg = "bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800";
@@ -3679,12 +3728,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     </td>
 
                     {/* First Item Quantity */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
                           key={firstItem.id + "-quantity-" + (firstItem.quantity || "")}
                           type="text"
                           defaultValue={firstItem.quantity ? Number(firstItem.quantity).toString() : ""}
+                          disabled={isFrozen}
+                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (firstItem.quantity ? Number(firstItem.quantity).toString() : "")) {
                               handleItemFieldChange(firstItem.id, "quantity", e.target.value);
@@ -3694,7 +3745,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-semibold text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-semibold text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
                     </td>
@@ -3782,7 +3833,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             return (
                               <select
                                 value={(firstItem as any).bomId || ""}
+                                disabled={isFrozen}
+                                title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : (avail || []).join(", ")}
                                 onChange={(e) => {
+                                  if (isFrozen) { toast.error("Rate & cost columns are frozen after one-time PDF generation — revert APM to edit."); return; }
                                   const v = e.target.value || null;
                                   toast.promise(dispatch(selectBomId({ itemId: firstItem.id, bomId: v })).unwrap(), {
                                     loading: "Saving BOM...",
@@ -3790,8 +3844,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                                     error: (err) => (typeof err === "string" ? err : err?.message || "Failed to save BOM."),
                                   });
                                 }}
-                                className="w-full text-[10px] border border-border rounded px-1 py-1 bg-background"
-                                title={(avail || []).join(", ")}
+                                className="w-full text-[10px] border border-border rounded px-1 py-1 bg-background disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 <option value="">-- select --</option>
                                 {avail!.map((b) => (
@@ -3870,11 +3923,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     </td>
 
                     {/* First Item Product Cost */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
                           type="text"
                           defaultValue={firstItem.productCost ? Number(firstItem.productCost).toString() : ""}
+                          disabled={isFrozen}
+                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (firstItem.productCost ? Number(firstItem.productCost).toString() : "")) {
                               handleItemFieldChange(firstItem.id, "productCost", e.target.value);
@@ -3884,17 +3939,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
                     </td>
 
                     {/* First Item Cost Ref Code */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
                           type="text"
                           defaultValue={firstItem.costRefCode || ""}
+                          disabled={isFrozen}
+                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (firstItem.costRefCode || "")) {
                               handleItemFieldChange(firstItem.id, "costRefCode", e.target.value);
@@ -3904,17 +3961,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
                     </td>
 
                     {/* First Item Cost */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
                           type="text"
                           defaultValue={firstItem.cost ? Number(firstItem.cost).toString() : ""}
+                          disabled={isFrozen}
+                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (firstItem.cost ? Number(firstItem.cost).toString() : "")) {
                               handleItemFieldChange(firstItem.id, "cost", e.target.value);
@@ -3925,18 +3984,20 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
                     </td>
 
                     {/* First Item Cost Logic */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
                           key={firstItem.id + "-costLogic-" + (firstItem.costLogic || "")}
                           type="text"
                           defaultValue={firstItem.costLogic || ""}
+                          disabled={isFrozen}
+                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (firstItem.costLogic || "")) {
                               handleItemFieldChange(firstItem.id, "costLogic", e.target.value);
@@ -3946,7 +4007,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
                     </td>
@@ -4045,11 +4106,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     </td>
 
                     {/* First Item Discount */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
                           type="text"
                           defaultValue={firstItem.discount ? Number(firstItem.discount).toString() : ""}
+                          disabled={isFrozen}
+                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (firstItem.discount ? Number(firstItem.discount).toString() : "")) {
                               handleItemFieldChange(firstItem.id, "discount", e.target.value);
@@ -4059,18 +4122,20 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
                     </td>
 
                     {/* First Item VA% */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0 font-semibold">
+                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
                           key={firstItem.id + "-vaPercent-" + (firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : "")}
                           type="text"
                           defaultValue={firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : ""}
+                          disabled={isFrozen}
+                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             const val = e.target.value.trim();
                             if (val !== (firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : "")) {
@@ -4082,18 +4147,20 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
                     </td>
 
                     {/* First Item Quoted Rate */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
                           key={firstItem.id + "-" + (firstItem.quotedRate || "")}
                           type="text"
                           defaultValue={firstItem.quotedRate || ""}
+                          disabled={isFrozen}
+                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (firstItem.quotedRate || "")) {
                               handleItemFieldChange(firstItem.id, "quotedRate", e.target.value);
@@ -4104,7 +4171,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
                     </td>
@@ -4138,12 +4205,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     </td>
 
                     {/* First Item Total Value */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
                           key={firstItem.id + "-totalValue-" + (firstItem.totalValue || "")}
                           type="text"
                           defaultValue={firstItem.totalValue || ""}
+                          disabled={isFrozen}
+                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (firstItem.totalValue || "")) {
                               handleItemFieldChange(firstItem.id, "totalValue", e.target.value);
@@ -4153,18 +4222,20 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
                     </td>
 
                     {/* First Item Itemwise Total Value */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
                           key={firstItem.id + "-itemWiseTotalValue-" + (firstItem.itemWiseTotalValue || "")}
                           type="text"
                           defaultValue={firstItem.itemWiseTotalValue || ""}
+                          disabled={isFrozen}
+                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (firstItem.itemWiseTotalValue || "")) {
                               handleItemFieldChange(firstItem.id, "itemWiseTotalValue", e.target.value);
@@ -4174,7 +4245,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
                     </td>
@@ -4395,11 +4466,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         </td>
                         
                         {/* Additional Item Quantity */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
                             key={item.id + "-quantity-" + (item.quantity || "")}
                             type="text"
                             defaultValue={item.quantity ? Number(item.quantity).toString() : ""}
+                            disabled={isFrozen}
+                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (item.quantity ? Number(item.quantity).toString() : "")) {
                               handleItemFieldChange(item.id, "quantity", e.target.value);
@@ -4409,7 +4482,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-semibold text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-semibold text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                         </td>
 
@@ -4485,7 +4558,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               return (
                                 <select
                                   value={(item as any).bomId || ""}
+                                  disabled={isFrozen}
+                                  title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : (avail || []).join(", ")}
                                   onChange={(e) => {
+                                    if (isFrozen) { toast.error("Rate & cost columns are frozen after one-time PDF generation — revert APM to edit."); return; }
                                     const v = e.target.value || null;
                                     toast.promise(dispatch(selectBomId({ itemId: item.id, bomId: v })).unwrap(), {
                                       loading: "Saving BOM...",
@@ -4493,8 +4569,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                                       error: (err) => (typeof err === "string" ? err : err?.message || "Failed to save BOM."),
                                     });
                                   }}
-                                  className="w-full text-[10px] border border-border rounded px-1 py-1 bg-background"
-                                  title={(avail || []).join(", ")}
+                                  className="w-full text-[10px] border border-border rounded px-1 py-1 bg-background disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   <option value="">-- select --</option>
                                   {avail!.map((b) => (
@@ -4564,10 +4639,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         </td>
 
                         {/* Product Cost */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
                             type="text"
                             defaultValue={item.productCost ? Number(item.productCost).toString() : ""}
+                            disabled={isFrozen}
+                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (item.productCost ? Number(item.productCost).toString() : "")) {
                               handleItemFieldChange(item.id, "productCost", e.target.value);
@@ -4577,15 +4654,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </td>
 
                       {/* Cost Ref Code */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
                             type="text"
                             defaultValue={item.costRefCode || ""}
+                            disabled={isFrozen}
+                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (item.costRefCode || "")) {
                               handleItemFieldChange(item.id, "costRefCode", e.target.value);
@@ -4595,15 +4674,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </td>
 
                       {/* Cost */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
                             type="text"
                             defaultValue={item.cost ? Number(item.cost).toString() : ""}
+                            disabled={isFrozen}
+                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (item.cost ? Number(item.cost).toString() : "")) {
                               handleItemFieldChange(item.id, "cost", e.target.value);
@@ -4614,16 +4695,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </td>
 
                       {/* Cost Logic */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
                             key={item.id + "-costLogic-" + (item.costLogic || "")}
                             type="text"
                             defaultValue={item.costLogic || ""}
+                            disabled={isFrozen}
+                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (item.costLogic || "")) {
                               handleItemFieldChange(item.id, "costLogic", e.target.value);
@@ -4633,7 +4716,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </td>
 
@@ -4721,10 +4804,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       </td>
 
                       {/* Discount */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
                             type="text"
                             defaultValue={item.discount ? Number(item.discount).toString() : ""}
+                            disabled={isFrozen}
+                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (item.discount ? Number(item.discount).toString() : "")) {
                               handleItemFieldChange(item.id, "discount", e.target.value);
@@ -4734,16 +4819,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </td>
 
                       {/* VA% */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0 font-semibold">
+                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
                             key={item.id + "-vaPercent-" + (item.vaPercent !== null ? `${item.vaPercent}%` : "")}
                             type="text"
                             defaultValue={item.vaPercent !== null ? `${item.vaPercent}%` : ""}
+                            disabled={isFrozen}
+                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             const val = e.target.value.trim();
                             if (val !== (item.vaPercent !== null ? `${item.vaPercent}%` : "")) {
@@ -4755,16 +4842,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </td>
 
                       {/* Quoted Rate */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
                             key={item.id + "-" + (item.quotedRate || "")}
                             type="text"
                             defaultValue={item.quotedRate || ""}
+                            disabled={isFrozen}
+                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (item.quotedRate || "")) {
                               handleItemFieldChange(item.id, "quotedRate", e.target.value);
@@ -4775,7 +4864,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </td>
 
@@ -4806,11 +4895,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         </td>
 
                         {/* Total Value */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
                             key={item.id + "-totalValue-" + (item.totalValue || "")}
                             type="text"
                             defaultValue={item.totalValue || ""}
+                            disabled={isFrozen}
+                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (item.totalValue || "")) {
                               handleItemFieldChange(item.id, "totalValue", e.target.value);
@@ -4820,16 +4911,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </td>
 
                       {/* Itemwise Total Value */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
                             key={item.id + "-itemWiseTotalValue-" + (item.itemWiseTotalValue || "")}
                             type="text"
                             defaultValue={item.itemWiseTotalValue || ""}
+                            disabled={isFrozen}
+                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             if (e.target.value !== (item.itemWiseTotalValue || "")) {
                               handleItemFieldChange(item.id, "itemWiseTotalValue", e.target.value);
@@ -4839,7 +4932,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </td>
 

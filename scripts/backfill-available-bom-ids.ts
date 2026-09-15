@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getBatchDistinctBomIds } from "@/lib/verifyBomLookup";
+import { getBatchDistinctBomIds, getNoUseBomIdSet } from "@/lib/verifyBomLookup";
 
 async function main() {
   const args = process.argv.slice(2);
@@ -7,7 +7,7 @@ async function main() {
   const limitArg = args.find((a) => a.startsWith("--limit="));
   const limit = limitArg ? parseInt(limitArg.split("=")[1], 10) : 0;
 
-  console.log(`\n=== Backfill availableBomIds ${dryRun ? "(DRY RUN - no writes)" : "(WRITE MODE)"} ===`);
+  console.log(`\n=== Backfill availableBomIds (NO-USE filtered) ${dryRun ? "(DRY RUN - no writes)" : "(WRITE MODE)"} ===`);
 
   const items = await prisma.enquiryItem.findMany({
     where: { erpItemCode: { not: null } },
@@ -22,26 +22,36 @@ async function main() {
   console.log(`Distinct codes: ${codes.length}`);
 
   const map = await getBatchDistinctBomIds(codes);
+  // Quotation-scoped: exclude NO-USE bomIds permanently (never bring them back)
+  const allBomIds = [...new Set([...map.values()].flat())];
+  const noUse = await getNoUseBomIdSet(allBomIds);
+  console.log(`VerifyBom NO-USE bomIds in scope: ${noUse.size}${noUse.size ? ` (${[...noUse].slice(0, 10).join(", ")}${noUse.size > 10 ? ", ..." : ""})` : ""}`);
 
-  // Show preview of multi-BOM codes
-  const multiCodes = [...map.entries()].filter(([, ids]) => ids.length > 1);
-  console.log(`\n--- VerifyBom multi-BOM codes: ${multiCodes.length} have >1 distinct bomId ---`);
+  // Build filtered map per code (distinct minus NO-USE)
+  const filteredMap = new Map<string, string[]>();
+  for (const [code, ids] of map) {
+    filteredMap.set(code, ids.filter((id) => !noUse.has(id)));
+  }
+
+  // Show preview of multi-BOM codes (filtered)
+  const multiCodes = [...filteredMap.entries()].filter(([, ids]) => ids.length > 1);
+  console.log(`\n--- VerifyBom multi-BOM codes (NO-USE filtered, >1): ${multiCodes.length} codes ---`);
   for (const [code, ids] of multiCodes.slice(0, 20)) {
     console.log(`  ${code}: ${ids.length} BOMs => ${ids.join(", ")}`);
   }
   if (multiCodes.length > 20) console.log(`  ... and ${multiCodes.length - 20} more`);
 
-  const zeroCodes = [...map.entries()].filter(([, ids]) => ids.length === 0);
-  console.log(`Zero BOM codes: ${zeroCodes.length}`);
-  const singleCodes = [...map.entries()].filter(([, ids]) => ids.length === 1);
-  console.log(`Single BOM codes: ${singleCodes.length}`);
+  const zeroCodes = [...filteredMap.entries()].filter(([, ids]) => ids.length === 0);
+  console.log(`Zero BOM codes (after NO-USE filter): ${zeroCodes.length}`);
+  const singleCodes = [...filteredMap.entries()].filter(([, ids]) => ids.length === 1);
+  console.log(`Single BOM codes (after NO-USE filter): ${singleCodes.length}`);
 
-  // Per-item preview
+  // Per-item preview: compare current stored vs correct filtered per code
   let willUpdate = 0;
   let alreadyCorrect = 0;
   const previewRows: any[] = [];
   for (const it of actionable) {
-    const ids = map.get(it.erpItemCode!) ?? [];
+    const ids = filteredMap.get(it.erpItemCode!) ?? [];
     const current = it.availableBomIds ?? [];
     const same = current.length === ids.length && current.every((v, i) => v === ids[i]);
     if (!same) willUpdate++;
@@ -68,18 +78,18 @@ async function main() {
     console.log(`  npx tsx scripts/backfill-available-bom-ids.ts --write`);
     if (limit) console.log(`  (remove --limit to process all)`);
   } else {
-    console.log(`\nWriting...`);
+    console.log(`\nWriting per-code (updateMany) ...`);
     let updated = 0;
-    for (const it of actionable) {
-      const ids = map.get(it.erpItemCode!) ?? [];
-      const current = it.availableBomIds ?? [];
-      const same = current.length === ids.length && current.every((v, i) => v === ids[i]);
-      if (same) continue;
-      await prisma.enquiryItem.update({ where: { id: it.id }, data: { availableBomIds: ids } });
-      updated++;
-      if (updated % 500 === 0) console.log(`  updated ${updated}...`);
+    for (const [code, ids] of filteredMap) {
+      const res = await prisma.enquiryItem.updateMany({
+        where: { erpItemCode: code },
+        data: { availableBomIds: ids },
+      });
+      updated += res.count;
     }
-    console.log(`Done. Updated ${updated} items.`);
+    // Codes whose filtered list is [] but items may have had NO-USE entries: they are already covered above (updateMany sets to []).
+    // Also ensure any code that was not in map (shouldn't happen) gets [] — not needed as actionable only has mapped codes.
+    console.log(`Done. Updated ${updated} items (per-code consistency, NO-USE never restored).`);
   }
 
   await prisma.$disconnect();

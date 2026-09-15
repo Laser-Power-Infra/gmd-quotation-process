@@ -10,9 +10,10 @@ import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
 import { update2to1CostForItems, buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
-import { getDistinctBomIds, getBatchDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail, getFallbackBomRowByCostRef, getFallbackRowsByCostRefs } from "@/lib/verifyBomLookup";
+import { getDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail, getNoUseBomIdSet } from "@/lib/verifyBomLookup";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, getRmTypeMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
+import { makeImageKey } from "@/lib/imageKey";
 import {
   uploadToS3,
   deleteFromS3,
@@ -360,6 +361,28 @@ export async function updateEnquiryItemAction(formData: {
     }
 
     console.log(`[Server] updateEnquiryItem item=${formData.itemId}`);
+    // Freeze pricing columns when parent enquiry is in one-time-consumed state.
+    // Quantity is included per "make it frozen as well" requirement.
+    {
+      const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+      const parent = await prisma.enquiry.findUnique({
+        where: { id: item.enquiryId },
+        select: { apm: true, offerPdfGeneratedAt: true },
+      });
+      if (parent && isEnquiryFrozen(parent.apm, parent.offerPdfGeneratedAt)) {
+        const frozenChanged =
+          (formData.quantity !== undefined && formData.quantity !== Number(item.quantity)) ||
+          (formData.productCost !== undefined && formData.productCost !== (item.productCost ? Number(item.productCost) : null)) ||
+          (formData.costRefCode !== undefined && (formData.costRefCode ?? null) !== (item.costRefCode ?? null)) ||
+          (formData.cost !== undefined && formData.cost !== (item.cost ? Number(item.cost) : null)) ||
+          (formData.discount !== undefined && formData.discount !== (item.discount ? Number(item.discount) : null)) ||
+          (formData.vaPercent !== undefined && formData.vaPercent !== (item.vaPercent !== null && item.vaPercent !== undefined ? Number(item.vaPercent) : null)) ||
+          (formData.quotedRate !== undefined && (formData.quotedRate || null) !== (item.quotedRate || null));
+        if (frozenChanged) {
+          return { success: false, error: "Rate & cost columns are frozen after one-time PDF generation — revert APM to edit." };
+        }
+      }
+    }
     const fieldDiffs: string[] = [];
     if (formData.itemName !== item.itemName) fieldDiffs.push(`itemName: "${item.itemName}" → "${formData.itemName}"`);
     if (formData.itemType !== undefined && formData.itemType !== item.itemType) fieldDiffs.push(`itemType: "${item.itemType}" → "${formData.itemType}"`);
@@ -771,15 +794,33 @@ export async function updateEnquiryFieldAction(
     console.log(`[Server] updateEnquiryField enquiry=${enquiryId} field=${field} old="${oldVal}" new="${value}"`);
 
     let parsedVal = value;
+    // When APM leaves "Yes" (cleared or set to "No"), reset the one-time PDF freeze so a future
+    // "Yes" grants a fresh one-time download and pricing columns unfreeze.
+    const data: Record<string, any> = { [field]: parsedVal };
+    if (field === "apm" && parsedVal !== "Yes") {
+      data.offerPdfGeneratedAt = null;
+      data.offerPdfGeneratedBy = null;
+    }
     await prisma.enquiry.update({
       where: { id: enquiryId },
-      data: { [field]: parsedVal },
+      data,
     });
 
-    // Recalculate costs of all items if an enquiry field affecting cost changed
+    // Recalculate costs of all items if an enquiry field affecting cost changed.
+    // Skip recalculation when the enquiry is frozen (apm === "Yes" && offerPdfGeneratedAt set)
+    // to keep rate/cost columns frozen after the one-time PDF.
     let updatedItems = null;
     if (["state", "paymentTerms", "inspection", "pbg"].includes(field)) {
-      updatedItems = await recalculateEnquiryItems(enquiryId);
+      const frozenCheck = await prisma.enquiry.findUnique({
+        where: { id: enquiryId },
+        select: { apm: true, offerPdfGeneratedAt: true },
+      });
+      const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+      if (frozenCheck && isEnquiryFrozen(frozenCheck.apm, frozenCheck.offerPdfGeneratedAt)) {
+        console.log(`[Server] updateEnquiryField skipped recalcEnquiryItems for frozen enquiry=${enquiryId}`);
+      } else {
+        updatedItems = await recalculateEnquiryItems(enquiryId);
+      }
     }
 
     // Fetch the full enquiry with items to return
@@ -811,6 +852,7 @@ export async function updateItemFieldAction(
     const prevFull = await prisma.enquiryItem.findUnique({
       where: { id: itemId },
       select: {
+        enquiryId: true,
         itemName: true,
         itemType: true,
         moc: true,
@@ -822,10 +864,27 @@ export async function updateItemFieldAction(
         [field]: true,
       },
     });
-    const oldVal = prevFull ? (prevFull as any)[field] : undefined;
-    const oldCode = prevFull?.erpItemCode ?? null;
-    const oldProductCost = prevFull?.productCost ?? null;
+    if (!prevFull) {
+      return { success: false, error: "Item not found." };
+    }
+    const oldVal = (prevFull as any)[field];
+    const oldCode = prevFull.erpItemCode ?? null;
+    const oldProductCost = prevFull.productCost ?? null;
     console.log(`[Server] updateItemField item=${itemId} field=${field} old="${oldVal}" new="${value}"`);
+
+    // Enforce frozen pricing columns after one-time PDF (apm === "Yes" && offerPdfGeneratedAt set)
+    {
+      const { FROZEN_ITEM_FIELD_SET, isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+      if (FROZEN_ITEM_FIELD_SET.has(field)) {
+        const parent = await prisma.enquiry.findUnique({
+          where: { id: (prevFull as any).enquiryId },
+          select: { apm: true, offerPdfGeneratedAt: true },
+        });
+        if (parent && isEnquiryFrozen(parent.apm, parent.offerPdfGeneratedAt)) {
+          return { success: false, error: "Rate & cost columns are frozen after one-time PDF generation — revert APM to edit." };
+        }
+      }
+    }
 
     let parsedVal: any = value;
     if (field === "others") {
@@ -997,6 +1056,8 @@ export async function updateItemFieldAction(
 }
 
 // Helper: populate availableBomIds from VerifyBom for a given erpItemCode
+// Quotation-scoped: excludes NO-USE bomIds (VerifyBom.noUse == "NO USE") so they don't reappear in the dashboard dropdown
+// Per-code consistency: updates ALL rows sharing the same erpItemCode (so same itemCode always has same array)
 async function syncAvailableBomIds(itemId: string, erpItemCode: string | null) {
   try {
     if (!erpItemCode) {
@@ -1004,8 +1065,12 @@ async function syncAvailableBomIds(itemId: string, erpItemCode: string | null) {
       return [];
     }
     const ids = await getDistinctBomIds(erpItemCode);
-    await prisma.enquiryItem.update({ where: { id: itemId }, data: { availableBomIds: ids } });
-    return ids;
+    const noUse = await getNoUseBomIdSet(ids);
+    const filtered = ids.filter((id) => !noUse.has(id));
+    // Per-code updateMany ensures every EnquiryItem with the same erpItemCode gets the identical array
+    // (prevents blank vs dropdown divergence for e.g. FSD040074). Never brings back NO-USE.
+    await prisma.enquiryItem.updateMany({ where: { erpItemCode }, data: { availableBomIds: filtered } });
+    return filtered;
   } catch (e) {
     console.warn(`[syncAvailableBomIds] failed for ${itemId} code=${erpItemCode}:`, e);
     return [];
@@ -1028,6 +1093,40 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
   // "0" is present per requirement (trim() === "0" is non-empty)
   if (!needProductCost && !needStock && !needBomType) return;
   try {
+    // First-class rule: bomId absent + costRefCode present -> direct GMDUpdateItem match
+    if (!preMeta?.bomId && preMeta?.costRefCode?.trim()) {
+      const refCode = preMeta.costRefCode.trim();
+      // Batch lookups for this single code (reuses existing helpers which filter empty values)
+      const rawMap = await buildRawMaterialsCostMap([refCode]);
+      const cost = rawMap.get(refCode);
+      let fbStock: string | undefined;
+      let fbRmType: string | undefined;
+      {
+        const stockMap = await getRmStockMap([refCode]);
+        const v = stockMap.get(refCode);
+        if (v !== undefined && v.trim() !== "") fbStock = v;
+      }
+      {
+        const rmTypeMap = await getRmTypeMap([refCode]);
+        const v = rmTypeMap.get(refCode);
+        if (v !== undefined) fbRmType = v;
+      }
+      // If costRefCode matches a GMDUpdateItem row, fill cost/stock/rmType and return (ignore numbers that don't match)
+      const hasMatch = cost !== undefined || fbStock !== undefined || fbRmType !== undefined;
+      if (hasMatch) {
+        if (needProductCost && cost !== undefined && cost !== null) {
+          await recalculateItem(itemId, { productCost: cost });
+        }
+        const data: any = {};
+        if (fbRmType !== undefined) data.rmType = fbRmType;
+        if (needStock && fbStock !== undefined) data.availableStock = fbStock;
+        if (Object.keys(data).length > 0) {
+          await prisma.enquiryItem.update({ where: { id: itemId }, data });
+        }
+        return;
+      }
+      // No GMDUpdateItem match (e.g. numeric costRefCode) -> fall through to normal BOM logic
+    }
     // Always populate availableBomIds from VerifyBom first
     const candidateIds = await syncAvailableBomIds(itemId, newCode);
     // If multiple candidates, defer bom/productCost until user selects via selectBomIdAction
@@ -1120,39 +1219,32 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
     }
     // Zero fallback also requires checking candidateIds==0 - if we have 1 candidate we already returned; if bom exists we returned
     if (candidateIds.length !== 0) return;
-    // Primary has zero candidates (candidateIds==0 && sheet miss) -> costRefCode fallback (bomId stays NULL)
-    // Fetch fresh bomId gate and costRefCode - only when bomId IS NULL, and fill only missing fields
+    // Fallback: bomId absent -> direct GMDUpdateItem match on costRefCode (code cost ref is an erpItemCode)
+    // Keeps bomId null / rmItemCode null / availableBomIds [] ; bomType stays null per requirement
     const fallbackMeta = preMeta; // reuse pre-fetched meta (already has bomId,costRefCode,productCost,availableStock,bomType)
     if (fallbackMeta?.bomId) return; // bomId already present, do not fallback
-    const fallbackBomId = fallbackMeta?.costRefCode?.trim();
-    if (!fallbackBomId) return;
-    const vbFallback = await getFallbackBomRowByCostRef(fallbackBomId);
-    if (!vbFallback?.rmItemCode) return;
+    const fallbackCode = fallbackMeta?.costRefCode?.trim();
+    if (!fallbackCode) return;
     let fallbackCost: number | undefined;
-    if (needProductCost) {
-      const rawMap = await buildRawMaterialsCostMap([vbFallback.rmItemCode]);
-      fallbackCost = rawMap.get(vbFallback.rmItemCode);
-      if (fallbackCost === undefined) {
-        const supplyMap = await buildRmCostMap([vbFallback.rmItemCode]);
-        fallbackCost = supplyMap.get(vbFallback.rmItemCode);
-      }
-      if (fallbackCost !== undefined && fallbackCost !== null) {
-        await recalculateItem(itemId, { productCost: fallbackCost });
-      }
-    }
-    const fallbackBomType = vbFallback.bomIdType || DIRECT_M2M;
-    const fallbackData: any = {}; // keep bomId null, rmItemCode null, availableBomIds [] per requirement
-    if (needBomType && fallbackBomType) fallbackData.bomType = fallbackBomType;
+    let fbStock: string | undefined;
+    let fbRmType: string | undefined;
     {
-      const rmTypeMap = await getRmTypeMap([vbFallback.rmItemCode]);
-      const rmTypeVal = rmTypeMap.get(vbFallback.rmItemCode);
-      if (rmTypeVal !== undefined) fallbackData.rmType = rmTypeVal;
+      const rawMap = await buildRawMaterialsCostMap([fallbackCode]);
+      fallbackCost = rawMap.get(fallbackCode);
+      // availableStock / rmType from the same GMDUpdateItem row
+      const stockMap = await getRmStockMap([fallbackCode]);
+      const stockVal = stockMap.get(fallbackCode);
+      if (stockVal !== undefined && stockVal.trim() !== "") fbStock = stockVal;
+      const rmTypeMap = await getRmTypeMap([fallbackCode]);
+      const rt = rmTypeMap.get(fallbackCode);
+      if (rt !== undefined) fbRmType = rt;
     }
-    if (needStock && fallbackBomType === DIRECT_M2M) {
-      const stockMap = await getRmStockMap([vbFallback.rmItemCode]);
-      const stock = stockMap.get(vbFallback.rmItemCode);
-      if (stock !== undefined && stock.trim() !== "") fallbackData.availableStock = stock;
+    if (needProductCost && fallbackCost !== undefined && fallbackCost !== null) {
+      await recalculateItem(itemId, { productCost: fallbackCost });
     }
+    const fallbackData: any = {}; // keep bomId null, rmItemCode null, availableBomIds [] ; bomType stays null per requirement
+    if (fbRmType !== undefined) fallbackData.rmType = fbRmType;
+    if (needStock && fbStock !== undefined) fallbackData.availableStock = fbStock;
     if (Object.keys(fallbackData).length > 0) {
       await prisma.enquiryItem.update({ where: { id: itemId }, data: fallbackData });
     }
@@ -1164,8 +1256,16 @@ async function maybeUpdateProductCostFromNewCode(itemId: string, newCode: string
 // User selects a single bomId from availableBomIds dropdown → persist to bomId/rmItemCode/bomType + optional cost
 export async function selectBomIdAction(itemId: string, bomId: string | null) {
   try {
-    const item = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { erpItemCode: true, productCost: true, availableBomIds: true } });
+    const item = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { enquiryId: true, erpItemCode: true, productCost: true, availableBomIds: true } });
     if (!item) return { success: false, error: "Item not found." };
+    // Guard frozen enquiries: bom selection mutates productCost/cost linkage
+    {
+      const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+      const parent = await prisma.enquiry.findUnique({ where: { id: (item as any).enquiryId }, select: { apm: true, offerPdfGeneratedAt: true } });
+      if (parent && isEnquiryFrozen(parent.apm, parent.offerPdfGeneratedAt)) {
+        return { success: false, error: "Cannot change BOM: rate & cost columns are frozen after one-time PDF generation — revert APM to edit." };
+      }
+    }
     if (!item.erpItemCode) return { success: false, error: "Item has no Item Code." };
     if (bomId !== null && bomId !== "" && !item.availableBomIds.includes(bomId)) {
       return { success: false, error: "Selected BOM ID is not in available options." };
@@ -1268,6 +1368,20 @@ export async function fetchErpItemCodesAction(itemIds: string[]) {
 // PRIORITY: Raw Materials (GMDUpdateItem.cost) wins; SupplyHistory is fallback. Fixes FSD040002 -> RSD110023 (4900)
 export async function updateProductCostFromBomAction(itemIds: string[]) {
   try {
+    // Guard frozen enquiries: productCost is a frozen column after one-time PDF
+    {
+      const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+      const checkItems = await prisma.enquiryItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, enquiryId: true } });
+      if (checkItems.length > 0) {
+        const eIds = [...new Set(checkItems.map((i) => i.enquiryId))];
+        const parents = await prisma.enquiry.findMany({ where: { id: { in: eIds } }, select: { id: true, apm: true, offerPdfGeneratedAt: true } });
+        const frozenIds = new Set(parents.filter((p) => isEnquiryFrozen(p.apm, p.offerPdfGeneratedAt)).map((p) => p.id));
+        if (frozenIds.size > 0) {
+          const frozenCount = checkItems.filter((i) => frozenIds.has(i.enquiryId)).length;
+          if (frozenCount > 0) return { success: false, error: `Cannot update product costs: ${frozenCount} item(s) are frozen after one-time PDF generation — revert APM to edit.` };
+        }
+      }
+    }
     const bomRows = await fetchBomRows();
     const bomMap = new Map<string, { bomId: string | null; rmItemCode: string }>();
     for (const r of bomRows) {
@@ -1299,27 +1413,66 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
     let lastError: string | null = null;
     const noCostRmCodes = new Set<string>();
     const noBomItemCodes = new Set<string>();
-    // Collect items that missed primary sheet but may qualify for costRefCode fallback (zero candidates, bomId null)
-    // Fallback should also fill availableStock/bomType even when productCost already present (per requirement: dont override present, fill missing)
-    const fallbackCandidates: typeof items = [];
+
+    // First-class rule: bomId absent + costRefCode present -> direct GMDUpdateItem match (before sheet BOM).
+    // Pre-batch GMDUpdateItem lookups for all costRefCode candidates.
+    const costRefItems = items.filter((it) => !it.bomId && it.costRefCode?.trim());
+    const costRefCodes = [...new Set(costRefItems.map((i) => i.costRefCode!.trim()).filter(Boolean))];
+    const crCostMap = costRefCodes.length ? await buildRawMaterialsCostMap(costRefCodes) : new Map<string, number>();
+    const crStockMap = costRefCodes.length ? await getRmStockMap(costRefCodes) : new Map<string, string>();
+    const crRmTypeMap = costRefCodes.length ? await getRmTypeMap(costRefCodes) : new Map<string, string>();
 
     for (const item of items) {
+      // First-class: costRefCode direct match when bomId absent (ignore numeric codes that don't match GMDUpdateItem)
+      if (!item.bomId && item.costRefCode?.trim()) {
+        const ref = item.costRefCode.trim();
+        const needProductCost = item.productCost == null;
+        const needStock = !item.availableStock || item.availableStock.trim() === "";
+        const cost = crCostMap.get(ref);
+        const stock = crStockMap.get(ref);
+        const rmTypeVal = crRmTypeMap.get(ref);
+        const hasMatch = cost !== undefined || stock !== undefined || rmTypeVal !== undefined;
+        if (hasMatch) {
+          if (!needProductCost && !needStock && rmTypeVal === undefined) continue;
+          try {
+            let didCostUpdate = false;
+            if (needProductCost && cost !== undefined && cost !== null) {
+              await recalculateItem(item.id, { productCost: cost });
+              didCostUpdate = true;
+            } else if (needProductCost && cost === undefined) {
+              noCostRmCodes.add(ref);
+            }
+            const dataToUpdate: any = {};
+            if (rmTypeVal !== undefined) dataToUpdate.rmType = rmTypeVal;
+            if (needStock && stock !== undefined && stock.trim() !== "") dataToUpdate.availableStock = stock;
+            if (Object.keys(dataToUpdate).length > 0) {
+              await prisma.enquiryItem.update({ where: { id: item.id }, data: dataToUpdate });
+            }
+            const refreshed = await prisma.enquiryItem.findUnique({ where: { id: item.id } });
+            if (refreshed) {
+              updatedItems.push(serializeItem(refreshed));
+              if (didCostUpdate) updated++;
+              else if (needStock && dataToUpdate.availableStock !== undefined) updated++;
+              else if (dataToUpdate.rmType !== undefined) updated++;
+            }
+          } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : "Failed to update product cost (costRefCode).";
+            lastError = message;
+            console.error(`Error updating product cost (costRefCode) for item ${item.id}:`, error);
+          }
+          continue;
+        }
+        // No GMDUpdateItem match (e.g. numeric costRefCode) -> fall through to sheet BOM path
+      }
       if (!item.erpItemCode) continue;
       const needProductCost = item.productCost == null;
       const needStock = !item.availableStock || item.availableStock.trim() === "";
       const needBomType = !item.bomType;
       // If nothing needed, skip entirely
       if (!needProductCost && !needStock && !needBomType) continue;
-      // Primary sheet path only when needProductCost (to avoid overriding); but still need to handle stock-only fallback later
       const bom = bomMap.get(item.erpItemCode);
       if (!bom) {
-        // Check if qualifies for ephemeral costRefCode fallback (bomId null, costRefCode present)
-        if (!item.bomId && item.costRefCode?.trim()) {
-          fallbackCandidates.push(item);
-        } else {
-          // Only count as noBom if we actually needed something and couldn't fulfill
-          if (needProductCost) noBomItemCodes.add(item.erpItemCode);
-        }
+        if (needProductCost) noBomItemCodes.add(item.erpItemCode);
         continue;
       }
       // Primary sheet has candidate - handle productCost only if needed, stock/bomType respect present checks
@@ -1380,87 +1533,6 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
       }
     }
 
-    // Fallback pass: costRefCode as ephemeral bomId (bomId stays NULL, only bomType/availableStock/productCost)
-    // Primary has zero candidates (bomMap miss) -> verify VerifyBom also has zero candidates
-    // Non-override: only fill missing productCost/availableStock/bomType
-    if (fallbackCandidates.length > 0) {
-      const erpCodes = [...new Set(fallbackCandidates.map((i) => i.erpItemCode).filter(Boolean) as string[])];
-      // Confirm VerifyBom also zero - if VerifyBom has candidates, do not fallback (respect zero-candidates gate)
-      const vbDistinctMap = await getBatchDistinctBomIds(erpCodes);
-      const trueFallback = fallbackCandidates.filter((it) => {
-        const v = vbDistinctMap.get(it.erpItemCode!);
-        return !v || v.length === 0;
-      });
-      if (trueFallback.length > 0) {
-        const costRefCodes = [...new Set(trueFallback.map((i) => i.costRefCode!.trim()).filter(Boolean))];
-        const fallbackMap = await getFallbackRowsByCostRefs(costRefCodes);
-        // Collect rm codes from fallback rows for batch cost/stock fetch
-        const fbRmCodes = [...new Set([...fallbackMap.values()].map((r) => r.rmItemCode).filter(Boolean) as string[])];
-        const fbStockMap = await getRmStockMap(fbRmCodes);
-        const fbRmTypeMap = await getRmTypeMap(fbRmCodes);
-        const fbRawMap = await buildRawMaterialsCostMap(fbRmCodes);
-        const fbCostMap = new Map<string, number>(fbRawMap);
-        const fbMissing = fbRmCodes.filter((c) => !fbRawMap.has(c));
-        if (fbMissing.length > 0) {
-          const fbSupply = await buildRmCostMap(fbMissing);
-          for (const [k, v] of fbSupply) if (!fbCostMap.has(k)) fbCostMap.set(k, v);
-        }
-        for (const item of trueFallback) {
-          const fbKey = item.costRefCode!.trim();
-          const vbRow = fallbackMap.get(fbKey);
-          if (!vbRow?.rmItemCode) {
-            if (item.productCost == null) noBomItemCodes.add(item.erpItemCode!);
-            continue;
-          }
-          const needProductCost = item.productCost == null;
-          const needStock = !item.availableStock || item.availableStock.trim() === "";
-          const needBomType = !item.bomType;
-          if (!needProductCost && !needStock && !needBomType) continue;
-          const cost = fbCostMap.get(vbRow.rmItemCode);
-          try {
-            let didCostUpdate = false;
-            if (needProductCost && cost !== undefined && cost !== null) {
-              await recalculateItem(item.id, { productCost: cost });
-              didCostUpdate = true;
-            } else if (needProductCost) {
-              noCostRmCodes.add(vbRow.rmItemCode);
-            }
-            const bomType = (vbRow as any).bomIdType || DIRECT_M2M;
-            const dataToUpdate: any = {}; // keep bomId null, rmItemCode null, availableBomIds [] per requirement
-            if (needBomType && bomType) dataToUpdate.bomType = bomType;
-            {
-              const rmTypeVal = fbRmTypeMap.get(vbRow.rmItemCode);
-              if (rmTypeVal !== undefined) dataToUpdate.rmType = rmTypeVal;
-            }
-            if (needStock) {
-              const stock = fbStockMap.get(vbRow.rmItemCode);
-              if (stock !== undefined && stock.trim() !== "") dataToUpdate.availableStock = stock;
-            }
-            if (Object.keys(dataToUpdate).length > 0) {
-              await prisma.enquiryItem.update({ where: { id: item.id }, data: dataToUpdate });
-            }
-            const refreshed = await prisma.enquiryItem.findUnique({ where: { id: item.id } });
-            if (refreshed) {
-              updatedItems.push(serializeItem(refreshed));
-              if (didCostUpdate) updated++;
-              else if (needStock && dataToUpdate.availableStock !== undefined) updated++;
-              else if (needBomType && dataToUpdate.bomType !== undefined) updated++;
-            }
-          } catch (error: unknown) {
-            const message = error instanceof Error ? error.message : "Failed to update product cost (fallback).";
-            lastError = message;
-            console.error(`Error updating product cost (fallback) for item ${item.id}:`, error);
-          }
-        }
-      } else {
-        // Those not in trueFallback had VerifyBom candidates -> keep as noBom? they will be handled via maybeUpdate which defers; mark as noBom for message only if productCost needed
-        for (const it of fallbackCandidates) {
-          const v = vbDistinctMap.get(it.erpItemCode!);
-          if (v && v.length > 0 && it.productCost == null) noBomItemCodes.add(it.erpItemCode!);
-        }
-      }
-    }
-
     if (updated === 0) {
       const errMsgs: string[] = [];
       if (noCostRmCodes.size > 0) {
@@ -1481,6 +1553,20 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
 // Fill null or "-" cost column from Raw Materials table (2:1 BOM), triggered via UI button or API
 export async function update2to1CostAction(itemIds: string[]) {
   try {
+    // Guard frozen enquiries: cost is a frozen column after one-time PDF
+    {
+      const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+      const checkItems = await prisma.enquiryItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, enquiryId: true } });
+      if (checkItems.length > 0) {
+        const eIds = [...new Set(checkItems.map((i) => i.enquiryId))];
+        const parents = await prisma.enquiry.findMany({ where: { id: { in: eIds } }, select: { id: true, apm: true, offerPdfGeneratedAt: true } });
+        const frozenIds = new Set(parents.filter((p) => isEnquiryFrozen(p.apm, p.offerPdfGeneratedAt)).map((p) => p.id));
+        if (frozenIds.size > 0) {
+          const frozenCount = checkItems.filter((i) => frozenIds.has(i.enquiryId)).length;
+          if (frozenCount > 0) return { success: false, error: `Cannot update 2:1 costs: ${frozenCount} item(s) are frozen after one-time PDF generation — revert APM to edit.` };
+        }
+      }
+    }
     const res = await update2to1CostForItems(itemIds);
     if (res.updatedCount === 0) {
       const errMsgs: string[] = [];
@@ -1712,6 +1798,20 @@ export async function autoFillBlanksAction(itemIds: string[]) {
 // Fill blank VA% values from the default VA% table (type + size based) using keyword item-type detection only
 export async function updateVaPercentAction(itemIds: string[]) {
   try {
+    // Guard frozen enquiries: vaPercent/quotedRate are frozen after one-time PDF
+    {
+      const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+      const checkItems = await prisma.enquiryItem.findMany({ where: { id: { in: itemIds } }, select: { id: true, enquiryId: true } });
+      if (checkItems.length > 0) {
+        const eIds = [...new Set(checkItems.map((i) => i.enquiryId))];
+        const parents = await prisma.enquiry.findMany({ where: { id: { in: eIds } }, select: { id: true, apm: true, offerPdfGeneratedAt: true } });
+        const frozenIds = new Set(parents.filter((p) => isEnquiryFrozen(p.apm, p.offerPdfGeneratedAt)).map((p) => p.id));
+        if (frozenIds.size > 0) {
+          const frozenCount = checkItems.filter((i) => frozenIds.has(i.enquiryId)).length;
+          if (frozenCount > 0) return { success: false, error: `Cannot update VA%: ${frozenCount} item(s) are frozen after one-time PDF generation — revert APM to edit.` };
+        }
+      }
+    }
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
       select: { id: true, itemName: true, itemType: true, size: true, vaPercent: true },
@@ -2836,10 +2936,26 @@ export async function clearQuotedRatesAction(itemIds: string[]) {
 
     const existing = await prisma.enquiryItem.findMany({
       where: { id: { in: uniqueIds } },
-      select: { id: true },
+      select: { id: true, enquiryId: true },
     });
     if (existing.length !== uniqueIds.length) {
       return { success: false, error: "Some items not found. Please refresh and try again." };
+    }
+    // Block when any parent enquiry is frozen (quotedRate / totals are frozen fields)
+    {
+      const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+      const enquiryIds = [...new Set(existing.map((e) => e.enquiryId))];
+      const parents = await prisma.enquiry.findMany({
+        where: { id: { in: enquiryIds } },
+        select: { id: true, apm: true, offerPdfGeneratedAt: true },
+      });
+      const frozenParents = new Set(parents.filter((p) => isEnquiryFrozen(p.apm, p.offerPdfGeneratedAt)).map((p) => p.id));
+      if (frozenParents.size > 0) {
+        const frozenItemIds = existing.filter((e) => frozenParents.has(e.enquiryId)).map((e) => e.id);
+        if (frozenItemIds.length > 0) {
+          return { success: false, error: `Cannot clear rates: ${frozenItemIds.length} item(s) are frozen after one-time PDF generation — revert APM to edit.` };
+        }
+      }
     }
 
     console.log(`[Server] clearQuotedRates ids=${uniqueIds.length}`);
@@ -2894,9 +3010,14 @@ export async function bulkUpdateApmAction(enquiryIds: string[], apm: string | nu
 
     console.log(`[Server] bulkApm enquiries=${uniqueIds.length} set="${normalized ?? ""}"`);
 
+    const bulkData: Record<string, any> = { apm: normalized };
+    if (normalized !== "Yes") {
+      bulkData.offerPdfGeneratedAt = null;
+      bulkData.offerPdfGeneratedBy = null;
+    }
     await prisma.enquiry.updateMany({
       where: { id: { in: uniqueIds } },
-      data: { apm: normalized },
+      data: bulkData,
     });
 
     const updatedEnquiries = await prisma.enquiry.findMany({
@@ -2946,5 +3067,134 @@ export async function bulkUpdateValidationAction(itemIds: string[], validation: 
   } catch (error: any) {
     console.error("Error bulk updating validation:", error);
     return { success: false, error: error.message || "Failed to update validation." };
+  }
+}
+
+export async function createGeneratedImageAction(data: {
+  itemType: string;
+  operationType: string;
+  rmType: string;
+}) {
+  "use server";
+  const itemType = data.itemType?.trim();
+  const operationType = data.operationType?.trim();
+  const rmType = data.rmType?.trim();
+  if (!itemType || !operationType || !rmType) {
+    return { success: false, error: "itemType, operationType and rmType are required." };
+  }
+  const imageKey = makeImageKey(itemType, operationType, rmType);
+  try {
+    const existing = await prisma.generatedImage.findUnique({ where: { imageKey } });
+    if (existing) {
+      return { success: false, error: `An entry with imageKey "${imageKey}" already exists.` };
+    }
+    const created = await prisma.generatedImage.create({
+      data: {
+        itemType,
+        operationType,
+        rmType,
+        imageKey,
+        status: "pending",
+      },
+    });
+    return { success: true, data: created };
+  } catch (error: any) {
+    if (error?.code === "P2002") {
+      return { success: false, error: "Duplicate imageKey — an entry for this combination already exists." };
+    }
+    return { success: false, error: error?.message || "Failed to create entry." };
+  }
+}
+
+export async function uploadGeneratedImageAction(
+  id: string,
+  payload: { fileName: string; mimeType: string; base64Data: string }
+) {
+  "use server";
+  if (!id) return { success: false, error: "Missing id." };
+  const { fileName, mimeType, base64Data } = payload;
+  if (!fileName || !mimeType || !base64Data) {
+    return { success: false, error: "Missing file data." };
+  }
+  // Basic mime check
+  if (!mimeType.startsWith("image/")) {
+    return { success: false, error: "Only image files are allowed." };
+  }
+  try {
+    const existing = await prisma.generatedImage.findUnique({ where: { id } });
+    if (!existing) return { success: false, error: "Record not found." };
+
+    const { fileId, url } = await uploadFileToDrive(fileName, mimeType, base64Data);
+
+    const updated = await prisma.generatedImage.update({
+      where: { id },
+      data: {
+        url,
+        driveFileId: fileId,
+        status: "ready",
+        error: null,
+        generatedAt: new Date(),
+      },
+    });
+    return { success: true, data: updated, url, driveFileId: fileId };
+  } catch (error: any) {
+    console.error("uploadGeneratedImageAction failed:", error);
+    return { success: false, error: error?.message || "Upload failed." };
+  }
+}
+
+export async function uploadImageForComboAction(data: {
+  itemType: string;
+  operationType: string;
+  rmType: string;
+  fileName: string;
+  mimeType: string;
+  base64Data: string;
+}) {
+  "use server";
+  const itemType = data.itemType?.trim();
+  const operationType = data.operationType?.trim();
+  const rmType = data.rmType?.trim();
+  const { fileName, mimeType, base64Data } = data;
+  if (!itemType || !operationType || !rmType) {
+    return { success: false, error: "itemType, operationType and rmType are required." };
+  }
+  if (!fileName || !mimeType || !base64Data) {
+    return { success: false, error: "Missing file data." };
+  }
+  if (!mimeType.startsWith("image/")) {
+    return { success: false, error: "Only image files are allowed." };
+  }
+  const imageKey = makeImageKey(itemType, operationType, rmType);
+  try {
+    const { fileId, url } = await uploadFileToDrive(fileName, mimeType, base64Data);
+
+    const upserted = await prisma.generatedImage.upsert({
+      where: { imageKey },
+      update: {
+        itemType,
+        operationType,
+        rmType,
+        url,
+        driveFileId: fileId,
+        status: "ready",
+        error: null,
+        generatedAt: new Date(),
+      },
+      create: {
+        itemType,
+        operationType,
+        rmType,
+        imageKey,
+        url,
+        driveFileId: fileId,
+        status: "ready",
+        generatedAt: new Date(),
+      },
+    });
+    return { success: true, data: upserted, url, driveFileId: fileId };
+  } catch (error: any) {
+    console.error("uploadImageForComboAction failed:", error);
+    return { success: false, error: error?.message || "Upload failed." };
   }
 }

@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { updateEnquiryItem, deleteEnquiryItem } from "@/lib/enquiriesSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { openViewDialog, closeViewDialog, openEditDialog, closeEditDialog, openDeleteDialog, closeDeleteDialog } from "@/lib/dialogsSlice";
+import { isEnquiryFrozen } from "@/lib/oneClickAccess";
 
 interface Attachment {
   id: string;
@@ -110,6 +111,7 @@ interface ActionsDropdownProps {
 function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDropdownProps) {
   const dispatch = useAppDispatch();
   const item = useMemo(() => ({ ...itemProp, enquiry }), [itemProp, enquiry]);
+  const isFrozen = isEnquiryFrozen((enquiry as any).apm, (enquiry as any).offerPdfGeneratedAt);
   const isViewOpen = useAppSelector((s) => s.dialogs.viewItemId === itemProp.id);
   const isEditOpen = useAppSelector((s) => s.dialogs.editItemId === itemProp.id);
   const isDeleteOpen = useAppSelector((s) => s.dialogs.deleteItemId === itemProp.id);
@@ -947,8 +949,10 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
                     type="number"
                     step="any"
                     value={quantity}
+                    disabled={isFrozen}
+                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                     onChange={(e) => setQuantity(e.target.value)}
-                    className="h-8 text-xs"
+                    className="h-8 text-xs disabled:opacity-50"
                   />
                 </div>
 
@@ -1071,8 +1075,10 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
                   <Input
                     type="number"
                     value={productCost}
+                    disabled={isFrozen}
+                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                     onChange={(e) => setProductCost(e.target.value)}
-                    className="h-8 text-xs"
+                    className="h-8 text-xs disabled:opacity-50"
                   />
                 </div>
 
@@ -1083,8 +1089,10 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
                   <Input
                     type="text"
                     value={costRefCode}
+                    disabled={isFrozen}
+                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                     onChange={(e) => setCostRefCode(e.target.value)}
-                    className="h-8 text-xs"
+                    className="h-8 text-xs disabled:opacity-50"
                   />
                 </div>
 
@@ -1095,8 +1103,10 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
                   <Input
                     type="number"
                     value={cost}
+                    disabled={isFrozen}
+                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                     onChange={(e) => setCost(e.target.value)}
-                    className="h-8 text-xs"
+                    className="h-8 text-xs disabled:opacity-50"
                   />
                 </div>
 
@@ -1107,8 +1117,10 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
                   <Input
                     type="text"
                     value={quotedRate}
+                    disabled={isFrozen}
+                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                     onChange={(e) => setQuotedRate(e.target.value)}
-                    className="h-8 text-xs"
+                    className="h-8 text-xs disabled:opacity-50"
                     placeholder="Auto-calculated"
                   />
                 </div>
@@ -1168,8 +1180,10 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
                   <Input
                     type="number"
                     value={discount}
+                    disabled={isFrozen}
+                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                     onChange={(e) => setDiscount(e.target.value)}
-                    className="h-8 text-xs"
+                    className="h-8 text-xs disabled:opacity-50"
                   />
                 </div>
 
@@ -1180,8 +1194,10 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
                   <Input
                     type="text"
                     value={vaPercent}
+                    disabled={isFrozen}
+                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                     onChange={(e) => setVaPercent(e.target.value)}
-                    className="h-8 text-xs"
+                    className="h-8 text-xs disabled:opacity-50"
                   />
                 </div>
               </div>

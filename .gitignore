@@ -46,3 +46,4 @@ credentials.json
 token.json
 assets/
 public/offers
+public/generated-images
