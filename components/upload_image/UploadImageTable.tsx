@@ -4,7 +4,8 @@ import { useState, useRef, useMemo } from "react";
 import { Upload, ExternalLink, ImageIcon, Loader2, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { uploadImageForComboAction } from "@/app/actions";
+import { uploadImageForComboAction, createGeneratedImageAction } from "@/app/actions";
+import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 
 export type UploadImageComboRow = {
   itemType: string;
@@ -20,6 +21,7 @@ export type UploadImageComboRow = {
   createdAt: string | null;
   updatedAt: string | null;
   hasImage: boolean;
+  rmTypeBlank: boolean;
 };
 
 // Keep legacy type for backwards compat if needed
@@ -54,6 +56,7 @@ export default function UploadImageTable({
   const [page, setPage] = useState(1);
   const pageSize = 25;
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
+  const [assigningKey, setAssigningKey] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeRow, setActiveRow] = useState<UploadImageComboRow | null>(null);
 
@@ -79,6 +82,30 @@ export default function UploadImageTable({
     setActiveRow(row);
     if (fileInputRef.current) fileInputRef.current.value = "";
     fileInputRef.current?.click();
+  };
+
+  const handleRmTypeSelect = async (row: UploadImageComboRow, value: string) => {
+    const rmType = value.trim();
+    if (!rmType) return;
+    setAssigningKey(row.imageKey);
+    const toastId = toast.loading("Assigning RM Type...");
+    try {
+      const res: any = await createGeneratedImageAction({
+        itemType: row.itemType,
+        operationType: row.operationType,
+        rmType,
+      });
+      if (res?.success === false) {
+        toast.error(res.error || "Failed to assign RM Type", { id: toastId });
+        return;
+      }
+      toast.success(`RM Type "${rmType}" assigned`, { id: toastId });
+      onUploaded();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to assign RM Type", { id: toastId });
+    } finally {
+      setAssigningKey(null);
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -196,7 +223,7 @@ export default function UploadImageTable({
             {paged.length === 0 ? (
               <tr>
                 <td colSpan={6} className="h-24 text-center text-xs text-muted-foreground">
-                  No matching rows — no distinct itemType/operationType/rmType combos found in enquiry items.
+                  No matching rows — no distinct itemType/operationType combos found in enquiry items.
                 </td>
               </tr>
             ) : (
@@ -206,6 +233,8 @@ export default function UploadImageTable({
                   ? `https://drive.google.com/thumbnail?id=${row.driveFileId}&sz=w400`
                   : null;
                 const isUploading = uploadingKey === row.imageKey;
+                const isAssigning = assigningKey === row.imageKey;
+                const isBlank = row.rmTypeBlank;
                 return (
                   <tr key={row.imageKey} className="hover:bg-gray-50 transition-colors border-b border-[#e1e6eb] last:border-b-0">
                     <td className="px-3 py-2 text-xs text-[#0a2540] border-r border-[#e1e6eb] truncate" title={row.itemType}>
@@ -214,8 +243,31 @@ export default function UploadImageTable({
                     <td className="px-3 py-2 text-xs text-[#0a2540] border-r border-[#e1e6eb] truncate" title={row.operationType}>
                       {row.operationType || <span className="text-gray-400 italic">—</span>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-[#0a2540] border-r border-[#e1e6eb] truncate" title={row.rmType}>
-                      {row.rmType || <span className="text-gray-400 italic">—</span>}
+                    <td className="px-3 py-1 text-xs text-[#0a2540] border-r border-[#e1e6eb]" title={row.rmType}>
+                      {isBlank ? (
+                        <div className="relative">
+                          <select
+                            value=""
+                            disabled={isAssigning}
+                            onChange={(e) => handleRmTypeSelect(row, e.target.value)}
+                            className="w-full bg-white border border-[#d0d7de] rounded px-2 py-1 pr-6 text-xs text-[#0a2540] outline-none focus:border-[#0f62fe] focus:ring-1 focus:ring-[#0f62fe]/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <option value="">Select RM Type</option>
+                            {RM_TYPE_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
+                          {isAssigning && (
+                            <Loader2 size={12} className="animate-spin absolute right-1.5 top-1/2 -translate-y-1/2 text-[#0a2540]/50 pointer-events-none" />
+                          )}
+                        </div>
+                      ) : (
+                        <span className="truncate block" title={row.rmType}>
+                          {row.rmType || <span className="text-gray-400 italic">—</span>}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 border-r border-[#e1e6eb]">
                       <StatusBadge status={row.status} hasImage={hasImage} />
@@ -265,23 +317,29 @@ export default function UploadImageTable({
                       )}
                     </td>
                     <td className="px-3 py-2">
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        className="h-7 gap-1.5 px-2.5 text-[11px] font-semibold border-[#0f62fe]/20 bg-white hover:bg-[#f0f4ff] text-[#0f62fe]"
-                        onClick={() => handlePick(row)}
-                        disabled={isUploading}
-                      >
-                        {isUploading ? (
-                          <>
-                            <Loader2 size={12} className="animate-spin" /> Uploading...
-                          </>
-                        ) : (
-                          <>
-                            <Upload size={12} /> {hasImage ? "Replace" : "Upload Image"}
-                          </>
-                        )}
-                      </Button>
+                      {isBlank ? (
+                        <span className="text-[11px] text-gray-400 italic" title="Select an RM Type first to enable upload">
+                          Select RM Type first
+                        </span>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          className="h-7 gap-1.5 px-2.5 text-[11px] font-semibold border-[#0f62fe]/20 bg-white hover:bg-[#f0f4ff] text-[#0f62fe]"
+                          onClick={() => handlePick(row)}
+                          disabled={isUploading}
+                        >
+                          {isUploading ? (
+                            <>
+                              <Loader2 size={12} className="animate-spin" /> Uploading...
+                            </>
+                          ) : (
+                            <>
+                              <Upload size={12} /> {hasImage ? "Replace" : "Upload Image"}
+                            </>
+                          )}
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 );
