@@ -1787,7 +1787,6 @@ export default function ContractReviewPage() {
                   "BAL BILL AG MC",
                   "ic qty",
                   "bom formula trial",
-                  "STATUS",
                 ]}
               />
             </ResizablePanel>
