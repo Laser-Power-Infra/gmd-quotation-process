@@ -24,6 +24,7 @@ model Enquiry {
   docketNumber     String   @unique
   partyName        String
   contractNo       String[]  @default([])
+  selectedContractNo String[] @default([])
   enquiryDate      DateTime
 
   enquiryType      String?

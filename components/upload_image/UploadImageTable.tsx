@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { uploadImageForComboAction, createGeneratedImageAction } from "@/app/actions";
 import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
+import MultiSelectFilter, { BLANK } from "@/components/table/MultiSelectFilter";
 
 export type UploadImageComboRow = {
   itemType: string;
@@ -45,6 +46,10 @@ function StatusBadge({ status, hasImage }: { status: string; hasImage: boolean }
   );
 }
 
+function statusLabel(row: UploadImageComboRow): string {
+  return row.hasImage ? "ready" : (row.status || "pending").toLowerCase();
+}
+
 export default function UploadImageTable({
   items,
   onUploaded,
@@ -60,16 +65,79 @@ export default function UploadImageTable({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeRow, setActiveRow] = useState<UploadImageComboRow | null>(null);
 
+  // Column dropdown filters (multi-select, independent — reset page on change)
+  const [itemTypeFilter, setItemTypeFilter] = useState<string[]>([]);
+  const [operationTypeFilter, setOperationTypeFilter] = useState<string[]>([]);
+  const [rmTypeFilter, setRmTypeFilter] = useState<string[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+
+  const itemTypeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of items) {
+      const v = r.itemType?.trim();
+      if (v) set.add(v);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [items]);
+
+  const operationTypeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of items) {
+      const v = r.operationType?.trim();
+      if (v) set.add(v);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [items]);
+
+  const rmTypeOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of items) {
+      const v = r.rmType?.trim();
+      if (v) set.add(v);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [items]);
+
+  const statusOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of items) set.add(statusLabel(r));
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [items]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((r) =>
-      [r.itemType, r.operationType, r.rmType, r.status, r.imageKey, r.driveFileId]
-        .join(" ")
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [items, search]);
+    return items.filter((r) => {
+      if (q) {
+        const hay = [r.itemType, r.operationType, r.rmType, r.status, r.imageKey, r.driveFileId].join(" ").toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (itemTypeFilter.length > 0) {
+        const v = r.itemType?.trim() ?? "";
+        if (!itemTypeFilter.includes(v)) return false;
+      }
+      if (operationTypeFilter.length > 0) {
+        const v = r.operationType?.trim() ?? "";
+        if (!operationTypeFilter.includes(v)) return false;
+      }
+      if (rmTypeFilter.length > 0) {
+        const isBlank = !r.rmType?.trim();
+        const wantBlank = rmTypeFilter.includes(BLANK);
+        if (isBlank) {
+          if (!wantBlank) return false;
+        } else {
+          const vals = rmTypeFilter.filter((v) => v !== BLANK);
+          // if filter is only [BLANK], non-blank rows are out; if filter has values, match them
+          if (vals.length === 0) return false;
+          if (!vals.includes(r.rmType.trim())) return false;
+        }
+      }
+      if (statusFilter.length > 0) {
+        const label = statusLabel(r);
+        if (!statusFilter.includes(label)) return false;
+      }
+      return true;
+    });
+  }, [items, search, itemTypeFilter, operationTypeFilter, rmTypeFilter, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -199,7 +267,7 @@ export default function UploadImageTable({
         </div>
       </div>
 
-      <div className="w-full overflow-auto" style={{ maxHeight: "62vh" }}>
+      <div className="w-full overflow-auto" style={{ maxHeight: "62vh", minHeight: "260px" }}>
         <table className="w-full text-left" style={{ borderCollapse: "separate", borderSpacing: 0, tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: 170 }} />
@@ -211,10 +279,75 @@ export default function UploadImageTable({
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className="bg-[#f4f6f8]">
-              <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-[#0a2540] border-b-2 border-[#e1e6eb] border-r">Item Type</th>
-              <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-[#0a2540] border-b-2 border-[#e1e6eb] border-r">Operation Type</th>
-              <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-[#0a2540] border-b-2 border-[#e1e6eb] border-r">RM Type</th>
-              <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-[#0a2540] border-b-2 border-[#e1e6eb] border-r">Status</th>
+              <th className="relative px-3 py-2 align-top border-b-2 border-[#e1e6eb] border-r">
+                <div className="text-xs font-bold uppercase tracking-wider text-[#0a2540]">Item Type</div>
+                <div className="mt-1.5">
+                  <MultiSelectFilter
+                    label="Item Type"
+                    allLabel="All Item Types"
+                    options={itemTypeOptions}
+                    cascadedOptions={itemTypeOptions}
+                    selected={itemTypeFilter}
+                    onChange={(v) => {
+                      setItemTypeFilter(v);
+                      setPage(1);
+                    }}
+                    searchPlaceholder="Search item types..."
+                  />
+                </div>
+              </th>
+              <th className="relative px-3 py-2 align-top border-b-2 border-[#e1e6eb] border-r">
+                <div className="text-xs font-bold uppercase tracking-wider text-[#0a2540]">Operation Type</div>
+                <div className="mt-1.5">
+                  <MultiSelectFilter
+                    label="Operation Type"
+                    allLabel="All Operation Types"
+                    options={operationTypeOptions}
+                    cascadedOptions={operationTypeOptions}
+                    selected={operationTypeFilter}
+                    onChange={(v) => {
+                      setOperationTypeFilter(v);
+                      setPage(1);
+                    }}
+                    searchPlaceholder="Search operation types..."
+                  />
+                </div>
+              </th>
+              <th className="relative px-3 py-2 align-top border-b-2 border-[#e1e6eb] border-r">
+                <div className="text-xs font-bold uppercase tracking-wider text-[#0a2540]">RM Type</div>
+                <div className="mt-1.5">
+                  <MultiSelectFilter
+                    label="RM Type"
+                    allLabel="All RM Types"
+                    options={rmTypeOptions}
+                    cascadedOptions={rmTypeOptions}
+                    selected={rmTypeFilter}
+                    onChange={(v) => {
+                      setRmTypeFilter(v);
+                      setPage(1);
+                    }}
+                    searchPlaceholder="Search RM types..."
+                    includeBlank
+                  />
+                </div>
+              </th>
+              <th className="relative px-3 py-2 align-top border-b-2 border-[#e1e6eb] border-r">
+                <div className="text-xs font-bold uppercase tracking-wider text-[#0a2540]">Status</div>
+                <div className="mt-1.5">
+                  <MultiSelectFilter
+                    label="Status"
+                    allLabel="All Statuses"
+                    options={statusOptions}
+                    cascadedOptions={statusOptions}
+                    selected={statusFilter}
+                    onChange={(v) => {
+                      setStatusFilter(v);
+                      setPage(1);
+                    }}
+                    searchPlaceholder="Search statuses..."
+                  />
+                </div>
+              </th>
               <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-[#0a2540] border-b-2 border-[#e1e6eb] border-r">Image</th>
               <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-[#0a2540] border-b-2 border-[#e1e6eb]">Upload</th>
             </tr>

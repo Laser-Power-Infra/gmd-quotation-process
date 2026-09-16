@@ -1008,6 +1008,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   };
 
+  const handleSelectedContractNoChange = async (enquiryId: string, values: string[]) => {
+    console.log(`[Client] updateEnquiryField enquiry=${enquiryId} field=selectedContractNo val="${values.join(",")}"`);
+    const toastId = toast.loading(`Saving selected contracts...`);
+    try {
+      await dispatch(updateEnquiryField({ enquiryId, field: "selectedContractNo", value: values })).unwrap();
+      toast.success(`Selected contracts saved.`, { id: toastId });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : err ? String(err) : `Failed to save.`, { id: toastId });
+    }
+  };
+
   const getItemNameMerge = (item: EnquiryItemData) => {
     const orderedFields = [
       item.itemType,
@@ -3640,17 +3651,40 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       )}
                     </td>
 
-                    {/* 3. Contract Review (matched from ContractReview by party name) */}
+                    {/* 3. Contract Review — available contracts multi-select (persists to selectedContractNo) */}
                     <td className="py-1 px-1 border-r border-b border-border last:border-r-0 align-top">
                       {enquiry.contractNo && enquiry.contractNo.length > 0 ? (
-                        <div
-                          className="max-h-12 overflow-y-auto cell-scrollable whitespace-normal break-words leading-normal p-1 text-[10px] font-medium text-foreground"
-                          title={enquiry.contractNo.join(", ")}
-                        >
-                          {enquiry.contractNo.join(", ")}
-                        </div>
+                        <MultiSelectFilter
+                          label="Contract"
+                          allLabel={`All contracts (${enquiry.contractNo.length})`}
+                          options={enquiry.contractNo}
+                          cascadedOptions={enquiry.contractNo}
+                          selected={(enquiry as any).selectedContractNo ?? []}
+                          onChange={(values) => handleSelectedContractNoChange(enquiry.id, values)}
+                          searchPlaceholder="Search contracts..."
+                          className="text-[10px]"
+                        />
                       ) : (
-                        <span className="block p-1 text-[10px] text-muted-foreground">-</span>
+                        <input
+                          key={enquiry.id + "-selectedContractNo-" + ((enquiry as any).selectedContractNo ?? []).join(",")}
+                          type="text"
+                          defaultValue={((enquiry as any).selectedContractNo ?? []).join(", ")}
+                          placeholder="Add contract numbers (comma separated)"
+                          onBlur={(e) => {
+                            const raw = e.target.value;
+                            const arr = raw
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean);
+                            const current = ((enquiry as any).selectedContractNo ?? []) as string[];
+                            const same = arr.length === current.length && arr.every((v, i) => v === current[i]);
+                            if (!same) handleSelectedContractNoChange(enquiry.id, arr);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          className="w-full bg-transparent border-none text-[10px] text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium placeholder:text-muted-foreground"
+                        />
                       )}
                     </td>
 
