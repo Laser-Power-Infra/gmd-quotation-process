@@ -56,6 +56,7 @@ const initialState: FiltersState = {
   availableStock: [],
   rmType: [],
   stockAgainstContract: "",
+  contractNo: [],
 };
 
 const filtersSlice = createSlice({

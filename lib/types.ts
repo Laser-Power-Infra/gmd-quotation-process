@@ -151,6 +151,7 @@ export interface FiltersState {
   availableStock: string[];
   rmType: string[];
   stockAgainstContract: string;
+  contractNo: string[];
 }
 
 export interface UiState {
