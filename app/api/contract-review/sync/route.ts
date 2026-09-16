@@ -12,6 +12,10 @@ import {
   recomputeVerifyBomValues,
   computeContractReviewRmAvail,
 } from "@/lib/verifyBomLookup";
+import {
+  computeContractReviewEnquiryBackfill,
+  applyContractReviewEnquiryBackfill,
+} from "@/lib/gmd_lib/contract-review-enquiry-backfill";
 
 const SPREADSHEET_ID =
   process.env.CONTRACT_REVIEW_SPREADSHEET_ID
@@ -188,9 +192,15 @@ export async function POST() {
       await prisma.$transaction(noUseUpdates);
     }
 
+    // Backfill State / Utility / Project Reference from Enquiry by matching
+    // the contract number (Enquiry.contractNo is a list of contract numbers).
+    const backfill = await computeContractReviewEnquiryBackfill(prisma);
+    await applyContractReviewEnquiryBackfill(prisma, backfill.rows);
+
     return NextResponse.json({
       count: upserted,
       patched,
+      backfilled: backfill.changed,
       totalInContracts: contractsByKey.size,
       syncedAt: syncedAt.toISOString(),
     });

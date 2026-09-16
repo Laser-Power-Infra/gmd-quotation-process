@@ -53,6 +53,9 @@ export const CONTRACT_REVIEW_HEADERS = [
   "MC Received/Pending",
   "Inspection",
   "Remarks",
+  "STATE",
+  "UTILITY",
+  "PROJECT REFERENCE",
 ] as const;
 
 export const CONTRACTS_SHEET_COLUMNS = [
@@ -298,6 +301,9 @@ export function dbContractReviewToRow(item: {
   mcReceivedPending: string | null;
   inspection: string | null;
   remarks: string | null;
+  state: string | null;
+  utility: string | null;
+  projectReference: string | null;
 }): unknown[] {
   return [
     item.contractNo,
@@ -329,6 +335,9 @@ export function dbContractReviewToRow(item: {
     item.mcReceivedPending,
     item.inspection,
     item.remarks,
+    item.state,
+    item.utility,
+    item.projectReference,
   ];
 }
 
