@@ -48,7 +48,6 @@ interface ContractReviewData {
   totalRows: number;
   syncedAt: string | null;
   bomIdOptions?: Record<string, string[]>;
-  pnRatingOptions?: string[];
 }
 
 type BalBillFilter = "all" | "yes" | "no";
@@ -312,7 +311,6 @@ export default function ContractReviewPage() {
   const [bomIdOptionsById, setBomIdOptionsById] = useState<
     Record<string, string[]>
   >({});
-  const [pnRatingOptions, setPnRatingOptions] = useState<string[]>([]);
   const [actuatorOptions, setActuatorOptions] = useState<string[]>([]);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
     {},
@@ -399,7 +397,6 @@ export default function ContractReviewPage() {
       const json = await res.json();
       setData(json);
       if (json.bomIdOptions) setBomIdOptionsById(json.bomIdOptions);
-      if (json.pnRatingOptions) setPnRatingOptions(json.pnRatingOptions);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -676,6 +673,13 @@ export default function ContractReviewPage() {
           .filter(Boolean),
       ),
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    result["PN RATING"] = [
+      ...new Set(
+        data.rows
+          .map((r) => String(r[PN_IDX] ?? "").trim())
+          .filter(Boolean),
+      ),
+    ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return result;
   }, [data, clearanceIdx]);
 
@@ -693,14 +697,7 @@ export default function ContractReviewPage() {
           dateRanges,
         ),
       ),
-    [
-      allRows,
-      headers,
-      columnFilters,
-      multiFilters,
-      globalSearch,
-      dateRanges,
-    ],
+    [allRows, headers, columnFilters, multiFilters, globalSearch, dateRanges],
   );
 
   const balBillCounts = useMemo(() => {
@@ -1311,6 +1308,35 @@ export default function ContractReviewPage() {
     [contractNoMeta],
   );
 
+  const contractTiles = useMemo(
+    () =>
+      Object.entries(contractNoMeta)
+        .map(([contractNo, m]) => ({
+          contractNo,
+          partyName: m.partyName,
+          count: m.count,
+        }))
+        .sort(
+          (a, b) =>
+            b.count - a.count ||
+            a.contractNo.localeCompare(b.contractNo, undefined, {
+              numeric: true,
+            }),
+        ),
+    [contractNoMeta],
+  );
+
+  const handleContractTileClick = useCallback(
+    (contractNo: string) => {
+      const current = multiFilters["CONTRACT NO"] ?? [];
+      const next =
+        current.length === 1 && current[0] === contractNo ? [] : [contractNo];
+      filterActions.onMultiFilter("CONTRACT NO", next);
+      filterActions.onColumnFilter("CONTRACT NO", "");
+    },
+    [multiFilters, filterActions],
+  );
+
   const tileAllCounts = useMemo(
     () => ({
       item: sidebarBaseRows.reduce(
@@ -1587,16 +1613,15 @@ export default function ContractReviewPage() {
               ))}
             </select>
           </div>
-
           <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-              RATE × MC QTY
+              RATE × ORDER QTY
             </span>
             <span className="block text-lg font-bold text-white mt-1">
-              {fmt(rateMcCont.sum)}
+              {fmt(rateOrderQty.sum)}
             </span>
             <span className="block text-[10px] font-medium text-white/50 mt-0.5">
-              {rateMcCont.count} rows of {tileRowsCount}
+              {rateOrderQty.count} rows of {tileRowsCount}
             </span>
           </div>
 
@@ -1614,13 +1639,13 @@ export default function ContractReviewPage() {
 
           <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-              RATE × ORDER QTY
+              RATE × MC QTY
             </span>
             <span className="block text-lg font-bold text-white mt-1">
-              {fmt(rateOrderQty.sum)}
+              {fmt(rateMcCont.sum)}
             </span>
             <span className="block text-[10px] font-medium text-white/50 mt-0.5">
-              {rateOrderQty.count} rows of {tileRowsCount}
+              {rateMcCont.count} rows of {tileRowsCount}
             </span>
           </div>
 
@@ -1652,6 +1677,51 @@ export default function ContractReviewPage() {
             <span className="block text-[10px] font-medium text-white/50 mt-0.5">
               {rateBalMspQty.count} rows of {tileRowsCount}
             </span>
+          </div>
+
+          <span className="text-xs font-bold uppercase tracking-wider text-white mt-2">
+            Contracts ({contractTiles.length})
+          </span>
+          <div className="flex flex-col gap-1.5">
+            {contractTiles.length === 0 ? (
+              <div className="text-[11px] text-white/40">No contracts</div>
+            ) : (
+              contractTiles.map((t) => {
+                const sel = multiFilters["CONTRACT NO"] ?? [];
+                const active = sel.length === 1 && sel[0] === t.contractNo;
+                return (
+                  <button
+                    key={t.contractNo}
+                    type="button"
+                    onClick={() => handleContractTileClick(t.contractNo)}
+                    className={`w-full text-left border rounded-lg px-2.5 py-2 transition-all cursor-pointer ${
+                      active
+                        ? "border-[#38ef7d] bg-white/10"
+                        : "border-white/10 hover:border-white/25"
+                    }`}
+                    title={`${t.contractNo} — ${t.partyName || ""} (${t.count})`}
+                  >
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="block text-[12px] font-bold text-white truncate">
+                        {t.partyName || t.contractNo}
+                      </span>
+                      <span
+                        className={`shrink-0 min-w-8 text-center rounded-md px-2 py-0.5 text-sm font-bold ${
+                          active
+                            ? "bg-[#38ef7d] text-[#0a2540]"
+                            : "bg-white/15 text-white"
+                        }`}
+                      >
+                        {t.count}
+                      </span>
+                    </span>
+                    <span className="block text-[10px] font-medium text-white/50 truncate mt-0.5">
+                      {t.contractNo}
+                    </span>
+                  </button>
+                );
+              })
+            )}
           </div>
         </aside>
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
@@ -1706,11 +1776,10 @@ export default function ContractReviewPage() {
                   "LC DATE/RTGS DATE",
                   "LAST DATE OF SHIPMENT/DATE OF LC",
                   "Issuing bank name",
-                   "PAYMENT TERMS",
+                  "PAYMENT TERMS",
                 ]}
                 categoryOptions={categoryOptions}
                 fixedDropdownOptions={{
-                  "PN RATING": pnRatingOptions,
                   "MC Received/Pending": ["Received", "Pending"],
                   Inspection: ["DONE", "PENDING"],
                   Actuator: actuatorOptions,

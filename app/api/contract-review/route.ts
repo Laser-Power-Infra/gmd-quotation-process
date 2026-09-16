@@ -15,20 +15,9 @@ export async function GET() {
   try {
     await recomputeVerifyBomValues();
 
-    const [items, pnRatingRows] = await Promise.all([
-      prisma.contractReview.findMany({
-        orderBy: { syncedAt: "desc" },
-      }),
-      prisma.lookupOption.findMany({
-        where: { type: { in: ["PN_RATING", "pnRating"] }, isActive: true },
-        orderBy: [{ sortOrder: "asc" }],
-        select: { value: true },
-      }),
-    ]);
-
-    const pnRatingOptions = [...new Set(pnRatingRows.map((r) => r.value.trim()).filter(Boolean))].sort((a, b) =>
-      a.localeCompare(b, undefined, { numeric: true }),
-    );
+    const items = await prisma.contractReview.findMany({
+      orderBy: { syncedAt: "desc" },
+    });
 
     const withBom = items.filter((i) => i.bomId);
     const bomIds = [
@@ -81,7 +70,6 @@ export async function GET() {
       totalRows: rows.length,
       syncedAt: lastSynced?.toISOString() ?? null,
       bomIdOptions,
-      pnRatingOptions,
     });
   } catch (error) {
     return NextResponse.json(
