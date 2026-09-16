@@ -1682,7 +1682,7 @@ export default function ContractReviewPage() {
           <span className="text-xs font-bold uppercase tracking-wider text-white mt-2">
             Contracts ({contractTiles.length})
           </span>
-          <div className="flex flex-col gap-1.5 max-h-96 overflow-y-auto pr-1">
+          <div className="flex flex-col gap-1.5">
             {contractTiles.length === 0 ? (
               <div className="text-[11px] text-white/40">No contracts</div>
             ) : (

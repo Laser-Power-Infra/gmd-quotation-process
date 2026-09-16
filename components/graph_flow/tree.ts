@@ -59,6 +59,14 @@ export const LIVE_TREE: FlowNode = {
               edge: "rgb(110 231 183)",
               children: [
                 {
+                  id: "inspcallraised",
+                  filter: { column: "Inspection", values: ["CALL RAISED"] },
+                  label: "Inspection Call Raised",
+                  accent: "text-amber-300",
+                  edge: "rgb(252 211 77)",
+                  children:[
+                  
+                {
                   id: "inspectionDone",
                   filter: { column: "Inspection", values: ["DONE"] },
                   label: "Inspection Done",
@@ -113,6 +121,8 @@ export const LIVE_TREE: FlowNode = {
                   accent: "text-amber-300",
                   edge: "rgb(252 211 77)",
                 },
+                  ]
+                }
               ],
             },
             {
