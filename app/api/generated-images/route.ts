@@ -4,32 +4,54 @@ import { makeImageKey } from "@/lib/imageKey";
 
 export async function GET() {
   try {
-    // 1) Distinct combos from EnquiryItem (source of truth for all valid triples)
-    const distinctRows = await prisma.enquiryItem.findMany({
-      // Prisma distinct on multiple fields returns distinct combinations
-      distinct: ["itemType", "operationType", "rmType"],
+    // 1) Fetch all EnquiryItem rows with itemType/operationType present (rmType may be blank)
+    const rows = await prisma.enquiryItem.findMany({
       select: { itemType: true, operationType: true, rmType: true },
       where: {
         itemType: { not: null },
         operationType: { not: null },
-        rmType: { not: null },
       },
     });
 
-    // Filter to trimmed non-empty values (matches backfillImages.ts logic)
-    const filtered = distinctRows.filter(
-      (r) => r.itemType?.trim() && r.operationType?.trim() && r.rmType?.trim()
-    ) as { itemType: string; operationType: string; rmType: string }[];
+    // Group by normalized (itemType, operationType) pair
+    const pairMap = new Map<string, { itemType: string; operationType: string; rmTypes: Set<string> }>();
+    for (const r of rows) {
+      const itemType = r.itemType?.trim();
+      const operationType = r.operationType?.trim();
+      if (!itemType || !operationType) continue;
+      const rmType = r.rmType?.trim() ?? "";
+      // pairKey normalized like makeImageKey(itemType, operationType, "") -> itemType__operationType__
+      const pairKey = makeImageKey(itemType, operationType, "");
+      let entry = pairMap.get(pairKey);
+      if (!entry) {
+        entry = { itemType, operationType, rmTypes: new Set<string>() };
+        pairMap.set(pairKey, entry);
+      }
+      if (rmType) entry.rmTypes.add(rmType);
+    }
 
-    // 2) Deduplicate by normalized imageKey (handles case/whitespace/+ ordering variations)
-    const comboMap = new Map<string, { itemType: string; operationType: string; rmType: string }>();
-    for (const r of filtered) {
-      const key = makeImageKey(r.itemType, r.operationType, r.rmType);
-      if (!comboMap.has(key)) {
-        comboMap.set(key, {
-          itemType: r.itemType.trim(),
-          operationType: r.operationType.trim(),
-          rmType: r.rmType.trim(),
+    // 2) Build comboMap: one row per non-blank rmType, or one blank row if pair has no rmType at all
+    const comboMap = new Map<string, { itemType: string; operationType: string; rmType: string; rmTypeBlank: boolean }>();
+    for (const [pairKey, p] of pairMap.entries()) {
+      if (p.rmTypes.size > 0) {
+        for (const rt of p.rmTypes) {
+          const fullKey = makeImageKey(p.itemType, p.operationType, rt);
+          if (!comboMap.has(fullKey)) {
+            comboMap.set(fullKey, {
+              itemType: p.itemType,
+              operationType: p.operationType,
+              rmType: rt,
+              rmTypeBlank: false,
+            });
+          }
+        }
+      } else {
+        // Pair has no non-blank rmType — emit a blank row with dropdown
+        comboMap.set(pairKey, {
+          itemType: p.itemType,
+          operationType: p.operationType,
+          rmType: "",
+          rmTypeBlank: true,
         });
       }
     }
@@ -57,20 +79,33 @@ export async function GET() {
       imageByKey.set(g.imageKey, g);
     }
 
+    // 3b) If a pair had a blank row but a GeneratedImage now exists with a concrete rmType for that pair,
+    // suppress the blank row (so after user selects rmType the blank placeholder disappears)
+    for (const g of generatedImages) {
+      const rt = (g.rmType || "").trim();
+      const it = (g.itemType || "").trim();
+      const ot = (g.operationType || "").trim();
+      if (!rt || !it || !ot) continue;
+      const pairKey = makeImageKey(it, ot, "");
+      const blankEntry = comboMap.get(pairKey);
+      if (blankEntry?.rmTypeBlank) {
+        comboMap.delete(pairKey);
+      }
+    }
+
     // 4) Include any GeneratedImage orphans (imageKey not present in EnquiryItem combos)
     //    so manually added rows are never hidden
     for (const g of generatedImages) {
       if (!comboMap.has(g.imageKey)) {
-        // Use stored values if available, otherwise fall back to parsing imageKey is not needed — just use stored
         const itemType = (g.itemType || "").trim();
         const operationType = (g.operationType || "").trim();
         const rmType = (g.rmType || "").trim();
-        // Only add if we have at least displayable values; otherwise still show with placeholders
         if (!comboMap.has(g.imageKey)) {
           comboMap.set(g.imageKey, {
             itemType: itemType || g.itemType || "(unknown)",
             operationType: operationType || g.operationType || "(unknown)",
             rmType: rmType || g.rmType || "(unknown)",
+            rmTypeBlank: !rmType,
           });
         }
       }
@@ -93,12 +128,11 @@ export async function GET() {
           generatedAt: g?.generatedAt ? g.generatedAt.toISOString() : null,
           createdAt: g?.createdAt ? g.createdAt.toISOString() : null,
           updatedAt: g?.updatedAt ? g.updatedAt.toISOString() : null,
-          // helper: whether an uploaded image exists (only manual uploads count)
           hasImage: !!(g?.url || g?.driveFileId),
+          rmTypeBlank: combo.rmTypeBlank,
         };
       })
       .sort((a, b) => {
-        // Sort: rows with images first? Or alphabetical. Keep alphabetical by itemType/operationType/rmType for stability
         const ax = `${a.itemType}|${a.operationType}|${a.rmType}`.toLowerCase();
         const bx = `${b.itemType}|${b.operationType}|${b.rmType}`.toLowerCase();
         return ax.localeCompare(bx);

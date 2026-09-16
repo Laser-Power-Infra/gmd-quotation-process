@@ -106,7 +106,7 @@ export default function UploadImagePage() {
 
         <div className="flex items-center justify-between mt-3 shrink-0 gap-2">
           <p className="text-xs text-muted-foreground">
-            All unique <span className="font-semibold text-[#0a2540]">itemType · operationType · rmType</span> combos from enquiry items. Upload/replace an image for any row — only manually uploaded images are shown (AI generation disabled).
+            All unique <span className="font-semibold text-[#0a2540]">itemType · operationType</span> combos from enquiry items (one row per distinct RM Type). Rows with a blank RM Type show a dropdown — select a type to create the entry, then upload an image.
           </p>
           <Button
             size="sm"
