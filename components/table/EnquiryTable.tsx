@@ -1531,7 +1531,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     
     const strA = String(valA).toLowerCase();
     const strB = String(valB).toLowerCase();
-    
+
+    const numA = parseFloat(strA);
+    const numB = parseFloat(strB);
+    if (/^-?\d+(\.\d+)?$/.test(strA) && /^-?\d+(\.\d+)?$/.test(strB)) {
+      return sortDirection === "asc" ? numA - numB : numB - numA;
+    }
+
     return sortDirection === "asc"
       ? strA.localeCompare(strB, undefined, { numeric: true })
       : strB.localeCompare(strA, undefined, { numeric: true });
