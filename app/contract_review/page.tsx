@@ -18,6 +18,14 @@ import {
   CONTRACT_REVIEW_HEADER_TO_DB_FIELD,
   CONTRACT_REVIEW_HEADERS,
 } from "@/lib/gmd_lib/contract-review-columns";
+import {
+  FLOW_HAS_VALUE,
+  FLOW_NO_VALUE,
+  FLOW_ZERO,
+  FLOW_NON_ZERO,
+  cellHasValue,
+  cellIsZero,
+} from "@/lib/gmd_lib/flowFilter";
 
 import {
   ResizableHandle,
@@ -93,6 +101,43 @@ const BILLED_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BILLED QTY");
 const BAL_BILL_AG_CONT_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf("BAL BILL AG CONT");
 const STATUS_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATUS");
+
+type RateTileKey =
+  | "rateXOrderQty"
+  | "rateXBalBillAgCont"
+  | "rateXMcQty"
+  | "rateXBalDiQty"
+  | "rateXBalMcQty";
+
+function isNumIdx(row: unknown[], idx: number): boolean {
+  return !isNaN(parseNum(row[idx]));
+}
+
+function matchesRateTile(row: unknown[], key: RateTileKey | null): boolean {
+  if (!key) return true;
+  switch (key) {
+    case "rateXOrderQty":
+      return isNumIdx(row, RATE_IDX) && isNumIdx(row, ORDER_QTY_IDX);
+    case "rateXBalBillAgCont":
+      return isNumIdx(row, RATE_IDX) && isNumIdx(row, BAL_BILL_AG_CONT_IDX);
+    case "rateXMcQty":
+      return isNumIdx(row, RATE_IDX) && isNumIdx(row, MC_QTY_IDX);
+    case "rateXBalDiQty":
+      return (
+        isNumIdx(row, RATE_IDX) &&
+        isNumIdx(row, DI_QTY_IDX) &&
+        isNumIdx(row, BILLED_QTY_IDX)
+      );
+    case "rateXBalMcQty":
+      return (
+        isNumIdx(row, RATE_IDX) &&
+        isNumIdx(row, MC_QTY_IDX) &&
+        isNumIdx(row, DI_QTY_IDX)
+      );
+    default:
+      return true;
+  }
+}
 
 interface TileOption {
   value: string;
@@ -242,7 +287,24 @@ function matchesTableFilters(
     if (colIdx === -1) continue;
     const cellVal = String(row[colIdx] ?? "").trim();
     const matchesBlank = selected.includes("(Blank)") && cellVal === "";
-    if (!(matchesBlank || selected.includes(cellVal))) return false;
+    const matchesHasValue =
+      selected.includes(FLOW_HAS_VALUE) && cellHasValue(cellVal);
+    const matchesNoValue =
+      selected.includes(FLOW_NO_VALUE) && !cellHasValue(cellVal);
+    const matchesZero = selected.includes(FLOW_ZERO) && cellIsZero(cellVal);
+    const matchesNonZero =
+      selected.includes(FLOW_NON_ZERO) && !cellIsZero(cellVal);
+    if (
+      !(
+        matchesBlank ||
+        matchesHasValue ||
+        matchesNoValue ||
+        matchesZero ||
+        matchesNonZero ||
+        selected.includes(cellVal)
+      )
+    )
+      return false;
   }
   if (dateRanges) {
     for (const [colName, r] of Object.entries(dateRanges)) {
@@ -274,7 +336,21 @@ function matchesGraphFilter(row: unknown[], filter: FlowFilter): boolean {
   if (colIdx === -1) return true;
   const cell = String(row[colIdx] ?? "").trim();
   const matchesBlank = filter.values.includes("(Blank)") && cell === "";
-  return matchesBlank || filter.values.includes(cell);
+  const matchesHasValue =
+    filter.values.includes(FLOW_HAS_VALUE) && cellHasValue(cell);
+  const matchesNoValue =
+    filter.values.includes(FLOW_NO_VALUE) && !cellHasValue(cell);
+  const matchesZero = filter.values.includes(FLOW_ZERO) && cellIsZero(cell);
+  const matchesNonZero =
+    filter.values.includes(FLOW_NON_ZERO) && !cellIsZero(cell);
+  return (
+    matchesBlank ||
+    matchesHasValue ||
+    matchesNoValue ||
+    matchesZero ||
+    matchesNonZero ||
+    filter.values.includes(cell)
+  );
 }
 
 /** Reduce a node path to one constraint per column (last level wins). */
@@ -308,6 +384,9 @@ export default function ContractReviewPage() {
   const [tileItem, setTileItem] = useState("");
   const [tileSize, setTileSize] = useState("");
   const [tilePn, setTilePn] = useState("");
+  const [activeRateTile, setActiveRateTile] = useState<RateTileKey | null>(
+    null,
+  );
   const [bomIdOptionsById, setBomIdOptionsById] = useState<
     Record<string, string[]>
   >({});
@@ -378,6 +457,7 @@ export default function ContractReviewPage() {
         setMultiFilters({});
         setGlobalSearch("");
         setDateRanges({});
+        setActiveRateTile(null);
       },
       onPageChange: setCurrentPage,
       onPageSizeChange: setPageSize,
@@ -675,9 +755,7 @@ export default function ContractReviewPage() {
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     result["PN RATING"] = [
       ...new Set(
-        data.rows
-          .map((r) => String(r[PN_IDX] ?? "").trim())
-          .filter(Boolean),
+        data.rows.map((r) => String(r[PN_IDX] ?? "").trim()).filter(Boolean),
       ),
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     return result;
@@ -687,17 +765,26 @@ export default function ContractReviewPage() {
 
   const sidebarBaseRows = useMemo(
     () =>
-      allRows.filter((row) =>
-        matchesTableFilters(
-          row,
-          headers,
-          columnFilters,
-          multiFilters,
-          globalSearch,
-          dateRanges,
-        ),
+      allRows.filter(
+        (row) =>
+          matchesTableFilters(
+            row,
+            headers,
+            columnFilters,
+            multiFilters,
+            globalSearch,
+            dateRanges,
+          ) && matchesRateTile(row, activeRateTile),
       ),
-    [allRows, headers, columnFilters, multiFilters, globalSearch, dateRanges],
+    [
+      allRows,
+      headers,
+      columnFilters,
+      multiFilters,
+      globalSearch,
+      dateRanges,
+      activeRateTile,
+    ],
   );
 
   const balBillCounts = useMemo(() => {
@@ -788,16 +875,17 @@ export default function ContractReviewPage() {
   // Bidirectional: also exclude column's CLEARANCE STATUS filter (same logical filter synced)
   const clearanceCounts = useMemo(() => {
     const counts: Record<string, number> = { all: 0 };
-    const baseForClearance = allRows.filter((row) =>
-      matchesTableFilters(
-        row,
-        headers,
-        columnFilters,
-        multiFilters,
-        globalSearch,
-        dateRanges,
-        "CLEARANCE STATUS",
-      ),
+    const baseForClearance = allRows.filter(
+      (row) =>
+        matchesTableFilters(
+          row,
+          headers,
+          columnFilters,
+          multiFilters,
+          globalSearch,
+          dateRanges,
+          "CLEARANCE STATUS",
+        ) && matchesRateTile(row, activeRateTile),
     );
     for (const row of baseForClearance) {
       if (
@@ -828,6 +916,7 @@ export default function ContractReviewPage() {
     multiFilters,
     globalSearch,
     dateRanges,
+    activeRateTile,
     balBillFilter,
     statusFilter,
     tileItem,
@@ -1122,6 +1211,19 @@ export default function ContractReviewPage() {
     tilePn,
   ]);
 
+  const visibleData = useMemo(() => {
+    const base = filteredData ?? data;
+    if (!base || !activeRateTile) return base;
+    const rows: unknown[][] = [];
+    const ids: string[] = [];
+    base.rows.forEach((row, i) => {
+      if (!matchesRateTile(row, activeRateTile)) return;
+      rows.push(row);
+      ids.push(base.ids[i]);
+    });
+    return { ...base, rows, ids, totalRows: rows.length };
+  }, [filteredData, data, activeRateTile]);
+
   // Per-node row counts for the flow diagram. Respects every active filter
   // except the graph's own columns (STATUS / CLEARANCE STATUS), so selecting
   // one branch never collapses the sibling counts (exclude-self cascading,
@@ -1148,7 +1250,8 @@ export default function ContractReviewPage() {
               dateRanges,
               undefined,
               graphPathColumns,
-            )
+            ) ||
+            !matchesRateTile(row, activeRateTile)
           )
             continue;
           if (!path.every((p) => matchesGraphFilter(row, p.filter))) continue;
@@ -1165,6 +1268,7 @@ export default function ContractReviewPage() {
     multiFilters,
     globalSearch,
     dateRanges,
+    activeRateTile,
     graphPathColumns,
   ]);
 
@@ -1227,7 +1331,8 @@ export default function ContractReviewPage() {
               dateRanges,
               undefined,
               graphPathColumns,
-            )
+            ) ||
+            !matchesRateTile(row, activeRateTile)
           )
             continue;
           if (!path.every((p) => matchesGraphFilter(row, p.filter))) continue;
@@ -1248,6 +1353,7 @@ export default function ContractReviewPage() {
     multiFilters,
     globalSearch,
     dateRanges,
+    activeRateTile,
     graphPathColumns,
   ]);
 
@@ -1274,7 +1380,8 @@ export default function ContractReviewPage() {
           globalSearch,
           dateRanges,
           "CONTRACT NO",
-        )
+        ) ||
+        !matchesRateTile(row, activeRateTile)
       )
         continue;
       const cn = String(row[CONTRACT_NO_IDX] ?? "").trim();
@@ -1294,6 +1401,7 @@ export default function ContractReviewPage() {
     multiFilters,
     globalSearch,
     dateRanges,
+    activeRateTile,
   ]);
 
   const columnOptionMeta = useMemo(
@@ -1308,34 +1416,9 @@ export default function ContractReviewPage() {
     [contractNoMeta],
   );
 
-  const contractTiles = useMemo(
-    () =>
-      Object.entries(contractNoMeta)
-        .map(([contractNo, m]) => ({
-          contractNo,
-          partyName: m.partyName,
-          count: m.count,
-        }))
-        .sort(
-          (a, b) =>
-            b.count - a.count ||
-            a.contractNo.localeCompare(b.contractNo, undefined, {
-              numeric: true,
-            }),
-        ),
-    [contractNoMeta],
-  );
-
-  const handleContractTileClick = useCallback(
-    (contractNo: string) => {
-      const current = multiFilters["CONTRACT NO"] ?? [];
-      const next =
-        current.length === 1 && current[0] === contractNo ? [] : [contractNo];
-      filterActions.onMultiFilter("CONTRACT NO", next);
-      filterActions.onColumnFilter("CONTRACT NO", "");
-    },
-    [multiFilters, filterActions],
-  );
+  const handleRateTileClick = useCallback((key: RateTileKey) => {
+    setActiveRateTile((prev) => (prev === key ? null : key));
+  }, []);
 
   const tileAllCounts = useMemo(
     () => ({
@@ -1613,7 +1696,15 @@ export default function ContractReviewPage() {
               ))}
             </select>
           </div>
-          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+          <button
+            type="button"
+            onClick={() => handleRateTileClick("rateXOrderQty")}
+            className={`w-full text-left border rounded-lg p-3 transition-all cursor-pointer ${
+              activeRateTile === "rateXOrderQty"
+                ? "bg-white/10 border-[#38ef7d]"
+                : "bg-white/5 border-white/10 hover:border-white/25"
+            }`}
+          >
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
               RATE × ORDER QTY
             </span>
@@ -1623,9 +1714,17 @@ export default function ContractReviewPage() {
             <span className="block text-[10px] font-medium text-white/50 mt-0.5">
               {rateOrderQty.count} rows of {tileRowsCount}
             </span>
-          </div>
+          </button>
 
-          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+          <button
+            type="button"
+            onClick={() => handleRateTileClick("rateXBalBillAgCont")}
+            className={`w-full text-left border rounded-lg p-3 transition-all cursor-pointer ${
+              activeRateTile === "rateXBalBillAgCont"
+                ? "bg-white/10 border-[#38ef7d]"
+                : "bg-white/5 border-white/10 hover:border-white/25"
+            }`}
+          >
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
               RATE × BAL BILL AG CONT
             </span>
@@ -1635,9 +1734,17 @@ export default function ContractReviewPage() {
             <span className="block text-[10px] font-medium text-white/50 mt-0.5">
               {rateBalBillCont.count} rows of {tileRowsCount}
             </span>
-          </div>
+          </button>
 
-          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+          <button
+            type="button"
+            onClick={() => handleRateTileClick("rateXMcQty")}
+            className={`w-full text-left border rounded-lg p-3 transition-all cursor-pointer ${
+              activeRateTile === "rateXMcQty"
+                ? "bg-white/10 border-[#38ef7d]"
+                : "bg-white/5 border-white/10 hover:border-white/25"
+            }`}
+          >
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
               RATE × MC QTY
             </span>
@@ -1647,9 +1754,17 @@ export default function ContractReviewPage() {
             <span className="block text-[10px] font-medium text-white/50 mt-0.5">
               {rateMcCont.count} rows of {tileRowsCount}
             </span>
-          </div>
+          </button>
 
-          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+          <button
+            type="button"
+            onClick={() => handleRateTileClick("rateXBalDiQty")}
+            className={`w-full text-left border rounded-lg p-3 transition-all cursor-pointer ${
+              activeRateTile === "rateXBalDiQty"
+                ? "bg-white/10 border-[#38ef7d]"
+                : "bg-white/5 border-white/10 hover:border-white/25"
+            }`}
+          >
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
               RATE × BAL DI QTY
             </span>
@@ -1662,9 +1777,17 @@ export default function ContractReviewPage() {
             <span className="block text-[10px] font-medium text-white/50 mt-0.5">
               {rateBalDiQty.count} rows of {tileRowsCount}
             </span>
-          </div>
+          </button>
 
-          <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+          <button
+            type="button"
+            onClick={() => handleRateTileClick("rateXBalMcQty")}
+            className={`w-full text-left border rounded-lg p-3 transition-all cursor-pointer ${
+              activeRateTile === "rateXBalMcQty"
+                ? "bg-white/10 border-[#38ef7d]"
+                : "bg-white/5 border-white/10 hover:border-white/25"
+            }`}
+          >
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
               RATE × BAL MC QTY
             </span>
@@ -1677,52 +1800,7 @@ export default function ContractReviewPage() {
             <span className="block text-[10px] font-medium text-white/50 mt-0.5">
               {rateBalMspQty.count} rows of {tileRowsCount}
             </span>
-          </div>
-
-          <span className="text-xs font-bold uppercase tracking-wider text-white mt-2">
-            Contracts ({contractTiles.length})
-          </span>
-          <div className="flex flex-col gap-1.5">
-            {contractTiles.length === 0 ? (
-              <div className="text-[11px] text-white/40">No contracts</div>
-            ) : (
-              contractTiles.map((t) => {
-                const sel = multiFilters["CONTRACT NO"] ?? [];
-                const active = sel.length === 1 && sel[0] === t.contractNo;
-                return (
-                  <button
-                    key={t.contractNo}
-                    type="button"
-                    onClick={() => handleContractTileClick(t.contractNo)}
-                    className={`w-full text-left border rounded-lg px-2.5 py-2 transition-all cursor-pointer ${
-                      active
-                        ? "border-[#38ef7d] bg-white/10"
-                        : "border-white/10 hover:border-white/25"
-                    }`}
-                    title={`${t.contractNo} — ${t.partyName || ""} (${t.count})`}
-                  >
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="block text-[12px] font-bold text-white truncate">
-                        {t.partyName || t.contractNo}
-                      </span>
-                      <span
-                        className={`shrink-0 min-w-8 text-center rounded-md px-2 py-0.5 text-sm font-bold ${
-                          active
-                            ? "bg-[#38ef7d] text-[#0a2540]"
-                            : "bg-white/15 text-white"
-                        }`}
-                      >
-                        {t.count}
-                      </span>
-                    </span>
-                    <span className="block text-[10px] font-medium text-white/50 truncate mt-0.5">
-                      {t.contractNo}
-                    </span>
-                  </button>
-                );
-              })
-            )}
-          </div>
+          </button>
         </aside>
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
           <GMDUpdateHeader
@@ -1755,8 +1833,8 @@ export default function ContractReviewPage() {
             <ResizablePanel id="table" defaultSize="68" minSize="25">
               <GMDUpdateTable
                 headers={headers}
-                rows={filteredData?.rows ?? []}
-                ids={filteredData?.ids ?? []}
+                rows={visibleData?.rows ?? []}
+                ids={visibleData?.ids ?? []}
                 selectedIndex={selectedIndex}
                 onSelect={setSelectedIndex}
                 title="Contract Review"
@@ -1826,6 +1904,7 @@ export default function ContractReviewPage() {
                   setTileItem("");
                   setTileSize("");
                   setTilePn("");
+                  setActiveRateTile(null);
                   setBalBillFilter("all");
                   setStatusFilter("all");
                   setActivePath([]);
@@ -1856,6 +1935,12 @@ export default function ContractReviewPage() {
                   "BAL BILL AG MC",
                   "ic qty",
                   "bom formula trial",
+                  "BILLED QTY",
+                  "DI QTY",
+                  "MC QTY",
+                  "OFFER NUMBER",
+                  "INSPECTION NUMBER",
+                  "DI DATE",
                 ]}
               />
             </ResizablePanel>

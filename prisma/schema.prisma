@@ -316,6 +316,9 @@ model ContractReview {
   mcReceivedPending      String?
   inspection             String?
   remarks                String?
+  offerNumber            String[] @default([])
+  inspectionNumber       String[] @default([])
+  diDate                 String[] @default([])
   syncedAt               DateTime @default(now())
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt

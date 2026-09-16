@@ -56,6 +56,9 @@ export const CONTRACT_REVIEW_HEADERS = [
   "STATE",
   "UTILITY",
   "PROJECT REFERENCE",
+  "OFFER NUMBER",
+  "INSPECTION NUMBER",
+  "DI DATE",
 ] as const;
 
 export const CONTRACTS_SHEET_COLUMNS = [
@@ -304,6 +307,9 @@ export function dbContractReviewToRow(item: {
   state: string | null;
   utility: string | null;
   projectReference: string | null;
+  offerNumber: string[] | null;
+  inspectionNumber: string[] | null;
+  diDate: string[] | null;
 }): unknown[] {
   return [
     item.contractNo,
@@ -338,6 +344,9 @@ export function dbContractReviewToRow(item: {
     item.state,
     item.utility,
     item.projectReference,
+    (item.offerNumber ?? []).join(", "),
+    (item.inspectionNumber ?? []).join(", "),
+    (item.diDate ?? []).join(", "),
   ];
 }
 

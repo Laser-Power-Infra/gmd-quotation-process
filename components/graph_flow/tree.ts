@@ -6,6 +6,13 @@
  * node applies to the table (path-based: clicking a node ANDs the whole
  * ancestor chain with the node's own filter).
  */
+import {
+  FLOW_HAS_VALUE,
+  FLOW_NO_VALUE,
+  FLOW_ZERO,
+  FLOW_NON_ZERO,
+} from "@/lib/gmd_lib/flowFilter";
+
 export interface FlowFilter {
   /** Display header the filter targets, e.g. "STATUS". */
   column: string;
@@ -46,7 +53,7 @@ export const LIVE_TREE: FlowNode = {
       children: [
         {
           id: "mcreceived",
-          filter: { column: "MC Received/Pending", values: ["RECEIVED"] },
+          filter: { column: "MC Received/Pending", values: ["Received"] },
           label: "MC Received",
           accent: "text-emerald-300",
           edge: "rgb(110 231 183)",
@@ -60,7 +67,7 @@ export const LIVE_TREE: FlowNode = {
               children: [
                 {
                   id: "inspcallraised",
-                  filter: { column: "Inspection", values: ["CALL RAISED"] },
+                  filter: { column: "OFFER NUMBER", values: [FLOW_HAS_VALUE] },
                   label: "Inspection Call Raised",
                   accent: "text-amber-300",
                   edge: "rgb(252 211 77)",
@@ -68,27 +75,27 @@ export const LIVE_TREE: FlowNode = {
                   
                 {
                   id: "inspectionDone",
-                  filter: { column: "Inspection", values: ["DONE"] },
+                  filter: { column: "INSPECTION NUMBER", values: [FLOW_HAS_VALUE] },
                   label: "Inspection Done",
                   accent: "text-emerald-300",
                   edge: "rgb(110 231 183)",
                   children: [{
                     id: "DI Received",
-                    filter: { column: "DI Received", values: ["YES"] },
+                    filter: { column: "DI DATE", values: [FLOW_HAS_VALUE] },
                     label: "DI Received",
                     accent: "text-emerald-300",
                     edge: "rgb(110 231 183)",
                     children: [
                       {
                         id:"dispatchDone",
-                        filter: { column: "Dispatch", values: ["YES"] },
+                        filter: { column: "BAL BILL AG CONT", values: [FLOW_ZERO] },
                         label: "Dispatch Done",
                         accent: "text-emerald-300",
                         edge: "rgb(110 231 183)",
                       },
                       {
                         id:"dispatchPending",
-                        filter: { column: "Dispatch", values: ["NO"] },
+                        filter: { column: "BAL BILL AG CONT", values: [FLOW_NON_ZERO] },
                         label: "Dispatch Pending",
                         accent: "text-rose-300",
                         edge: "rgb(253 164 175)",
@@ -106,7 +113,7 @@ export const LIVE_TREE: FlowNode = {
                   },
                   {
                     id: "DI pending",
-                    filter: { column: "DI Received", values: ["NO"] },
+                    filter: { column: "DI DATE", values: [FLOW_NO_VALUE] },
                     label: "DI Pending",
                     accent: "text-rose-300",
                     edge: "rgb(253 164 175)",
@@ -116,12 +123,19 @@ export const LIVE_TREE: FlowNode = {
                 },
                 {
                   id: "inspectionPending",
-                  filter: { column: "Inspection", values: ["PENDING"] },
+                  filter: { column: "INSPECTION NUMBER", values: [FLOW_NO_VALUE] },
                   label: "Inspection Pending",
                   accent: "text-amber-300",
                   edge: "rgb(252 211 77)",
                 },
                   ]
+                },
+                {
+                  id: "inspcallpending",
+                  filter: { column: "OFFER NUMBER", values: [FLOW_NO_VALUE] },
+                  label: "Inspection Call Pending",
+                  accent: "text-amber-300",
+                  edge: "rgb(252 211 77)",
                 }
               ],
             },
@@ -136,7 +150,7 @@ export const LIVE_TREE: FlowNode = {
         },
         {
           id: "mcpending",
-          filter: { column: "MC Received/Pending", values: ["PENDING"] },
+          filter: { column: "MC Received/Pending", values: ["Pending"] },
           label: "MC Pending",
           accent: "text-amber-300",
           edge: "rgb(252 211 77)",

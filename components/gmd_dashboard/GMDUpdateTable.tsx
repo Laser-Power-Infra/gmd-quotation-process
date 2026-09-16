@@ -8,6 +8,14 @@ import {
   NUMERIC_COLUMNS,
   COL_INDEX_TO_DB_FIELD,
 } from "../../lib/gmd_lib/sheet-columns";
+import {
+  FLOW_HAS_VALUE,
+  FLOW_NO_VALUE,
+  FLOW_ZERO,
+  FLOW_NON_ZERO,
+  cellHasValue,
+  cellIsZero,
+} from "../../lib/gmd_lib/flowFilter";
 import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import Pagination from "./Pagination";
 import { useAppDispatch } from "@/lib/hooks";
@@ -921,7 +929,24 @@ castingRateInputs,
         if (colIdx === -1) continue;
         const cellVal = String(row[colIdx] ?? "").trim();
         const matchesBlank = selected.includes("(Blank)") && cellVal === "";
-        if (!(matchesBlank || selected.includes(cellVal))) return false;
+        const matchesHasValue =
+          selected.includes(FLOW_HAS_VALUE) && cellHasValue(cellVal);
+        const matchesNoValue =
+          selected.includes(FLOW_NO_VALUE) && !cellHasValue(cellVal);
+        const matchesZero = selected.includes(FLOW_ZERO) && cellIsZero(cellVal);
+        const matchesNonZero =
+          selected.includes(FLOW_NON_ZERO) && !cellIsZero(cellVal);
+        if (
+          !(
+            matchesBlank ||
+            matchesHasValue ||
+            matchesNoValue ||
+            matchesZero ||
+            matchesNonZero ||
+            selected.includes(cellVal)
+          )
+        )
+          return false;
       }
 
       for (const [colName, r] of Object.entries(dateRanges)) {
