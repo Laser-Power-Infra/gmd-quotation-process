@@ -1,4 +1,5 @@
 import type { EnquiryData, EnquiryItemData, FiltersState } from "./types";
+import { makeImageKey } from "./imageKey";
 
 export const BLANK = "__blank__";
 
@@ -52,10 +53,34 @@ export function matchesText(filterVal: string, actual: unknown): boolean {
   return String(actual).toLowerCase().includes(filterVal.toLowerCase());
 }
 
+export type GeneratedImagesMap = Record<string, { url: string | null; driveFileId: string | null }>;
+
+export function itemHasImage(
+  item: EnquiryItemData,
+  imageMap: GeneratedImagesMap | undefined
+): boolean {
+  if (!imageMap) return false;
+  const rmType = (item as unknown as Record<string, unknown>).rmType as string | undefined;
+  if (!item.itemType || !item.operationType || !rmType) return false;
+  const key = makeImageKey(item.itemType, item.operationType, rmType);
+  const img = imageMap[key];
+  return !!(img && (img.url || img.driveFileId));
+}
+
+export function enquiryHasImage(
+  enquiry: EnquiryData,
+  imageMap: GeneratedImagesMap | undefined
+): boolean {
+  const firstItem = enquiry.items?.[0];
+  if (!firstItem) return false;
+  return itemHasImage(firstItem, imageMap);
+}
+
 export function enquiryPassesFilters(
   enquiry: EnquiryData,
   filters: FiltersState,
-  globalSearch?: string
+  globalSearch?: string,
+  _imageMap?: GeneratedImagesMap
 ): boolean {
   if (filters.partyNames.length > 0 && !filters.partyNames.includes(enquiry.partyName)) return false;
   if (filters.enquiryType.length > 0 && !matchesMulti(filters.enquiryType, enquiry.enquiryType)) return false;
@@ -102,7 +127,7 @@ export function matchesGlobalSearch(enquiry: EnquiryData, globalSearch?: string)
   );
 }
 
-export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState): boolean {
+export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState, imageMap?: GeneratedImagesMap): boolean {
   if (filters.itemName && !matchesText(filters.itemName, item.itemName)) return false;
   if (filters.quantity && !matchesText(filters.quantity, String(item.quantity))) return false;
   if (!matchesMulti(filters.itemType, item.itemType)) return false;
@@ -132,6 +157,15 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState):
   if (filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;
   if (filters.stockQuantity && !matchesText(filters.stockQuantity, item.stockQuantity || "")) return false;
   if (filters.availableStock.length > 0 && !matchesMulti(filters.availableStock, item.availableStock ?? null)) return false;
+  if (filters.rmType && filters.rmType.length > 0 && !matchesMulti(filters.rmType, (item as any).rmType ?? null)) return false;
+  if ((filters as any).image && Array.isArray((filters as any).image) && (filters as any).image.length > 0 && imageMap) {
+    const imageVals = (filters as any).image as string[];
+    const hasImage = itemHasImage(item, imageMap);
+    const wantsPresent = imageVals.includes("Present");
+    const wantsBlank = imageVals.includes(BLANK);
+    if (wantsPresent && !wantsBlank && !hasImage) return false;
+    if (wantsBlank && !wantsPresent && hasImage) return false;
+  }
   if (filters.stockAgainstContract && !matchesText(filters.stockAgainstContract, item.stockAgainstContract || "")) return false;
   if (filters.discount && !matchesText(filters.discount, item.discount != null ? String(item.discount) : "")) return false;
   if (filters.vaPercent.length > 0 && !matchesMulti(filters.vaPercent, item.vaPercent?.toString() ?? null)) return false;
@@ -146,18 +180,20 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState):
 export function filterEnquiries(
   enquiries: EnquiryData[],
   filters: FiltersState,
-  globalSearch?: string
+  globalSearch?: string,
+  imageMap?: GeneratedImagesMap
 ): EnquiryData[] {
   return enquiries.filter((enquiry) => {
-    if (!enquiryPassesFilters(enquiry, filters, globalSearch)) return false;
+    if (!enquiryPassesFilters(enquiry, filters, globalSearch, imageMap)) return false;
     if (!enquiry.items || enquiry.items.length === 0) return true;
-    return enquiry.items.some((item) => itemPassesFilters(item, filters));
+    return enquiry.items.some((item) => itemPassesFilters(item, filters, imageMap));
   });
 }
 
 export function filterEnquiryItems(
   items: EnquiryItemData[],
-  filters: FiltersState
+  filters: FiltersState,
+  imageMap?: GeneratedImagesMap
 ): EnquiryItemData[] {
-  return items.filter((item) => itemPassesFilters(item, filters));
+  return items.filter((item) => itemPassesFilters(item, filters, imageMap));
 }

@@ -58,6 +58,7 @@ const initialState: UiState = {
   expandedRows: {},
   isAnalyticsSidebarCollapsed: false,
   columnWidths: { ...DEFAULT_COLUMN_WIDTHS },
+  generatedImages: {},
 };
 
 const uiSlice = createSlice({
@@ -95,6 +96,12 @@ const uiSlice = createSlice({
     setAnalyticsSidebarCollapsed(state, action: PayloadAction<boolean>) {
       state.isAnalyticsSidebarCollapsed = action.payload;
     },
+    setGeneratedImages(
+      state,
+      action: PayloadAction<Record<string, { url: string | null; driveFileId: string | null }>>
+    ) {
+      state.generatedImages = action.payload;
+    },
   },
 });
 
@@ -105,6 +112,7 @@ export const {
   setColumnWidth,
   toggleAnalyticsSidebar,
   setAnalyticsSidebarCollapsed,
+  setGeneratedImages,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;
