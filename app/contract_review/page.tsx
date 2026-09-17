@@ -10,6 +10,7 @@ import {
   selectContractReviewBomIdAction,
   updateContractReviewFieldAction,
   backfillContractReviewNoUseBatchAction,
+  backfillContractReviewOrderListBatchAction,
   autoAssignContractReviewBomIdFromActuator,
   getActuatorOptionsAction,
   saveActuatorWithRmCodeAction,
@@ -101,13 +102,15 @@ const BILLED_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BILLED QTY");
 const BAL_BILL_AG_CONT_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf("BAL BILL AG CONT");
 const STATUS_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATUS");
+const ORDER_LIST_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER LIST");
 
 type RateTileKey =
   | "rateXOrderQty"
   | "rateXBalBillAgCont"
   | "rateXMcQty"
   | "rateXBalDiQty"
-  | "rateXBalMcQty";
+  | "rateXBalMcQty"
+  | "balBillAgContSum";
 
 function isNumIdx(row: unknown[], idx: number): boolean {
   return !isNaN(parseNum(row[idx]));
@@ -134,6 +137,8 @@ function matchesRateTile(row: unknown[], key: RateTileKey | null): boolean {
         isNumIdx(row, MC_QTY_IDX) &&
         isNumIdx(row, DI_QTY_IDX)
       );
+    case "balBillAgContSum":
+      return isNumIdx(row, BAL_BILL_AG_CONT_IDX);
     default:
       return true;
   }
@@ -273,7 +278,11 @@ function matchesTableFilters(
     const colIdx = headers.indexOf(colName);
     if (colIdx === -1) continue;
     const cellVal = String(row[colIdx] ?? "");
-    if (filterVal === "(Blank)") {
+    if (
+      filterVal === "(Blank)" ||
+      filterVal === "-" ||
+      filterVal === "—"
+    ) {
       if (cellVal !== "") return false;
     } else if (!cellVal.toLowerCase().includes(filterVal.toLowerCase())) {
       return false;
@@ -736,6 +745,40 @@ export default function ContractReviewPage() {
     });
   }, [data, headers]);
 
+  const autoOrderListRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!data || ORDER_LIST_IDX === -1) return;
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoOrderListRef.current.has(id)) return;
+      if (String(row[ORDER_LIST_IDX] ?? "").trim() !== "") return;
+      autoOrderListRef.current.add(id);
+      pending.push(id);
+    });
+    if (!pending.length) return;
+    backfillContractReviewOrderListBatchAction(pending).then((res) => {
+      if (!res?.success) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(
+          (res.data ?? []).map((d) => [d.id, (d.orderList ?? []).join(", ")]),
+        );
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined || v === "") return row;
+            const next = [...row];
+            next[ORDER_LIST_IDX] = v;
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
+
   const categoryOptions = useMemo<Record<string, string[]>>(() => {
     if (!data) return {};
     const items = [
@@ -1114,6 +1157,43 @@ export default function ContractReviewPage() {
     () => rateTile(RATE_IDX, BAL_BILL_AG_CONT_IDX),
     [rateTile],
   );
+
+  const balBillAgContTotal = useMemo(() => {
+    let sum = 0;
+    let count = 0;
+    for (const row of sidebarBaseRows) {
+      if (
+        !matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          clearanceFilter,
+          tileItem,
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          undefined,
+        )
+      )
+        continue;
+      const v = parseNum(row[BAL_BILL_AG_CONT_IDX]);
+      if (isNaN(v)) continue;
+      sum += v;
+      count++;
+    }
+    return { sum, count };
+  }, [
+    sidebarBaseRows,
+    balBillFilter,
+    statusFilter,
+    clearanceFilter,
+    tileItem,
+    tileSize,
+    tilePn,
+    balBillIdx,
+    clearanceIdx,
+  ]);
 
   const rateOrderQty = useMemo(
     () => rateTile(RATE_IDX, ORDER_QTY_IDX),
@@ -1738,6 +1818,26 @@ export default function ContractReviewPage() {
 
           <button
             type="button"
+            onClick={() => handleRateTileClick("balBillAgContSum")}
+            className={`w-full text-left border rounded-lg p-3 transition-all cursor-pointer ${
+              activeRateTile === "balBillAgContSum"
+                ? "bg-white/10 border-[#38ef7d]"
+                : "bg-white/5 border-white/10 hover:border-white/25"
+            }`}
+          >
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+              BAL BILL AG CONT
+            </span>
+            <span className="block text-lg font-bold text-white mt-1">
+              {fmt(balBillAgContTotal.sum)}
+            </span>
+            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+              {balBillAgContTotal.count} rows of {tileRowsCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => handleRateTileClick("rateXMcQty")}
             className={`w-full text-left border rounded-lg p-3 transition-all cursor-pointer ${
               activeRateTile === "rateXMcQty"
@@ -1856,6 +1956,7 @@ export default function ContractReviewPage() {
                   "Issuing bank name",
                   "PAYMENT TERMS",
                 ]}
+                blankOnlyEditableColumns={["DATE OF CONTRACT"]}
                 categoryOptions={categoryOptions}
                 fixedDropdownOptions={{
                   "MC Received/Pending": ["Received", "Pending"],
@@ -1941,6 +2042,7 @@ export default function ContractReviewPage() {
                   "OFFER NUMBER",
                   "INSPECTION NUMBER",
                   "DI DATE",
+                  "STATUS"
                 ]}
               />
             </ResizablePanel>

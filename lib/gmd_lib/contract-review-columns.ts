@@ -59,6 +59,7 @@ export const CONTRACT_REVIEW_HEADERS = [
   "OFFER NUMBER",
   "INSPECTION NUMBER",
   "DI DATE",
+  "ORDER LIST",
 ] as const;
 
 export const CONTRACTS_SHEET_COLUMNS = [
@@ -310,6 +311,7 @@ export function dbContractReviewToRow(item: {
   offerNumber: string[] | null;
   inspectionNumber: string[] | null;
   diDate: string[] | null;
+  orderList: string[] | null;
 }): unknown[] {
   return [
     item.contractNo,
@@ -347,6 +349,7 @@ export function dbContractReviewToRow(item: {
     (item.offerNumber ?? []).join(", "),
     (item.inspectionNumber ?? []).join(", "),
     (item.diDate ?? []).join(", "),
+    (item.orderList ?? []).join(", "),
   ];
 }
 
@@ -405,4 +408,5 @@ export const CONTRACT_REVIEW_HEADER_TO_DB_FIELD: Record<string, string> = {
   "MC Received/Pending": "mcReceivedPending",
   "Inspection": "inspection",
   "Remarks": "remarks",
+  "ORDER LIST": "orderList",
 };

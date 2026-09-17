@@ -35,7 +35,22 @@ function isNullOrEmpty(value: unknown): boolean {
   return value === null || value === undefined || String(value).trim() === "";
 }
 
-const PRESERVE_UI_FIELDS = new Set(["bomFormulaTrial", "item", "clearanceStatus"]);
+const PRESERVE_UI_FIELDS = new Set([
+  "bomFormulaTrial",
+  "item",
+  "clearanceStatus",
+  "pnRating",
+  "actuator",
+  "paymentTerms",
+  "lcRtgsRefNo",
+  "lcDateRtgsDate",
+  "lastDateOfShipmentDateOfLc",
+  "issuingBankName",
+  "dateOfContract",
+]);
+
+// Derived / UI-managed fields: never written by sync (create or update).
+const SKIP_FIELDS = new Set(["itemType", "rmCodeForActuator"]);
 
 export async function POST() {
   try {
@@ -102,8 +117,10 @@ export async function POST() {
 
     const syncedAt = new Date();
 
-    let upserted = 0;
-    let patched = 0;
+    let created = 0;
+    let updated = 0;
+    let unchanged = 0;
+    const changedColumns: Record<string, number> = {};
     for (const [key, contractRow] of contractsByKey) {
       const dumpRow = dumpByKey.get(key) ?? null;
       const mapped = mapContractReviewRow(
@@ -120,23 +137,30 @@ export async function POST() {
         },
       });
       if (!existing) {
-        await prisma.contractReview.create({ data: { ...mapped, syncedAt } });
-        upserted++;
+        const { itemType: _it, rmCodeForActuator: _rma, ...rest } = mapped;
+        await prisma.contractReview.create({
+          data: { ...rest, syncedAt },
+        });
+        created++;
         continue;
       }
 
-      // Sheet is authoritative only when it has a value; a blank/null sheet
-      // value never clears the DB. UI-editable fields are gap-filled only.
+      // Only columns coming from the sheet are synced. Editable columns are
+      // gap-filled only (a blank DB value is filled from the sheet, an existing
+      // value is never overwritten). Derived/UI-managed fields are skipped.
+      // A blank/null sheet value never clears the DB.
       const filtered: Record<string, unknown> = { syncedAt };
       let hasDataChange = false;
       for (const [field, sheetVal] of Object.entries(mapped)) {
         if (field === "contractNo" || field === "itemCode") continue; // keys immutable
+        if (SKIP_FIELDS.has(field)) continue;
         const dbVal = (existing as unknown as Record<string, unknown>)[field];
 
         if (PRESERVE_UI_FIELDS.has(field)) {
           if (isNullOrEmpty(dbVal) && !isNullOrEmpty(sheetVal)) {
             (filtered as Record<string, unknown>)[field] = sheetVal;
             hasDataChange = true;
+            changedColumns[field] = (changedColumns[field] ?? 0) + 1;
           }
           continue;
         }
@@ -145,6 +169,7 @@ export async function POST() {
         if (String(dbVal ?? "").trim() !== String(sheetVal).trim()) {
           (filtered as Record<string, unknown>)[field] = sheetVal;
           hasDataChange = true;
+          changedColumns[field] = (changedColumns[field] ?? 0) + 1;
         }
       }
 
@@ -153,15 +178,15 @@ export async function POST() {
           where: { id: existing.id },
           data: filtered,
         });
-        patched++;
+        updated++;
       } else {
         // No data gaps to fill, still bump syncedAt to record sync time
         await prisma.contractReview.update({
           where: { id: existing.id },
           data: { syncedAt },
         });
+        unchanged++;
       }
-      upserted++;
     }
 
     await recomputeVerifyBomValues();
@@ -208,12 +233,21 @@ export async function POST() {
       console.warn("[contract-review sync] contractNo sync failed:", e);
     }
 
+    const total = created + updated + unchanged;
+    console.log(
+      `[contract-review-sync] Summary: created=${created} updated=${updated} unchanged=${unchanged} total=${total} backfilled=${backfill.changed}`,
+    );
+    console.log(`[contract-review-sync] Changed columns:`, changedColumns);
+
     return NextResponse.json({
-      count: upserted,
-      patched,
+      created,
+      updated,
+      unchanged,
+      total,
       backfilled: backfill.changed,
       contractNoSynced: contractNoSynced.updated,
       contractNoMatched: contractNoSynced.matched,
+      changedColumns,
       totalInContracts: contractsByKey.size,
       syncedAt: syncedAt.toISOString(),
     });

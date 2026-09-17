@@ -588,6 +588,7 @@ interface GMDUpdateTableProps {
   onClearAttachment?: (id: string) => Promise<void>;
   onDeleteRow?: (id: string) => Promise<void>;
   onMatchCosts?: () => void;
+  blankOnlyEditableColumns?: string[];
 }
 
 export default function GMDUpdateTable({
@@ -632,6 +633,7 @@ castingRateInputs,
   onClearAttachment,
   onDeleteRow,
   onMatchCosts,
+  blankOnlyEditableColumns,
   filterState,
   filterActions,
   columnOptionMeta,
@@ -915,7 +917,11 @@ castingRateInputs,
         const colIdx = headers.indexOf(colName);
         if (colIdx === -1) continue;
         const cellVal = String(row[colIdx] ?? "");
-        if (filterVal === "(Blank)") {
+        if (
+          filterVal === "(Blank)" ||
+          filterVal === "-" ||
+          filterVal === "—"
+        ) {
           if (cellVal !== "") return false;
         } else if (!cellVal.toLowerCase().includes(filterVal.toLowerCase())) {
           return false;
@@ -1429,7 +1435,9 @@ castingRateInputs,
                       idx < 2 ? " sticky z-20" : ""
                     }${
                       editable &&
-                      (!editableColumns || editableColumns.includes(header))
+                      (!editableColumns ||
+                        editableColumns.includes(header) ||
+                        blankOnlyEditableColumns?.includes(header))
                         ? " bg-amber-50/50"
                         : ""
                     }`}
@@ -1632,9 +1640,16 @@ castingRateInputs,
                       : undefined;
 
                     let cellContent: React.ReactNode;
+                    const isBlankCell = String(display ?? "").trim() === "";
+                    const isBlankOnlyColumn = !!blankOnlyEditableColumns?.includes(header);
+                    const baseEditable =
+                      !editableColumns ||
+                      editableColumns.includes(header) ||
+                      isBlankOnlyColumn;
                     const isCellEditable =
-                      editable &&
-                      (!editableColumns || editableColumns.includes(header));
+                      !!editable &&
+                      baseEditable &&
+                      (!isBlankOnlyColumn || isBlankCell);
                     const isAttachmentColumn =
                       attachmentColumn &&
                       header === attachmentColumn &&
