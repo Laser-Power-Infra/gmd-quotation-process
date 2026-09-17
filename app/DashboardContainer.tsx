@@ -41,6 +41,7 @@ export default function DashboardContainer({
   const storeEnquiries = useAppSelector(selectAllEnquiries);
   const storeItems = useAppSelector(selectAllItems);
   const filters = useAppSelector((s) => s.filters);
+  const generatedImages = useAppSelector((s) => s.ui.generatedImages);
   const globalSearch = filters.globalSearch.trim();
 
   // Sidebar filter values synced with Redux filtersSlice
@@ -73,11 +74,11 @@ export default function DashboardContainer({
   // Fully filtered enquiries matching both sidebar and table header filters
   const filteredEnquiries = useMemo(() => {
     return effectiveEnquiries.filter((enquiry) => {
-      if (!enquiryPassesFilters(enquiry, filters, globalSearch)) return false;
+      if (!enquiryPassesFilters(enquiry, filters, globalSearch, generatedImages)) return false;
       if (!enquiry.items || enquiry.items.length === 0) return true;
-      return enquiry.items.some((item) => itemPassesFilters(item, filters));
+      return enquiry.items.some((item) => itemPassesFilters(item, filters, generatedImages));
     });
-  }, [effectiveEnquiries, filters, globalSearch]);
+  }, [effectiveEnquiries, filters, globalSearch, generatedImages]);
 
   // Items of filtered enquiries that pass active item filters
   const analyticsItems = useMemo(() => {
@@ -85,13 +86,13 @@ export default function DashboardContainer({
     for (const e of filteredEnquiries) {
       if (!e.items) continue;
       for (const item of e.items) {
-        if (itemPassesFilters(item, filters)) {
+        if (itemPassesFilters(item, filters, generatedImages)) {
           items.push(item);
         }
       }
     }
     return items;
-  }, [filteredEnquiries, filters]);
+  }, [filteredEnquiries, filters, generatedImages]);
 
   const totalValueGstSum = useMemo(() => {
     let sum = 0;
@@ -171,6 +172,25 @@ export default function DashboardContainer({
     return `${totalVaPercent.toFixed(2)}%`;
   }, [totalCostSum, totalVaPercent]);
 
+  const totalQuantity = useMemo(() => {
+    let sum = 0;
+    for (const item of analyticsItems) {
+      const rawQty = (item as any).quantity;
+      const qty =
+        typeof rawQty === "number"
+          ? rawQty
+          : parseFloat(String(rawQty).replace(/,/g, "").trim());
+      if (!isNaN(qty) && qty > 0) sum += qty;
+    }
+    return sum;
+  }, [analyticsItems]);
+
+  const formattedTotalQuantity = useMemo(() => {
+    return new Intl.NumberFormat("en-IN", {
+      maximumFractionDigits: 2,
+    }).format(totalQuantity);
+  }, [totalQuantity]);
+
   useEffect(() => {
     const allItems = enquiries.flatMap((e) => e.items as EnquiryItemData[]);
     dispatch(hydrateFromServer({ enquiries, items: allItems }));
@@ -217,6 +237,7 @@ export default function DashboardContainer({
             formattedExclSum={formattedExclSum}
             formattedTotalCost={formattedTotalCost}
             formattedTotalVa={formattedTotalVa}
+            formattedTotalQuantity={formattedTotalQuantity}
             filteredEnquiriesCount={filteredEnquiries.length}
             analyticsItemsCount={analyticsItems.length}
             hasActiveAnalyticsFilters={hasActiveAnalyticsFilters}

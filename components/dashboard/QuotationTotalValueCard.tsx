@@ -1,13 +1,14 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { IndianRupee, Percent } from "lucide-react";
+import { Hash, IndianRupee, Percent } from "lucide-react";
 
 interface QuotationTotalValueCardProps {
   formattedSum: string;
   formattedExclSum: string;
   formattedTotalCost: string;
   formattedTotalVa: string;
+  formattedTotalQuantity: string;
   filteredEnquiriesCount: number;
   analyticsItemsCount: number;
   hasActiveAnalyticsFilters: boolean;
@@ -20,6 +21,7 @@ export default function QuotationTotalValueCard({
   formattedExclSum,
   formattedTotalCost,
   formattedTotalVa,
+  formattedTotalQuantity,
   filteredEnquiriesCount,
   analyticsItemsCount,
   hasActiveAnalyticsFilters,
@@ -100,6 +102,21 @@ export default function QuotationTotalValueCard({
         <CardContent className="flex flex-row items-center gap-2 py-0.5">
           <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
             {formattedTotalVa}
+          </span>
+        </CardContent>
+      </Card>
+
+      {/* 5. Total Quantity */}
+      <Card size="sm" className={cardClassName}>
+        <CardHeader className="py-1 pb-0.5">
+          <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
+            <Hash className="h-3 w-3 text-teal-600" />
+            Total Quantity
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-row items-center gap-2 py-0.5">
+          <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
+            {formattedTotalQuantity}
           </span>
         </CardContent>
       </Card>

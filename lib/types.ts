@@ -152,12 +152,14 @@ export interface FiltersState {
   rmType: string[];
   stockAgainstContract: string;
   contractNo: string[];
+  image: string[];
 }
 
 export interface UiState {
   expandedRows: Record<string, boolean>;
   columnWidths: Record<number, number>;
   isAnalyticsSidebarCollapsed?: boolean;
+  generatedImages: Record<string, { url: string | null; driveFileId: string | null }>;
 }
 
 export interface PaginationState {

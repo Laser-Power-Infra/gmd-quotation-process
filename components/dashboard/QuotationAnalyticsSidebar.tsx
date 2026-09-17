@@ -42,6 +42,7 @@ export default function QuotationAnalyticsSidebar({
   const isCollapsed = useAppSelector((s) => s.ui.isAnalyticsSidebarCollapsed);
   const enquiries = useAppSelector(selectAllEnquiries);
   const filters = useAppSelector((s) => s.filters);
+  const generatedImages = useAppSelector((s) => s.ui.generatedImages);
   const searchParams = useSearchParams();
   const globalSearch = (searchParams.get("search") || "").trim();
 
@@ -71,9 +72,9 @@ export default function QuotationAnalyticsSidebar({
   const partyCounts = useMemo(() => {
     const filtersWithoutParty = { ...filters, partyNames: [] };
     const filteredByOthers = enquiries.filter((e) => {
-      if (!enquiryPassesFilters(e, filtersWithoutParty, globalSearch)) return false;
+      if (!enquiryPassesFilters(e, filtersWithoutParty, globalSearch, generatedImages)) return false;
       if (!e.items || e.items.length === 0) return true;
-      return e.items.some((item) => itemPassesFilters(item, filtersWithoutParty));
+      return e.items.some((item) => itemPassesFilters(item, filtersWithoutParty, generatedImages));
     });
 
     const counts: Record<string, number> = {};
@@ -83,15 +84,15 @@ export default function QuotationAnalyticsSidebar({
       }
     }
     return counts;
-  }, [enquiries, filters, globalSearch]);
+  }, [enquiries, filters, globalSearch, generatedImages]);
 
   // Compute state counts under all active filters except state
   const stateCounts = useMemo(() => {
     const filtersWithoutState = { ...filters, state: [] };
     const filteredByOthers = enquiries.filter((e) => {
-      if (!enquiryPassesFilters(e, filtersWithoutState, globalSearch)) return false;
+      if (!enquiryPassesFilters(e, filtersWithoutState, globalSearch, generatedImages)) return false;
       if (!e.items || e.items.length === 0) return true;
-      return e.items.some((item) => itemPassesFilters(item, filtersWithoutState));
+      return e.items.some((item) => itemPassesFilters(item, filtersWithoutState, generatedImages));
     });
 
     const counts: Record<string, number> = {};
@@ -101,7 +102,7 @@ export default function QuotationAnalyticsSidebar({
       }
     }
     return counts;
-  }, [enquiries, filters, globalSearch]);
+  }, [enquiries, filters, globalSearch, generatedImages]);
 
   // Cascaded options: for each field, exclude its own filter when computing availability
   const cascaded = useMemo(() => {
@@ -110,9 +111,9 @@ export default function QuotationAnalyticsSidebar({
       const customFilters = { ...filters, [fieldName]: [] };
 
       const filtered = enquiries.filter((e) => {
-        if (!enquiryPassesFilters(e, customFilters, globalSearch)) return false;
+        if (!enquiryPassesFilters(e, customFilters, globalSearch, generatedImages)) return false;
         if (!e.items || e.items.length === 0) return true;
-        return e.items.some((item) => itemPassesFilters(item, customFilters));
+        return e.items.some((item) => itemPassesFilters(item, customFilters, generatedImages));
       });
 
       const set = new Set<string>();
@@ -133,7 +134,7 @@ export default function QuotationAnalyticsSidebar({
       enquiryTypes: getCascadedFor("enquiryType"),
       states: getCascadedFor("state"),
     };
-  }, [enquiries, filters, globalSearch]);
+  }, [enquiries, filters, globalSearch, generatedImages]);
 
   const visibleStateOptions = useMemo(() => {
     if (!stateSearchQuery.trim()) return allOptions.states;

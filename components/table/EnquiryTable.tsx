@@ -12,7 +12,7 @@ import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { matchesGlobalSearch } from "@/lib/filterUtils";
 import { setPage, setPageSize, resetPage } from "@/lib/paginationSlice";
-import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows, DEFAULT_COLUMN_WIDTHS } from "@/lib/uiSlice";
+import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows, DEFAULT_COLUMN_WIDTHS, setGeneratedImages } from "@/lib/uiSlice";
 import type { DropdownOptions, EnquiryData, EnquiryItemData, FiltersState } from "@/lib/types";
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
@@ -344,10 +344,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [addingContractFor, setAddingContractFor] = useState<string | null>(null);
 
   // Image lookup: GeneratedImage rows keyed by imageKey (itemType__operationType__rmType).
-  // Fetched once from the same endpoint the Upload Image dashboard uses.
-  const [imageMap, setImageMap] = useState<Record<string, { url: string | null; driveFileId: string | null }>>({});
+  // Fetched once from the same endpoint the Upload Image dashboard uses; stored in Redux so cards can react.
+  const imageMap = useAppSelector((s) => s.ui.generatedImages);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/generated-images", { cache: "no-store" })
@@ -356,20 +357,24 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         if (cancelled) return;
         const map: Record<string, { url: string | null; driveFileId: string | null }> = {};
         for (const it of json.items ?? []) {
-          map[it.imageKey] = { url: it.url ?? null, driveFileId: it.driveFileId ?? null };
+          if (it.url || it.driveFileId) {
+            map[it.imageKey] = { url: it.url ?? null, driveFileId: it.driveFileId ?? null };
+          }
         }
-        setImageMap(map);
+        dispatch(setGeneratedImages(map));
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [dispatch]);
 
   const getItemImage = useCallback(
     (item: EnquiryItemData) => {
       if (!item.itemType || !item.operationType || !item.rmType) return null;
-      return imageMap[makeImageKey(item.itemType, item.operationType, item.rmType)] ?? null;
+      const img = imageMap[makeImageKey(item.itemType, item.operationType, item.rmType)];
+      if (!img || (!img.url && !img.driveFileId)) return null;
+      return img;
     },
     [imageMap]
   );
@@ -921,9 +926,16 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           return false;
         }
       }
+      if ((filters as any).image && (filters as any).image.length > 0) {
+        const hasImg = !!getItemImage(item);
+        const wantPresent = (filters as any).image.includes("Present");
+        const wantBlank = (filters as any).image.includes(BLANK);
+        if (wantPresent && !wantBlank && !hasImg) return false;
+        if (wantBlank && !wantPresent && hasImg) return false;
+      }
       return true;
     });
-  }, [filters]);
+  }, [filters, getItemImage]);
 
   const toggleExpand = (id: string, currentExpanded: boolean) => {
     dispatch(setRowExpanded({ id, expanded: !currentExpanded }));
@@ -1478,6 +1490,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           return false;
         }
       }
+      if ((filters as any).image && (filters as any).image.length > 0) {
+        const hasImg = !!getItemImage(item);
+        const wantPresent = (filters as any).image.includes("Present");
+        const wantBlank = (filters as any).image.includes(BLANK);
+        if (wantPresent && !wantBlank && !hasImg) return false;
+        if (wantBlank && !wantPresent && hasImg) return false;
+      }
       return true;
     });
 
@@ -1493,7 +1512,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
 
     return true;
-  }), [enquiries, filters, filterProjectReference, globalSearch]);
+  }), [enquiries, filters, filterProjectReference, globalSearch, getItemImage]);
 
   const getSortValue = useCallback((enquiry: EnquiryData, field: string): string | number | Date | null | undefined => {
     if (field === "contractNo") {
@@ -1511,6 +1530,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     if (field === "attachment") {
       return enquiry.attachments ? enquiry.attachments.length : 0;
     }
+
+    if (field === "image") {
+      const items = getFilteredItems(enquiry);
+      if (items.length === 0) return 0;
+      const imageCount = items.filter((it) => !!getItemImage(it)).length;
+      return imageCount / items.length;
+    }
     
     const firstItem = enquiry.items && enquiry.items[0];
     if (!firstItem) return null;
@@ -1521,7 +1547,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
 
     return (firstItem as unknown as Record<string, unknown>)[field] as string | number | Date | null | undefined;
-  }, []);
+  }, [getItemImage, getFilteredItems]);
 
   const sortedEnquiries = useMemo(() => [...filteredEnquiries].sort((a, b) => {
     if (!sortField) return 0;
@@ -3044,6 +3070,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>View Image</span>
+                {renderSortArrow("image")}
+              </div>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Image"
+                  allLabel="All"
+                  options={["Present"]}
+                  cascadedOptions={["Present"]}
+                  selected={(filters as any).image ?? []}
+                  onChange={(v) => dispatch(setFilter({ field: "image" as any, value: v }))}
+                  includeBlank
+                />
               </div>
               <div
                 onMouseDown={(e) => handleMouseDown(33, e)}
@@ -3509,7 +3547,14 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             paginatedEnquiries.map((enquiry) => {
               const { company, branch } = parseParty(enquiry.partyName);
               const initials = getInitials(enquiry.partyName);
-              const displayItems = getFilteredItems(enquiry);
+              let displayItems = getFilteredItems(enquiry);
+              if (displayItems.length > 1 && sortField === "image") {
+                displayItems = [...displayItems].sort((a, b) => {
+                  const aVal = getItemImage(a) ? 1 : 0;
+                  const bVal = getItemImage(b) ? 1 : 0;
+                  return sortDirection === "asc" ? aVal - bVal : bVal - aVal;
+                });
+              }
               const hasMultiple = displayItems.length > 1;
               const isExpanded = expandedRows[enquiry.id] ?? hasActiveFilters;
               const firstItem = displayItems[0];
@@ -3671,19 +3716,58 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       )}
                     </td>
 
-                    {/* 3. Contract Review — available contracts multi-select (persists to selectedContractNo) */}
+                    {/* 3. Contract Review — available contracts multi-select (persists to selectedContractNo) + manual Add */}
                     <td className="py-1 px-1 border-r border-b border-border last:border-r-0 align-top">
                       {enquiry.contractNo && enquiry.contractNo.length > 0 ? (
-                        <MultiSelectFilter
-                          label="Contract"
-                          allLabel={`All contracts (${enquiry.contractNo.length})`}
-                          options={enquiry.contractNo}
-                          cascadedOptions={enquiry.contractNo}
-                          selected={(enquiry as any).selectedContractNo ?? []}
-                          onChange={(values) => handleSelectedContractNoChange(enquiry.id, values)}
-                          searchPlaceholder="Search contracts..."
-                          className="text-[10px]"
-                        />
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-1">
+                            <div className="flex-1 min-w-0">
+                              <MultiSelectFilter
+                                label="Contract"
+                                allLabel={`All contracts (${enquiry.contractNo.length})`}
+                                options={enquiry.contractNo}
+                                cascadedOptions={enquiry.contractNo}
+                                selected={(enquiry as any).selectedContractNo ?? []}
+                                onChange={(values) => handleSelectedContractNoChange(enquiry.id, values)}
+                                searchPlaceholder="Search contracts..."
+                                className="text-[10px]"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setAddingContractFor(enquiry.id)}
+                              title="Manually add contract number"
+                              className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-1 text-[10px] font-semibold rounded border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer"
+                            >
+                              <Plus className="h-3 w-3" /> Add
+                            </button>
+                          </div>
+                          {addingContractFor === enquiry.id && (
+                            <input
+                              autoFocus
+                              type="text"
+                              placeholder="Add contract numbers (comma separated)"
+                              onBlur={(e) => {
+                                const raw = e.target.value.trim();
+                                if (raw) {
+                                  const arr = raw.split(",").map((s) => s.trim()).filter(Boolean);
+                                  if (arr.length > 0) {
+                                    const current = ((enquiry as any).selectedContractNo ?? []) as string[];
+                                    const merged = [...current];
+                                    for (const v of arr) if (!merged.includes(v)) merged.push(v);
+                                    if (merged.length !== current.length) handleSelectedContractNoChange(enquiry.id, merged);
+                                  }
+                                }
+                                setAddingContractFor(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                if (e.key === "Escape") setAddingContractFor(null);
+                              }}
+                              className="w-full bg-background border border-blue-200 text-[10px] text-foreground outline-none p-1.5 rounded focus:ring-1 focus:ring-blue-500 placeholder:text-muted-foreground"
+                            />
+                          )}
+                        </div>
                       ) : (
                         <input
                           key={enquiry.id + "-selectedContractNo-" + ((enquiry as any).selectedContractNo ?? []).join(",")}
