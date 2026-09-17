@@ -11,6 +11,7 @@ import { lookupAndSetItemCode, recomputeItemCodeForValues, fetchBomIdSet } from 
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows } from "@/lib/gmdBomCostLookup";
 import { update2to1CostForItems, buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
 import { getDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail, getNoUseBomIdSet, normalizeActuatorPart } from "@/lib/verifyBomLookup";
+import { splitCsvLinks } from "@/lib/gmd_lib/contract-order-links";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, getRmTypeMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 import { makeImageKey } from "@/lib/imageKey";
@@ -2883,6 +2884,88 @@ export async function backfillContractReviewNoUseBatchAction(ids: string[]) {
   }
 }
 
+export async function backfillContractReviewOrderListBatchAction(ids: string[]) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+    const items = await prisma.contractReview.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, itemCode: true, orderList: true },
+    });
+    const normalize = (v: string) => v.trim().replace(/\s+/g, " ").toUpperCase();
+    const codes = [
+      ...new Set(
+        items
+          .map((i) => i.itemCode)
+          .filter((c): c is string => !!c && c.trim() !== "")
+          .map(normalize),
+      ),
+    ];
+    let supplyMap = new Map<string, string[]>();
+    if (codes.length > 0) {
+      const supplyRows = await prisma.supplyHistoryItem.findMany({
+        where: { erpItemCode: { in: codes } },
+        select: { erpItemCode: true, orderList: true },
+      });
+      for (const row of supplyRows) {
+        if (!row.erpItemCode) continue;
+        const key = normalize(row.erpItemCode);
+        const links = splitCsvLinks(row.orderList);
+        if (links.length === 0) continue;
+        const set = new Set(supplyMap.get(key) ?? []);
+        for (const l of links) set.add(l);
+        supplyMap.set(key, [...set]);
+      }
+    }
+    const updates = items
+      .map((item) => {
+        const key = normalize(item.itemCode);
+        const incoming = supplyMap.get(key) ?? [];
+        if (incoming.length === 0) return null;
+        const merged = [...new Set([...(item.orderList ?? []), ...incoming])];
+        if (merged.length <= (item.orderList?.length ?? 0)) return null;
+        return {
+          id: item.id,
+          promise: prisma.contractReview.update({
+            where: { id: item.id },
+            data: { orderList: merged },
+          }),
+        };
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null);
+    if (updates.length > 0) {
+      const chunkSize = 200;
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize);
+        const results = await Promise.allSettled(chunk.map((u) => u.promise));
+        results.forEach((r, idx) => {
+          if (r.status === "rejected") {
+            console.error(
+              `[backfill ORDER LIST] update failed id=${chunk[idx].id} err=${(r.reason as Error)?.message}`,
+            );
+          }
+        });
+      }
+    }
+    return {
+      success: true,
+      data: items.map((item) => {
+        const key = normalize(item.itemCode);
+        const incoming = supplyMap.get(key) ?? [];
+        const merged = [...new Set([...(item.orderList ?? []), ...incoming])];
+        return { id: item.id, orderList: merged };
+      }),
+    };
+  } catch (error: any) {
+    console.error("Error backfilling ContractReview ORDER LIST:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to backfill ORDER LIST.",
+    };
+  }
+}
+
 export async function updateContractReviewFieldAction(
   id: string,
   field: string,
@@ -2890,6 +2973,25 @@ export async function updateContractReviewFieldAction(
 ) {
   "use server";
   try {
+    if (field === "dateOfContract") {
+      const existing = await prisma.contractReview.findUnique({
+        where: { id },
+        select: { dateOfContract: true },
+      });
+      if (!existing) {
+        return { success: false, error: "Contract review row not found." };
+      }
+      const current = String(existing.dateOfContract ?? "").trim();
+      if (current !== "") {
+        return {
+          success: false,
+          error: "DATE OF CONTRACT can only be set when blank and cannot be changed or cleared.",
+        };
+      }
+      if (!value || String(value).trim() === "") {
+        return { success: false, error: "DATE OF CONTRACT cannot be empty." };
+      }
+    }
     await prisma.contractReview.update({
       where: { id },
       data: { [field]: value },
