@@ -18,10 +18,14 @@ interface QuotationAnalyticsSidebarProps {
   selectedUtilities: string[];
   selectedEnquiryTypes: string[];
   selectedStates: string[];
+  selectedItemTypes: string[];
+  selectedSizes: string[];
   onPartyNamesChange: (v: string[]) => void;
   onUtilitiesChange: (v: string[]) => void;
   onEnquiryTypesChange: (v: string[]) => void;
   onStatesChange: (v: string[]) => void;
+  onItemTypesChange: (v: string[]) => void;
+  onSizesChange: (v: string[]) => void;
   onClearAll: () => void;
   hasActiveAnalyticsFilters: boolean;
 }
@@ -31,10 +35,14 @@ export default function QuotationAnalyticsSidebar({
   selectedUtilities,
   selectedEnquiryTypes,
   selectedStates,
+  selectedItemTypes,
+  selectedSizes,
   onPartyNamesChange,
   onUtilitiesChange,
   onEnquiryTypesChange,
   onStatesChange,
+  onItemTypesChange,
+  onSizesChange,
   onClearAll,
   hasActiveAnalyticsFilters,
 }: QuotationAnalyticsSidebarProps) {
@@ -54,17 +62,25 @@ export default function QuotationAnalyticsSidebar({
     const utilitySet = new Set<string>();
     const typeSet = new Set<string>();
     const stateSet = new Set<string>();
+    const itemTypeSet = new Set<string>();
+    const sizeSet = new Set<string>();
     for (const e of enquiries) {
       if (e.partyName) partySet.add(e.partyName);
       if (e.utility) utilitySet.add(e.utility);
       if (e.enquiryType) typeSet.add(e.enquiryType);
       if (e.state) stateSet.add(e.state);
+      for (const item of e.items ?? []) {
+        if (item.itemType) itemTypeSet.add(item.itemType);
+        if (item.size) sizeSet.add(item.size);
+      }
     }
     return {
       parties: sortStrings([...partySet]),
       utilities: sortStrings([...utilitySet]),
       enquiryTypes: sortStrings([...typeSet]),
       states: sortStrings([...stateSet]),
+      itemTypes: sortStrings([...itemTypeSet]),
+      sizes: sortStrings([...sizeSet]),
     };
   }, [enquiries]);
 
@@ -104,20 +120,72 @@ export default function QuotationAnalyticsSidebar({
     return counts;
   }, [enquiries, filters, globalSearch, generatedImages]);
 
+  // Compute item type counts (enquiry counts) under all active filters except itemType
+  const itemTypeCounts = useMemo(() => {
+    const filtersWithoutItemType = { ...filters, itemType: [] };
+    const filteredByOthers = enquiries.filter((e) => {
+      if (!enquiryPassesFilters(e, filtersWithoutItemType as any, globalSearch, generatedImages)) return false;
+      if (!e.items || e.items.length === 0) return true;
+      return e.items.some((item) => itemPassesFilters(item, filtersWithoutItemType as any, generatedImages));
+    });
+    const counts: Record<string, number> = {};
+    for (const e of filteredByOthers) {
+      const seen = new Set<string>();
+      for (const item of e.items ?? []) {
+        if (item.itemType && !seen.has(item.itemType)) {
+          seen.add(item.itemType);
+          counts[item.itemType] = (counts[item.itemType] || 0) + 1;
+        }
+      }
+    }
+    return counts;
+  }, [enquiries, filters, globalSearch, generatedImages]);
+
+  // Compute size counts (enquiry counts) under all active filters except size
+  const sizeCounts = useMemo(() => {
+    const filtersWithoutSize = { ...filters, size: [] };
+    const filteredByOthers = enquiries.filter((e) => {
+      if (!enquiryPassesFilters(e, filtersWithoutSize as any, globalSearch, generatedImages)) return false;
+      if (!e.items || e.items.length === 0) return true;
+      return e.items.some((item) => itemPassesFilters(item, filtersWithoutSize as any, generatedImages));
+    });
+    const counts: Record<string, number> = {};
+    for (const e of filteredByOthers) {
+      const seen = new Set<string>();
+      for (const item of e.items ?? []) {
+        if (item.size && !seen.has(item.size)) {
+          seen.add(item.size);
+          counts[item.size] = (counts[item.size] || 0) + 1;
+        }
+      }
+    }
+    return counts;
+  }, [enquiries, filters, globalSearch, generatedImages]);
+
   // Cascaded options: for each field, exclude its own filter when computing availability
   const cascaded = useMemo(() => {
-    const getCascadedFor = (exclude: "party" | "utility" | "enquiryType" | "state"): string[] => {
+    const getCascadedFor = (
+      exclude: "party" | "utility" | "enquiryType" | "state" | "itemType" | "size"
+    ): string[] => {
       const fieldName = exclude === "party" ? "partyNames" : exclude;
       const customFilters = { ...filters, [fieldName]: [] };
 
       const filtered = enquiries.filter((e) => {
-        if (!enquiryPassesFilters(e, customFilters, globalSearch, generatedImages)) return false;
+        if (!enquiryPassesFilters(e, customFilters as any, globalSearch, generatedImages)) return false;
         if (!e.items || e.items.length === 0) return true;
-        return e.items.some((item) => itemPassesFilters(item, customFilters, generatedImages));
+        return e.items.some((item) => itemPassesFilters(item, customFilters as any, generatedImages));
       });
 
       const set = new Set<string>();
       for (const e of filtered) {
+        if (exclude === "itemType") {
+          for (const item of e.items ?? []) if (item.itemType) set.add(item.itemType);
+          continue;
+        }
+        if (exclude === "size") {
+          for (const item of e.items ?? []) if (item.size) set.add(item.size);
+          continue;
+        }
         let val: string | null | undefined;
         if (exclude === "party") val = e.partyName;
         else if (exclude === "utility") val = (e as any).utility;
@@ -133,6 +201,8 @@ export default function QuotationAnalyticsSidebar({
       utilities: getCascadedFor("utility"),
       enquiryTypes: getCascadedFor("enquiryType"),
       states: getCascadedFor("state"),
+      itemTypes: getCascadedFor("itemType"),
+      sizes: getCascadedFor("size"),
     };
   }, [enquiries, filters, globalSearch, generatedImages]);
 
@@ -228,6 +298,50 @@ export default function QuotationAnalyticsSidebar({
             selected={selectedEnquiryTypes}
             onChange={onEnquiryTypesChange}
             searchPlaceholder="Search enquiry type..."
+            panelClassName="w-72 z-80"
+          />
+        </CardContent>
+      </Card>
+
+      {/* Item Type */}
+      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-[12px] font-semibold">Item Type</CardTitle>
+          <CardDescription className="text-[11px]">Filter by item type</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <MultiSelectFilter
+            label="Item Type"
+            allLabel="All Item Types"
+            options={allOptions.itemTypes}
+            cascadedOptions={cascaded.itemTypes}
+            selected={selectedItemTypes}
+            onChange={onItemTypesChange}
+            counts={itemTypeCounts}
+            includeBlank
+            searchPlaceholder="Search item type..."
+            panelClassName="w-72 z-80"
+          />
+        </CardContent>
+      </Card>
+
+      {/* Size */}
+      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-[12px] font-semibold">Size</CardTitle>
+          <CardDescription className="text-[11px]">Filter by size</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <MultiSelectFilter
+            label="Size"
+            allLabel="All Sizes"
+            options={allOptions.sizes}
+            cascadedOptions={cascaded.sizes}
+            selected={selectedSizes}
+            onChange={onSizesChange}
+            counts={sizeCounts}
+            includeBlank
+            searchPlaceholder="Search size..."
             panelClassName="w-72 z-80"
           />
         </CardContent>

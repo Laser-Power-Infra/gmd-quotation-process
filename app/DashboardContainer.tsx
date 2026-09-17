@@ -49,23 +49,31 @@ export default function DashboardContainer({
   const selectedUtilities = filters.utility;
   const selectedEnquiryTypes = filters.enquiryType;
   const selectedStates = filters.state;
+  const selectedItemTypes = filters.itemType;
+  const selectedSizes = filters.size;
 
   const setSelectedPartyNames = (v: string[]) => dispatch(setFilter({ field: "partyNames", value: v }));
   const setSelectedUtilities = (v: string[]) => dispatch(setFilter({ field: "utility", value: v }));
   const setSelectedEnquiryTypes = (v: string[]) => dispatch(setFilter({ field: "enquiryType", value: v }));
   const setSelectedStates = (v: string[]) => dispatch(setFilter({ field: "state", value: v }));
+  const setSelectedItemTypes = (v: string[]) => dispatch(setFilter({ field: "itemType", value: v }));
+  const setSelectedSizes = (v: string[]) => dispatch(setFilter({ field: "size", value: v }));
 
   const hasActiveAnalyticsFilters =
     selectedPartyNames.length > 0 ||
     selectedUtilities.length > 0 ||
     selectedEnquiryTypes.length > 0 ||
-    selectedStates.length > 0;
+    selectedStates.length > 0 ||
+    selectedItemTypes.length > 0 ||
+    selectedSizes.length > 0;
 
   const clearAllAnalytics = () => {
     setSelectedPartyNames([]);
     setSelectedUtilities([]);
     setSelectedEnquiryTypes([]);
     setSelectedStates([]);
+    setSelectedItemTypes([]);
+    setSelectedSizes([]);
   };
 
   // Use store data when hydrated, fallback to server prop for initial render
@@ -223,10 +231,14 @@ export default function DashboardContainer({
         selectedUtilities={selectedUtilities}
         selectedEnquiryTypes={selectedEnquiryTypes}
         selectedStates={selectedStates}
+        selectedItemTypes={selectedItemTypes}
+        selectedSizes={selectedSizes}
         onPartyNamesChange={setSelectedPartyNames}
         onUtilitiesChange={setSelectedUtilities}
         onEnquiryTypesChange={setSelectedEnquiryTypes}
         onStatesChange={setSelectedStates}
+        onItemTypesChange={setSelectedItemTypes}
+        onSizesChange={setSelectedSizes}
         onClearAll={clearAllAnalytics}
         hasActiveAnalyticsFilters={hasActiveAnalyticsFilters}
       />
@@ -245,7 +257,9 @@ export default function DashboardContainer({
               selectedPartyNames.length +
               selectedUtilities.length +
               selectedEnquiryTypes.length +
-              selectedStates.length
+              selectedStates.length +
+              selectedItemTypes.length +
+              selectedSizes.length
             }
           />
         </div>

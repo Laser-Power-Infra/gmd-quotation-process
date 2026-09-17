@@ -139,8 +139,10 @@ export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, e
         }
       }
 
-      // Compute rowspan groups: consecutive rows sharing the same non-empty imageKey are merged.
-      // Each group: first row gets rowspan = group length for BOTH name and image; continuation rows get 0 (skipped in template).
+      // Compute rowspan groups:
+      // - Image: consecutive rows sharing the same non-empty imageKey are merged.
+      // - Name: within each image group, consecutive rows sharing the exact same non-empty partyItemName are merged.
+      //         Rows with different item names each receive nameRowspan = 1 so different names are never merged.
       const items: any[] = [];
       let idx = 0;
       while (idx < baseItems.length) {
@@ -154,23 +156,38 @@ export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, e
         }
         const groupLen = groupEnd - idx;
         const groupImageDataUrl = curHasParts ? (imageByKey.get(curKey) ?? null) : null;
-        for (let j = idx; j < groupEnd; j++) {
-          const b = baseItems[j];
-          const isFirst = j === idx;
-          items.push({
-            itemName: b.itemName,
-            partyItemName: b.partyItemName,
-            quantity: b.quantity,
-            quotationRate: b.quotationRate,
-            quotedRateGst: b.quotedRateGst,
-            totalValue: b.totalValue,
-            unit: b.unit,
-            deliverySchedule: b.deliverySchedule,
-            imageDataUrl: isFirst ? groupImageDataUrl : null,
-            nameRowspan: isFirst ? groupLen : 0,
-            imageRowspan: isFirst ? groupLen : 0,
-          });
+
+        let j = idx;
+        while (j < groupEnd) {
+          const curName = (baseItems[j].partyItemName || "").trim();
+          let nameEnd = j + 1;
+          if (curName) {
+            while (nameEnd < groupEnd && (baseItems[nameEnd].partyItemName || "").trim() === curName) {
+              nameEnd++;
+            }
+          }
+          const nameLen = nameEnd - j;
+          for (let k = j; k < nameEnd; k++) {
+            const b = baseItems[k];
+            const isFirstInImageGroup = k === idx;
+            const isFirstInNameGroup = k === j;
+            items.push({
+              itemName: b.itemName,
+              partyItemName: b.partyItemName,
+              quantity: b.quantity,
+              quotationRate: b.quotationRate,
+              quotedRateGst: b.quotedRateGst,
+              totalValue: b.totalValue,
+              unit: b.unit,
+              deliverySchedule: b.deliverySchedule,
+              imageDataUrl: isFirstInImageGroup ? groupImageDataUrl : null,
+              imageRowspan: isFirstInImageGroup ? groupLen : 0,
+              nameRowspan: isFirstInNameGroup ? nameLen : 0,
+            });
+          }
+          j = nameEnd;
         }
+
         idx = groupEnd;
       }
 

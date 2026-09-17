@@ -104,40 +104,87 @@ export default function UploadImageTable({
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [items]);
 
-  const filtered = useMemo(() => {
+  // Cascading helper: does a row pass all filters except the given column's own filter (search always applies)
+  const rowPassesExcept = (
+    r: UploadImageComboRow,
+    exclude: "itemType" | "operationType" | "rmType" | "status" | null
+  ): boolean => {
     const q = search.trim().toLowerCase();
-    return items.filter((r) => {
-      if (q) {
-        const hay = [r.itemType, r.operationType, r.rmType, r.status, r.imageKey, r.driveFileId].join(" ").toLowerCase();
-        if (!hay.includes(q)) return false;
+    if (q) {
+      const hay = [r.itemType, r.operationType, r.rmType, r.status, r.imageKey, r.driveFileId].join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (exclude !== "itemType" && itemTypeFilter.length > 0) {
+      const v = r.itemType?.trim() ?? "";
+      if (!itemTypeFilter.includes(v)) return false;
+    }
+    if (exclude !== "operationType" && operationTypeFilter.length > 0) {
+      const v = r.operationType?.trim() ?? "";
+      if (!operationTypeFilter.includes(v)) return false;
+    }
+    if (exclude !== "rmType" && rmTypeFilter.length > 0) {
+      const isBlank = !r.rmType?.trim();
+      const wantBlank = rmTypeFilter.includes(BLANK);
+      if (isBlank) {
+        if (!wantBlank) return false;
+      } else {
+        const vals = rmTypeFilter.filter((v) => v !== BLANK);
+        if (vals.length === 0) return false;
+        if (!vals.includes(r.rmType.trim())) return false;
       }
-      if (itemTypeFilter.length > 0) {
-        const v = r.itemType?.trim() ?? "";
-        if (!itemTypeFilter.includes(v)) return false;
-      }
-      if (operationTypeFilter.length > 0) {
-        const v = r.operationType?.trim() ?? "";
-        if (!operationTypeFilter.includes(v)) return false;
-      }
-      if (rmTypeFilter.length > 0) {
-        const isBlank = !r.rmType?.trim();
-        const wantBlank = rmTypeFilter.includes(BLANK);
-        if (isBlank) {
-          if (!wantBlank) return false;
+    }
+    if (exclude !== "status" && statusFilter.length > 0) {
+      const label = statusLabel(r);
+      if (!statusFilter.includes(label)) return false;
+    }
+    return true;
+  };
+
+  const filtered = useMemo(() => items.filter((r) => rowPassesExcept(r, null)), [items, search, itemTypeFilter, operationTypeFilter, rmTypeFilter, statusFilter]);
+
+  const cascaded = useMemo(() => {
+    const collect = (field: "itemType" | "operationType" | "rmType" | "status"): string[] => {
+      const set = new Set<string>();
+      for (const r of items) {
+        if (!rowPassesExcept(r, field)) continue;
+        if (field === "itemType") {
+          const v = r.itemType?.trim();
+          if (v) set.add(v);
+        } else if (field === "operationType") {
+          const v = r.operationType?.trim();
+          if (v) set.add(v);
+        } else if (field === "rmType") {
+          const v = r.rmType?.trim();
+          if (v) set.add(v);
         } else {
-          const vals = rmTypeFilter.filter((v) => v !== BLANK);
-          // if filter is only [BLANK], non-blank rows are out; if filter has values, match them
-          if (vals.length === 0) return false;
-          if (!vals.includes(r.rmType.trim())) return false;
+          set.add(statusLabel(r));
         }
       }
-      if (statusFilter.length > 0) {
-        const label = statusLabel(r);
-        if (!statusFilter.includes(label)) return false;
-      }
-      return true;
-    });
+      return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    };
+    return {
+      itemTypes: collect("itemType"),
+      operationTypes: collect("operationType"),
+      rmTypes: collect("rmType"),
+      statuses: collect("status"),
+    };
   }, [items, search, itemTypeFilter, operationTypeFilter, rmTypeFilter, statusFilter]);
+
+  const hasActiveFilters =
+    search.trim() !== "" ||
+    itemTypeFilter.length > 0 ||
+    operationTypeFilter.length > 0 ||
+    rmTypeFilter.length > 0 ||
+    statusFilter.length > 0;
+
+  const handleResetFilters = () => {
+    setSearch("");
+    setItemTypeFilter([]);
+    setOperationTypeFilter([]);
+    setRmTypeFilter([]);
+    setStatusFilter([]);
+    setPage(1);
+  };
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -241,6 +288,16 @@ export default function UploadImageTable({
           Showing {filtered.length} of {items.length} records · {items.filter((i) => i.hasImage).length} with image · {items.filter((i) => !i.hasImage).length} pending
         </span>
         <div className="flex items-center gap-2">
+          {hasActiveFilters && (
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={handleResetFilters}
+              className="h-7 gap-1.5 px-3 text-[11px] font-medium border-[#e1e6eb] bg-white hover:bg-[#f8f9fa] text-[#0a2540]/70 hover:text-[#0a2540]"
+            >
+              <X size={12} /> Reset Filters
+            </Button>
+          )}
           <div className="relative">
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#0a2540]/40" />
             <input
@@ -285,8 +342,8 @@ export default function UploadImageTable({
                   <MultiSelectFilter
                     label="Item Type"
                     allLabel="All Item Types"
-                    options={itemTypeOptions}
-                    cascadedOptions={itemTypeOptions}
+                    options={cascaded.itemTypes}
+                    cascadedOptions={cascaded.itemTypes}
                     selected={itemTypeFilter}
                     onChange={(v) => {
                       setItemTypeFilter(v);
@@ -302,8 +359,8 @@ export default function UploadImageTable({
                   <MultiSelectFilter
                     label="Operation Type"
                     allLabel="All Operation Types"
-                    options={operationTypeOptions}
-                    cascadedOptions={operationTypeOptions}
+                    options={cascaded.operationTypes}
+                    cascadedOptions={cascaded.operationTypes}
                     selected={operationTypeFilter}
                     onChange={(v) => {
                       setOperationTypeFilter(v);
@@ -319,8 +376,8 @@ export default function UploadImageTable({
                   <MultiSelectFilter
                     label="RM Type"
                     allLabel="All RM Types"
-                    options={rmTypeOptions}
-                    cascadedOptions={rmTypeOptions}
+                    options={cascaded.rmTypes}
+                    cascadedOptions={cascaded.rmTypes}
                     selected={rmTypeFilter}
                     onChange={(v) => {
                       setRmTypeFilter(v);
@@ -337,8 +394,8 @@ export default function UploadImageTable({
                   <MultiSelectFilter
                     label="Status"
                     allLabel="All Statuses"
-                    options={statusOptions}
-                    cascadedOptions={statusOptions}
+                    options={cascaded.statuses}
+                    cascadedOptions={cascaded.statuses}
                     selected={statusFilter}
                     onChange={(v) => {
                       setStatusFilter(v);
