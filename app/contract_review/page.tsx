@@ -107,6 +107,8 @@ const STATUS_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATUS");
 const ORDER_LIST_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER LIST");
 const ITEM_NAME_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ITEM_NAME");
 const VA_PCT_FROM_COST_IDX = CONTRACT_REVIEW_HEADERS.indexOf("VA % FROM COST");
+const COST_FROM_QUOTATION_IDX =
+  CONTRACT_REVIEW_HEADERS.indexOf("COST FROM QUOTATION");
 const CONTRACT_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("CONTRACT NO");
 const STATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATE");
 const UTILITY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("UTILITY");
@@ -118,7 +120,10 @@ type RateTileKey =
   | "rateXMcQty"
   | "rateXBalDiQty"
   | "rateXBalMcQty"
-  | "balBillAgContSum";
+  | "balBillAgContSum"
+  | "totalCostExcGst"
+  | "totalCostIncGst"
+  | "totalVaPct";
 
 function isNumIdx(row: unknown[], idx: number): boolean {
   return !isNaN(parseNum(row[idx]));
@@ -147,6 +152,11 @@ function matchesRateTile(row: unknown[], key: RateTileKey | null): boolean {
       );
     case "balBillAgContSum":
       return isNumIdx(row, BAL_BILL_AG_CONT_IDX);
+    case "totalCostExcGst":
+    case "totalCostIncGst":
+      return isNumIdx(row, COST_FROM_QUOTATION_IDX);
+    case "totalVaPct":
+      return isNumIdx(row, VA_PCT_FROM_COST_IDX);
     default:
       return true;
   }
@@ -1274,6 +1284,117 @@ export default function ContractReviewPage() {
     clearanceIdx,
   ]);
 
+  const totalCostExcGst = useMemo(() => {
+    let sum = 0;
+    let count = 0;
+    for (const row of sidebarBaseRows) {
+      if (
+        !matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          clearanceFilter,
+          tileItem,
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          undefined,
+        )
+      )
+        continue;
+      const c = parseNum(row[COST_FROM_QUOTATION_IDX]);
+      if (isNaN(c)) continue;
+      sum += c;
+      count++;
+    }
+    return { sum, count };
+  }, [
+    sidebarBaseRows,
+    balBillFilter,
+    statusFilter,
+    clearanceFilter,
+    tileItem,
+    tileSize,
+    tilePn,
+    balBillIdx,
+    clearanceIdx,
+  ]);
+
+  const totalCostIncGst = useMemo(() => {
+    let sum = 0;
+    let count = 0;
+    for (const row of sidebarBaseRows) {
+      if (
+        !matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          clearanceFilter,
+          tileItem,
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          undefined,
+        )
+      )
+        continue;
+      const c = parseNum(row[COST_FROM_QUOTATION_IDX]);
+      if (isNaN(c)) continue;
+      sum += c * 1.0118;
+      count++;
+    }
+    return { sum, count };
+  }, [
+    sidebarBaseRows,
+    balBillFilter,
+    statusFilter,
+    clearanceFilter,
+    tileItem,
+    tileSize,
+    tilePn,
+    balBillIdx,
+    clearanceIdx,
+  ]);
+
+  const totalVaPct = useMemo(() => {
+    let sum = 0;
+    let count = 0;
+    for (const row of sidebarBaseRows) {
+      if (
+        !matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          clearanceFilter,
+          tileItem,
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          undefined,
+        )
+      )
+        continue;
+      const v = parseNum(row[VA_PCT_FROM_COST_IDX]);
+      if (isNaN(v)) continue;
+      sum += v;
+      count++;
+    }
+    return { sum, count };
+  }, [
+    sidebarBaseRows,
+    balBillFilter,
+    statusFilter,
+    clearanceFilter,
+    tileItem,
+    tileSize,
+    tilePn,
+    balBillIdx,
+    clearanceIdx,
+  ]);
+
   const rateOrderQty = useMemo(
     () => rateTile(RATE_IDX, ORDER_QTY_IDX),
     [rateTile],
@@ -1979,6 +2100,66 @@ export default function ContractReviewPage() {
               {rateBalMspQty.count} rows of {tileRowsCount}
             </span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => handleRateTileClick("totalCostExcGst")}
+            className={`w-full text-left border rounded-lg p-3 transition-all cursor-pointer ${
+              activeRateTile === "totalCostExcGst"
+                ? "bg-white/10 border-[#38ef7d]"
+                : "bg-white/5 border-white/10 hover:border-white/25"
+            }`}
+          >
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+              TOTAL COST (EXC GST)
+            </span>
+            <span className="block text-lg font-bold text-white mt-1">
+              {fmt(totalCostExcGst.sum)}
+            </span>
+            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+              {totalCostExcGst.count} rows of {tileRowsCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleRateTileClick("totalCostIncGst")}
+            className={`w-full text-left border rounded-lg p-3 transition-all cursor-pointer ${
+              activeRateTile === "totalCostIncGst"
+                ? "bg-white/10 border-[#38ef7d]"
+                : "bg-white/5 border-white/10 hover:border-white/25"
+            }`}
+          >
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+              TOTAL COST (INC GST)
+            </span>
+            <span className="block text-lg font-bold text-white mt-1">
+              {fmt(totalCostIncGst.sum)}
+            </span>
+            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+              {totalCostIncGst.count} rows of {tileRowsCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleRateTileClick("totalVaPct")}
+            className={`w-full text-left border rounded-lg p-3 transition-all cursor-pointer ${
+              activeRateTile === "totalVaPct"
+                ? "bg-white/10 border-[#38ef7d]"
+                : "bg-white/5 border-white/10 hover:border-white/25"
+            }`}
+          >
+            <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+              TOTAL VA %
+            </span>
+            <span className="block text-lg font-bold text-white mt-1">
+              {fmt(totalVaPct.sum)}%
+            </span>
+            <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+              {totalVaPct.count} rows of {tileRowsCount}
+            </span>
+          </button>
         </aside>
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
           <GMDUpdateHeader
@@ -2104,6 +2285,7 @@ export default function ContractReviewPage() {
                 hiddenColumns={[
                   "VA %",
                   "CV",
+                  "COST FROM QUOTATION",
                   "FREE STOCK",
                   "FINAL REQ",
                   // "MC QTY",
