@@ -2,7 +2,9 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "module": "commonjs",
-    "moduleResolution": "node",
+    "moduleResolution": "node10",
     "baseUrl": ".."
-  }
+  },
+  "include": ["./**/*.ts", "./**/*.mjs"],
+  "exclude": ["../node_modules", "../.next"]
 }

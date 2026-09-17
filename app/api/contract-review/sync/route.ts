@@ -222,6 +222,17 @@ export async function POST() {
     const backfill = await computeContractReviewEnquiryBackfill(prisma);
     await applyContractReviewEnquiryBackfill(prisma, backfill.rows);
 
+    // Sync Enquiry.contractNo from ContractReview by party name so the
+    // Contract Review column in the quotation dashboard is fresh without
+    // requiring the manual `npm run contract:sync` script after every sheet sync.
+    let contractNoSynced = { updated: 0, matched: 0 };
+    try {
+      const { syncEnquiryContractNumbers } = await import("@/lib/syncEnquiryContractNumbers");
+      contractNoSynced = await syncEnquiryContractNumbers(undefined, prisma);
+    } catch (e) {
+      console.warn("[contract-review sync] contractNo sync failed:", e);
+    }
+
     const total = created + updated + unchanged;
     console.log(
       `[contract-review-sync] Summary: created=${created} updated=${updated} unchanged=${unchanged} total=${total} backfilled=${backfill.changed}`,
@@ -234,6 +245,8 @@ export async function POST() {
       unchanged,
       total,
       backfilled: backfill.changed,
+      contractNoSynced: contractNoSynced.updated,
+      contractNoMatched: contractNoSynced.matched,
       changedColumns,
       totalInContracts: contractsByKey.size,
       syncedAt: syncedAt.toISOString(),

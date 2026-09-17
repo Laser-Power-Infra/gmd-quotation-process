@@ -139,9 +139,10 @@ const ALL_DROPDOWN_FIELDS = [
   "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "others",
   "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "costRefCode", "cost", "contractReviewRate", "pdcostValidation", "availableStock", "rmType",
+  "contractNo",
 ] as const;
 
-const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm"]);
+const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm", "contractNo"]);
 
 // One header filter box. Owning its own Redux read and its own debounce keeps every
 // keystroke inside this leaf instead of re-rendering the whole table body.
@@ -639,11 +640,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             if (!enquiryPasses(enquiry, field)) return false;
             return enquiry.items.some((item) => itemPasses(item, field));
           })
-          .map((enquiry) => {
+          .flatMap((enquiry) => {
             const val = (enquiry as unknown as Record<string, unknown>)[field];
-            return val != null ? String(val) : "";
+            if (Array.isArray(val)) return val.map(String).filter((v) => v !== "" && v !== "undefined" && v !== "null");
+            return val != null ? [String(val)] : [];
           })
-          .filter((v) => v !== "")
+          .filter((v) => v !== "" && v !== "undefined" && v !== "null")
           .filter((v, i, arr) => arr.indexOf(v) === i)
           .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
         result[field] = available;
@@ -1008,6 +1010,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   };
 
+  const handleSelectedContractNoChange = async (enquiryId: string, values: string[]) => {
+    console.log(`[Client] updateEnquiryField enquiry=${enquiryId} field=selectedContractNo val="${values.join(",")}"`);
+    const toastId = toast.loading(`Saving selected contracts...`);
+    try {
+      await dispatch(updateEnquiryField({ enquiryId, field: "selectedContractNo", value: values })).unwrap();
+      toast.success(`Selected contracts saved.`, { id: toastId });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : err ? String(err) : `Failed to save.`, { id: toastId });
+    }
+  };
+
   const getItemNameMerge = (item: EnquiryItemData) => {
     const orderedFields = [
       item.itemType,
@@ -1257,6 +1270,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     if (!matchesMulti(filters.apm, (enquiry as any).apm)) {
       return false;
     }
+    if (!matchesMulti(filters.contractNo as unknown as string[], (enquiry as any).contractNo)) {
+      return false;
+    }
 
     // 11. Project Reference (Text Search)
     if (
@@ -1480,9 +1496,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   }), [enquiries, filters, filterProjectReference, globalSearch]);
 
   const getSortValue = useCallback((enquiry: EnquiryData, field: string): string | number | Date | null | undefined => {
+    if (field === "contractNo") {
+      return (enquiry.contractNo || []).join(", ");
+    }
     const enquiryFields = [
       "enquiryDate", "docketNumber", "partyName", "enquiryType", "state", 
-      "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "apm"
+      "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "apm", "closureStatus", "projectReference"
     ];
     
     if (enquiryFields.includes(field)) {
@@ -2211,7 +2230,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             {/* 3. Contract Review (matched from ContractReview by party name) */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
-                <span>Contract Review</span>
+                <span>Contract Number</span>
+                {renderSortArrow("contractNo")}
+              </div>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Contract Number"
+                  allLabel="All Contracts"
+                  options={cascadedOptions.contractNo || []}
+                  cascadedOptions={cascadedOptions.contractNo || []}
+                  selected={(filters as any).contractNo || []}
+                  onChange={(v) => dispatch(setFilter({ field: "contractNo" as any, value: v }))}
+                  includeBlank
+                />
               </div>
               <div
                 onMouseDown={(e) => handleMouseDown(3, e)}
@@ -3640,17 +3671,40 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       )}
                     </td>
 
-                    {/* 3. Contract Review (matched from ContractReview by party name) */}
+                    {/* 3. Contract Review — available contracts multi-select (persists to selectedContractNo) */}
                     <td className="py-1 px-1 border-r border-b border-border last:border-r-0 align-top">
                       {enquiry.contractNo && enquiry.contractNo.length > 0 ? (
-                        <div
-                          className="max-h-12 overflow-y-auto cell-scrollable whitespace-normal break-words leading-normal p-1 text-[10px] font-medium text-foreground"
-                          title={enquiry.contractNo.join(", ")}
-                        >
-                          {enquiry.contractNo.join(", ")}
-                        </div>
+                        <MultiSelectFilter
+                          label="Contract"
+                          allLabel={`All contracts (${enquiry.contractNo.length})`}
+                          options={enquiry.contractNo}
+                          cascadedOptions={enquiry.contractNo}
+                          selected={(enquiry as any).selectedContractNo ?? []}
+                          onChange={(values) => handleSelectedContractNoChange(enquiry.id, values)}
+                          searchPlaceholder="Search contracts..."
+                          className="text-[10px]"
+                        />
                       ) : (
-                        <span className="block p-1 text-[10px] text-muted-foreground">-</span>
+                        <input
+                          key={enquiry.id + "-selectedContractNo-" + ((enquiry as any).selectedContractNo ?? []).join(",")}
+                          type="text"
+                          defaultValue={((enquiry as any).selectedContractNo ?? []).join(", ")}
+                          placeholder="Add contract numbers (comma separated)"
+                          onBlur={(e) => {
+                            const raw = e.target.value;
+                            const arr = raw
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean);
+                            const current = ((enquiry as any).selectedContractNo ?? []) as string[];
+                            const same = arr.length === current.length && arr.every((v, i) => v === current[i]);
+                            if (!same) handleSelectedContractNoChange(enquiry.id, arr);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                          className="w-full bg-transparent border-none text-[10px] text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium placeholder:text-muted-foreground"
+                        />
                       )}
                     </td>
 

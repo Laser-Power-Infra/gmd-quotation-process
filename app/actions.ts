@@ -181,6 +181,14 @@ export async function createNewEnquiryAction(formData: {
       await recalculateItem(item.id);
     }
 
+    // Backfill contractNo for the new docket by party name so the Contract Review column is populated without manual script
+    try {
+      const { syncSingleEnquiryContractNumbers } = await import("@/lib/syncEnquiryContractNumbers");
+      await syncSingleEnquiryContractNumbers(created.id, formData.partyName);
+    } catch (e) {
+      console.warn("[createNewEnquiryAction] contractNo sync skipped:", e);
+    }
+
     // Refetch the fully updated enquiry with calculated costs
     const finalEnquiry = await prisma.enquiry.findUnique({
       where: { id: created.id },
@@ -806,6 +814,16 @@ export async function updateEnquiryFieldAction(
       where: { id: enquiryId },
       data,
     });
+
+    // Keep contractNo in sync when party name changes.
+    if (field === "partyName" && typeof value === "string" && value.trim()) {
+      try {
+        const { syncSingleEnquiryContractNumbers } = await import("@/lib/syncEnquiryContractNumbers");
+        await syncSingleEnquiryContractNumbers(enquiryId, value);
+      } catch (e) {
+        console.warn("[updateEnquiryFieldAction] partyName contractNo sync skipped:", e);
+      }
+    }
 
     // Recalculate costs of all items if an enquiry field affecting cost changed.
     // Skip recalculation when the enquiry is frozen (apm === "Yes" && offerPdfGeneratedAt set)
