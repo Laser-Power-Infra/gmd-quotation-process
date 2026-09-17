@@ -1035,7 +1035,6 @@ castingRateInputs,
       result[h] =
         filterOptionsOverride?.[h] ||
         fixedDropdownOptions?.[h] ||
-        categoryOptions?.[h] ||
         getUniqueColumnValues(idx);
     }
     return result;
