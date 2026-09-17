@@ -589,6 +589,7 @@ interface GMDUpdateTableProps {
   onDeleteRow?: (id: string) => Promise<void>;
   onMatchCosts?: () => void;
   blankOnlyEditableColumns?: string[];
+  dropdownRowCondition?: (header: string, row: unknown[]) => boolean;
 }
 
 export default function GMDUpdateTable({
@@ -634,6 +635,7 @@ castingRateInputs,
   onDeleteRow,
   onMatchCosts,
   blankOnlyEditableColumns,
+  dropdownRowCondition,
   filterState,
   filterActions,
   columnOptionMeta,
@@ -1649,7 +1651,9 @@ castingRateInputs,
                     const isCellEditable =
                       !!editable &&
                       baseEditable &&
-                      (!isBlankOnlyColumn || isBlankCell);
+                      (!isBlankOnlyColumn || isBlankCell) &&
+                      (!dropdownRowCondition ||
+                        dropdownRowCondition(header, row));
                     const isAttachmentColumn =
                       attachmentColumn &&
                       header === attachmentColumn &&

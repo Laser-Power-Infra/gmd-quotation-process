@@ -11,6 +11,7 @@ import {
   updateContractReviewFieldAction,
   backfillContractReviewNoUseBatchAction,
   backfillContractReviewOrderListBatchAction,
+  backfillContractReviewCostFromQuotationAction,
   autoAssignContractReviewBomIdFromActuator,
   getActuatorOptionsAction,
   saveActuatorWithRmCodeAction,
@@ -103,6 +104,9 @@ const BAL_BILL_AG_CONT_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf("BAL BILL AG CONT");
 const STATUS_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATUS");
 const ORDER_LIST_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER LIST");
+const ITEM_NAME_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ITEM_NAME");
+const VA_PCT_FROM_COST_IDX = CONTRACT_REVIEW_HEADERS.indexOf("VA % FROM COST");
+const CONTRACT_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("CONTRACT NO");
 
 type RateTileKey =
   | "rateXOrderQty"
@@ -779,6 +783,43 @@ export default function ContractReviewPage() {
     });
   }, [data, headers]);
 
+  const autoCostFromQuotationRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!data || VA_PCT_FROM_COST_IDX === -1) return;
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoCostFromQuotationRef.current.has(id)) return;
+      if (String(row[CONTRACT_NO_IDX] ?? "").trim() === "") return;
+      autoCostFromQuotationRef.current.add(id);
+      pending.push(id);
+    });
+    if (!pending.length) return;
+    backfillContractReviewCostFromQuotationAction(pending).then((res) => {
+      if (!res?.success) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(
+          (res.data ?? []).map((d) => [
+            d.id,
+            d.vaPercentfromcost ?? "",
+          ]),
+        );
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined) return row;
+            const next = [...row];
+            next[VA_PCT_FROM_COST_IDX] = v;
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
+
   const categoryOptions = useMemo<Record<string, string[]>>(() => {
     if (!data) return {};
     const items = [
@@ -1442,7 +1483,6 @@ export default function ContractReviewPage() {
   // Per-contract meta for the CONTRACT NO column filter dropdown
   // (party name, row count, and RATE × BAL BILL AG CONT sum). Excludes the
   // CONTRACT NO filter itself (exclude-self cascading), respects all other filters.
-  const CONTRACT_NO_IDX = headers.indexOf("CONTRACT NO");
   const PARTY_NAME_IDX = headers.indexOf("PARTY NAME");
 
   const contractNoMeta = useMemo(() => {
@@ -1957,6 +1997,17 @@ export default function ContractReviewPage() {
                   "PAYMENT TERMS",
                 ]}
                 blankOnlyEditableColumns={["DATE OF CONTRACT"]}
+                dropdownRowCondition={(header, row) => {
+                  if (header !== "Actuator") return true;
+                  const n = String(row[ITEM_NAME_IDX] ?? "")
+                    .toLowerCase()
+                    .replace(/\s+/g, "");
+                  return (
+                    n.includes("actuator") ||
+                    n.includes("_act") ||
+                    n.includes("act+gb")
+                  );
+                }}
                 categoryOptions={categoryOptions}
                 fixedDropdownOptions={{
                   "MC Received/Pending": ["Received", "Pending"],
