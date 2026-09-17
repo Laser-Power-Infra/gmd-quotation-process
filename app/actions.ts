@@ -2984,6 +2984,140 @@ export async function backfillContractReviewOrderListBatchAction(ids: string[]) 
   }
 }
 
+export async function backfillContractReviewCostFromQuotationAction(
+  ids: string[],
+) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+    const items = await prisma.contractReview.findMany({
+      where: { id: { in: unique } },
+      select: {
+        id: true,
+        contractNo: true,
+        itemCode: true,
+        rate: true,
+        costfromQuotation: true,
+        vaPercentfromcost: true,
+      },
+    });
+    const normalize = (v: string) => v.trim().replace(/\s+/g, " ").toUpperCase();
+    const codes = [
+      ...new Set(
+        items
+          .map((i) => i.itemCode)
+          .filter((c): c is string => !!c && c.trim() !== "")
+          .map(normalize),
+      ),
+    ];
+
+    // Walk the enquiryId relation: each item's parent enquiry provides the
+    // selectedContractNo + recency, so an item is only ever attributed to a
+    // contract its own enquiry actually selected.
+    const matches = await prisma.enquiryItem.findMany({
+      where: { erpItemCode: { in: codes } },
+      select: {
+        erpItemCode: true,
+        cost: true,
+        enquiry: {
+          select: {
+            selectedContractNo: true,
+            enquiryDate: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    const bestByKey = new Map<
+      string,
+      { cost: string | null; recency: number }
+    >();
+    for (const m of matches) {
+      if (!m.erpItemCode || !m.enquiry) continue;
+      const itemKey = normalize(m.erpItemCode);
+      const recency =
+        m.enquiry.enquiryDate?.getTime() ?? m.enquiry.createdAt.getTime() ?? 0;
+      for (const cn of m.enquiry.selectedContractNo ?? []) {
+        const key = normalize(cn) + "||" + itemKey;
+        const prev = bestByKey.get(key);
+        if (prev && prev.recency >= recency) continue;
+        bestByKey.set(key, {
+          cost: m.cost !== null && m.cost !== undefined ? String(m.cost) : null,
+          recency,
+        });
+      }
+    }
+
+    const computeVa = (cost: string | null, rate: string | null): string | null => {
+      const costNum = Number(cost);
+      if (isNaN(costNum) || costNum === 0) return null;
+      const rateNum = parseFloat(String(rate ?? "").replace(/,/g, ""));
+      const r = isNaN(rateNum) ? 0 : rateNum;
+      return `${(((r - costNum) / costNum) * 100).toFixed(2)}%`;
+    };
+
+    const updates = items
+      .map((item) => {
+        const key = normalize(item.contractNo) + "||" + normalize(item.itemCode);
+        const best = bestByKey.get(key);
+        if (!best) return null;
+        const cost = best.cost ?? null;
+        const va = computeVa(cost, item.rate ?? null);
+        const data: Record<string, string | null> = {};
+        if (item.costfromQuotation !== cost) data.costfromQuotation = cost;
+        if (item.vaPercentfromcost !== va) data.vaPercentfromcost = va;
+        if (Object.keys(data).length === 0) return null;
+        return {
+          id: item.id,
+          promise: prisma.contractReview.update({
+            where: { id: item.id },
+            data,
+          }),
+        };
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null);
+
+    if (updates.length > 0) {
+      const chunkSize = 200;
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize);
+        const results = await Promise.allSettled(chunk.map((u) => u.promise));
+        results.forEach((r, idx) => {
+          if (r.status === "rejected") {
+            console.error(
+              `[backfill COST FROM QUOTATION] update failed id=${chunk[idx].id} err=${(r.reason as Error)?.message}`,
+            );
+          }
+        });
+      }
+    }
+
+    const data = items
+      .map((item) => {
+        const key = normalize(item.contractNo) + "||" + normalize(item.itemCode);
+        const best = bestByKey.get(key);
+        if (!best) return null;
+        const cost = best.cost ?? null;
+        return {
+          id: item.id,
+          costfromQuotation: cost,
+          vaPercentfromcost: computeVa(cost, item.rate ?? null),
+        };
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null);
+
+    return { success: true, data };
+  } catch (error: any) {
+    console.error("Error backfilling ContractReview COST FROM QUOTATION:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to backfill COST FROM QUOTATION.",
+    };
+  }
+}
+
 export async function updateContractReviewFieldAction(
   id: string,
   field: string,

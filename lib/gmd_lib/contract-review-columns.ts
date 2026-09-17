@@ -7,6 +7,7 @@ export const CONTRACT_REVIEW_HEADERS = [
   "ITEM_NAME",
   "PARTY ITEM NAME",
   "RATE",
+  "VA % FROM COST",
   "CV",
   "VA %",
   "ORDER QTY",
@@ -312,6 +313,8 @@ export function dbContractReviewToRow(item: {
   inspectionNumber: string[] | null;
   diDate: string[] | null;
   orderList: string[] | null;
+  costfromQuotation: string | null;
+  vaPercentfromcost: string | null;
 }): unknown[] {
   return [
     item.contractNo,
@@ -319,6 +322,7 @@ export function dbContractReviewToRow(item: {
     item.partyNameDump,
     item.itemCode, item.mcNo,
     item.itemName, item.partyItemName, item.rate,
+    item.vaPercentfromcost,
     item.cv, item.vaPercent,
     item.orderQty,
     item.freeStock, item.finalReq, item.mcQty,
@@ -361,6 +365,7 @@ export const CONTRACT_REVIEW_HEADER_TO_DB_FIELD: Record<string, string> = {
   "ITEM_NAME": "itemName",
   "PARTY ITEM NAME": "partyItemName",
   "RATE": "rate",
+  "VA % FROM COST": "vaPercentfromcost",
   "CV": "cv",
   "VA %": "vaPercent",
   "ORDER QTY": "orderQty",
