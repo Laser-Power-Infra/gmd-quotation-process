@@ -92,6 +92,7 @@ export function enquiryPassesFilters(
   if (filters.orderStatus.length > 0 && !matchesMulti(filters.orderStatus, enquiry.orderStatus)) return false;
   if (filters.closureStatus.length > 0 && !matchesMultiCI(filters.closureStatus, enquiry.closureStatus)) return false;
   if (filters.apm.length > 0 && !matchesMulti(filters.apm, (enquiry as any).apm)) return false;
+  if (filters.contractNo && filters.contractNo.length > 0 && !matchesMulti(filters.contractNo, enquiry.selectedContractNo ?? [])) return false;
 
   if (filters.docketNumber && !matchesText(filters.docketNumber, enquiry.docketNumber)) return false;
   if (filters.enquiryDateFrom) {

@@ -24,30 +24,37 @@ export interface ContractReviewEnquiryBackfillResult {
 }
 
 // Builds the list of ContractReview rows whose State / Utility / Project
-// Reference differ from the matching Enquiry (matched by contract number,
-// where Enquiry.contractNo is a list of contract numbers). First enquiry wins
-// when several share the same contract number.
+// Reference differ from the matching Enquiry (matched strictly by contract number
+// in Enquiry.selectedContractNo). Newer enquiry wins when several share the same
+// contract number. ContractReview rows not matching any selectedContractNo have
+// state / utility / projectReference cleared to null.
 export async function computeContractReviewEnquiryBackfill(
   prisma: PrismaClient,
 ): Promise<ContractReviewEnquiryBackfillResult> {
   const enquiries = await prisma.enquiry.findMany({
+    where: {
+      selectedContractNo: { isEmpty: false },
+    },
     select: {
-      contractNo: true,
+      selectedContractNo: true,
       state: true,
       utility: true,
       projectReference: true,
+      enquiryDate: true,
+      createdAt: true,
     },
+    orderBy: [{ enquiryDate: "desc" }, { createdAt: "desc" }],
   });
 
   const byContract = new Map<string, ContractReviewEnquiryFields>();
   for (const enquiry of enquiries) {
-    for (const cn of enquiry.contractNo ?? []) {
+    for (const cn of enquiry.selectedContractNo ?? []) {
       const key = normalizeContractKey(cn);
       if (!key || byContract.has(key)) continue;
       byContract.set(key, {
-        state: enquiry.state,
-        utility: enquiry.utility,
-        projectReference: enquiry.projectReference,
+        state: enquiry.state ?? null,
+        utility: enquiry.utility ?? null,
+        projectReference: enquiry.projectReference ?? null,
       });
     }
   }
@@ -66,25 +73,31 @@ export async function computeContractReviewEnquiryBackfill(
   let matched = 0;
   for (const row of reviewRows) {
     const match = byContract.get(normalizeContractKey(row.contractNo));
-    if (!match) continue;
-    matched++;
+    if (match) {
+      matched++;
+    }
+    const targetState = match?.state ?? null;
+    const targetUtility = match?.utility ?? null;
+    const targetProjectReference = match?.projectReference ?? null;
+
     const previous: ContractReviewEnquiryFields = {
       state: row.state ?? null,
       utility: row.utility ?? null,
       projectReference: row.projectReference ?? null,
     };
     const same =
-      previous.state === (match.state ?? null) &&
-      previous.utility === (match.utility ?? null) &&
-      previous.projectReference === (match.projectReference ?? null);
+      previous.state === targetState &&
+      previous.utility === targetUtility &&
+      previous.projectReference === targetProjectReference;
     if (same) continue;
+
     rows.push({
       id: row.id,
       contractNo: row.contractNo,
       previous,
-      state: match.state,
-      utility: match.utility,
-      projectReference: match.projectReference,
+      state: targetState,
+      utility: targetUtility,
+      projectReference: targetProjectReference,
     });
   }
 

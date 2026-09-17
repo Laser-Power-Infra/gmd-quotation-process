@@ -24,6 +24,7 @@ interface MultiSelectFilterProps {
   className?: string;
   panelClassName?: string;
   align?: "start" | "center" | "end";
+  renderButtonLabel?: (selected: string[], allLabel: string) => string;
 }
 
 export default function MultiSelectFilter({
@@ -39,6 +40,7 @@ export default function MultiSelectFilter({
   className,
   panelClassName,
   align = "start",
+  renderButtonLabel,
 }: MultiSelectFilterProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -60,10 +62,11 @@ export default function MultiSelectFilter({
     );
   };
 
-  const buttonLabel =
-    selected.length === 0
-      ? allLabel
-      : `${selected.length} Selected`;
+  const buttonLabel = renderButtonLabel
+    ? renderButtonLabel(selected, allLabel)
+    : selected.length === 0
+    ? allLabel
+    : `${selected.length} Selected`;
 
   const blankChecked = selected.includes(BLANK);
 

@@ -1,7 +1,14 @@
 "use server";
 
+import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+
+async function assertDeveloper(): Promise<boolean> {
+  const session = await auth();
+  const role = (session?.user as any)?.role;
+  return role === "developer";
+}
 
 export type LookupOptionData = {
   id: string;
@@ -25,6 +32,9 @@ export async function getLookupOptions(): Promise<LookupOptionData[]> {
 }
 
 export async function addLookupOptionAction(formData: FormData) {
+  if (!(await assertDeveloper())) {
+    return { success: false, error: "Unauthorized: developer only" };
+  }
   const type = (formData.get("type") as string)?.trim();
   const value = (formData.get("value") as string)?.trim();
 
@@ -57,6 +67,9 @@ export async function addLookupOptionAction(formData: FormData) {
 }
 
 export async function updateLookupOptionAction(formData: FormData) {
+  if (!(await assertDeveloper())) {
+    return { success: false, error: "Unauthorized: developer only" };
+  }
   const id = formData.get("id") as string;
   const value = (formData.get("value") as string)?.trim();
   const type = (formData.get("type") as string)?.trim();
@@ -93,6 +106,9 @@ export async function updateLookupOptionAction(formData: FormData) {
 }
 
 export async function toggleLookupOptionAction(id: string) {
+  if (!(await assertDeveloper())) {
+    return { success: false, error: "Unauthorized: developer only" };
+  }
   const existing = await prisma.lookupOption.findUnique({ where: { id } });
   if (!existing) {
     return { success: false, error: "Option not found." };
@@ -108,6 +124,9 @@ export async function toggleLookupOptionAction(id: string) {
 }
 
 export async function deleteLookupOptionAction(id: string) {
+  if (!(await assertDeveloper())) {
+    return { success: false, error: "Unauthorized: developer only" };
+  }
   await prisma.lookupOption.delete({ where: { id } });
 
   revalidatePath("/admin/lookup-options");
