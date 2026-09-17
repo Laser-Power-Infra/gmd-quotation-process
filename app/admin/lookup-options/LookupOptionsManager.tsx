@@ -109,8 +109,8 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
         {types.map((t) => (
           <Button
             key={t}
@@ -124,8 +124,8 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
         ))}
       </div>
 
-      <div className="rounded-lg border border-border bg-card">
-        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="rounded-lg border border-border bg-card flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-end sm:justify-between shrink-0">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             {canEdit ? (
               <form onSubmit={handleAdd} className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -166,7 +166,7 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
           </div>
         </div>
 
-        <div className="divide-y divide-border">
+        <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-border">
           {filtered.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground italic">
               No options found for this type.

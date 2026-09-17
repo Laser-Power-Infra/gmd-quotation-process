@@ -20,8 +20,8 @@ export default async function LookupOptionsAdminPage() {
   const types = Array.from(new Set(options.map((o) => o.type))).sort();
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 p-6 flex-1 min-h-0 overflow-hidden">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold text-foreground">Lookup Options Admin</h1>
           <p className="text-xs text-muted-foreground">
