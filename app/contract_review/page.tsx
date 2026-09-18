@@ -187,7 +187,7 @@ function matchesSidebar(
   balBill: BalBillFilter,
   status: string,
   clearance: string[],
-  item: string,
+  item: string[],
   size: string,
   pn: string,
   balBillIdx: number,
@@ -214,12 +214,9 @@ function matchesSidebar(
     const matchesVal = clearance.includes(cell);
     if (!(matchesBlank || matchesVal)) return false;
   }
-  if (
-    exclude !== "item" &&
-    item &&
-    String(row[ITEM_IDX] ?? "").trim() !== item
-  ) {
-    return false;
+  if (exclude !== "item" && item.length > 0) {
+    const cell = String(row[ITEM_IDX] ?? "").trim();
+    if (!item.includes(cell)) return false;
   }
   if (
     exclude !== "size" &&
@@ -404,7 +401,9 @@ export default function ContractReviewPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [clearanceOpen, setClearanceOpen] = useState(false);
   const clearanceRef = useRef<HTMLDivElement>(null);
-  const [tileItem, setTileItem] = useState("");
+  const [itemOpen, setItemOpen] = useState(false);
+  const itemRef = useRef<HTMLDivElement>(null);
+  const [tileItems, setTileItems] = useState<string[]>([]);
   const [tileSize, setTileSize] = useState("");
   const [tilePn, setTilePn] = useState("");
   const [activeRateTile, setActiveRateTile] = useState<RateTileKey | null>(
@@ -546,11 +545,14 @@ export default function ContractReviewPage() {
       ) {
         setClearanceOpen(false);
       }
+      if (itemRef.current && !itemRef.current.contains(e.target as Node)) {
+        setItemOpen(false);
+      }
     }
-    if (clearanceOpen)
+    if (clearanceOpen || itemOpen)
       document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [clearanceOpen]);
+  }, [clearanceOpen, itemOpen]);
 
   // Single source of truth: sidebar CLEARANCE STATUS mirrors column multiFilters["CLEARANCE STATUS"]
   const clearanceFilter = multiFilters["CLEARANCE STATUS"] ?? [];
@@ -892,7 +894,7 @@ export default function ContractReviewPage() {
           "all",
           statusFilter,
           clearanceFilter,
-          tileItem,
+          tileItems,
           tileSize,
           tilePn,
           balBillIdx,
@@ -909,7 +911,7 @@ export default function ContractReviewPage() {
     sidebarBaseRows,
     statusFilter,
     clearanceFilter,
-    tileItem,
+    tileItems,
     tileSize,
     tilePn,
     balBillIdx,
@@ -925,7 +927,7 @@ export default function ContractReviewPage() {
           balBillFilter,
           "all",
           clearanceFilter,
-          tileItem,
+          tileItems,
           tileSize,
           tilePn,
           balBillIdx,
@@ -944,7 +946,7 @@ export default function ContractReviewPage() {
     sidebarBaseRows,
     balBillFilter,
     clearanceFilter,
-    tileItem,
+    tileItems,
     tileSize,
     tilePn,
     balBillIdx,
@@ -988,7 +990,7 @@ export default function ContractReviewPage() {
           balBillFilter,
           statusFilter,
           [],
-          tileItem,
+          tileItems,
           tileSize,
           tilePn,
           balBillIdx,
@@ -1013,7 +1015,7 @@ export default function ContractReviewPage() {
     activeRateTile,
     balBillFilter,
     statusFilter,
-    tileItem,
+    tileItems,
     tileSize,
     tilePn,
     balBillIdx,
@@ -1035,33 +1037,39 @@ export default function ContractReviewPage() {
     });
   }, [clearanceCounts, clearanceFilter]);
 
-  const itemOptions = useMemo(
-    () =>
-      groupCount(sidebarBaseRows, ITEM_IDX, (row) =>
-        matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          "",
-          tileSize,
-          tilePn,
-          balBillIdx,
-          clearanceIdx,
-          "item",
-        ),
+  const itemOptions = useMemo(() => {
+    const opts = groupCount(sidebarBaseRows, ITEM_IDX, (row) =>
+      matchesSidebar(
+        row,
+        balBillFilter,
+        statusFilter,
+        clearanceFilter,
+        [],
+        tileSize,
+        tilePn,
+        balBillIdx,
+        clearanceIdx,
+        "item",
       ),
-    [
-      sidebarBaseRows,
-      balBillFilter,
-      statusFilter,
-      clearanceFilter,
-      tileSize,
-      tilePn,
-      balBillIdx,
-      clearanceIdx,
-    ],
-  );
+    );
+    // Keep selected items visible even if count 0 (bidirectional cascading keep-selected)
+    for (const s of tileItems) {
+      if (!opts.some((o) => o.value === s)) opts.push({ value: s, count: 0 });
+    }
+    return opts.sort((a, b) =>
+      a.value.localeCompare(b.value, undefined, { numeric: true }),
+    );
+  }, [
+    sidebarBaseRows,
+    balBillFilter,
+    statusFilter,
+    clearanceFilter,
+    tileItems,
+    tileSize,
+    tilePn,
+    balBillIdx,
+    clearanceIdx,
+  ]);
 
   const sizeOptions = useMemo(
     () =>
@@ -1071,7 +1079,7 @@ export default function ContractReviewPage() {
           balBillFilter,
           statusFilter,
           clearanceFilter,
-          tileItem,
+          tileItems,
           "",
           tilePn,
           balBillIdx,
@@ -1084,7 +1092,7 @@ export default function ContractReviewPage() {
       balBillFilter,
       statusFilter,
       clearanceFilter,
-      tileItem,
+      tileItems,
       tilePn,
       balBillIdx,
       clearanceIdx,
@@ -1099,7 +1107,7 @@ export default function ContractReviewPage() {
           balBillFilter,
           statusFilter,
           clearanceFilter,
-          tileItem,
+          tileItems,
           tileSize,
           "",
           balBillIdx,
@@ -1112,7 +1120,7 @@ export default function ContractReviewPage() {
       balBillFilter,
       statusFilter,
       clearanceFilter,
-      tileItem,
+      tileItems,
       tileSize,
       balBillIdx,
       clearanceIdx,
@@ -1129,7 +1137,7 @@ export default function ContractReviewPage() {
           balBillFilter,
           statusFilter,
           clearanceFilter,
-          tileItem,
+          tileItems,
           tileSize,
           tilePn,
           balBillIdx,
@@ -1150,7 +1158,7 @@ export default function ContractReviewPage() {
     balBillFilter,
     statusFilter,
     clearanceFilter,
-    tileItem,
+    tileItems,
     tileSize,
     tilePn,
     balBillIdx,
@@ -1168,7 +1176,7 @@ export default function ContractReviewPage() {
             balBillFilter,
             statusFilter,
             clearanceFilter,
-            tileItem,
+            tileItems,
             tileSize,
             tilePn,
             balBillIdx,
@@ -1196,7 +1204,7 @@ export default function ContractReviewPage() {
       balBillFilter,
       statusFilter,
       clearanceFilter,
-      tileItem,
+      tileItems,
       tileSize,
       tilePn,
       balBillIdx,
@@ -1219,7 +1227,7 @@ export default function ContractReviewPage() {
           balBillFilter,
           statusFilter,
           clearanceFilter,
-          tileItem,
+          tileItems,
           tileSize,
           tilePn,
           balBillIdx,
@@ -1239,7 +1247,7 @@ export default function ContractReviewPage() {
     balBillFilter,
     statusFilter,
     clearanceFilter,
-    tileItem,
+    tileItems,
     tileSize,
     tilePn,
     balBillIdx,
@@ -1256,7 +1264,7 @@ export default function ContractReviewPage() {
           balBillFilter,
           statusFilter,
           clearanceFilter,
-          tileItem,
+          tileItems,
           tileSize,
           tilePn,
           balBillIdx,
@@ -1276,7 +1284,7 @@ export default function ContractReviewPage() {
     balBillFilter,
     statusFilter,
     clearanceFilter,
-    tileItem,
+    tileItems,
     tileSize,
     tilePn,
     balBillIdx,
@@ -1293,7 +1301,7 @@ export default function ContractReviewPage() {
           balBillFilter,
           statusFilter,
           clearanceFilter,
-          tileItem,
+          tileItems,
           tileSize,
           tilePn,
           balBillIdx,
@@ -1313,7 +1321,7 @@ export default function ContractReviewPage() {
     balBillFilter,
     statusFilter,
     clearanceFilter,
-    tileItem,
+    tileItems,
     tileSize,
     tilePn,
     balBillIdx,
@@ -1330,7 +1338,7 @@ export default function ContractReviewPage() {
           balBillFilter,
           statusFilter,
           clearanceFilter,
-          tileItem,
+          tileItems,
           tileSize,
           tilePn,
           balBillIdx,
@@ -1350,7 +1358,7 @@ export default function ContractReviewPage() {
     balBillFilter,
     statusFilter,
     clearanceFilter,
-    tileItem,
+    tileItems,
     tileSize,
     tilePn,
     balBillIdx,
@@ -1382,7 +1390,7 @@ export default function ContractReviewPage() {
             balBillFilter,
             statusFilter,
             clearanceFilter,
-            tileItem,
+            tileItems,
             tileSize,
             tilePn,
             balBillIdx,
@@ -1398,7 +1406,7 @@ export default function ContractReviewPage() {
       balBillFilter,
       statusFilter,
       clearanceFilter,
-      tileItem,
+      tileItems,
       tileSize,
       tilePn,
       balBillIdx,
@@ -1406,7 +1414,8 @@ export default function ContractReviewPage() {
     ],
   );
 
-  const hasTileFilter = tileItem !== "" || tileSize !== "" || tilePn !== "";
+  const hasTileFilter =
+    tileItems.length > 0 || tileSize !== "" || tilePn !== "";
 
   const filteredData = useMemo(() => {
     if (
@@ -1427,7 +1436,7 @@ export default function ContractReviewPage() {
           balBillFilter,
           statusFilter,
           clearanceFilter,
-          tileItem,
+          tileItems,
           tileSize,
           tilePn,
           balBillIdx,
@@ -1448,7 +1457,7 @@ export default function ContractReviewPage() {
     clearanceFilter,
     balBillIdx,
     clearanceIdx,
-    tileItem,
+    tileItems,
     tileSize,
     tilePn,
   ]);
@@ -1671,7 +1680,7 @@ export default function ContractReviewPage() {
             balBillFilter,
             statusFilter,
             clearanceFilter,
-            "",
+            [],
             tileSize,
             tilePn,
             balBillIdx,
@@ -1690,7 +1699,7 @@ export default function ContractReviewPage() {
             balBillFilter,
             statusFilter,
             clearanceFilter,
-            tileItem,
+            tileItems,
             "",
             tilePn,
             balBillIdx,
@@ -1709,7 +1718,7 @@ export default function ContractReviewPage() {
             balBillFilter,
             statusFilter,
             clearanceFilter,
-            tileItem,
+            tileItems,
             tileSize,
             "",
             balBillIdx,
@@ -1726,7 +1735,7 @@ export default function ContractReviewPage() {
       balBillFilter,
       statusFilter,
       clearanceFilter,
-      tileItem,
+      tileItems,
       tileSize,
       tilePn,
       balBillIdx,
@@ -1884,22 +1893,79 @@ export default function ContractReviewPage() {
             Breakdown
           </span>
 
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5" ref={itemRef}>
             <span className="text-[11px] font-semibold text-white/60">
               Item
             </span>
-            <select
-              value={tileItem}
-              onChange={(e) => setTileItem(e.target.value)}
-              className="w-full text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-2 py-1.5 outline-none cursor-pointer"
-            >
-              <option value="">All ({tileAllCounts.item})</option>
-              {itemOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.value} ({o.count})
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setItemOpen((v) => !v)}
+                className="w-full text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-2 py-1.5 text-left outline-none cursor-pointer flex items-center justify-between gap-1"
+              >
+                <span className="truncate">
+                  {tileItems.length === 0
+                    ? `All (${tileAllCounts.item})`
+                    : `${tileItems.length} selected`}
+                </span>
+                <span className="text-[10px] text-[#0a2540]/60 shrink-0">
+                  {itemOpen ? "▲" : "▼"}
+                </span>
+              </button>
+              {itemOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-[#e1e6eb] rounded shadow-lg overflow-hidden">
+                  <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-[#e1e6eb] bg-[#f8f9fa]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTileItems(itemOptions.map((o) => o.value))
+                      }
+                      className="text-blue-600 font-bold hover:underline cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTileItems([])}
+                      className="text-red-600 font-semibold hover:underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto py-1">
+                    {itemOptions.length === 0 ? (
+                      <div className="px-2 py-2 text-[11px] text-muted-foreground">
+                        No options
+                      </div>
+                    ) : (
+                      itemOptions.map((o) => (
+                        <label
+                          key={o.value}
+                          className="flex items-center gap-1.5 px-2 py-1 hover:bg-gray-50 cursor-pointer text-[11px] text-[#0a2540]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={tileItems.includes(o.value)}
+                            onChange={() => {
+                              setTileItems((prev) =>
+                                prev.includes(o.value)
+                                  ? prev.filter((v) => v !== o.value)
+                                  : [...prev, o.value],
+                              );
+                            }}
+                            className="accent-blue-600 shrink-0"
+                          />
+                          <span className="truncate flex-1">{o.value}</span>
+                          <span className="text-[10px] text-[#0a2540]/50 shrink-0">
+                            ({o.count})
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -1987,7 +2053,7 @@ export default function ContractReviewPage() {
             }`}
           >
             <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-              BAL BILL AG CONT
+              QUANTITY
             </span>
             <span className="block text-lg font-bold text-white mt-1">
               {fmt(balBillAgContTotal.sum)}
@@ -2234,7 +2300,7 @@ export default function ContractReviewPage() {
                 onSelectBomId={handleSelectBomId}
                 bomIdCategoryFilter
                 onReset={() => {
-                  setTileItem("");
+                  setTileItems([]);
                   setTileSize("");
                   setTilePn("");
                   setActiveRateTile(null);
