@@ -20,10 +20,12 @@ import { useSession } from "next-auth/react";
 import { oneClickAccess, FROZEN_ITEM_FIELD_SET, isEnquiryFrozen } from "@/lib/oneClickAccess";
 import { importExcelData, autoFillBlanks, updateVaPercent } from "@/lib/enquiriesSlice";
 import { validateVaPercent } from "@/lib/vaValidation";
+import { parseAndValidateContractNumbers } from "@/lib/contractValidation";
 import { makeImageKey } from "@/lib/imageKey";
 import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
@@ -126,6 +128,7 @@ function itemFieldMatches(item: EnquiryItemData, field: string, filterValue: str
 
 function enquiryFieldMatches(enquiry: EnquiryData, field: string, filterValue: string[]): boolean {
   if (field === "closureStatus") return matchesMultiCI(filterValue, enquiry[field as keyof EnquiryData]);
+  if (field === "contractNo") return matchesMulti(filterValue, (enquiry as any).selectedContractNo ?? []);
   return matchesMulti(filterValue, enquiry[field as keyof EnquiryData]);
 }
 
@@ -646,8 +649,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             return enquiry.items.some((item) => itemPasses(item, field));
           })
           .flatMap((enquiry) => {
-            const val = (enquiry as unknown as Record<string, unknown>)[field];
-            if (Array.isArray(val)) return val.map(String).filter((v) => v !== "" && v !== "undefined" && v !== "null");
+            const val = field === "contractNo"
+              ? ((enquiry as any).selectedContractNo ?? [])
+              : (enquiry as unknown as Record<string, unknown>)[field];
+            if (Array.isArray(val)) return val.map(String).map((s) => s.trim()).filter((v) => v !== "" && v !== "undefined" && v !== "null");
             return val != null ? [String(val)] : [];
           })
           .filter((v) => v !== "" && v !== "undefined" && v !== "null")
@@ -694,6 +699,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
     return result;
   }, [enquiries, allItems, filters, filterProjectReference, globalSearch]);
+
+  // Master unique list of all contract numbers selected across all enquiries
+  const allSelectedContractOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const eq of enquiries) {
+      for (const cn of (eq as any).selectedContractNo ?? []) {
+        const trimmed = String(cn ?? "").trim();
+        if (trimmed) set.add(trimmed);
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [enquiries]);
 
   // VA% validation: compute set of item IDs where VA% exceeds allowed max
   const invalidVaItemIds = useMemo(() => {
@@ -1282,7 +1299,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     if (!matchesMulti(filters.apm, (enquiry as any).apm)) {
       return false;
     }
-    if (!matchesMulti(filters.contractNo as unknown as string[], (enquiry as any).contractNo)) {
+    if (!matchesMulti(filters.contractNo as unknown as string[], (enquiry as any).selectedContractNo ?? [])) {
       return false;
     }
 
@@ -1516,7 +1533,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
   const getSortValue = useCallback((enquiry: EnquiryData, field: string): string | number | Date | null | undefined => {
     if (field === "contractNo") {
-      return (enquiry.contractNo || []).join(", ");
+      return ((enquiry as any).selectedContractNo || []).join(", ");
     }
     const enquiryFields = [
       "enquiryDate", "docketNumber", "partyName", "enquiryType", "state", 
@@ -2263,7 +2280,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <MultiSelectFilter
                   label="Contract Number"
                   allLabel="All Contracts"
-                  options={cascadedOptions.contractNo || []}
+                  options={allSelectedContractOptions}
                   cascadedOptions={cascadedOptions.contractNo || []}
                   selected={(filters as any).contractNo || []}
                   onChange={(v) => dispatch(setFilter({ field: "contractNo" as any, value: v }))}
@@ -3724,13 +3741,17 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             <div className="flex-1 min-w-0">
                               <MultiSelectFilter
                                 label="Contract"
-                                allLabel={`All contracts (${enquiry.contractNo.length})`}
+                                allLabel="—"
                                 options={enquiry.contractNo}
                                 cascadedOptions={enquiry.contractNo}
                                 selected={(enquiry as any).selectedContractNo ?? []}
                                 onChange={(values) => handleSelectedContractNoChange(enquiry.id, values)}
                                 searchPlaceholder="Search contracts..."
-                                className="text-[10px]"
+                                className={cn(
+                                  "text-[10px]",
+                                  (!((enquiry as any).selectedContractNo) || ((enquiry as any).selectedContractNo).length === 0) && "text-muted-foreground"
+                                )}
+                                renderButtonLabel={(sel) => sel.length === 0 ? "—" : sel.join(", ")}
                               />
                             </div>
                             <button
@@ -3747,14 +3768,22 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                               autoFocus
                               type="text"
                               placeholder="Add contract numbers (comma separated)"
+                              onChange={(e) => {
+                                e.target.value = e.target.value.toUpperCase();
+                              }}
                               onBlur={(e) => {
                                 const raw = e.target.value.trim();
                                 if (raw) {
-                                  const arr = raw.split(",").map((s) => s.trim()).filter(Boolean);
-                                  if (arr.length > 0) {
+                                  const validation = parseAndValidateContractNumbers(raw);
+                                  if (!validation.isValid) {
+                                    toast.error(validation.error || "Invalid contract number");
+                                    setAddingContractFor(null);
+                                    return;
+                                  }
+                                  if (validation.contracts.length > 0) {
                                     const current = ((enquiry as any).selectedContractNo ?? []) as string[];
                                     const merged = [...current];
-                                    for (const v of arr) if (!merged.includes(v)) merged.push(v);
+                                    for (const v of validation.contracts) if (!merged.includes(v)) merged.push(v);
                                     if (merged.length !== current.length) handleSelectedContractNoChange(enquiry.id, merged);
                                   }
                                 }
@@ -3764,7 +3793,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                                 if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                                 if (e.key === "Escape") setAddingContractFor(null);
                               }}
-                              className="w-full bg-background border border-blue-200 text-[10px] text-foreground outline-none p-1.5 rounded focus:ring-1 focus:ring-blue-500 placeholder:text-muted-foreground"
+                              className="w-full uppercase bg-background border border-blue-200 text-[10px] text-foreground outline-none p-1.5 rounded focus:ring-1 focus:ring-blue-500 placeholder:text-muted-foreground placeholder:normal-case"
                             />
                           )}
                         </div>
@@ -3774,20 +3803,26 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           type="text"
                           defaultValue={((enquiry as any).selectedContractNo ?? []).join(", ")}
                           placeholder="Add contract numbers (comma separated)"
+                          onChange={(e) => {
+                            e.target.value = e.target.value.toUpperCase();
+                          }}
                           onBlur={(e) => {
                             const raw = e.target.value;
-                            const arr = raw
-                              .split(",")
-                              .map((s) => s.trim())
-                              .filter(Boolean);
                             const current = ((enquiry as any).selectedContractNo ?? []) as string[];
+                            const validation = parseAndValidateContractNumbers(raw);
+                            if (!validation.isValid) {
+                              toast.error(validation.error || "Invalid contract number");
+                              e.target.value = current.join(", ");
+                              return;
+                            }
+                            const arr = validation.contracts;
                             const same = arr.length === current.length && arr.every((v, i) => v === current[i]);
                             if (!same) handleSelectedContractNoChange(enquiry.id, arr);
                           }}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
-                          className="w-full bg-transparent border-none text-[10px] text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium placeholder:text-muted-foreground"
+                          className="w-full uppercase bg-transparent border-none text-[10px] text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium placeholder:text-muted-foreground placeholder:normal-case"
                         />
                       )}
                     </td>

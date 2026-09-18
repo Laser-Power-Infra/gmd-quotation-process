@@ -12,6 +12,7 @@ import {
   backfillContractReviewNoUseBatchAction,
   backfillContractReviewOrderListBatchAction,
   backfillContractReviewCostFromQuotationAction,
+  syncContractReviewEnquiryFieldsBatchAction,
   autoAssignContractReviewBomIdFromActuator,
   getActuatorOptionsAction,
   saveActuatorWithRmCodeAction,
@@ -109,6 +110,9 @@ const VA_PCT_FROM_COST_IDX = CONTRACT_REVIEW_HEADERS.indexOf("VA % FROM COST");
 const COST_FROM_QUOTATION_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf("COST FROM QUOTATION");
 const CONTRACT_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("CONTRACT NO");
+const STATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATE");
+const UTILITY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("UTILITY");
+const PROJECT_REFERENCE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PROJECT REFERENCE");
 
 type RateTileKey =
   | "rateXOrderQty"
@@ -825,6 +829,40 @@ export default function ContractReviewPage() {
             if (v === undefined) return row;
             const next = [...row];
             next[VA_PCT_FROM_COST_IDX] = v;
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
+
+  const autoEnquiryFieldsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!data) return;
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoEnquiryFieldsRef.current.has(id)) return;
+      autoEnquiryFieldsRef.current.add(id);
+      pending.push(id);
+    });
+    if (!pending.length) return;
+    syncContractReviewEnquiryFieldsBatchAction(pending).then((res) => {
+      if (!res?.success || !res.data) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(res.data.map((d) => [d.id, d]));
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (!v) return row;
+            const next = [...row];
+            if (STATE_IDX !== -1) next[STATE_IDX] = v.state ?? "";
+            if (UTILITY_IDX !== -1) next[UTILITY_IDX] = v.utility ?? "";
+            if (PROJECT_REFERENCE_IDX !== -1)
+              next[PROJECT_REFERENCE_IDX] = v.projectReference ?? "";
             return next;
           }),
         };

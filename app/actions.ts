@@ -2984,6 +2984,128 @@ export async function backfillContractReviewOrderListBatchAction(ids: string[]) 
   }
 }
 
+export async function syncContractReviewEnquiryFieldsBatchAction(ids: string[]) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+
+    const { normalizeContractKey } = await import(
+      "@/lib/gmd_lib/contract-review-enquiry-backfill"
+    );
+
+    const enquiries = await prisma.enquiry.findMany({
+      where: {
+        selectedContractNo: { isEmpty: false },
+      },
+      select: {
+        selectedContractNo: true,
+        state: true,
+        utility: true,
+        projectReference: true,
+        enquiryDate: true,
+        createdAt: true,
+      },
+      orderBy: [{ enquiryDate: "desc" }, { createdAt: "desc" }],
+    });
+
+    const byContract = new Map<
+      string,
+      { state: string | null; utility: string | null; projectReference: string | null }
+    >();
+    for (const eq of enquiries) {
+      for (const cn of eq.selectedContractNo ?? []) {
+        const key = normalizeContractKey(cn);
+        if (!key || byContract.has(key)) continue;
+        byContract.set(key, {
+          state: eq.state ?? null,
+          utility: eq.utility ?? null,
+          projectReference: eq.projectReference ?? null,
+        });
+      }
+    }
+
+    const items = await prisma.contractReview.findMany({
+      where: { id: { in: unique } },
+      select: {
+        id: true,
+        contractNo: true,
+        state: true,
+        utility: true,
+        projectReference: true,
+      },
+    });
+
+    const updates: Array<{
+      where: { id: string };
+      data: { state: string | null; utility: string | null; projectReference: string | null };
+    }> = [];
+
+    const returnData: Array<{
+      id: string;
+      state: string | null;
+      utility: string | null;
+      projectReference: string | null;
+    }> = [];
+
+    for (const item of items) {
+      const match = byContract.get(normalizeContractKey(item.contractNo));
+      const targetState = match?.state ?? null;
+      const targetUtility = match?.utility ?? null;
+      const targetProjectReference = match?.projectReference ?? null;
+
+      returnData.push({
+        id: item.id,
+        state: targetState,
+        utility: targetUtility,
+        projectReference: targetProjectReference,
+      });
+
+      const changed =
+        (item.state ?? null) !== targetState ||
+        (item.utility ?? null) !== targetUtility ||
+        (item.projectReference ?? null) !== targetProjectReference;
+
+      if (changed) {
+        updates.push({
+          where: { id: item.id },
+          data: {
+            state: targetState,
+            utility: targetUtility,
+            projectReference: targetProjectReference,
+          },
+        });
+      }
+    }
+
+    if (updates.length > 0) {
+      const chunkSize = 500;
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize);
+        await prisma.$transaction(
+          chunk.map((u) =>
+            prisma.contractReview.update({
+              where: u.where,
+              data: u.data,
+            }),
+          ),
+        );
+      }
+    }
+
+    return {
+      success: true,
+      data: returnData,
+    };
+  } catch (error: any) {
+    console.error("Error syncing ContractReview enquiry fields:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to sync enquiry fields.",
+    };
+  }
+}
+
 export async function backfillContractReviewCostFromQuotationAction(
   ids: string[],
 ) {

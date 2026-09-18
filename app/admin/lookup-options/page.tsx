@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { auth } from "@/auth";
 import { getLookupOptions } from "./actions";
 import LookupOptionsManager from "./LookupOptionsManager";
 
@@ -10,13 +11,17 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function LookupOptionsAdminPage() {
+  const session = await auth();
+  const role = (session?.user as any)?.role as string | undefined;
+  const canEdit = role === "developer";
+
   const options = await getLookupOptions();
 
   const types = Array.from(new Set(options.map((o) => o.type))).sort();
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4 p-6 flex-1 min-h-0 overflow-hidden">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold text-foreground">Lookup Options Admin</h1>
           <p className="text-xs text-muted-foreground">
@@ -33,7 +38,7 @@ export default async function LookupOptionsAdminPage() {
       </div>
 
       <Suspense fallback={<div className="text-sm text-muted-foreground">Loading options...</div>}>
-        <LookupOptionsManager options={options} types={types} />
+        <LookupOptionsManager options={options} types={types} canEdit={canEdit} />
       </Suspense>
     </div>
   );

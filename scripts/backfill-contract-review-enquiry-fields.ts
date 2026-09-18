@@ -5,7 +5,10 @@ import {
   applyContractReviewEnquiryBackfill,
 } from "../lib/gmd_lib/contract-review-enquiry-backfill";
 
-const APPLY = process.argv.includes("--apply");
+const APPLY =
+  process.argv.includes("--apply") ||
+  process.argv.includes("apply") ||
+  process.argv.some((a) => a.endsWith("apply"));
 
 function show(value: string | null | undefined): string {
   if (value === null || value === undefined) return "<null>";
@@ -25,8 +28,9 @@ async function main() {
 
   const result = await computeContractReviewEnquiryBackfill(prisma);
 
-  console.log("--- PREVIEW: CONTRACT NO | STATE | UTILITY | PROJECT REFERENCE ---");
-  for (const row of result.rows) {
+  console.log("--- PREVIEW (Sample of changes up to 30 rows) ---");
+  const previewRows = result.rows.slice(0, 30);
+  for (const row of previewRows) {
     console.log(
       `[CHANGE] ${short(row.contractNo, 28).padEnd(28)} | ` +
         `${short(row.previous.state, 18).padStart(18)} -> ${short(row.state, 18).padEnd(18)} | ` +
@@ -34,12 +38,14 @@ async function main() {
         `${short(row.previous.projectReference, 20).padStart(20)} -> ${short(row.projectReference, 20)}`,
     );
   }
+  if (result.rows.length > 30) {
+    console.log(`... and ${result.rows.length - 30} more row(s) to change.`);
+  }
 
   console.log("\n--- SUMMARY ---");
-  console.log(`Matched review rows:   ${result.matched}`);
-  console.log(`Rows to change:        ${result.changed}`);
-  console.log(`Rows already up to date: ${result.matched - result.changed}`);
-  console.log(`Review rows unmatched: ${result.unmatched}`);
+  console.log(`Matched review rows (in selectedContractNo): ${result.matched}`);
+  console.log(`Unmatched review rows (cleared/blank):       ${result.unmatched}`);
+  console.log(`Total rows needing update:                   ${result.changed}`);
 
   if (!APPLY) {
     console.log("\nDry run complete. Re-run with --apply to write state / utility / projectReference.\n");

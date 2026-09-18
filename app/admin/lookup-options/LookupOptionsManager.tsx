@@ -36,9 +36,10 @@ const TYPE_LABELS: Record<string, string> = {
 interface LookupOptionsManagerProps {
   options: LookupOptionData[];
   types: string[];
+  canEdit: boolean;
 }
 
-export default function LookupOptionsManager({ options, types }: LookupOptionsManagerProps) {
+export default function LookupOptionsManager({ options, types, canEdit }: LookupOptionsManagerProps) {
   const [selectedType, setSelectedType] = useState<string>("PARTY");
   const [search, setSearch] = useState("");
   const [newValue, setNewValue] = useState("");
@@ -69,6 +70,10 @@ export default function LookupOptionsManager({ options, types }: LookupOptionsMa
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) {
+      toast.error("Developer access required.");
+      return;
+    }
     if (!newValue.trim()) {
       toast.error("Value is required.");
       return;
@@ -82,6 +87,10 @@ export default function LookupOptionsManager({ options, types }: LookupOptionsMa
 
   const handleEdit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canEdit) {
+      toast.error("Developer access required.");
+      return;
+    }
     if (!editingId) return;
     const fd = new FormData();
     fd.set("id", editingId);
@@ -93,14 +102,15 @@ export default function LookupOptionsManager({ options, types }: LookupOptionsMa
   };
 
   const startEditing = (o: LookupOptionData) => {
+    if (!canEdit) return;
     setEditingId(o.id);
     setEditValue(o.value);
     setEditSort(String(o.sortOrder));
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-2 shrink-0">
         {types.map((t) => (
           <Button
             key={t}
@@ -114,26 +124,32 @@ export default function LookupOptionsManager({ options, types }: LookupOptionsMa
         ))}
       </div>
 
-      <div className="rounded-lg border border-border bg-card">
-        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="rounded-lg border border-border bg-card flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-end sm:justify-between shrink-0">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <form onSubmit={handleAdd} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <div className="space-y-1">
-                <Label className="text-[10px] font-semibold text-muted-foreground">
-                  New {TYPE_LABELS[selectedType] || selectedType} value
-                </Label>
-                <Input
-                  type="text"
-                  value={newValue}
-                  onChange={(e) => setNewValue(e.target.value)}
-                  placeholder={`Enter new ${(TYPE_LABELS[selectedType] || selectedType).toLowerCase()}...`}
-                  className="w-72"
-                />
+            {canEdit ? (
+              <form onSubmit={handleAdd} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-semibold text-muted-foreground">
+                    New {TYPE_LABELS[selectedType] || selectedType} value
+                  </Label>
+                  <Input
+                    type="text"
+                    value={newValue}
+                    onChange={(e) => setNewValue(e.target.value)}
+                    placeholder={`Enter new ${(TYPE_LABELS[selectedType] || selectedType).toLowerCase()}...`}
+                    className="w-72"
+                  />
+                </div>
+                <Button type="submit" disabled={isPending}>
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </Button>
+              </form>
+            ) : (
+              <div className="text-xs text-muted-foreground italic py-1">
+                Read-only view — developer access required to add or edit options.
               </div>
-              <Button type="submit" disabled={isPending}>
-                <Plus className="h-3.5 w-3.5" /> Add
-              </Button>
-            </form>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -150,7 +166,7 @@ export default function LookupOptionsManager({ options, types }: LookupOptionsMa
           </div>
         </div>
 
-        <div className="divide-y divide-border">
+        <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-border">
           {filtered.length === 0 ? (
             <div className="p-6 text-center text-sm text-muted-foreground italic">
               No options found for this type.
@@ -161,7 +177,7 @@ export default function LookupOptionsManager({ options, types }: LookupOptionsMa
                 key={o.id}
                 className="flex items-center justify-between gap-3 px-4 py-2"
               >
-                {editingId === o.id ? (
+                {canEdit && editingId === o.id ? (
                   <form onSubmit={handleEdit} className="flex flex-1 items-center gap-2">
                     <Input
                       type="text"
@@ -202,40 +218,42 @@ export default function LookupOptionsManager({ options, types }: LookupOptionsMa
                         #{o.sortOrder}
                       </span>
                     </div>
-                    <div className="flex shrink-0 items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        title={o.isActive ? "Deactivate" : "Activate"}
-                        onClick={() =>
-                          runAction(
-                            () => toggleLookupOptionAction(o.id),
-                            o.isActive ? "Option deactivated." : "Option activated."
-                          )
-                        }
-                      >
-                        <Power className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        title="Edit"
-                        onClick={() => startEditing(o)}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        className="text-destructive hover:text-destructive"
-                        title="Delete"
-                        onClick={() =>
-                          runAction(() => deleteLookupOptionAction(o.id), "Option deleted.")
-                        }
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                    {canEdit && (
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          title={o.isActive ? "Deactivate" : "Activate"}
+                          onClick={() =>
+                            runAction(
+                              () => toggleLookupOptionAction(o.id),
+                              o.isActive ? "Option deactivated." : "Option activated."
+                            )
+                          }
+                        >
+                          <Power className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          title="Edit"
+                          onClick={() => startEditing(o)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          className="text-destructive hover:text-destructive"
+                          title="Delete"
+                          onClick={() =>
+                            runAction(() => deleteLookupOptionAction(o.id), "Option deleted.")
+                          }
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
