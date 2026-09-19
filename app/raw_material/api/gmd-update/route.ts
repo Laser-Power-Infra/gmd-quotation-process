@@ -12,6 +12,7 @@ export async function GET() {
         id: true,
         erpItemCode: true,
         itemNameAuto: true,
+        itemNameDerived: true,
         l1: true,
         l2ValveType: true,
         l3Dia: true,
@@ -58,8 +59,11 @@ export async function GET() {
     }
 
     const syncedAt = items.length > 0 ? items[0].syncedAt : null;
-    const headers = [...CANONICAL_COLUMNS, "BOM ID", "Vendor Reference", "Attachment"];
-    const rows = items.map(dbItemToRow);
+    const headers = [...CANONICAL_COLUMNS.slice(0, 2), "ITEM NAME (derived)", ...CANONICAL_COLUMNS.slice(2), "BOM ID", "Vendor Reference", "Attachment"];
+    const rows = items.map((i) => {
+      const r = dbItemToRow(i);
+      return [...r.slice(0, 2), i.itemNameDerived, ...r.slice(2)];
+    });
     const ids = items.map((item) => item.id);
     const transferredIds = items
       .filter((item) => item.transferred)

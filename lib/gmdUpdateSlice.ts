@@ -17,6 +17,7 @@ export interface GMDUpdateRow {
   id: string;
   erpItemCode: string | null;
   itemNameAuto: string | null;
+  itemNameDerived: string | null;
   l1: string | null;
   l2ValveType: string | null;
   l3Dia: string | null;
