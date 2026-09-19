@@ -165,6 +165,7 @@ function matchesRateTile(row: unknown[], key: RateTileKey | null): boolean {
 interface TileOption {
   value: string;
   count: number;
+  sum?: number;
 }
 
 function groupCount(
@@ -181,6 +182,32 @@ function groupCount(
   }
   return [...counts.entries()]
     .map(([value, count]) => ({ value, count }))
+    .sort((a, b) =>
+      a.value.localeCompare(b.value, undefined, { numeric: true }),
+    );
+}
+
+function groupItemBalBill(
+  rows: unknown[][],
+  itemColIdx: number,
+  balBillColIdx: number,
+  filter: (row: unknown[]) => boolean,
+): TileOption[] {
+  const map = new Map<string, { count: number; sum: number }>();
+  for (const row of rows) {
+    if (!filter(row)) continue;
+    const v = String(row[itemColIdx] ?? "").trim();
+    if (!v) continue;
+    const val = parseNum(balBillColIdx !== -1 ? row[balBillColIdx] : NaN);
+    const prev = map.get(v) ?? { count: 0, sum: 0 };
+    prev.count++;
+    if (!isNaN(val)) {
+      prev.sum += val;
+    }
+    map.set(v, prev);
+  }
+  return [...map.entries()]
+    .map(([value, data]) => ({ value, count: data.count, sum: data.sum }))
     .sort((a, b) =>
       a.value.localeCompare(b.value, undefined, { numeric: true }),
     );
@@ -539,6 +566,8 @@ export default function ContractReviewPage() {
 
   const headers = data?.headers ?? [];
   const balBillIdx = data ? headers.indexOf("BAL BILL AG CONT") : -1;
+  const effectiveBalBillIdx =
+    balBillIdx !== -1 ? balBillIdx : BAL_BILL_AG_CONT_IDX;
   const clearanceIdx = data ? headers.indexOf("CLEARANCE STATUS") : -1;
 
   useEffect(() => {
@@ -1076,23 +1105,28 @@ export default function ContractReviewPage() {
   }, [clearanceCounts, clearanceFilter]);
 
   const itemOptions = useMemo(() => {
-    const opts = groupCount(sidebarBaseRows, ITEM_IDX, (row) =>
-      matchesSidebar(
-        row,
-        balBillFilter,
-        statusFilter,
-        clearanceFilter,
-        [],
-        tileSize,
-        tilePn,
-        balBillIdx,
-        clearanceIdx,
-        "item",
-      ),
+    const opts = groupItemBalBill(
+      sidebarBaseRows,
+      ITEM_IDX,
+      effectiveBalBillIdx,
+      (row) =>
+        matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          clearanceFilter,
+          [],
+          tileSize,
+          tilePn,
+          balBillIdx,
+          clearanceIdx,
+          "item",
+        ),
     );
     // Keep selected items visible even if count 0 (bidirectional cascading keep-selected)
     for (const s of tileItems) {
-      if (!opts.some((o) => o.value === s)) opts.push({ value: s, count: 0 });
+      if (!opts.some((o) => o.value === s))
+        opts.push({ value: s, count: 0, sum: 0 });
     }
     return opts.sort((a, b) =>
       a.value.localeCompare(b.value, undefined, { numeric: true }),
@@ -1107,6 +1141,7 @@ export default function ContractReviewPage() {
     tilePn,
     balBillIdx,
     clearanceIdx,
+    effectiveBalBillIdx,
   ]);
 
   const sizeOptions = useMemo(
@@ -1729,6 +1764,25 @@ export default function ContractReviewPage() {
             : 0),
         0,
       ),
+      itemBalBill: sidebarBaseRows.reduce((n, r) => {
+        if (
+          !matchesSidebar(
+            r,
+            balBillFilter,
+            statusFilter,
+            clearanceFilter,
+            [],
+            tileSize,
+            tilePn,
+            balBillIdx,
+            clearanceIdx,
+            "item",
+          )
+        )
+          return n;
+        const v = parseNum(r[effectiveBalBillIdx]);
+        return n + (isNaN(v) ? 0 : v);
+      }, 0),
       size: sidebarBaseRows.reduce(
         (n, r) =>
           n +
@@ -1778,6 +1832,7 @@ export default function ContractReviewPage() {
       tilePn,
       balBillIdx,
       clearanceIdx,
+      effectiveBalBillIdx,
     ],
   );
 
@@ -1943,7 +1998,7 @@ export default function ContractReviewPage() {
               >
                 <span className="truncate">
                   {tileItems.length === 0
-                    ? `All (${tileAllCounts.item})`
+                    ? `All (${fmt(tileAllCounts.itemBalBill)})`
                     : `${tileItems.length} selected`}
                 </span>
                 <span className="text-[10px] text-[#0a2540]/60 shrink-0">
@@ -1994,8 +2049,8 @@ export default function ContractReviewPage() {
                             className="accent-blue-600 shrink-0"
                           />
                           <span className="truncate flex-1">{o.value}</span>
-                          <span className="text-[10px] text-[#0a2540]/50 shrink-0">
-                            ({o.count})
+                          <span className="text-[10px] text-[#0a2540]/60 font-mono shrink-0">
+                            ({fmt(o.sum ?? 0)})
                           </span>
                         </label>
                       ))
