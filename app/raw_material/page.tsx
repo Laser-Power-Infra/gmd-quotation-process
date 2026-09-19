@@ -129,33 +129,34 @@ function rowToGMDUpdateItem(id: string, row: unknown[]): GMDUpdateRow {
     id,
     erpItemCode: String(row[0] ?? ""),
     itemNameAuto: String(row[1] ?? ""),
-    l1: String(row[2] ?? ""),
-    l2ValveType: String(row[3] ?? ""),
-    l3Dia: String(row[4] ?? ""),
-    l7Dimension: String(row[5] ?? ""),
-    l4Component: String(row[6] ?? ""),
-    l5Material: String(row[7] ?? ""),
-    l6Std: String(row[8] ?? ""),
-    l8ItemCategory: String(row[9] ?? ""),
-    um: String(row[10] ?? ""),
-    availableStock: String(row[11] ?? ""),
-    conv1: String(row[12] ?? ""),
-    pcsWgt: String(row[13] ?? ""),
-    aum: String(row[14] ?? ""),
-    cost: String(row[15] ?? ""),
-    usdRateOption: String(row[16] ?? ""),
-    hsnCode: String(row[17] ?? ""),
-    hsnCodeValidation: String(row[18] ?? ""),
-    conv2: String(row[19] ?? ""),
-    majorMarking: String(row[20] ?? ""),
-    newItemStatus: String(row[21] ?? ""),
-    currentStatus: String(row[22] ?? ""),
-    rmType: String(row[23] ?? ""),
-    indianImported: String(row[24] ?? ""),
-    orderDelivery: String(row[25] ?? ""),
-    bomId: String(row[26] ?? ""),
-    vendorReference: String(row[27] ?? ""),
-    attachmentUrl: String(row[28] ?? ""),
+    itemNameDerived: String(row[2] ?? ""),
+    l1: String(row[3] ?? ""),
+    l2ValveType: String(row[4] ?? ""),
+    l3Dia: String(row[5] ?? ""),
+    l7Dimension: String(row[6] ?? ""),
+    l4Component: String(row[7] ?? ""),
+    l5Material: String(row[8] ?? ""),
+    l6Std: String(row[9] ?? ""),
+    l8ItemCategory: String(row[10] ?? ""),
+    um: String(row[11] ?? ""),
+    availableStock: String(row[12] ?? ""),
+    conv1: String(row[13] ?? ""),
+    pcsWgt: String(row[14] ?? ""),
+    aum: String(row[15] ?? ""),
+    cost: String(row[16] ?? ""),
+    usdRateOption: String(row[17] ?? ""),
+    hsnCode: String(row[18] ?? ""),
+    hsnCodeValidation: String(row[19] ?? ""),
+    conv2: String(row[20] ?? ""),
+    majorMarking: String(row[21] ?? ""),
+    newItemStatus: String(row[22] ?? ""),
+    currentStatus: String(row[23] ?? ""),
+    rmType: String(row[24] ?? ""),
+    indianImported: String(row[25] ?? ""),
+    orderDelivery: String(row[26] ?? ""),
+    bomId: String(row[27] ?? ""),
+    vendorReference: String(row[28] ?? ""),
+    attachmentUrl: String(row[29] ?? ""),
   };
 }
 
@@ -191,6 +192,7 @@ function blankGMDUpdateRow(id: string, erpItemCode: string): GMDUpdateRow {
     bomId: null,
     vendorReference: null,
     attachmentUrl: null,
+    itemNameDerived: null,
   };
 }
 
@@ -475,7 +477,10 @@ export default function Home() {
     [processedItems, castingRates],
   );
   const processedItemRows = useMemo(
-    () => processedCost.items.map(dbItemToRow),
+    () => processedCost.items.map((i) => {
+      const r = dbItemToRow(i);
+      return [...r.slice(0, 2), i.itemNameDerived, ...r.slice(2)];
+    }),
     [processedCost],
   );
   const processedItemIds = useMemo(
@@ -484,7 +489,10 @@ export default function Home() {
   );
 
   const transferredItemRows = useMemo(
-    () => transferredItems.map(dbItemToRow),
+    () => transferredItems.map((i) => {
+      const r = dbItemToRow(i);
+      return [...r.slice(0, 2), i.itemNameDerived, ...r.slice(2)];
+    }),
     [transferredItems],
   );
   const transferredItemIds = useMemo(
@@ -945,7 +953,10 @@ export default function Home() {
     [scopedNewItems, castingRates],
   );
   const scopedNewItemRows = useMemo(
-    () => scopedNewCost.items.map(dbItemToRow),
+    () => scopedNewCost.items.map((i) => {
+      const r = dbItemToRow(i);
+      return [...r.slice(0, 2), i.itemNameDerived, ...r.slice(2)];
+    }),
     [scopedNewCost],
   );
   const scopedNewItemIds = useMemo(
@@ -960,7 +971,10 @@ export default function Home() {
 
   // Base rows for sidebar = table-filtered newItems (respects column/multi/global filters)
   const sidebarBaseRows = useMemo(() => {
-    const allRows = newItems.map(dbItemToRow);
+    const allRows = newItems.map((i) => {
+      const r = dbItemToRow(i);
+      return [...r.slice(0, 2), i.itemNameDerived, ...r.slice(2)];
+    });
     if (!headers.length) return allRows;
     return allRows.filter((row) =>
       matchesTableFilters(

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { RefreshCw, Loader2 } from "lucide-react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
@@ -14,6 +15,7 @@ import {
   backfillContractReviewOrderListBatchAction,
   backfillContractReviewCostFromQuotationAction,
   syncContractReviewEnquiryFieldsBatchAction,
+  syncContractReviewEnquiryFieldsAllAction,
   autoAssignContractReviewBomIdFromActuator,
   getActuatorOptionsAction,
   saveActuatorWithRmCodeAction,
@@ -303,7 +305,7 @@ function matchesTableFilters(
   columnFilters: Record<string, string>,
   multiFilters: Record<string, string[]>,
   globalSearch: string,
-  dateRanges?: Record<string, { from: string; to: string }>,
+  dateRanges?: Record<string, { from: string; to: string; blank?: boolean }>,
   excludeHeader?: string,
   ignoreColumns?: Set<string>,
 ): boolean {
@@ -362,10 +364,16 @@ function matchesTableFilters(
     for (const [colName, r] of Object.entries(dateRanges)) {
       if (excludeHeader && colName === excludeHeader) continue;
       if (ignoreColumns?.has(colName)) continue;
-      if (!r.from && !r.to) continue;
+      if (!r.from && !r.to && !r.blank) continue;
       const colIdx = headers.indexOf(colName);
       if (colIdx === -1) continue;
       const dateStr = String(row[colIdx] ?? "");
+      if (r.blank) {
+        const isBlank =
+          dateStr === "" || dateStr === "-" || dateStr === "—";
+        if (!isBlank) return false;
+        continue;
+      }
       if (!dateStr) return false;
       const date = parseDateCR(dateStr);
       if (!date) return false;
@@ -427,6 +435,7 @@ export default function ContractReviewPage() {
   const [data, setData] = useState<ContractReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [enquirySyncing, setEnquirySyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [balBillFilter, setBalBillFilter] = useState<BalBillFilter>("all");
@@ -453,7 +462,7 @@ export default function ContractReviewPage() {
   );
   const [globalSearch, setGlobalSearch] = useState("");
   const [dateRanges, setDateRanges] = useState<
-    Record<string, { from: string; to: string }>
+    Record<string, { from: string; to: string; blank?: boolean }>
   >({});
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -505,6 +514,17 @@ export default function ContractReviewPage() {
           else delete next[header];
           return next;
         }),
+      onDateBlank: (header: string, blank: boolean) =>
+        setDateRanges((prev) => {
+          const next = { ...prev };
+          if (blank) next[header] = { from: "", to: "", blank: true };
+          else if (next[header]) {
+            const { from, to } = next[header];
+            if (from || to) next[header] = { from, to };
+            else delete next[header];
+          }
+          return next;
+        }),
       onGlobalSearch: setGlobalSearch,
       onResetFilters: () => {
         setColumnFilters({});
@@ -552,6 +572,32 @@ export default function ContractReviewPage() {
       setError(err instanceof Error ? err.message : "Sync failed");
     } finally {
       setSyncing(false);
+    }
+  }, [fetchData]);
+
+  const handleEnquirySync = useCallback(async () => {
+    setEnquirySyncing(true);
+    const toastId = toast.loading(
+      "Syncing State / Utility / Project Reference from Enquiry...",
+    );
+    try {
+      const res = await syncContractReviewEnquiryFieldsAllAction();
+      if (res?.success) {
+        toast.success(
+          `Synced ${res.data?.changed ?? 0} Contract Review row(s) from Enquiry`,
+          { id: toastId },
+        );
+        await fetchData();
+      } else {
+        toast.error(res?.error || "Sync failed", { id: toastId });
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Sync failed",
+        { id: toastId },
+      );
+    } finally {
+      setEnquirySyncing(false);
     }
   }, [fetchData]);
 
@@ -2298,6 +2344,22 @@ export default function ContractReviewPage() {
             syncedAt={data?.syncedAt ?? undefined}
             onSync={handleSync}
             syncing={syncing}
+            actions={
+              <button
+                type="button"
+                onClick={handleEnquirySync}
+                disabled={enquirySyncing}
+                className="flex items-center gap-1.5 bg-[#38ef7d]/10 hover:bg-[#38ef7d]/20 border border-[#38ef7d]/40 rounded px-3 py-1.5 text-[11px] font-semibold text-[#38ef7d] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Backfill State / Utility / Project Reference from Enquiry"
+              >
+                {enquirySyncing ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={12} />
+                )}
+                {enquirySyncing ? "Syncing..." : "Sync Enquiry Fields"}
+              </button>
+            }
           />
           {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
           <ResizablePanelGroup

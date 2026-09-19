@@ -332,7 +332,10 @@ function parseDate(str: string): Date | null {
 }
 
 const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-const EMPTY_DATE_RANGES: Record<string, { from: string; to: string }> = {};
+const EMPTY_DATE_RANGES: Record<
+  string,
+  { from: string; to: string; blank?: boolean }
+> = {};
 
 function toDateInputValue(display: string): string {
   const d = parseDate(display);
@@ -550,7 +553,7 @@ interface GMDUpdateTableProps {
     multiFilters: Record<string, string[]>;
     dateFrom?: string;
     dateTo?: string;
-    dateRanges?: Record<string, { from: string; to: string }>;
+    dateRanges?: Record<string, { from: string; to: string; blank?: boolean }>;
     globalSearch: string;
     currentPage: number;
     pageSize: number;
@@ -561,6 +564,7 @@ interface GMDUpdateTableProps {
     onDateFrom?: (val: string) => void;
     onDateTo?: (val: string) => void;
     onDateRange?: (header: string, from: string, to: string) => void;
+    onDateBlank?: (header: string, blank: boolean) => void;
     onGlobalSearch: (val: string) => void;
     onResetFilters: () => void;
     onPageChange: (page: number) => void;
@@ -656,7 +660,7 @@ castingRateInputs,
   const [localDateFrom, setLocalDateFrom] = useState("");
   const [localDateTo, setLocalDateTo] = useState("");
   const [localDateRanges, setLocalDateRanges] = useState<
-    Record<string, { from: string; to: string }>
+    Record<string, { from: string; to: string; blank?: boolean }>
   >({});
 
   const currentPage = isControlled
@@ -705,6 +709,26 @@ castingRateInputs,
   const setPageSize = isControlled
     ? filterActions!.onPageSizeChange
     : setLocalPageSize;
+  const setDateBlank = useCallback(
+    (header: string, blank: boolean) => {
+      if (filterActions?.onDateBlank) {
+        filterActions.onDateBlank(header, blank);
+      } else {
+        setLocalDateRanges((prev) => {
+          const next = { ...prev };
+          if (blank) next[header] = { from: "", to: "", blank: true };
+          else if (next[header]) {
+            const { from, to } = next[header];
+            if (from || to) next[header] = { from, to };
+            else delete next[header];
+          }
+          return next;
+        });
+      }
+      setCurrentPage(1);
+    },
+    [filterActions, setCurrentPage],
+  );
 
   const DATE_FILTER_CANDIDATES = useMemo(() => new Set(["Date", "expiryDate", "DATE OF CONTRACT", "LC DATE/RTGS DATE", "LAST DATE OF SHIPMENT/DATE OF LC"]), []);
   const dateColIdx = useMemo(() => {
@@ -959,10 +983,16 @@ castingRateInputs,
 
       for (const [colName, r] of Object.entries(dateRanges)) {
         if (colName === opts.excludeHeader) continue;
-        if (!r.from && !r.to) continue;
+        if (!r.from && !r.to && !r.blank) continue;
         const colIdx = headers.indexOf(colName);
         if (colIdx === -1) continue;
         const dateStr = String(row[colIdx] ?? "");
+        if (r.blank) {
+          const isBlank =
+            dateStr === "" || dateStr === "-" || dateStr === "—";
+          if (!isBlank) return false;
+          continue;
+        }
         if (!dateStr) return false;
         const date = parseDate(dateStr);
         if (!date) return false;
@@ -1504,6 +1534,23 @@ castingRateInputs,
                               className="flex-1 min-w-0 text-[10px] border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-1 py-0.5 outline-none"
                             />
                           </div>
+                          {header === "DATE OF CONTRACT" && (
+                            <label
+                              onClick={(e) => e.stopPropagation()}
+                              className="flex items-center gap-1.5 text-[10px] text-[#0a2540]/70 cursor-pointer select-none"
+                              title="Show only rows with no date of contract"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={!!dateRanges[header]?.blank}
+                                onChange={(e) =>
+                                  setDateBlank(header, e.target.checked)
+                                }
+                                className="accent-[#0070f3]"
+                              />
+                              Blanks
+                            </label>
+                          )}
                           <div className="flex items-center gap-1">
                             <DebouncedSearchInput
                               value={columnFilters[header] ?? ""}
@@ -1516,7 +1563,8 @@ castingRateInputs,
                               dateFrom ||
                               dateTo ||
                               dateRanges[header]?.from ||
-                              dateRanges[header]?.to) && (
+                              dateRanges[header]?.to ||
+                              dateRanges[header]?.blank) && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();

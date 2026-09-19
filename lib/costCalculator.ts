@@ -5,15 +5,15 @@ import { roundUp } from "./rounding";
 export function serializeItem(item: any) {
   return {
     ...item,
-    quantity: item.quantity ? Number(item.quantity) : 0,
-    productCost: item.productCost ? Number(item.productCost) : null,
-    cost: item.cost ? Number(item.cost) : null,
-    discount: item.discount ? Number(item.discount) : null,
+    quantity: item.quantity !== null && item.quantity !== undefined ? Number(item.quantity) : 0,
+    productCost: item.productCost !== null && item.productCost !== undefined ? Number(item.productCost) : null,
+    cost: item.cost !== null && item.cost !== undefined ? Number(item.cost) : null,
+    discount: item.discount !== null && item.discount !== undefined ? Number(item.discount) : null,
     vaPercent: item.vaPercent !== null && item.vaPercent !== undefined ? Number(item.vaPercent) : null,
     quotedRate: item.quotedRate || null,
     quotedRateGst: item.quotedRateGst || null,
-    createdAt: item.createdAt.toISOString(),
-    updatedAt: item.updatedAt.toISOString(),
+    createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+    updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : item.updatedAt,
   };
 }
 

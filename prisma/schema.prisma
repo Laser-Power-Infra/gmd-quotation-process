@@ -225,6 +225,7 @@ model GMDUpdateItem {
   id              String   @id @default(cuid())
   erpItemCode     String?
   itemNameAuto    String?
+  itemNameDerived String?
   l1              String?
   l2ValveType     String?
   l3Dia           String?

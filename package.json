@@ -21,7 +21,9 @@
     "cr:backfill-enquiry": "tsx scripts/backfill-contract-review-enquiry-fields.ts",
     "cr:backfill-enquiry:apply": "tsx scripts/backfill-contract-review-enquiry-fields.ts --apply",
     "bom:cleanup-no-use": "tsx scripts/remove-no-use-bom-ids.ts",
-    "bom:cleanup-no-use:apply": "tsx scripts/remove-no-use-bom-ids.ts --write"
+    "bom:cleanup-no-use:apply": "tsx scripts/remove-no-use-bom-ids.ts --write",
+    "cr:cleanup-invalid-boms": "tsx scripts/remove-invalid-contract-review-boms.ts",
+    "cr:cleanup-invalid-boms:apply": "tsx scripts/remove-invalid-contract-review-boms.ts --write"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",
