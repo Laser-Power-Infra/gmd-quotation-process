@@ -302,7 +302,7 @@ function matchesTableFilters(
   columnFilters: Record<string, string>,
   multiFilters: Record<string, string[]>,
   globalSearch: string,
-  dateRanges?: Record<string, { from: string; to: string }>,
+  dateRanges?: Record<string, { from: string; to: string; blank?: boolean }>,
   excludeHeader?: string,
   ignoreColumns?: Set<string>,
 ): boolean {
@@ -361,10 +361,16 @@ function matchesTableFilters(
     for (const [colName, r] of Object.entries(dateRanges)) {
       if (excludeHeader && colName === excludeHeader) continue;
       if (ignoreColumns?.has(colName)) continue;
-      if (!r.from && !r.to) continue;
+      if (!r.from && !r.to && !r.blank) continue;
       const colIdx = headers.indexOf(colName);
       if (colIdx === -1) continue;
       const dateStr = String(row[colIdx] ?? "");
+      if (r.blank) {
+        const isBlank =
+          dateStr === "" || dateStr === "-" || dateStr === "—";
+        if (!isBlank) return false;
+        continue;
+      }
       if (!dateStr) return false;
       const date = parseDateCR(dateStr);
       if (!date) return false;
@@ -452,7 +458,7 @@ export default function ContractReviewPage() {
   );
   const [globalSearch, setGlobalSearch] = useState("");
   const [dateRanges, setDateRanges] = useState<
-    Record<string, { from: string; to: string }>
+    Record<string, { from: string; to: string; blank?: boolean }>
   >({});
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -502,6 +508,17 @@ export default function ContractReviewPage() {
           const next = { ...prev };
           if (from || to) next[header] = { from, to };
           else delete next[header];
+          return next;
+        }),
+      onDateBlank: (header: string, blank: boolean) =>
+        setDateRanges((prev) => {
+          const next = { ...prev };
+          if (blank) next[header] = { from: "", to: "", blank: true };
+          else if (next[header]) {
+            const { from, to } = next[header];
+            if (from || to) next[header] = { from, to };
+            else delete next[header];
+          }
           return next;
         }),
       onGlobalSearch: setGlobalSearch,
