@@ -2359,6 +2359,11 @@ export default function ContractReviewPage() {
                   );
                 }}
                 categoryOptions={categoryOptions}
+                filterOptionsOverride={{
+                  "CLEARANCE STATUS": clearanceOptions.filter(
+                    (o) => o !== "(Blank)",
+                  ),
+                }}
                 fixedDropdownOptions={{
                   "MC Received/Pending": ["Received", "Pending"],
                   Inspection: ["DONE", "PENDING"],

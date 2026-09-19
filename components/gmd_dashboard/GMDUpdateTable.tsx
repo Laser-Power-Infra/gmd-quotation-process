@@ -818,7 +818,7 @@ castingRateInputs,
   const handleExportToExcel = async () => {
     const toastId = toast.loading("Preparing Excel file...");
     try {
-      const rows = paginatedWithIds.map(({ row }) => {
+      const rows = filteredWithIds.map(({ row }) => {
         const obj: Record<string, unknown> = {};
         visibleCols.forEach(({ header, idx }) => {
           const v = row[idx];

@@ -22,8 +22,8 @@ const EDITABLE_FIELDS = new Set([
   "hsnCodeValidation",
   "majorMarking",
   "rmType",
-  "newItemStatus",
   "orderDelivery",
+  "newItemStatus",
 ]);
 
 // Non-editable sheet fields — overwritten when the sheet has a value that differs.
@@ -61,6 +61,7 @@ const EXISTING_SELECT = {
   um: true,
   conv2: true,
   currentStatus: true,
+  // newItemStatus: true,
 } as const;
 
 export async function POST() {
@@ -85,17 +86,14 @@ export async function POST() {
     const existingRows = await prisma.gMDUpdateItem.findMany({
       select: EXISTING_SELECT,
     });
-    const existingByCode = new Map<
-      string,
-      (typeof existingRows)[number]
-    >();
+    const existingByCode = new Map<string, (typeof existingRows)[number]>();
     for (const item of existingRows) {
       const code = (item.erpItemCode ?? "").trim();
       if (!code || existingByCode.has(code)) continue;
       existingByCode.set(code, item);
     }
 
-    const toCreate: typeof dbItems[number][] = [];
+    const toCreate: (typeof dbItems)[number][] = [];
     const toUpdate: {
       id: string;
       data: Record<string, unknown>;
