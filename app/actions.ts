@@ -1193,7 +1193,12 @@ export async function updateItemFieldAction(
       }
     }
 
-    return { success: true, data: updatedItem };
+    // Always fetch authoritative latest record directly from database before returning
+    const finalItem = await prisma.enquiryItem.findUnique({
+      where: { id: itemId },
+    });
+
+    return { success: true, data: finalItem ? serializeItem(finalItem) : updatedItem };
   } catch (error: any) {
     console.error(`Error updating item ${field}:`, error);
     return { success: false, error: error.message || `Failed to update ${itemId}.` };
@@ -3099,6 +3104,35 @@ export async function syncContractReviewEnquiryFieldsBatchAction(ids: string[]) 
     };
   } catch (error: any) {
     console.error("Error syncing ContractReview enquiry fields:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to sync enquiry fields.",
+    };
+  }
+}
+
+export async function syncContractReviewEnquiryFieldsAllAction() {
+  "use server";
+  try {
+    const {
+      computeContractReviewEnquiryBackfill,
+      applyContractReviewEnquiryBackfill,
+    } = await import("@/lib/gmd_lib/contract-review-enquiry-backfill");
+
+    const result = await computeContractReviewEnquiryBackfill(prisma);
+    const updated = await applyContractReviewEnquiryBackfill(prisma, result.rows);
+
+    return {
+      success: true,
+      data: {
+        changed: result.rows.length,
+        matched: result.matched,
+        unmatched: result.unmatched,
+        updated,
+      },
+    };
+  } catch (error: any) {
+    console.error("Error syncing all ContractReview enquiry fields:", error);
     return {
       success: false,
       error: error.message || "Failed to sync enquiry fields.",

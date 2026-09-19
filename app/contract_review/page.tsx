@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { RefreshCw, Loader2 } from "lucide-react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
@@ -13,6 +14,7 @@ import {
   backfillContractReviewOrderListBatchAction,
   backfillContractReviewCostFromQuotationAction,
   syncContractReviewEnquiryFieldsBatchAction,
+  syncContractReviewEnquiryFieldsAllAction,
   autoAssignContractReviewBomIdFromActuator,
   getActuatorOptionsAction,
   saveActuatorWithRmCodeAction,
@@ -432,6 +434,7 @@ export default function ContractReviewPage() {
   const [data, setData] = useState<ContractReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [enquirySyncing, setEnquirySyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [balBillFilter, setBalBillFilter] = useState<BalBillFilter>("all");
@@ -568,6 +571,32 @@ export default function ContractReviewPage() {
       setError(err instanceof Error ? err.message : "Sync failed");
     } finally {
       setSyncing(false);
+    }
+  }, [fetchData]);
+
+  const handleEnquirySync = useCallback(async () => {
+    setEnquirySyncing(true);
+    const toastId = toast.loading(
+      "Syncing State / Utility / Project Reference from Enquiry...",
+    );
+    try {
+      const res = await syncContractReviewEnquiryFieldsAllAction();
+      if (res?.success) {
+        toast.success(
+          `Synced ${res.data?.changed ?? 0} Contract Review row(s) from Enquiry`,
+          { id: toastId },
+        );
+        await fetchData();
+      } else {
+        toast.error(res?.error || "Sync failed", { id: toastId });
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Sync failed",
+        { id: toastId },
+      );
+    } finally {
+      setEnquirySyncing(false);
     }
   }, [fetchData]);
 
@@ -2306,6 +2335,22 @@ export default function ContractReviewPage() {
             syncedAt={data?.syncedAt ?? undefined}
             onSync={handleSync}
             syncing={syncing}
+            actions={
+              <button
+                type="button"
+                onClick={handleEnquirySync}
+                disabled={enquirySyncing}
+                className="flex items-center gap-1.5 bg-[#38ef7d]/10 hover:bg-[#38ef7d]/20 border border-[#38ef7d]/40 rounded px-3 py-1.5 text-[11px] font-semibold text-[#38ef7d] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Backfill State / Utility / Project Reference from Enquiry"
+              >
+                {enquirySyncing ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <RefreshCw size={12} />
+                )}
+                {enquirySyncing ? "Syncing..." : "Sync Enquiry Fields"}
+              </button>
+            }
           />
           {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
           <ResizablePanelGroup

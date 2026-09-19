@@ -4233,12 +4233,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
+                          key={firstItem.id + "-productCost-" + (firstItem.productCost !== null && firstItem.productCost !== undefined ? Number(firstItem.productCost).toString() : "")}
                           type="text"
-                          defaultValue={firstItem.productCost ? Number(firstItem.productCost).toString() : ""}
+                          defaultValue={firstItem.productCost !== null && firstItem.productCost !== undefined ? Number(firstItem.productCost).toString() : ""}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (firstItem.productCost ? Number(firstItem.productCost).toString() : "")) {
+                            if (e.target.value !== (firstItem.productCost !== null && firstItem.productCost !== undefined ? Number(firstItem.productCost).toString() : "")) {
                               handleItemFieldChange(firstItem.id, "productCost", e.target.value);
                             }
                           }}
@@ -4255,6 +4256,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
+                          key={firstItem.id + "-costRefCode-" + (firstItem.costRefCode || "")}
                           type="text"
                           defaultValue={firstItem.costRefCode || ""}
                           disabled={isFrozen}
@@ -4277,12 +4279,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
+                          key={firstItem.id + "-cost-" + (firstItem.cost !== null && firstItem.cost !== undefined ? Number(firstItem.cost).toString() : "")}
                           type="text"
-                          defaultValue={firstItem.cost ? Number(firstItem.cost).toString() : ""}
+                          defaultValue={firstItem.cost !== null && firstItem.cost !== undefined ? Number(firstItem.cost).toString() : ""}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (firstItem.cost ? Number(firstItem.cost).toString() : "")) {
+                            if (e.target.value !== (firstItem.cost !== null && firstItem.cost !== undefined ? Number(firstItem.cost).toString() : "")) {
                               handleItemFieldChange(firstItem.id, "cost", e.target.value);
                             }
                           }}
@@ -4430,12 +4433,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                       {firstItem ? (
                         <input
+                          key={firstItem.id + "-discount-" + (firstItem.discount !== null && firstItem.discount !== undefined ? Number(firstItem.discount).toString() : "")}
                           type="text"
-                          defaultValue={firstItem.discount ? Number(firstItem.discount).toString() : ""}
+                          defaultValue={firstItem.discount !== null && firstItem.discount !== undefined ? Number(firstItem.discount).toString() : ""}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (firstItem.discount ? Number(firstItem.discount).toString() : "")) {
+                            if (e.target.value !== (firstItem.discount !== null && firstItem.discount !== undefined ? Number(firstItem.discount).toString() : "")) {
                               handleItemFieldChange(firstItem.id, "discount", e.target.value);
                             }
                           }}
@@ -4963,12 +4967,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         {/* Product Cost */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
+                            key={item.id + "-productCost-" + (item.productCost !== null && item.productCost !== undefined ? Number(item.productCost).toString() : "")}
                             type="text"
-                            defaultValue={item.productCost ? Number(item.productCost).toString() : ""}
+                            defaultValue={item.productCost !== null && item.productCost !== undefined ? Number(item.productCost).toString() : ""}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (item.productCost ? Number(item.productCost).toString() : "")) {
+                            if (e.target.value !== (item.productCost !== null && item.productCost !== undefined ? Number(item.productCost).toString() : "")) {
                               handleItemFieldChange(item.id, "productCost", e.target.value);
                             }
                           }}
@@ -4983,6 +4988,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       {/* Cost Ref Code */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
+                            key={item.id + "-costRefCode-" + (item.costRefCode || "")}
                             type="text"
                             defaultValue={item.costRefCode || ""}
                             disabled={isFrozen}
@@ -5003,12 +5009,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       {/* Cost */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
+                            key={item.id + "-cost-" + (item.cost !== null && item.cost !== undefined ? Number(item.cost).toString() : "")}
                             type="text"
-                            defaultValue={item.cost ? Number(item.cost).toString() : ""}
+                            defaultValue={item.cost !== null && item.cost !== undefined ? Number(item.cost).toString() : ""}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (item.cost ? Number(item.cost).toString() : "")) {
+                            if (e.target.value !== (item.cost !== null && item.cost !== undefined ? Number(item.cost).toString() : "")) {
                               handleItemFieldChange(item.id, "cost", e.target.value);
                             }
                           }}
@@ -5142,12 +5149,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       {/* Discount */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
+                            key={item.id + "-discount-" + (item.discount !== null && item.discount !== undefined ? Number(item.discount).toString() : "")}
                             type="text"
-                            defaultValue={item.discount ? Number(item.discount).toString() : ""}
+                            defaultValue={item.discount !== null && item.discount !== undefined ? Number(item.discount).toString() : ""}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (item.discount ? Number(item.discount).toString() : "")) {
+                            if (e.target.value !== (item.discount !== null && item.discount !== undefined ? Number(item.discount).toString() : "")) {
                               handleItemFieldChange(item.id, "discount", e.target.value);
                             }
                           }}
