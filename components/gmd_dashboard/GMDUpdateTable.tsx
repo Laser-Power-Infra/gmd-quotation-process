@@ -23,6 +23,7 @@ import { updateGMDUpdateField, updateGMDUsdCost } from "@/lib/gmdUpdateSlice";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import DatePicker from "@/components/ui/date-picker";
 
 function isUrl(text: string): boolean {
   try {
@@ -331,30 +332,10 @@ function parseDate(str: string): Date | null {
   return null;
 }
 
-const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const EMPTY_DATE_RANGES: Record<
   string,
   { from: string; to: string; blank?: boolean }
 > = {};
-
-function toDateInputValue(display: string): string {
-  const d = parseDate(display);
-  if (!d) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function fromDateInputValue(value: string): string {
-  if (!value) return "";
-  const d = new Date(`${value}T00:00:00`);
-  if (isNaN(d.getTime())) return "";
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = MONTH_ABBR[d.getMonth()];
-  const yyyy = d.getFullYear();
-  return `${dd}-${mm}-${yyyy}`;
-}
 
 const DATE_SORT_HEADERS = new Set(["Date", "expiryDate", "PBG VALID TILL", "PBG CLAIM TILL"]);
 function isDateHeader(header: string): boolean {
@@ -1878,18 +1859,14 @@ castingRateInputs,
                         );
                       } else if (isDateHeader(header)) {
                         cellContent = (
-                          <input
+                          <DatePicker
                             key={display + "-" + idx + "-" + cellIdx}
-                            type="date"
-                            value={toDateInputValue(display)}
-                            onChange={(e) => {
-                              const next = fromDateInputValue(e.target.value);
+                            value={display}
+                            onChange={(next) => {
                               if (next !== display) {
                                 handleCellUpdate(idx, cellIdx, next);
                               }
                             }}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full text-xs bg-transparent border-none outline-none"
                           />
                         );
                       } else if (

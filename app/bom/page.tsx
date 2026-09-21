@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Database, Loader2 } from "lucide-react";
-import { RefreshCw, Loader2 } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
@@ -211,6 +211,7 @@ export default function BomPage() {
           onSync={handleSync}
           syncing={syncing}
           actions={
+            <>
             <button
               onClick={handleMetaSync}
               disabled={syncingMeta}
@@ -223,8 +224,7 @@ export default function BomPage() {
               )}
               {syncingMeta ? "Syncing..." : "Sync Item Meta"}
             </button>
-          }
-          actions={
+          
             <button
               type="button"
               onClick={handleSyncMissingStock}
@@ -239,6 +239,7 @@ export default function BomPage() {
               )}
               {syncingStock ? "Syncing Stock..." : "Sync Missing Stock"}
             </button>
+            </>
           }
         />
         {error && (
