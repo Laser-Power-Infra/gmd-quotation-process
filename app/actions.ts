@@ -2714,13 +2714,15 @@ export async function updateDerivedItemName(itemCode: string) {
     const seen = new Set<string>();
     const parts: string[] = [];
     for (const raw of order) {
-      const v = (raw ?? "").trim();
+      let v = (raw ?? "").trim();
       if (!v) continue;
+      const up = v.toUpperCase();
+      if (up === "TRADING VALVE" || up === "TRADING VALVES") v = "TV";
+      else if (up.includes("GEAR BOX")) v = v.replace(/gear box/gi, "GB");
       const key = v.toUpperCase().replace(/S$/, "");
       if (seen.has(key)) continue;
       seen.add(key);
-      const isTradingValve = key === "TRADING VALVE";
-      parts.push(isTradingValve ? "TV" : v);
+      parts.push(v);
     }
 
     const itemNameDerived = parts.join("-");
