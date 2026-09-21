@@ -1,14 +1,37 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Database, Loader2 } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
 import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
-import { updateVerifyBomFieldBatchAction } from "@/app/actions";
+import {
+  updateVerifyBomFieldBatchAction,
+  syncNullVerifyBomStockAction,
+} from "@/app/actions";
 import { VERIFY_BOM_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/verify-bom-columns";
+
+const TABLE2_EDITABLE_COLUMNS = [
+  "BOM ID TYPE",
+  "BOM ITEM QTY",
+  "ITEM SCHEDULE NAME",
+  "ITEM TYPE",
+  "MOC",
+  "OPERATION",
+  "SIZE",
+  "NO",
+  "PN-GMD",
+  "CURRENT REQT",
+  "NEW ITEM NAME",
+  "DUPLICATE MERGER COUNT",
+  "BOM NATURE",
+  "CONSUMPTION-1",
+  "CONSUMPTION 2",
+  "CONSUMPTION 3",
+];
 
 interface BomData {
   headers: string[];
@@ -23,8 +46,10 @@ export default function BomPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncingMeta, setSyncingMeta] = useState(false);
+  const [syncingStock, setSyncingStock] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [selectedNoIndex, setSelectedNoIndex] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -43,6 +68,34 @@ export default function BomPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleSyncMissingStock = useCallback(async () => {
+    setSyncingStock(true);
+    const toastId = toast.loading("Checking Google Sheets for missing available stock...");
+    try {
+      const res = await syncNullVerifyBomStockAction();
+      if (!res?.success) {
+        toast.error(res?.error || "Failed to sync available stock", { id: toastId });
+        return;
+      }
+      if (res.updatedCount === 0) {
+        toast.info(
+          `Checked ${res.totalNullCount} null items: no matching stock found in Google Sheets.`,
+          { id: toastId },
+        );
+      } else {
+        toast.success(
+          `Successfully populated available stock for ${res.updatedCount} items!`,
+          { id: toastId },
+        );
+        await fetchData();
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to sync available stock", { id: toastId });
+    } finally {
+      setSyncingStock(false);
+    }
+  }, [fetchData]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
@@ -86,6 +139,29 @@ export default function BomPage() {
 
   const headers = data?.headers ?? [];
   const ids = data?.ids ?? [];
+
+  const { yesRows, yesIds, noRows, noIds } = useMemo(() => {
+    const yesRows: unknown[][] = [];
+    const yesIds: string[] = [];
+    const noRows: unknown[][] = [];
+    const noIds: string[] = [];
+    const rows = data?.rows ?? [];
+    const currentReqtIdx = headers.indexOf("CURRENT REQT");
+    rows.forEach((row, i) => {
+      const v =
+        currentReqtIdx >= 0
+          ? String(row[currentReqtIdx] ?? "").trim().toLowerCase()
+          : "";
+      if (v === "yes") {
+        yesRows.push(row);
+        yesIds.push(ids[i]);
+      } else {
+        noRows.push(row);
+        noIds.push(ids[i]);
+      }
+    });
+    return { yesRows, yesIds, noRows, noIds };
+  }, [data, headers, ids]);
 
   const handleCellUpdate = useCallback(
     async (id: string, colIndex: number, value: string) => {
@@ -178,6 +254,7 @@ export default function BomPage() {
           onSync={handleSync}
           syncing={syncing}
           actions={
+            <>
             <button
               onClick={handleMetaSync}
               disabled={syncingMeta}
@@ -190,6 +267,22 @@ export default function BomPage() {
               )}
               {syncingMeta ? "Syncing..." : "Sync Item Meta"}
             </button>
+          
+            <button
+              type="button"
+              onClick={handleSyncMissingStock}
+              disabled={syncingStock || loading}
+              className="flex items-center gap-1.5 bg-[#38ef7d]/10 hover:bg-[#38ef7d]/20 border border-[#38ef7d]/40 rounded px-3 py-1.5 text-[11px] font-semibold text-[#38ef7d] transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              title="Find null available stock in VerifyBom, match with Google Sheet, and backfill available stock"
+            >
+              {syncingStock ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              {syncingStock ? "Syncing Stock..." : "Sync Missing Stock"}
+            </button>
+            </>
           }
         />
         {error && (
@@ -198,17 +291,34 @@ export default function BomPage() {
         <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4 pr-1 mt-4">
           <GMDUpdateTable
             headers={headers}
-            rows={data?.rows ?? []}
-            ids={ids}
+            rows={yesRows}
+            ids={yesIds}
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
-            title="Verify BOM"
+            title="Verify BOM — YES"
             groupByColumn="BOM ID"
             mergeColumns={["BOM ID", "ITEM CODE", "BOM ID TYPE", "USE/NO USE", "AVAILABLE STOCK"]}
             mergeTypeColumn="BOM ID TYPE"
             mergeOnlyTypes={["2:1", "3:1"]}
             editable
             editableColumns={["BOM ID TYPE"]}
+            fixedDropdownOptions={{ "BOM ID TYPE": ["2:1", "3:1", "DIRECT M2M", "CREATE BOM"] }}
+            onCellUpdate={handleCellUpdate}
+            hiddenColumns={["ITEM SCHEDULE NAME"]}
+          />
+          <GMDUpdateTable
+            headers={headers}
+            rows={noRows}
+            ids={noIds}
+            selectedIndex={selectedNoIndex}
+            onSelect={setSelectedNoIndex}
+            title="Verify BOM — NO/Blank"
+            groupByColumn="BOM ID"
+            mergeColumns={["BOM ID", "ITEM CODE", "BOM ID TYPE", "USE/NO USE", "AVAILABLE STOCK"]}
+            mergeTypeColumn="BOM ID TYPE"
+            mergeOnlyTypes={["2:1", "3:1"]}
+            editable
+            editableColumns={TABLE2_EDITABLE_COLUMNS}
             fixedDropdownOptions={{ "BOM ID TYPE": ["2:1", "3:1", "DIRECT M2M", "CREATE BOM"] }}
             onCellUpdate={handleCellUpdate}
             hiddenColumns={["ITEM SCHEDULE NAME"]}

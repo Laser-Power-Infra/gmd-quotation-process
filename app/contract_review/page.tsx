@@ -91,6 +91,7 @@ function parseNum(value: unknown): number {
 }
 
 const ITEM_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Item");
+const EXTRA_ITEM_OPTION = "TPV + SLV METAL RISING - 9523";
 const SIZE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("SIZE");
 const PN_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PN RATING");
 const RATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RATE");
@@ -957,9 +958,12 @@ export default function ContractReviewPage() {
   const categoryOptions = useMemo<Record<string, string[]>>(() => {
     if (!data) return {};
     const items = [
-      ...new Set(
-        data.rows.map((r) => String(r[ITEM_IDX] ?? "").trim()).filter(Boolean),
-      ),
+      ...new Set([
+        ...data.rows
+          .map((r) => String(r[ITEM_IDX] ?? "").trim())
+          .filter(Boolean),
+        EXTRA_ITEM_OPTION,
+      ]),
     ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
     const result: Record<string, string[]> = {};
     if (items.length) result.Item = items;
@@ -1183,6 +1187,9 @@ export default function ContractReviewPage() {
       if (!opts.some((o) => o.value === s))
         opts.push({ value: s, count: 0, sum: 0 });
     }
+    // Always show the fixed extra item option
+    if (!opts.some((o) => o.value === EXTRA_ITEM_OPTION))
+      opts.push({ value: EXTRA_ITEM_OPTION, count: 0, sum: 0 });
     return opts.sort((a, b) =>
       a.value.localeCompare(b.value, undefined, { numeric: true }),
     );
@@ -2369,7 +2376,7 @@ export default function ContractReviewPage() {
             onLayoutChanged={onVerticalLayoutChanged}
             className="flex-1 min-h-0 mt-4"
           >
-            <ResizablePanel id="graph" defaultSize="32" minSize="12">
+            <ResizablePanel id="graph" defaultSize="32" minSize="12" maxSize="38">
               <div className="h-full overflow-hidden rounded-lg border border-[#1e3d59] bg-[#0a2540]">
                 <FlowDiagram
                   trees={CONTRACT_REVIEW_TREES}

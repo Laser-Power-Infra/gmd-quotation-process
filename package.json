@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 4561",
+    "dev": "next dev --port 4569",
     "build": "npx prisma generate && next build",
-    "build-start": "npx prisma generate && next build && next start --port 4560",
-    "start": "next start --port 4560",
+    "build-start": "npx prisma generate && next build && next start --port 4570",
+    "start": "next start --port 4570",
     "lint": "eslint",
     "seed:lookups": "tsx scripts/seed-lookup-options.ts",
     "bom:cost": "tsx scripts/update-product-cost-from-bom.ts",
@@ -23,7 +23,11 @@
     "bom:cleanup-no-use": "tsx scripts/remove-no-use-bom-ids.ts",
     "bom:cleanup-no-use:apply": "tsx scripts/remove-no-use-bom-ids.ts --write",
     "cr:cleanup-invalid-boms": "tsx scripts/remove-invalid-contract-review-boms.ts",
-    "cr:cleanup-invalid-boms:apply": "tsx scripts/remove-invalid-contract-review-boms.ts --write"
+    "cr:cleanup-invalid-boms:apply": "tsx scripts/remove-invalid-contract-review-boms.ts --write",
+    "bom:stock:dry-run": "tsx scripts/dry-run-verify-bom-missing-stock.ts",
+    "bom:stock:apply": "tsx scripts/dry-run-verify-bom-missing-stock.ts --apply",
+    "bom:cost:derive": "tsx scripts/backfill-verify-bom-cost.ts",
+    "bom:cost:derive:apply": "tsx scripts/backfill-verify-bom-cost.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",

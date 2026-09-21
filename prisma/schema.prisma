@@ -355,6 +355,7 @@ model VerifyBom {
   consumption1  String?
   consumption2  String?
   consumption3  String?
+  cost         String?
   syncedAt   DateTime @default(now())
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

@@ -5,14 +5,14 @@ services:
     container_name: gmd-quotation-process
 
     ports:
-      - "4560:4560"
+      - "4570:4570"
 
     env_file:
       - .env.production
 
     environment:
       NODE_ENV: production
-      PORT: 4560
+      PORT: 4570
       HOSTNAME: 0.0.0.0
 
       GOOGLE_APPLICATION_CREDENTIALS: /app/credentials.json
