@@ -3424,6 +3424,68 @@ export async function updateVerifyBomFieldBatchAction(
   }
 }
 
+function deriveVerifyBomItemName(item: {
+  itemType: string | null;
+  moc: string | null;
+  operation: string | null;
+  size: string | null;
+  pnGmd: string | null;
+}): string | null {
+  const parts = [item.itemType, item.moc, item.operation, item.size, item.pnGmd].map(
+    (p) => (p ?? "").trim(),
+  );
+  if (parts.some((p) => p === "")) return null;
+  return parts.join("_");
+}
+
+// Derives VerifyBom NEW ITEM NAME as ITEM_TYPE_MOC_OPERATION_SIZE_PN-GMD
+// and overwrites `merged` (derived wins). Returns the updated rows for the client to patch.
+export async function deriveVerifyBomItemNameBatchAction(ids: string[]) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+    const items = await prisma.verifyBom.findMany({
+      where: { id: { in: unique } },
+      select: {
+        id: true,
+        itemType: true,
+        moc: true,
+        operation: true,
+        size: true,
+        pnGmd: true,
+        merged: true,
+      },
+    });
+    const updates = items
+      .map((item) => {
+        const merged = deriveVerifyBomItemName(item);
+        const current = (item.merged ?? "").trim();
+        const next = merged ?? "";
+        if (current === next) return null;
+        return prisma.verifyBom.update({
+          where: { id: item.id },
+          data: { merged },
+        });
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null);
+    if (updates.length > 0) {
+      await prisma.$transaction(updates);
+    }
+    return {
+      success: true,
+      data: items
+        .map((item) => ({ id: item.id, merged: deriveVerifyBomItemName(item) })),
+    };
+  } catch (error: any) {
+    console.error("Error deriving VerifyBom item names:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to derive VerifyBom item names.",
+    };
+  }
+}
+
 /**
  * Syncs available stock from Google Sheet (stock-phys tab ONLY)
  * ONLY for VerifyBom rows where availableStock is null, empty string, or whitespace.
