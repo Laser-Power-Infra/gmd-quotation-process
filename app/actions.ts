@@ -2687,6 +2687,57 @@ export async function updateGMDUpdateFieldAction(
   return { id, field, value };
 }
 
+export async function updateDerivedItemName(itemCode: string) {
+  "use server";
+  try {
+    const item = await prisma.gMDUpdateItem.findFirst({
+      where: { erpItemCode: itemCode },
+    });
+    if (!item) return { success: false, error: "Item not found." };
+
+    const l8 = (item.l8ItemCategory ?? "").trim();
+    const isGearbox = l8.toUpperCase().includes("GEAR BOX");
+
+    const order = isGearbox
+      ? [item.l4Component, item.l5Material, item.l7Dimension]
+      : [
+          item.l8ItemCategory,
+          item.l2ValveType,
+          item.l3Dia,
+          item.l4Component,
+          item.l5Material,
+          item.l6Std,
+          item.l7Dimension,
+        ];
+
+    const seen = new Set<string>();
+    const parts: string[] = [];
+    for (const raw of order) {
+      const v = (raw ?? "").trim();
+      if (!v) continue;
+      const key = v.toUpperCase().replace(/S$/, "");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const isTradingValve = key === "TRADING VALVE";
+      parts.push(isTradingValve ? "TV" : v);
+    }
+
+    const itemNameDerived = parts.join("-");
+    await prisma.gMDUpdateItem.update({
+      where: { id: item.id },
+      data: { itemNameDerived },
+    });
+
+    return { success: true, data: { itemCode, itemNameDerived } };
+  } catch (error: any) {
+    console.error("Error updating derived item name:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to update derived item name.",
+    };
+  }
+}
+
 export async function getUsdInrRateAction(refresh = false) {
   "use server";
   try {
