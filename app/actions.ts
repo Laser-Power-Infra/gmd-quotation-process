@@ -3399,6 +3399,85 @@ export async function updateVerifyBomFieldBatchAction(
   }
 }
 
+/**
+ * Syncs available stock from Google Sheet (stock-phys tab ONLY)
+ * ONLY for VerifyBom rows where availableStock is null, empty string, or whitespace.
+ */
+export async function syncNullVerifyBomStockAction() {
+  "use server";
+  try {
+    const { fetchStockPhysicalSheet } = await import(
+      "@/lib/gmd_lib/google-sheets"
+    );
+
+    const stockPhysMap = await fetchStockPhysicalSheet();
+
+    const nullRows = await prisma.verifyBom.findMany({
+      where: {
+        OR: [
+          { availableStock: null },
+          { availableStock: "" },
+        ],
+      },
+      select: {
+        id: true,
+        itemCode: true,
+        rmItemCode: true,
+        availableStock: true,
+      },
+    });
+
+    const updates: { id: string; stock: string }[] = [];
+
+    for (const row of nullRows) {
+      const currentStock = (row.availableStock ?? "").trim();
+      if (currentStock !== "") continue;
+
+      const rmCode = (row.rmItemCode ?? "").trim();
+      const itemCode = (row.itemCode ?? "").trim();
+
+      let foundStock: string | null = null;
+
+      if (rmCode && rmCode in stockPhysMap) {
+        foundStock = stockPhysMap[rmCode];
+      } else if (itemCode && itemCode in stockPhysMap) {
+        foundStock = stockPhysMap[itemCode];
+      }
+
+      if (foundStock !== null && foundStock !== "") {
+        updates.push({ id: row.id, stock: foundStock });
+      }
+    }
+
+    if (updates.length > 0) {
+      const chunkSize = 100;
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize);
+        await prisma.$transaction(
+          chunk.map((u) =>
+            prisma.verifyBom.update({
+              where: { id: u.id },
+              data: { availableStock: u.stock },
+            }),
+          ),
+        );
+      }
+    }
+
+    return {
+      success: true,
+      updatedCount: updates.length,
+      totalNullCount: nullRows.length,
+    };
+  } catch (error: any) {
+    console.error("Error syncing null VerifyBom stock:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to sync available stock from sheet.",
+    };
+  }
+}
+
 export async function updateSupplyHistoryFieldAction(
   id: string,
   field: string,

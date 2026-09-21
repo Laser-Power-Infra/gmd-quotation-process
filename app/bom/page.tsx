@@ -1,12 +1,16 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { RefreshCw, Loader2 } from "lucide-react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
 import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
-import { updateVerifyBomFieldBatchAction } from "@/app/actions";
+import {
+  updateVerifyBomFieldBatchAction,
+  syncNullVerifyBomStockAction,
+} from "@/app/actions";
 import { VERIFY_BOM_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/verify-bom-columns";
 
 interface BomData {
@@ -21,6 +25,7 @@ export default function BomPage() {
   const [data, setData] = useState<BomData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncingStock, setSyncingStock] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
@@ -41,6 +46,34 @@ export default function BomPage() {
       setLoading(false);
     }
   }, []);
+
+  const handleSyncMissingStock = useCallback(async () => {
+    setSyncingStock(true);
+    const toastId = toast.loading("Checking Google Sheets for missing available stock...");
+    try {
+      const res = await syncNullVerifyBomStockAction();
+      if (!res?.success) {
+        toast.error(res?.error || "Failed to sync available stock", { id: toastId });
+        return;
+      }
+      if (res.updatedCount === 0) {
+        toast.info(
+          `Checked ${res.totalNullCount} null items: no matching stock found in Google Sheets.`,
+          { id: toastId },
+        );
+      } else {
+        toast.success(
+          `Successfully populated available stock for ${res.updatedCount} items!`,
+          { id: toastId },
+        );
+        await fetchData();
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to sync available stock", { id: toastId });
+    } finally {
+      setSyncingStock(false);
+    }
+  }, [fetchData]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true);
@@ -156,6 +189,22 @@ export default function BomPage() {
           syncedAt={data?.syncedAt ?? undefined}
           onSync={handleSync}
           syncing={syncing}
+          actions={
+            <button
+              type="button"
+              onClick={handleSyncMissingStock}
+              disabled={syncingStock || loading}
+              className="flex items-center gap-1.5 bg-[#38ef7d]/10 hover:bg-[#38ef7d]/20 border border-[#38ef7d]/40 rounded px-3 py-1.5 text-[11px] font-semibold text-[#38ef7d] transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              title="Find null available stock in VerifyBom, match with Google Sheet, and backfill available stock"
+            >
+              {syncingStock ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              {syncingStock ? "Syncing Stock..." : "Sync Missing Stock"}
+            </button>
+          }
         />
         {error && (
           <div className="mt-2 text-sm text-red-600">{error}</div>
