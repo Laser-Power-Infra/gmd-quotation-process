@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { Database, Loader2 } from "lucide-react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
@@ -21,6 +22,7 @@ export default function BomPage() {
   const [data, setData] = useState<BomData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncingMeta, setSyncingMeta] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
@@ -56,6 +58,25 @@ export default function BomPage() {
       setError(err instanceof Error ? err.message : "Sync failed");
     } finally {
       setSyncing(false);
+    }
+  }, [fetchData]);
+
+  const handleMetaSync = useCallback(async () => {
+    setSyncingMeta(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/bom/sync-meta", { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Sync Item Meta failed (${res.status})`);
+      }
+      const json = await res.json();
+      toast.success(`Item meta synced: ${json.count ?? 0} row(s) updated`);
+      await fetchData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sync Item Meta failed");
+    } finally {
+      setSyncingMeta(false);
     }
   }, [fetchData]);
 
@@ -156,6 +177,20 @@ export default function BomPage() {
           syncedAt={data?.syncedAt ?? undefined}
           onSync={handleSync}
           syncing={syncing}
+          actions={
+            <button
+              onClick={handleMetaSync}
+              disabled={syncingMeta}
+              className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-400/30 rounded px-3 py-1.5 text-[11px] font-semibold text-emerald-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {syncingMeta ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Database size={12} />
+              )}
+              {syncingMeta ? "Syncing..." : "Sync Item Meta"}
+            </button>
+          }
         />
         {error && (
           <div className="mt-2 text-sm text-red-600">{error}</div>

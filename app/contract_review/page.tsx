@@ -7,6 +7,7 @@ import GMDUpdateTable from "../../components/gmd_dashboard/GMDUpdateTable";
 import ErrorState from "../../components/gmd_dashboard/ErrorState";
 import GMDUpdateSkeleton from "../../components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
+import { parseAndValidateProdOrderNumber } from "@/lib/contractValidation";
 import {
   selectContractReviewBomIdAction,
   updateContractReviewFieldAction,
@@ -677,6 +678,14 @@ export default function ContractReviewPage() {
       if (!header) return;
       const field = CONTRACT_REVIEW_HEADER_TO_DB_FIELD[header];
       if (!field) return;
+      if (header === "PROD ORDER NO") {
+        const validated = parseAndValidateProdOrderNumber(value);
+        if (!validated.isValid) {
+          toast.error(validated.error || "Invalid production order number.");
+          return;
+        }
+        value = validated.contracts.length > 0 ? validated.contracts[0] : "";
+      }
       const toastId = toast.loading(`Updating ${header}...`);
       try {
         if (header === "Actuator") {
@@ -2397,6 +2406,7 @@ export default function ContractReviewPage() {
                   "LAST DATE OF SHIPMENT/DATE OF LC",
                   "Issuing bank name",
                   "PAYMENT TERMS",
+                  "PROD ORDER NO",
                 ]}
                 blankOnlyEditableColumns={["DATE OF CONTRACT"]}
                 dropdownRowCondition={(header, row) => {
@@ -2411,6 +2421,11 @@ export default function ContractReviewPage() {
                   );
                 }}
                 categoryOptions={categoryOptions}
+                filterOptionsOverride={{
+                  "CLEARANCE STATUS": clearanceOptions.filter(
+                    (o) => o !== "(Blank)",
+                  ),
+                }}
                 fixedDropdownOptions={{
                   "MC Received/Pending": ["Received", "Pending"],
                   Inspection: ["DONE", "PENDING"],

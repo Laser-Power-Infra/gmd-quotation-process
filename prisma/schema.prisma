@@ -342,6 +342,19 @@ model VerifyBom {
   itemName      String?
   itemScheduleName String?
   rmItemName    String?
+  itemType      String?
+  moc           String?
+  operation     String?
+  size          String?
+  no            String?
+  pnGmd         String?
+  currentReqt   String?
+  merged        String?
+  duplicateMergerCount String?
+  bomNature     String?
+  consumption1  String?
+  consumption2  String?
+  consumption3  String?
   syncedAt   DateTime @default(now())
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

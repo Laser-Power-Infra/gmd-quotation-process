@@ -15,6 +15,7 @@ import { splitCsvLinks } from "@/lib/gmd_lib/contract-order-links";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, getRmTypeMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 import { makeImageKey } from "@/lib/imageKey";
+import { parseAndValidateProdOrderNumber } from "@/lib/contractValidation";
 import {
   uploadToS3,
   deleteFromS3,
@@ -3350,6 +3351,13 @@ export async function updateContractReviewFieldAction(
       if (!value || String(value).trim() === "") {
         return { success: false, error: "DATE OF CONTRACT cannot be empty." };
       }
+    }
+    if (field === "productionOrderNumber") {
+      const validated = parseAndValidateProdOrderNumber(value ?? "");
+      if (!validated.isValid) {
+        return { success: false, error: validated.error };
+      }
+      value = validated.contracts.length > 0 ? validated.contracts[0] : null;
     }
     await prisma.contractReview.update({
       where: { id },
