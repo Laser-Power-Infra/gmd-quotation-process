@@ -25,7 +25,9 @@
     "cr:cleanup-invalid-boms": "tsx scripts/remove-invalid-contract-review-boms.ts",
     "cr:cleanup-invalid-boms:apply": "tsx scripts/remove-invalid-contract-review-boms.ts --write",
     "bom:stock:dry-run": "tsx scripts/dry-run-verify-bom-missing-stock.ts",
-    "bom:stock:apply": "tsx scripts/dry-run-verify-bom-missing-stock.ts --apply"
+    "bom:stock:apply": "tsx scripts/dry-run-verify-bom-missing-stock.ts --apply",
+    "bom:cost:derive": "tsx scripts/backfill-verify-bom-cost.ts",
+    "bom:cost:derive:apply": "tsx scripts/backfill-verify-bom-cost.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",
