@@ -377,6 +377,25 @@ model BisStatus {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
+
+model IndentListing {
+  id                String   @id @default(cuid())
+  item         String?
+  size              String?
+  pnRating          String?
+  mcReceivedPending String?              // "Received" | "Pending"
+  totalBalBillAgCont Float?              // summed BAL BILL AG CONT
+  v1                String?
+  v2                String?
+  v3                String?
+  v4                String?
+  syncedAt          DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([item, size, pnRating, mcReceivedPending])
+}
+
 model LookupOption {
   id        String   @id @default(cuid())
   type      String
