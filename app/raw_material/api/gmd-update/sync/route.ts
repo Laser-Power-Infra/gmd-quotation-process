@@ -5,6 +5,7 @@ import {
   fetchStockPhysicalSheet,
 } from "@/lib/gmd_lib/google-sheets";
 import { sheetRowToDbItem } from "@/lib/gmd_lib/mapSheetRow";
+import { updateDerivedItemName } from "@/app/actions";
 
 const ERP_CODE_IDX = 0;
 const AVAILABLE_STOCK_IDX = 11;
@@ -101,6 +102,7 @@ export async function POST() {
     }[] = [];
     const changedColumns: Record<string, number> = {};
     const seen = new Set<string>();
+    const changedCodes: string[] = [];
 
     for (const item of dbItems) {
       const code = (item.erpItemCode ?? "").trim();
@@ -130,6 +132,7 @@ export async function POST() {
       if (Object.keys(dataUpdate).length > 0) {
         dataUpdate.syncedAt = syncedAt;
         toUpdate.push({ id: existing.id, data: dataUpdate, isChange: true });
+        changedCodes.push(code);
       } else {
         toUpdate.push({
           id: existing.id,
@@ -174,6 +177,28 @@ export async function POST() {
       (item.erpItemCode ?? "").trim(),
     );
 
+    // Recompute derived item name for rows that were created or changed.
+    const deriveCodes = [...new Set([...createdCodes, ...changedCodes])];
+    let derivedCount = 0;
+    if (deriveCodes.length > 0) {
+      const chunkSize = 200;
+      for (let i = 0; i < deriveCodes.length; i += chunkSize) {
+        const chunk = deriveCodes.slice(i, i + chunkSize);
+        const results = await Promise.allSettled(
+          chunk.map((code) => updateDerivedItemName(code)),
+        );
+        results.forEach((r, idx) => {
+          if (r.status === "rejected") {
+            console.error(
+              `[gmd-update-sync] derive failed code=${chunk[idx]} err=${(r.reason as Error)?.message}`,
+            );
+            return;
+          }
+          if (r.value?.success) derivedCount++;
+        });
+      }
+    }
+
     console.log("\n===== [SYNC] GMD UPDATION SHEET → DB =====");
     console.log(`[SYNC] Synced at      : ${syncedAt.toISOString()}`);
     console.log(`[SYNC] Rows in sheet  : ${data.rows.length}`);
@@ -182,6 +207,7 @@ export async function POST() {
       `[gmd-update-sync] Summary: created=${toCreate.length} updated=${updated} unchanged=${unchanged} total=${toCreate.length + updated + unchanged}`,
     );
     console.log(`[gmd-update-sync] Changed columns:`, changedColumns);
+    console.log(`[gmd-update-sync] Derived item names updated: ${derivedCount}/${deriveCodes.length}`);
     if (createdCodes.length > 0) {
       console.log(`[SYNC] New ERP codes  : ${createdCodes.length}`);
       createdCodes.forEach((code, i) =>
@@ -201,6 +227,7 @@ export async function POST() {
       skipped: data.rows.length - toCreate.length,
       totalInSheet: data.rows.length,
       createdCodes,
+      derivedCount,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

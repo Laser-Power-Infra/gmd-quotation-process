@@ -23,7 +23,9 @@
     "bom:cleanup-no-use": "tsx scripts/remove-no-use-bom-ids.ts",
     "bom:cleanup-no-use:apply": "tsx scripts/remove-no-use-bom-ids.ts --write",
     "cr:cleanup-invalid-boms": "tsx scripts/remove-invalid-contract-review-boms.ts",
-    "cr:cleanup-invalid-boms:apply": "tsx scripts/remove-invalid-contract-review-boms.ts --write"
+    "cr:cleanup-invalid-boms:apply": "tsx scripts/remove-invalid-contract-review-boms.ts --write",
+    "bom:stock:dry-run": "tsx scripts/dry-run-verify-bom-missing-stock.ts",
+    "bom:stock:apply": "tsx scripts/dry-run-verify-bom-missing-stock.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",
