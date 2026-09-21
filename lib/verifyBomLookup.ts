@@ -193,6 +193,7 @@ export async function recomputeVerifyBomValues(): Promise<{
   stockMap: Map<string, string>;
   rmNameMap: Map<string, string | null>;
   itemNameMap: Map<string, string>;
+  costMap: Map<string, string>;
 }> {
   const items = await prisma.verifyBom.findMany({
     select: {
@@ -202,6 +203,7 @@ export async function recomputeVerifyBomValues(): Promise<{
       rmItemCode: true,
       noUse: true,
       availableStock: true,
+      cost: true,
       itemName: true,
       rmItemName: true,
     },
@@ -231,22 +233,70 @@ export async function recomputeVerifyBomValues(): Promise<{
 
   const codes = [
     ...new Set(
-      items.map((i) => i.rmItemCode).filter((c): c is string => !!c),
+      items
+        .flatMap((i) => [i.rmItemCode, i.itemCode])
+        .filter((c): c is string => !!c),
     ),
   ];
   const rawItems = await prisma.gMDUpdateItem.findMany({
-    where: { erpItemCode: { in: codes } },
-    select: { erpItemCode: true, availableStock: true, itemNameAuto: true },
+    where: {
+      OR: [
+        { erpItemCode: { in: codes } },
+        { bomId: { in: bomIds } },
+      ],
+    },
+    select: {
+      erpItemCode: true,
+      bomId: true,
+      availableStock: true,
+      itemNameAuto: true,
+      cost: true,
+    },
   });
+
   const stockMap = new Map<string, string>();
   const rmNameMap = new Map<string, string | null>();
+  const bomAndItemCodeCostMap = new Map<string, string>();
+  const erpCodeCostMap = new Map<string, string>();
+
   for (const r of rawItems) {
     if (!r.erpItemCode) continue;
+    const code = r.erpItemCode.trim().toUpperCase();
+    const bId = (r.bomId ?? "").trim().toUpperCase();
+    const costVal = (r.cost ?? "").trim();
+
     if (!stockMap.has(r.erpItemCode)) {
       stockMap.set(r.erpItemCode, r.availableStock ?? "");
     }
     if (!rmNameMap.has(r.erpItemCode)) {
       rmNameMap.set(r.erpItemCode, r.itemNameAuto ?? null);
+    }
+    if (costVal && !erpCodeCostMap.has(code)) {
+      erpCodeCostMap.set(code, costVal);
+    }
+    if (bId && costVal) {
+      const key = `${bId}||${code}`;
+      if (!bomAndItemCodeCostMap.has(key)) {
+        bomAndItemCodeCostMap.set(key, costVal);
+      }
+    }
+  }
+
+  const costMap = new Map<string, string>();
+  for (const item of items) {
+    const b = (item.bomId ?? "").trim().toUpperCase();
+    const itemC = (item.itemCode ?? "").trim().toUpperCase();
+    const rmC = (item.rmItemCode ?? "").trim().toUpperCase();
+
+    const derivedCost =
+      (b && itemC ? bomAndItemCodeCostMap.get(`${b}||${itemC}`) : null) ??
+      (b && rmC ? bomAndItemCodeCostMap.get(`${b}||${rmC}`) : null) ??
+      (rmC ? erpCodeCostMap.get(rmC) : null) ??
+      (itemC ? erpCodeCostMap.get(itemC) : null) ??
+      null;
+
+    if (derivedCost !== null) {
+      costMap.set(item.id, derivedCost);
     }
   }
 
@@ -262,14 +312,17 @@ export async function recomputeVerifyBomValues(): Promise<{
       const itemName = item.itemCode
         ? (itemNameMap.get(item.itemCode) ?? item.itemName)
         : null;
+      const cost = costMap.get(item.id) ?? item.cost ?? null;
       return {
         id: item.id,
         noUse,
         stock,
+        cost,
         rmItemName,
         itemName,
         oldNoUse: item.noUse,
         oldStock: item.availableStock ?? null,
+        oldCost: item.cost ?? null,
         oldRmItemName: item.rmItemName ?? null,
         oldItemName: item.itemName ?? null,
       };
@@ -278,27 +331,34 @@ export async function recomputeVerifyBomValues(): Promise<{
       ({
         noUse,
         stock,
+        cost,
         rmItemName,
         itemName,
         oldNoUse,
         oldStock,
+        oldCost,
         oldRmItemName,
         oldItemName,
       }) =>
         oldNoUse !== noUse ||
         oldStock !== stock ||
+        oldCost !== cost ||
         oldRmItemName !== rmItemName ||
         oldItemName !== itemName,
     )
-    .map(({ id, noUse, stock, rmItemName, itemName }) =>
+    .map(({ id, noUse, stock, cost, rmItemName, itemName }) =>
       prisma.verifyBom.update({
         where: { id },
-        data: { noUse, availableStock: stock, rmItemName, itemName },
+        data: { noUse, availableStock: stock, cost, rmItemName, itemName },
       }),
     );
 
   if (updates.length > 0) {
-    await prisma.$transaction(updates, { timeout: 20000 });
+    const chunkSize = 100;
+    for (let i = 0; i < updates.length; i += chunkSize) {
+      const chunk = updates.slice(i, i + chunkSize);
+      await prisma.$transaction(chunk, { timeout: 20000 });
+    }
   }
 
   return {
@@ -307,6 +367,7 @@ export async function recomputeVerifyBomValues(): Promise<{
     stockMap,
     rmNameMap,
     itemNameMap,
+    costMap,
   };
 }
 

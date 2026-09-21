@@ -9,6 +9,7 @@ export const VERIFY_BOM_HEADERS = [
   "BOM ITEM QTY",
   "USE/NO USE",
   "AVAILABLE STOCK",
+  "COST",
   "ITEM TYPE",
   "MOC",
   "OPERATION",
@@ -81,6 +82,7 @@ export function dbVerifyBomToRow(item: {
   bomItemQty: string | null;
   noUse: string | null;
   availableStock: string | null;
+  cost: string | null;
   itemName: string | null;
   itemScheduleName: string | null;
   rmItemName: string | null;
@@ -109,6 +111,7 @@ export function dbVerifyBomToRow(item: {
     item.bomItemQty,
     item.noUse,
     item.availableStock,
+    item.cost,
     item.itemType,
     item.moc,
     item.operation,
@@ -133,6 +136,7 @@ export const VERIFY_BOM_HEADER_TO_DB_FIELD: Record<string, string> = {
   "BOM ITEM QTY": "bomItemQty",
   "USE/NO USE": "noUse",
   "AVAILABLE STOCK": "availableStock",
+  "COST": "cost",
   "ITEM NAME": "itemName",
   "ITEM SCHEDULE NAME": "itemScheduleName",
   "RM ITEM NAME": "rmItemName",
