@@ -3373,7 +3373,24 @@ export async function updateContractReviewFieldAction(
   }
 }
 
-const VERIFY_BOM_EDITABLE_FIELDS = new Set(["bomIdType"]);
+const VERIFY_BOM_EDITABLE_FIELDS = new Set([
+  "bomIdType",
+  "bomItemQty",
+  "itemScheduleName",
+  "itemType",
+  "moc",
+  "operation",
+  "size",
+  "no",
+  "pnGmd",
+  "currentReqt",
+  "merged",
+  "duplicateMergerCount",
+  "bomNature",
+  "consumption1",
+  "consumption2",
+  "consumption3",
+]);
 
 export async function updateVerifyBomFieldBatchAction(
   ids: string[],

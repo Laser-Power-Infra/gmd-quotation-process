@@ -2376,7 +2376,7 @@ export default function ContractReviewPage() {
             onLayoutChanged={onVerticalLayoutChanged}
             className="flex-1 min-h-0 mt-4"
           >
-            <ResizablePanel id="graph" defaultSize="32" minSize="12">
+            <ResizablePanel id="graph" defaultSize="32" minSize="12" maxSize="38">
               <div className="h-full overflow-hidden rounded-lg border border-[#1e3d59] bg-[#0a2540]">
                 <FlowDiagram
                   trees={CONTRACT_REVIEW_TREES}

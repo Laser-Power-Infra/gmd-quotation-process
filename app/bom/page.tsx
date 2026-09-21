@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Database, Loader2 } from "lucide-react";
 import { RefreshCw } from "lucide-react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
@@ -13,6 +13,25 @@ import {
   syncNullVerifyBomStockAction,
 } from "@/app/actions";
 import { VERIFY_BOM_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/verify-bom-columns";
+
+const TABLE2_EDITABLE_COLUMNS = [
+  "BOM ID TYPE",
+  "BOM ITEM QTY",
+  "ITEM SCHEDULE NAME",
+  "ITEM TYPE",
+  "MOC",
+  "OPERATION",
+  "SIZE",
+  "NO",
+  "PN-GMD",
+  "CURRENT REQT",
+  "NEW ITEM NAME",
+  "DUPLICATE MERGER COUNT",
+  "BOM NATURE",
+  "CONSUMPTION-1",
+  "CONSUMPTION 2",
+  "CONSUMPTION 3",
+];
 
 interface BomData {
   headers: string[];
@@ -30,6 +49,7 @@ export default function BomPage() {
   const [syncingStock, setSyncingStock] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [selectedNoIndex, setSelectedNoIndex] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -119,6 +139,29 @@ export default function BomPage() {
 
   const headers = data?.headers ?? [];
   const ids = data?.ids ?? [];
+
+  const { yesRows, yesIds, noRows, noIds } = useMemo(() => {
+    const yesRows: unknown[][] = [];
+    const yesIds: string[] = [];
+    const noRows: unknown[][] = [];
+    const noIds: string[] = [];
+    const rows = data?.rows ?? [];
+    const currentReqtIdx = headers.indexOf("CURRENT REQT");
+    rows.forEach((row, i) => {
+      const v =
+        currentReqtIdx >= 0
+          ? String(row[currentReqtIdx] ?? "").trim().toLowerCase()
+          : "";
+      if (v === "yes") {
+        yesRows.push(row);
+        yesIds.push(ids[i]);
+      } else {
+        noRows.push(row);
+        noIds.push(ids[i]);
+      }
+    });
+    return { yesRows, yesIds, noRows, noIds };
+  }, [data, headers, ids]);
 
   const handleCellUpdate = useCallback(
     async (id: string, colIndex: number, value: string) => {
@@ -248,17 +291,34 @@ export default function BomPage() {
         <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-4 pr-1 mt-4">
           <GMDUpdateTable
             headers={headers}
-            rows={data?.rows ?? []}
-            ids={ids}
+            rows={yesRows}
+            ids={yesIds}
             selectedIndex={selectedIndex}
             onSelect={setSelectedIndex}
-            title="Verify BOM"
+            title="Verify BOM — YES"
             groupByColumn="BOM ID"
             mergeColumns={["BOM ID", "ITEM CODE", "BOM ID TYPE", "USE/NO USE", "AVAILABLE STOCK"]}
             mergeTypeColumn="BOM ID TYPE"
             mergeOnlyTypes={["2:1", "3:1"]}
             editable
             editableColumns={["BOM ID TYPE"]}
+            fixedDropdownOptions={{ "BOM ID TYPE": ["2:1", "3:1", "DIRECT M2M", "CREATE BOM"] }}
+            onCellUpdate={handleCellUpdate}
+            hiddenColumns={["ITEM SCHEDULE NAME"]}
+          />
+          <GMDUpdateTable
+            headers={headers}
+            rows={noRows}
+            ids={noIds}
+            selectedIndex={selectedNoIndex}
+            onSelect={setSelectedNoIndex}
+            title="Verify BOM — NO/Blank"
+            groupByColumn="BOM ID"
+            mergeColumns={["BOM ID", "ITEM CODE", "BOM ID TYPE", "USE/NO USE", "AVAILABLE STOCK"]}
+            mergeTypeColumn="BOM ID TYPE"
+            mergeOnlyTypes={["2:1", "3:1"]}
+            editable
+            editableColumns={TABLE2_EDITABLE_COLUMNS}
             fixedDropdownOptions={{ "BOM ID TYPE": ["2:1", "3:1", "DIRECT M2M", "CREATE BOM"] }}
             onCellUpdate={handleCellUpdate}
             hiddenColumns={["ITEM SCHEDULE NAME"]}
