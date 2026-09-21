@@ -47,23 +47,25 @@ export default function GMDUpdateHeader({
           </span>
         )}
       </div>
-      {/* {onSync && (
+      {/* {(onSync || actions) && (
         <div className="flex items-center gap-2">
-          <button
-            onClick={onSync}
-            disabled={syncing}
-            className="flex items-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/30 rounded px-3 py-1.5 text-[11px] font-semibold text-blue-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {syncing ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <RefreshCw size={12} />
-            )}
-            {syncing ? "Syncing..." : "Sync"}
-          </button>
+          {onSync && (
+            <button
+              onClick={onSync}
+              disabled={syncing}
+              className="flex items-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/30 rounded px-3 py-1.5 text-[11px] font-semibold text-blue-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {syncing ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              {syncing ? "Syncing..." : "Sync"}
+            </button>
+          )}
+          {actions}
         </div>
       )} */}
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
   );
 }

@@ -9,6 +9,19 @@ export const VERIFY_BOM_HEADERS = [
   "BOM ITEM QTY",
   "USE/NO USE",
   "AVAILABLE STOCK",
+  "ITEM TYPE",
+  "MOC",
+  "OPERATION",
+  "SIZE",
+  "NO",
+  "PN-GMD",
+  "CURRENT REQT",
+  "NEW ITEM NAME",
+  "DUPLICATE MERGER COUNT",
+  "BOM NATURE",
+  "CONSUMPTION-1",
+  "CONSUMPTION 2",
+  "CONSUMPTION 3",
 ] as const;
 
 function normalizeHeader(h: string): string {
@@ -71,6 +84,19 @@ export function dbVerifyBomToRow(item: {
   itemName: string | null;
   itemScheduleName: string | null;
   rmItemName: string | null;
+  itemType: string | null;
+  moc: string | null;
+  operation: string | null;
+  size: string | null;
+  no: string | null;
+  pnGmd: string | null;
+  currentReqt: string | null;
+  merged: string | null;
+  duplicateMergerCount: string | null;
+  bomNature: string | null;
+  consumption1: string | null;
+  consumption2: string | null;
+  consumption3: string | null;
 }): unknown[] {
   return [
     item.bomId,
@@ -83,6 +109,19 @@ export function dbVerifyBomToRow(item: {
     item.bomItemQty,
     item.noUse,
     item.availableStock,
+    item.itemType,
+    item.moc,
+    item.operation,
+    item.size,
+    item.no,
+    item.pnGmd,
+    item.currentReqt,
+    item.merged,
+    item.duplicateMergerCount,
+    item.bomNature,
+    item.consumption1,
+    item.consumption2,
+    item.consumption3,
   ];
 }
 
@@ -97,4 +136,17 @@ export const VERIFY_BOM_HEADER_TO_DB_FIELD: Record<string, string> = {
   "ITEM NAME": "itemName",
   "ITEM SCHEDULE NAME": "itemScheduleName",
   "RM ITEM NAME": "rmItemName",
+  "ITEM TYPE": "itemType",
+  "MOC": "moc",
+  "OPERATION": "operation",
+  "SIZE": "size",
+  "NO": "no",
+  "PN-GMD": "pnGmd",
+  "CURRENT REQT": "currentReqt",
+  "NEW ITEM NAME": "merged",
+  "DUPLICATE MERGER COUNT": "duplicateMergerCount",
+  "BOM NATURE": "bomNature",
+  "CONSUMPTION-1": "consumption1",
+  "CONSUMPTION 2": "consumption2",
+  "CONSUMPTION 3": "consumption3",
 };

@@ -59,3 +59,39 @@ export function parseAndValidateContractNumbers(raw: string): ContractValidation
     contracts: validatedContracts,
   };
 }
+
+/**
+ * Parses and validates a single production order number (no comma splitting).
+ *
+ * Rules:
+ * 1. Lowercase letters are automatically converted to uppercase.
+ * 2. The value must be exactly 11 characters (alphabets, numbers, hyphens).
+ * 3. Empty/whitespace-only input is valid and returns no contracts (clears the field).
+ */
+export function parseAndValidateProdOrderNumber(
+  raw: string,
+): ContractValidationResult {
+  if (!raw || !raw.trim()) {
+    return { isValid: true, contracts: [] };
+  }
+
+  const token = raw.trim().toUpperCase();
+
+  if (token.length !== 11) {
+    return {
+      isValid: false,
+      contracts: [],
+      error: `Production order number "${token}" must be exactly 11 characters (got ${token.length}).`,
+    };
+  }
+
+  if (!/^[A-Z0-9-]+$/.test(token)) {
+    return {
+      isValid: false,
+      contracts: [],
+      error: `Production order number "${token}" contains invalid characters. Only letters, numbers, and hyphens (-) are allowed.`,
+    };
+  }
+
+  return { isValid: true, contracts: [token] };
+}
