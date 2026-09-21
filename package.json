@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 4561",
+    "dev": "next dev --port 4569",
     "build": "npx prisma generate && next build",
-    "build-start": "npx prisma generate && next build && next start --port 4560",
-    "start": "next start --port 4560",
+    "build-start": "npx prisma generate && next build && next start --port 4570",
+    "start": "next start --port 4570",
     "lint": "eslint",
     "seed:lookups": "tsx scripts/seed-lookup-options.ts",
     "bom:cost": "tsx scripts/update-product-cost-from-bom.ts",
