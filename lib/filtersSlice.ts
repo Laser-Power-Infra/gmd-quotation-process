@@ -23,6 +23,7 @@ const initialState: FiltersState = {
   moc: [],
   mocSearch: "",
   size: [],
+  sizeAndHeight: [],
   pnRating: [],
   operationType: [],
   extension: [],
