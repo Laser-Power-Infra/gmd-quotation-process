@@ -25,6 +25,20 @@ import { ConfirmDialog } from "./ConfirmDialog";
 
 type View = "chat" | "sessions" | "memory";
 
+function newId(): string {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 interface ChatViewProps {
   sessionId: string;
   initialMessages: UIMessage[];
@@ -166,7 +180,7 @@ export function ChatPanel({ enabled = true }: { enabled?: boolean }) {
     if (!hasOpenedRef.current) {
       hasOpenedRef.current = true;
       setInitialMessages([]);
-      setSessionId(crypto.randomUUID());
+      setSessionId(newId());
       setReady(true);
       return;
     }
@@ -178,10 +192,10 @@ export function ChatPanel({ enabled = true }: { enabled?: boolean }) {
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((data) => {
         setInitialMessages((data.messages as UIMessage[]) ?? []);
-        if (!sessionId) setSessionId((data.id as string) ?? crypto.randomUUID());
+        if (!sessionId) setSessionId((data.id as string) ?? newId());
       })
       .catch(() => {
-        if (!sessionId) setSessionId(crypto.randomUUID());
+        if (!sessionId) setSessionId(newId());
       })
       .finally(() => setReady(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,7 +209,7 @@ export function ChatPanel({ enabled = true }: { enabled?: boolean }) {
 
   const resetToNewChat = () => {
     setInitialMessages([]);
-    setSessionId(crypto.randomUUID());
+    setSessionId(newId());
     setReady(true);
     setView("chat");
   };
