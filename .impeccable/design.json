@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-22T00:00:00Z",
+  "title": "Design System: GMD Quotation Process",
+  "extensions": {
+    "colorMeta": {
+      "instrument-blue": {
+        "role": "primary",
+        "displayName": "Instrument Blue",
+        "canonical": "#0f62fe",
+        "tonalRamp": [
+          "oklch(0.15 0.06 264)",
+          "oklch(0.25 0.10 264)",
+          "oklch(0.35 0.15 264)",
+          "oklch(0.45 0.19 264)",
+          "oklch(0.55 0.23 264)",
+          "oklch(0.65 0.20 264)",
+          "oklch(0.75 0.14 264)",
+          "oklch(0.85 0.08 264)"
+        ]
+      },
+      "admin-emerald": {
+        "role": "secondary",
+        "displayName": "Admin Emerald",
+        "canonical": "#059669",
+        "tonalRamp": [
+          "oklch(0.15 0.05 165)",
+          "oklch(0.25 0.08 165)",
+          "oklch(0.35 0.11 165)",
+          "oklch(0.45 0.13 165)",
+          "oklch(0.55 0.14 165)",
+          "oklch(0.65 0.12 165)",
+          "oklch(0.75 0.08 165)",
+          "oklch(0.85 0.05 165)"
+        ]
+      },
+      "ink": {
+        "role": "primary",
+        "displayName": "Ink",
+        "canonical": "oklch(0.205 0 0)",
+        "tonalRamp": [
+          "oklch(0.15 0 0)",
+          "oklch(0.21 0 0)",
+          "oklch(0.30 0 0)",
+          "oklch(0.40 0 0)",
+          "oklch(0.50 0 0)",
+          "oklch(0.62 0 0)",
+          "oklch(0.75 0 0)",
+          "oklch(0.88 0 0)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "oklch(1 0 0)",
+        "tonalRamp": [
+          "oklch(0.60 0 0)",
+          "oklch(0.68 0 0)",
+          "oklch(0.76 0 0)",
+          "oklch(0.84 0 0)",
+          "oklch(0.90 0 0)",
+          "oklch(0.94 0 0)",
+          "oklch(0.97 0 0)",
+          "oklch(1 0 0)"
+        ]
+      },
+      "near-black": {
+        "role": "neutral",
+        "displayName": "Near-Black",
+        "canonical": "oklch(0.145 0 0)",
+        "tonalRamp": [
+          "oklch(0.145 0 0)",
+          "oklch(0.25 0 0)",
+          "oklch(0.35 0 0)",
+          "oklch(0.45 0 0)",
+          "oklch(0.55 0 0)",
+          "oklch(0.65 0 0)",
+          "oklch(0.78 0 0)",
+          "oklch(0.92 0 0)"
+        ]
+      },
+      "muted-wash": {
+        "role": "neutral",
+        "displayName": "Muted Wash",
+        "canonical": "oklch(0.97 0 0)",
+        "tonalRamp": [
+          "oklch(0.45 0 0)",
+          "oklch(0.55 0 0)",
+          "oklch(0.65 0 0)",
+          "oklch(0.75 0 0)",
+          "oklch(0.83 0 0)",
+          "oklch(0.90 0 0)",
+          "oklch(0.95 0 0)",
+          "oklch(0.97 0 0)"
+        ]
+      },
+      "muted-ink": {
+        "role": "neutral",
+        "displayName": "Muted Ink",
+        "canonical": "oklch(0.556 0 0)",
+        "tonalRamp": [
+          "oklch(0.20 0 0)",
+          "oklch(0.28 0 0)",
+          "oklch(0.36 0 0)",
+          "oklch(0.44 0 0)",
+          "oklch(0.52 0 0)",
+          "oklch(0.60 0 0)",
+          "oklch(0.70 0 0)",
+          "oklch(0.82 0 0)"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "oklch(0.922 0 0)",
+        "tonalRamp": [
+          "oklch(0.45 0 0)",
+          "oklch(0.55 0 0)",
+          "oklch(0.65 0 0)",
+          "oklch(0.75 0 0)",
+          "oklch(0.83 0 0)",
+          "oklch(0.89 0 0)",
+          "oklch(0.92 0 0)",
+          "oklch(0.95 0 0)"
+        ]
+      },
+      "destructive": {
+        "role": "neutral",
+        "displayName": "Destructive",
+        "canonical": "oklch(0.577 0.245 27.325)",
+        "tonalRamp": [
+          "oklch(0.15 0.12 27)",
+          "oklch(0.25 0.16 27)",
+          "oklch(0.35 0.19 27)",
+          "oklch(0.45 0.22 27)",
+          "oklch(0.55 0.24 27)",
+          "oklch(0.65 0.18 27)",
+          "oklch(0.78 0.10 27)",
+          "oklch(0.90 0.04 27)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Page-level titles on dashboard screens; used sparingly." },
+      "title": { "displayName": "Title", "purpose": "Navbar links, button labels, card headers." },
+      "body": { "displayName": "Body", "purpose": "General interface text, forms, cell content at rest." },
+      "table": { "displayName": "Table", "purpose": "Dense grid cell content; the workhorse role." },
+      "label": { "displayName": "Label", "purpose": "Column-filter selects, micro-labels, uppercase status text." }
+    },
+    "shadows": [
+      { "name": "float", "value": "0 4px 24px rgba(0,0,0,0.12)", "purpose": "Floating chrome only: popovers, dropdowns, dialogs. Never on the table floor." }
+    ],
+    "motion": [
+      { "name": "ease-badge", "value": "all 0.15s ease", "purpose": "Status badges, page buttons, export buttons, column resizer." },
+      { "name": "spin-loading", "value": "spin 1s linear infinite", "purpose": "Saving spinner." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" },
+      { "name": "2xl", "value": "1536px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The engaged-switch action. Near-black fill, 10px radius, 32px tall.",
+      "html": "<button class=\"ds-btn-primary\">Save Changes</button>",
+      "css": ".ds-btn-primary { background: oklch(0.205 0 0); color: oklch(1 0 0); height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 10px; font-family: Poppins, sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; outline: none; transition: background 0.15s ease, transform 0.15s ease; } .ds-btn-primary:hover { background: oklch(0.205 0 0 / 0.8); } .ds-btn-primary:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); } .ds-btn-primary:active:not([aria-haspopup]) { transform: translateY(1px); } .ds-btn-primary:disabled { opacity: 0.5; pointer-events: none; }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action. Paper fill, hairline border, muted hover.",
+      "html": "<button class=\"ds-btn-outline\">Export</button>",
+      "css": ".ds-btn-outline { background: oklch(1 0 0); color: oklch(0.145 0 0); height: 32px; padding: 0 12px; border: 1px solid oklch(0.922 0 0); border-radius: 10px; font-family: Poppins, sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; outline: none; transition: background 0.15s ease; } .ds-btn-outline:hover { background: oklch(0.97 0 0); } .ds-btn-outline:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); }"
+    },
+    {
+      "name": "Nav Pill",
+      "kind": "nav",
+      "refersTo": "nav-pill",
+      "description": "Primary navigation. Solid Instrument Blue, the console's live signal.",
+      "html": "<a class=\"ds-nav-pill\" href=\"#\">Quotation Process</a>",
+      "css": ".ds-nav-pill { display: inline-flex; align-items: center; height: 36px; padding: 0 16px; background: #0f62fe; color: #ffffff; border: none; border-radius: 8px; font-family: Poppins, sans-serif; font-size: 14px; font-weight: 600; text-decoration: none; transition: background 0.15s ease; } .ds-nav-pill:hover { background: #0353e9; } .ds-nav-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Dense form field. 32px tall, hairline border, unmistakable focus ring.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Search party...\">",
+      "css": ".ds-input { height: 32px; width: 100%; padding: 0 10px; background: transparent; border: 1px solid oklch(0.922 0 0); border-radius: 10px; font-family: Poppins, sans-serif; font-size: 14px; color: oklch(0.145 0 0); outline: none; transition: border-color 0.15s ease; } .ds-input::placeholder { color: oklch(0.556 0 0); } .ds-input:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); } .ds-input:disabled { opacity: 0.5; background: oklch(0.97 0 0 / 0.5); cursor: not-allowed; }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge-pill",
+      "description": "Order status as a soft-tinted pill. Submitted shown; each status owns a same-hue tint pair.",
+      "html": "<span class=\"ds-badge\">Submitted</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 0 10px; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 9999px; font-family: Poppins, sans-serif; font-size: 11px; font-weight: 600; white-space: nowrap; transition: all 0.15s ease; } .ds-badge.won { background: #d1fae5; color: #065f46; border-color: #a7f3d0; } .ds-badge.lost { background: #fee2e2; color: #991b1b; border-color: #fecaca; } .ds-badge.eval { background: #fef3c7; color: #92400e; border-color: #fde68a; }"
+    },
+    {
+      "name": "Active Page Button",
+      "kind": "button",
+      "refersTo": "page-button-active",
+      "description": "Pagination control. Active page lit in Instrument Blue; the rest paper with hairline border.",
+      "html": "<button class=\"ds-page\">3</button>",
+      "css": ".ds-page { display: inline-flex; align-items: center; justify-content: center; height: 28px; min-width: 28px; padding: 0 6px; border: 1px solid oklch(0.922 0 0); border-radius: 4px; background: oklch(1 0 0); color: oklch(0.145 0 0); font-family: Poppins, sans-serif; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; } .ds-page:hover:not(:disabled) { background: oklch(0.97 0 0); } .ds-page.active { background: #0f62fe; color: #ffffff; border-color: #0f62fe; } .ds-page:disabled { opacity: 0.3; pointer-events: none; }"
+    },
+    {
+      "name": "Column Filter Select",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Per-column header filter. 24px tall, 10px type, dense.",
+      "html": "<select class=\"ds-colfilter\"><option>All sizes</option></select>",
+      "css": ".ds-colfilter { width: 100%; height: 24px; padding: 0 4px; border: 1px solid oklch(0.922 0 0); border-radius: 4px; background: oklch(1 0 0); color: oklch(0.145 0 0); font-family: Poppins, sans-serif; font-size: 10px; outline: none; } .ds-colfilter:focus { border-color: #94a3b8; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Control Room Console",
+    "overview": "The GMD quotation dashboard is an instrument panel for pricing valves. The interface is a neutral, engineered chassis - paper-white surfaces, near-black ink, hairline borders - and the single loud color, Instrument Blue (#0f62fe), behaves like a live indicator light: it marks where the operator is, what is actionable, and what has switched on. Every blue element is a signal, never decoration.\n\nThe system is built for the day's load: dense data tables with 10-13px type, 24-36px hit targets, resizable columns, and inline editing. Density is a feature. The screen reads like gauges on a console - calm, evenly lit, each row scannable at a glance - rather than like a brochure or a dashboard mock. Controls are dense and decisive: small, clearly bordered, with unmistakable pressed and focused states. Focus is a first-class citizen (3px ring at 50% opacity), because most work here happens on the keyboard.\n\nDepth is lightly lifted. Surfaces are flat by default; modest separation comes from hairline borders and muted washes. Shadows appear only where something genuinely floats above the table plane - sticky bars, popovers, dropdowns, the navbar. The table itself never casts a shadow; it is the floor of the console.",
+    "keyCharacteristics": [
+      "Neutral chassis, one signal color (Instrument Blue) plus emerald reserved for admin.",
+      "Dense by design: small type, small targets, many rows visible per screen.",
+      "Flat surfaces with light lift for floating chrome only.",
+      "Every interactive element announces its state clearly (hover, focus, active, disabled).",
+      "Poppins everywhere, tight tracking, labels uppercase and small.",
+      "Light theme is canonical; a full neutral dark theme ships and inverts the chassis."
+    ],
+    "rules": [
+      { "name": "The One-Signal Rule", "body": "On any given screen, Instrument Blue appears on fewer than 10% of pixels. Its rarity is what makes it read as a live indicator. When more than one element needs to be \"on,\" they must compete or the blue loses meaning.", "section": "colors" },
+      { "name": "The Density Rule", "body": "Table text is 13px and never grows for readability alone; density is the point. If a value cannot be read at 13px, the row layout is wrong, not the font size.", "section": "typography" },
+      { "name": "The Flat-Floor Rule", "body": "Nothing on the data table casts a shadow. If a surface needs to feel separate from the table, separate it with a border or a muted wash first, and reach for a shadow only when it floats.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use Instrument Blue for navigation, active states, and live signals - and nowhere else.",
+      "Do keep table type at 13px and let density win over readability theater.",
+      "Do show focus on every interactive element (3px ring, 50% ring color).",
+      "Do keep surfaces flat; use hairline borders and muted washes before shadows.",
+      "Do use the status pill pairs verbatim - tinted backgrounds with same-hue darker text.",
+      "Do reserve emerald for admin-only actions."
+    ],
+    "donts": [
+      "Don't let any decorative element take Instrument Blue; it is a signal, not a theme.",
+      "Don't cast shadows on the data table or its rows.",
+      "Don't introduce a second display font; Poppins carries every role.",
+      "Don't grow table text past 13px for readability; fix the layout instead.",
+      "Don't add circles, gradients, or irregular silhouettes to the control vocabulary - rectangles and pills only.",
+      "Don't style new work on /raw_material from the global tokens; use its scoped Material 3 palette."
+    ]
+  }
+}

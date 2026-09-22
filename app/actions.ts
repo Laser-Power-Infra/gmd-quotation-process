@@ -3541,6 +3541,59 @@ export async function updateContractReviewFieldAction(
   }
 }
 
+export async function recomputeIndentListingVersionsAction() {
+  "use server";
+  try {
+    const { planIndentRecompute } = await import("@/lib/itemVersionResolver");
+    const rows = await prisma.indentListing.findMany({
+      select: {
+        id: true,
+        item: true,
+        size: true,
+        pnRating: true,
+        mcReceivedPending: true,
+        totalBalBillAgCont: true,
+      },
+    });
+
+    const { updates, deletes } = planIndentRecompute(rows);
+    const syncedAt = new Date();
+
+    await prisma.$transaction([
+      ...updates.map((u) =>
+        prisma.indentListing.update({
+          where: { id: u.id },
+          data: {
+            item: u.item,
+            totalBalBillAgCont: u.totalBalBillAgCont,
+            v1: u.v1,
+            v2: u.v2,
+            v3: u.v3,
+            v4: u.v4,
+            syncedAt,
+          },
+        }),
+      ),
+      ...deletes.map((id) => prisma.indentListing.delete({ where: { id } })),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        updated: updates.length,
+        deleted: deletes.length,
+        total: rows.length,
+      },
+    };
+  } catch (error: any) {
+    console.error("Error recomputing IndentListing versions:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to recompute IndentListing versions.",
+    };
+  }
+}
+
 const INDENT_LISTING_EDITABLE_FIELDS = new Set(["v1", "v2", "v3", "v4"]);
 
 export async function updateIndentListingFieldAction(

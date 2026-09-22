@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import GMDUpdateHeader from "@/components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateSkeleton from "@/components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
 import IndentListingTable from "@/components/indent_listing/IndentListingTable";
-import { updateIndentListingFieldAction } from "@/app/actions";
+import { updateIndentListingFieldAction, recomputeIndentListingVersionsAction } from "@/app/actions";
 
 const STATUS_IDX = 3;
 
@@ -101,6 +101,30 @@ export default function IndentListingPage() {
     [],
   );
 
+  const handleRecompute = useCallback(async () => {
+    setSyncing(true);
+    setError(null);
+    const toastId = toast.loading("Recomputing V1-V4 from Item...");
+    try {
+      const res = await recomputeIndentListingVersionsAction();
+      if (!res?.success) {
+        throw new Error(res?.error ?? "Recompute failed");
+      }
+      toast.success(
+        `Recomputed: ${res.data?.updated ?? 0} updated, ${res.data?.deleted ?? 0} merged/deleted`,
+        { id: toastId },
+      );
+      await fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Recompute failed", {
+        id: toastId,
+      });
+      setError(err instanceof Error ? err.message : "Recompute failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [fetchData]);
+
   const allRows = data?.rows ?? [];
   const allIds = data?.ids ?? [];
   const partition = (status: string) => {
@@ -150,6 +174,19 @@ export default function IndentListingPage() {
             <RefreshCw size={12} />
           )}
           {syncing ? "Syncing..." : "Sync from Contract Review"}
+        </button>
+        <button
+          type="button"
+          onClick={handleRecompute}
+          disabled={syncing}
+          className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-400/30 rounded px-3 py-1.5 text-[11px] font-semibold text-emerald-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {syncing ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <RefreshCw size={12} />
+          )}
+          {syncing ? "Working..." : "Recompute V1-V4"}
         </button>
         {error && <div className="text-sm text-red-600">{error}</div>}
       </div>
