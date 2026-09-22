@@ -1,0 +1,172 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { RefreshCw, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import GMDUpdateHeader from "@/components/gmd_dashboard/GMDUpdateHeader";
+import GMDUpdateSkeleton from "@/components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
+import IndentListingTable from "@/components/indent_listing/IndentListingTable";
+import { updateIndentListingFieldAction } from "@/app/actions";
+
+const STATUS_IDX = 3;
+
+interface IndentListingData {
+  headers: string[];
+  rows: unknown[][];
+  ids: string[];
+  totalRows: number;
+  syncedAt: string | null;
+}
+
+export default function IndentListingPage() {
+  const [data, setData] = useState<IndentListingData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const res = await fetch("/api/indent-listing");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Failed to load (${res.status})`);
+      }
+      const json = await res.json();
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    setError(null);
+    const toastId = toast.loading("Syncing from Contract Review...");
+    try {
+      const res = await fetch("/api/indent-listing/sync", { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `Sync failed (${res.status})`);
+      }
+      const result = await res.json();
+      toast.success(
+        `Synced: ${result.created} created, ${result.updated} updated`,
+        { id: toastId },
+      );
+      await fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Sync failed", {
+        id: toastId,
+      });
+      setError(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [fetchData]);
+
+  const handleUpdateCell = useCallback(
+    async (id: string, field: string, value: string) => {
+      const res = await updateIndentListingFieldAction(id, field, value);
+      if (!res?.success) {
+        toast.error(res?.error ?? "Failed to update field");
+        throw new Error(res?.error ?? "Failed to update field");
+      }
+      toast.success(`${field.toUpperCase()} updated`);
+      setData((prev) => {
+        if (!prev) return prev;
+        const idx = prev.ids.indexOf(id);
+        if (idx === -1) return prev;
+        const rows = prev.rows.map((r) => [...r]);
+        const col = [
+          "ITEM NAME",
+          "SIZE",
+          "PN RATING",
+          "MC RECEIVED/PENDING",
+          "TOTAL (BAL BILL AG CONT)",
+          "V1",
+          "V2",
+          "V3",
+          "V4",
+        ].indexOf(field.toUpperCase());
+        if (col !== -1) rows[idx][col] = value;
+        return { ...prev, rows };
+      });
+    },
+    [],
+  );
+
+  const allRows = data?.rows ?? [];
+  const allIds = data?.ids ?? [];
+  const partition = (status: string) => {
+    const rows: unknown[][] = [];
+    const ids: string[] = [];
+    allRows.forEach((r, i) => {
+      if (String(r[STATUS_IDX] ?? "").trim().toLowerCase() === status) {
+        rows.push(r);
+        ids.push(allIds[i]);
+      }
+    });
+    return { rows, ids };
+  };
+  const received = partition("received");
+  const pending = partition("pending");
+
+  if (loading) {
+    return (
+      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
+        <GMDUpdateHeader
+          title="INDENT CHECKING"
+          totalRows={0}
+          syncedAt={undefined}
+        />
+        <GMDUpdateSkeleton />
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
+      <GMDUpdateHeader
+        title="INDENT CHECKING"
+        totalRows={data?.totalRows ?? 0}
+        syncedAt={data?.syncedAt ?? undefined}
+      />
+      <div className="px-6 py-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={handleSync}
+          disabled={syncing}
+          className="flex items-center gap-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-400/30 rounded px-3 py-1.5 text-[11px] font-semibold text-blue-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {syncing ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <RefreshCw size={12} />
+          )}
+          {syncing ? "Syncing..." : "Sync from Contract Review"}
+        </button>
+        {error && <div className="text-sm text-red-600">{error}</div>}
+      </div>
+      <div className="flex-1 min-h-0 px-6 pb-6 flex gap-4">
+        <IndentListingTable
+          title="MC RECEIVED"
+          rows={received.rows}
+          ids={received.ids}
+          onUpdateCell={handleUpdateCell}
+        />
+        <IndentListingTable
+          title="MC PENDING"
+          rows={pending.rows}
+          ids={pending.ids}
+          onUpdateCell={handleUpdateCell}
+        />
+      </div>
+    </main>
+  );
+}

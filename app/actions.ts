@@ -3484,6 +3484,32 @@ export async function updateContractReviewFieldAction(
   }
 }
 
+const INDENT_LISTING_EDITABLE_FIELDS = new Set(["v1", "v2", "v3", "v4"]);
+
+export async function updateIndentListingFieldAction(
+  id: string,
+  field: string,
+  value: string | null,
+) {
+  "use server";
+  try {
+    if (!INDENT_LISTING_EDITABLE_FIELDS.has(field)) {
+      return { success: false, error: `Field "${field}" is not editable.` };
+    }
+    await prisma.indentListing.update({
+      where: { id },
+      data: { [field]: value },
+    });
+    return { success: true, data: { id, field, value } };
+  } catch (error: any) {
+    console.error("Error updating IndentListing field:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to update IndentListing field.",
+    };
+  }
+}
+
 const VERIFY_BOM_EDITABLE_FIELDS = new Set([
   "bomIdType",
   "bomItemQty",
