@@ -13,6 +13,8 @@ import {
   updateContractReviewFieldAction,
   backfillContractReviewNoUseBatchAction,
   backfillContractReviewOrderListBatchAction,
+  backfillContractReviewOfferPendingDoneBatchAction,
+  backfillContractReviewInspectionBatchAction,
   backfillContractReviewCostFromQuotationAction,
   syncContractReviewEnquiryFieldsBatchAction,
   syncContractReviewEnquiryFieldsAllAction,
@@ -117,6 +119,10 @@ const CONTRACT_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("CONTRACT NO");
 const STATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATE");
 const UTILITY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("UTILITY");
 const PROJECT_REFERENCE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PROJECT REFERENCE");
+const INSPECTION_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Inspection");
+const OFFER_NUMBER_IDX = CONTRACT_REVIEW_HEADERS.indexOf("OFFER NUMBER");
+const OFFER_PENDING_DONE_IDX =
+  CONTRACT_REVIEW_HEADERS.indexOf("OFFER PENDING/DONE");
 
 type RateTileKey =
   | "rateXOrderQty"
@@ -224,7 +230,7 @@ function matchesSidebar(
   clearance: string[],
   item: string[],
   size: string,
-  pn: string,
+  pn: string[],
   balBillIdx: number,
   clearanceIdx: number,
   exclude?: "balBill" | "status" | "clearance" | "item" | "size" | "pn",
@@ -260,8 +266,9 @@ function matchesSidebar(
   ) {
     return false;
   }
-  if (exclude !== "pn" && pn && String(row[PN_IDX] ?? "").trim() !== pn) {
-    return false;
+  if (exclude !== "pn" && pn.length > 0) {
+    const cell = String(row[PN_IDX] ?? "").trim();
+    if (!pn.includes(cell)) return false;
   }
   return true;
 }
@@ -445,9 +452,12 @@ export default function ContractReviewPage() {
   const clearanceRef = useRef<HTMLDivElement>(null);
   const [itemOpen, setItemOpen] = useState(false);
   const itemRef = useRef<HTMLDivElement>(null);
+  const itemMenuRef = useRef<HTMLDivElement>(null);
   const [tileItems, setTileItems] = useState<string[]>([]);
   const [tileSize, setTileSize] = useState("");
-  const [tilePn, setTilePn] = useState("");
+  const [pnOpen, setPnOpen] = useState(false);
+  const pnRef = useRef<HTMLDivElement>(null);
+  const pnMenuRef = useRef<HTMLDivElement>(null);
   const [activeRateTile, setActiveRateTile] = useState<RateTileKey | null>(
     null,
   );
@@ -629,14 +639,29 @@ export default function ContractReviewPage() {
       if (itemRef.current && !itemRef.current.contains(e.target as Node)) {
         setItemOpen(false);
       }
+      if (pnRef.current && !pnRef.current.contains(e.target as Node)) {
+        setPnOpen(false);
+      }
     }
-    if (clearanceOpen || itemOpen)
+    if (clearanceOpen || itemOpen || pnOpen)
       document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [clearanceOpen, itemOpen]);
+  }, [clearanceOpen, itemOpen, pnOpen]);
+
+  // Bring the dropdown popover fully into the sidebar's visible area on open,
+  // so its scrollable list (including the last value) is reachable.
+  useEffect(() => {
+    if (itemOpen) itemMenuRef.current?.scrollIntoView({ block: "nearest" });
+  }, [itemOpen]);
+  useEffect(() => {
+    if (pnOpen) pnMenuRef.current?.scrollIntoView({ block: "nearest" });
+  }, [pnOpen]);
 
   // Single source of truth: sidebar CLEARANCE STATUS mirrors column multiFilters["CLEARANCE STATUS"]
   const clearanceFilter = multiFilters["CLEARANCE STATUS"] ?? [];
+
+  // Single source of truth: sidebar PN RATING mirrors column multiFilters["PN RATING"] (clearance-style)
+  const tilePns = multiFilters["PN RATING"] ?? [];
 
   const handleSelectBomId = useCallback(
     (id: string, bomId: string | null) => {
@@ -955,6 +980,74 @@ export default function ContractReviewPage() {
     });
   }, [data, headers]);
 
+  // Auto-backfill OFFER PENDING/DONE for rows whose value is still blank
+  // (DONE iff itemCode + mcNo + offerNumber present, else PENDING). Manual edits preserved.
+  const autoOfferPendingDoneRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!data) return;
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoOfferPendingDoneRef.current.has(id)) return;
+      autoOfferPendingDoneRef.current.add(id);
+      if (String(row[OFFER_PENDING_DONE_IDX] ?? "").trim() === "")
+        pending.push(id);
+    });
+    if (!pending.length) return;
+    backfillContractReviewOfferPendingDoneBatchAction(pending).then((res) => {
+      if (!res?.success || !res.data) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(
+          res.data.map((d) => [d.id, d.offerPendingDone]),
+        );
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined) return row;
+            const next = [...row];
+            if (OFFER_PENDING_DONE_IDX !== -1)
+              next[OFFER_PENDING_DONE_IDX] = v ?? "";
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
+
+  // Auto-backfill Inspection for rows whose value is still blank
+  // (DONE iff offerNumber + inspectionNumber both have a value, else PENDING). Manual edits preserved.
+  const autoInspectionRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!data) return;
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoInspectionRef.current.has(id)) return;
+      autoInspectionRef.current.add(id);
+      if (String(row[INSPECTION_IDX] ?? "").trim() === "") pending.push(id);
+    });
+    if (!pending.length) return;
+    backfillContractReviewInspectionBatchAction(pending).then((res) => {
+      if (!res?.success || !res.data) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(res.data.map((d) => [d.id, d.inspection]));
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined) return row;
+            const next = [...row];
+            if (INSPECTION_IDX !== -1) next[INSPECTION_IDX] = v ?? "";
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
+
   const categoryOptions = useMemo<Record<string, string[]>>(() => {
     if (!data) return {};
     const items = [
@@ -1022,7 +1115,7 @@ export default function ContractReviewPage() {
           clearanceFilter,
           tileItems,
           tileSize,
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           "balBill",
@@ -1039,7 +1132,7 @@ export default function ContractReviewPage() {
     clearanceFilter,
     tileItems,
     tileSize,
-    tilePn,
+    tilePns,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1055,7 +1148,7 @@ export default function ContractReviewPage() {
           clearanceFilter,
           tileItems,
           tileSize,
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           "status",
@@ -1074,7 +1167,7 @@ export default function ContractReviewPage() {
     clearanceFilter,
     tileItems,
     tileSize,
-    tilePn,
+    tilePns,
     balBillIdx,
     clearanceIdx,
     STATUS_IDX,
@@ -1118,7 +1211,7 @@ export default function ContractReviewPage() {
           [],
           tileItems,
           tileSize,
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           "clearance",
@@ -1143,7 +1236,7 @@ export default function ContractReviewPage() {
     statusFilter,
     tileItems,
     tileSize,
-    tilePn,
+    tilePns,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1164,8 +1257,22 @@ export default function ContractReviewPage() {
   }, [clearanceCounts, clearanceFilter]);
 
   const itemOptions = useMemo(() => {
+    // Exclude the Item column filter from the base (clearance-style cascading):
+    // options never collapse under their own/column selection.
+    const base = allRows.filter(
+      (row) =>
+        matchesTableFilters(
+          row,
+          headers,
+          columnFilters,
+          multiFilters,
+          globalSearch,
+          dateRanges,
+          "Item",
+        ) && matchesRateTile(row, activeRateTile),
+    );
     const opts = groupItemBalBill(
-      sidebarBaseRows,
+      base,
       ITEM_IDX,
       effectiveBalBillIdx,
       (row) =>
@@ -1176,7 +1283,7 @@ export default function ContractReviewPage() {
           clearanceFilter,
           [],
           tileSize,
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           "item",
@@ -1194,13 +1301,19 @@ export default function ContractReviewPage() {
       a.value.localeCompare(b.value, undefined, { numeric: true }),
     );
   }, [
-    sidebarBaseRows,
+    allRows,
+    headers,
+    columnFilters,
+    multiFilters,
+    globalSearch,
+    dateRanges,
+    activeRateTile,
     balBillFilter,
     statusFilter,
     clearanceFilter,
     tileItems,
     tileSize,
-    tilePn,
+    tilePns,
     balBillIdx,
     clearanceIdx,
     effectiveBalBillIdx,
@@ -1216,7 +1329,7 @@ export default function ContractReviewPage() {
           clearanceFilter,
           tileItems,
           "",
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           "size",
@@ -1228,39 +1341,65 @@ export default function ContractReviewPage() {
       statusFilter,
       clearanceFilter,
       tileItems,
-      tilePn,
+      tilePns,
       balBillIdx,
       clearanceIdx,
     ],
   );
 
-  const pnOptions = useMemo(
-    () =>
-      groupCount(sidebarBaseRows, PN_IDX, (row) =>
-        matchesSidebar(
+  const pnOptions = useMemo(() => {
+    // Exclude the PN RATING column filter from the base (clearance-style cascading):
+    // options never collapse under their own/column selection.
+    const base = allRows.filter(
+      (row) =>
+        matchesTableFilters(
           row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          "",
-          balBillIdx,
-          clearanceIdx,
-          "pn",
-        ),
+          headers,
+          columnFilters,
+          multiFilters,
+          globalSearch,
+          dateRanges,
+          "PN RATING",
+        ) && matchesRateTile(row, activeRateTile),
+    );
+    const opts = groupCount(base, PN_IDX, (row) =>
+      matchesSidebar(
+        row,
+        balBillFilter,
+        statusFilter,
+        clearanceFilter,
+        tileItems,
+        tileSize,
+        [],
+        balBillIdx,
+        clearanceIdx,
+        "pn",
       ),
-    [
-      sidebarBaseRows,
-      balBillFilter,
-      statusFilter,
-      clearanceFilter,
-      tileItems,
-      tileSize,
-      balBillIdx,
-      clearanceIdx,
-    ],
-  );
+    );
+    // Keep selected PN values visible even if count 0 (bidirectional cascading keep-selected)
+    for (const s of tilePns) {
+      if (!opts.some((o) => o.value === s)) opts.push({ value: s, count: 0 });
+    }
+    return opts.sort((a, b) =>
+      a.value.localeCompare(b.value, undefined, { numeric: true }),
+    );
+  }, [
+    allRows,
+    headers,
+    columnFilters,
+    multiFilters,
+    globalSearch,
+    dateRanges,
+    activeRateTile,
+    balBillFilter,
+    statusFilter,
+    clearanceFilter,
+    tileItems,
+    tileSize,
+    tilePns,
+    balBillIdx,
+    clearanceIdx,
+  ]);
 
   const rateMcCont = useMemo(() => {
     let sum = 0;
@@ -1274,7 +1413,7 @@ export default function ContractReviewPage() {
           clearanceFilter,
           tileItems,
           tileSize,
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           undefined,
@@ -1295,7 +1434,7 @@ export default function ContractReviewPage() {
     clearanceFilter,
     tileItems,
     tileSize,
-    tilePn,
+    tilePns,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1313,7 +1452,7 @@ export default function ContractReviewPage() {
             clearanceFilter,
             tileItems,
             tileSize,
-            tilePn,
+            tilePns,
             balBillIdx,
             clearanceIdx,
             undefined,
@@ -1341,7 +1480,7 @@ export default function ContractReviewPage() {
       clearanceFilter,
       tileItems,
       tileSize,
-      tilePn,
+      tilePns,
       balBillIdx,
       clearanceIdx,
     ],
@@ -1364,7 +1503,7 @@ export default function ContractReviewPage() {
           clearanceFilter,
           tileItems,
           tileSize,
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           undefined,
@@ -1384,7 +1523,7 @@ export default function ContractReviewPage() {
     clearanceFilter,
     tileItems,
     tileSize,
-    tilePn,
+    tilePns,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1401,7 +1540,7 @@ export default function ContractReviewPage() {
           clearanceFilter,
           tileItems,
           tileSize,
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           undefined,
@@ -1421,7 +1560,7 @@ export default function ContractReviewPage() {
     clearanceFilter,
     tileItems,
     tileSize,
-    tilePn,
+    tilePns,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1438,7 +1577,7 @@ export default function ContractReviewPage() {
           clearanceFilter,
           tileItems,
           tileSize,
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           undefined,
@@ -1458,7 +1597,7 @@ export default function ContractReviewPage() {
     clearanceFilter,
     tileItems,
     tileSize,
-    tilePn,
+    tilePns,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1475,7 +1614,7 @@ export default function ContractReviewPage() {
           clearanceFilter,
           tileItems,
           tileSize,
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           undefined,
@@ -1495,7 +1634,7 @@ export default function ContractReviewPage() {
     clearanceFilter,
     tileItems,
     tileSize,
-    tilePn,
+    tilePns,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1527,7 +1666,7 @@ export default function ContractReviewPage() {
             clearanceFilter,
             tileItems,
             tileSize,
-            tilePn,
+            tilePns,
             balBillIdx,
             clearanceIdx,
             undefined,
@@ -1543,14 +1682,14 @@ export default function ContractReviewPage() {
       clearanceFilter,
       tileItems,
       tileSize,
-      tilePn,
+      tilePns,
       balBillIdx,
       clearanceIdx,
     ],
   );
 
   const hasTileFilter =
-    tileItems.length > 0 || tileSize !== "" || tilePn !== "";
+    tileItems.length > 0 || tileSize !== "" || tilePns.length > 0;
 
   const filteredData = useMemo(() => {
     if (
@@ -1573,7 +1712,7 @@ export default function ContractReviewPage() {
           clearanceFilter,
           tileItems,
           tileSize,
-          tilePn,
+          tilePns,
           balBillIdx,
           clearanceIdx,
           undefined,
@@ -1594,7 +1733,7 @@ export default function ContractReviewPage() {
     clearanceIdx,
     tileItems,
     tileSize,
-    tilePn,
+    tilePns,
   ]);
 
   const visibleData = useMemo(() => {
@@ -1817,7 +1956,7 @@ export default function ContractReviewPage() {
             clearanceFilter,
             [],
             tileSize,
-            tilePn,
+            tilePns,
             balBillIdx,
             clearanceIdx,
             "item",
@@ -1835,7 +1974,7 @@ export default function ContractReviewPage() {
             clearanceFilter,
             [],
             tileSize,
-            tilePn,
+            tilePns,
             balBillIdx,
             clearanceIdx,
             "item",
@@ -1855,7 +1994,7 @@ export default function ContractReviewPage() {
             clearanceFilter,
             tileItems,
             "",
-            tilePn,
+            tilePns,
             balBillIdx,
             clearanceIdx,
             "size",
@@ -1874,7 +2013,7 @@ export default function ContractReviewPage() {
             clearanceFilter,
             tileItems,
             tileSize,
-            "",
+            [],
             balBillIdx,
             clearanceIdx,
             "pn",
@@ -1891,7 +2030,7 @@ export default function ContractReviewPage() {
       clearanceFilter,
       tileItems,
       tileSize,
-      tilePn,
+      tilePns,
       balBillIdx,
       clearanceIdx,
       effectiveBalBillIdx,
@@ -2068,7 +2207,10 @@ export default function ContractReviewPage() {
                 </span>
               </button>
               {itemOpen && (
-                <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-[#e1e6eb] rounded shadow-lg overflow-hidden">
+                <div
+                  ref={itemMenuRef}
+                  className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-[#e1e6eb] rounded shadow-lg overflow-hidden"
+                >
                   <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-[#e1e6eb] bg-[#f8f9fa]">
                     <button
                       type="button"
@@ -2087,7 +2229,7 @@ export default function ContractReviewPage() {
                       Clear
                     </button>
                   </div>
-                  <div className="max-h-48 overflow-y-auto py-1">
+                  <div className="max-h-48 overflow-y-auto overscroll-contain py-1">
                     {itemOptions.length === 0 ? (
                       <div className="px-2 py-2 text-[11px] text-muted-foreground">
                         No options
@@ -2141,22 +2283,86 @@ export default function ContractReviewPage() {
             </select>
           </div>
 
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1.5" ref={pnRef}>
             <span className="text-[11px] font-semibold text-white/60">
               PN Rating
             </span>
-            <select
-              value={tilePn}
-              onChange={(e) => setTilePn(e.target.value)}
-              className="w-full text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-2 py-1.5 outline-none cursor-pointer"
-            >
-              <option value="">All ({tileAllCounts.pn})</option>
-              {pnOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.value} ({o.count})
-                </option>
-              ))}
-            </select>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setPnOpen((v) => !v)}
+                className="w-full text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-2 py-1.5 text-left outline-none cursor-pointer flex items-center justify-between gap-1"
+              >
+                <span className="truncate">
+                  {tilePns.length === 0
+                    ? `All (${tileAllCounts.pn})`
+                    : `${tilePns.length} selected`}
+                </span>
+                <span className="text-[10px] text-[#0a2540]/60 shrink-0">
+                  {pnOpen ? "▲" : "▼"}
+                </span>
+              </button>
+              {pnOpen && (
+                <div
+                  ref={pnMenuRef}
+                  className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-[#e1e6eb] rounded shadow-lg overflow-hidden"
+                >
+                  <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-[#e1e6eb] bg-[#f8f9fa]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        filterActions.onMultiFilter(
+                          "PN RATING",
+                          pnOptions.map((o) => o.value),
+                        )
+                      }
+                      className="text-blue-600 font-bold hover:underline cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => filterActions.onMultiFilter("PN RATING", [])}
+                      className="text-red-600 font-semibold hover:underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto overscroll-contain py-1">
+                    {pnOptions.length === 0 ? (
+                      <div className="px-2 py-2 text-[11px] text-muted-foreground">
+                        No options
+                      </div>
+                    ) : (
+                      pnOptions.map((o) => (
+                        <label
+                          key={o.value}
+                          className="flex items-center gap-1.5 px-2 py-1 hover:bg-gray-50 cursor-pointer text-[11px] text-[#0a2540]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={tilePns.includes(o.value)}
+                            onChange={() => {
+                              filterActions.onMultiFilter(
+                                "PN RATING",
+                                tilePns.includes(o.value)
+                                  ? tilePns.filter((v) => v !== o.value)
+                                  : [...tilePns, o.value],
+                              );
+                            }}
+                            className="accent-blue-600 shrink-0"
+                          />
+                          <span className="truncate flex-1">{o.value}</span>
+                          <span className="text-[10px] text-[#0a2540]/50 shrink-0">
+                            ({o.count})
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
           <button
             type="button"
@@ -2406,6 +2612,7 @@ export default function ContractReviewPage() {
                   "Actuator",
                   "MC Received/Pending",
                   "Inspection",
+                  "OFFER PENDING/DONE",
                   "Remarks",
                   "PN RATING",
                   "LC/RTGS REF NO",
@@ -2432,10 +2639,13 @@ export default function ContractReviewPage() {
                   "CLEARANCE STATUS": clearanceOptions.filter(
                     (o) => o !== "(Blank)",
                   ),
+                  "PN RATING": pnOptions.map((o) => o.value),
+                  Item: itemOptions.map((o) => o.value),
                 }}
                 fixedDropdownOptions={{
                   "MC Received/Pending": ["Received", "Pending"],
                   Inspection: ["DONE", "PENDING"],
+                  "OFFER PENDING/DONE": ["DONE", "PENDING"],
                   Actuator: actuatorOptions,
                   "PAYMENT TERMS": [
                     "CREDIT 45",
@@ -2479,13 +2689,13 @@ export default function ContractReviewPage() {
                 onReset={() => {
                   setTileItems([]);
                   setTileSize("");
-                  setTilePn("");
                   setActiveRateTile(null);
                   setBalBillFilter("all");
                   setStatusFilter("all");
                   setActivePath([]);
                   filterActions.onMultiFilter("CLEARANCE STATUS", []);
                   filterActions.onMultiFilter("STATUS", []);
+                  filterActions.onMultiFilter("PN RATING", []);
                 }}
                 hiddenColumns={[
                   "VA %",
