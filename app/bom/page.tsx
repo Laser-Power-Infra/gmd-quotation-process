@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Database, Loader2 } from "lucide-react";
 import { RefreshCw } from "lucide-react";
 import GMDUpdateHeader from "../../components/gmd_dashboard/GMDUpdateHeader";
@@ -11,6 +11,8 @@ import { toast } from "sonner";
 import {
   updateVerifyBomFieldBatchAction,
   syncNullVerifyBomStockAction,
+  deriveVerifyBomItemNameBatchAction,
+  recomputeVerifyBomBomQtyCostBatchAction,
 } from "@/app/actions";
 import { VERIFY_BOM_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/verify-bom-columns";
 
@@ -139,6 +141,110 @@ export default function BomPage() {
 
   const headers = data?.headers ?? [];
   const ids = data?.ids ?? [];
+
+  const autoItemNameRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!data) return;
+    const itemTypeIdx = headers.indexOf("ITEM TYPE");
+    const mocIdx = headers.indexOf("MOC");
+    const operationIdx = headers.indexOf("OPERATION");
+    const sizeIdx = headers.indexOf("SIZE");
+    const pnGmdIdx = headers.indexOf("PN-GMD");
+    const newItemNameIdx = headers.indexOf("NEW ITEM NAME");
+    if (
+      [itemTypeIdx, mocIdx, operationIdx, sizeIdx, pnGmdIdx, newItemNameIdx].some(
+        (i) => i < 0,
+      )
+    ) {
+      return;
+    }
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoItemNameRef.current.has(id)) return;
+      const parts = [row[itemTypeIdx], row[mocIdx], row[operationIdx], row[sizeIdx], row[pnGmdIdx]].map(
+        (v) => String(v ?? "").trim(),
+      );
+      const derived = parts.some((p) => p === "") ? "" : parts.join("_");
+      const current = String(row[newItemNameIdx] ?? "").trim();
+      if (current === derived) return;
+      autoItemNameRef.current.add(id);
+      pending.push(id);
+    });
+    if (!pending.length) return;
+    deriveVerifyBomItemNameBatchAction(pending).then((res) => {
+      if (!res?.success) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map((res.data ?? []).map((d) => [d.id, d.merged ?? ""]));
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined) return row;
+            const next = [...row];
+            next[newItemNameIdx] = v;
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
+
+  const autoBomQtyCostRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!data) return;
+    const bomItemQtyIdx = headers.indexOf("BOM ITEM QTY");
+    const costIdx = headers.indexOf("COST");
+    const bomItemQtyCostIdx = headers.indexOf("BOM ITEM QTY * COST");
+    if ([bomItemQtyIdx, costIdx, bomItemQtyCostIdx].some((i) => i < 0)) {
+      return;
+    }
+    const parseNum = (v: unknown): number | null => {
+      const s = String(v ?? "").replace(/,/g, "").trim();
+      if (!s || s === "-") return null;
+      const n = parseFloat(s);
+      return isNaN(n) ? null : n;
+    };
+    const compute = (row: unknown[]): string => {
+      const qty = parseNum(row[bomItemQtyIdx]);
+      const cost = parseNum(row[costIdx]);
+      if (qty === null) return "";
+      if (cost === null) return "RM COST NOT AVAILABLE";
+      return (Math.round(qty * cost * 100) / 100).toString();
+    };
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoBomQtyCostRef.current.has(id)) return;
+      const current = String(row[bomItemQtyCostIdx] ?? "").trim();
+      if (current === compute(row)) return;
+      autoBomQtyCostRef.current.add(id);
+      pending.push(id);
+    });
+    if (!pending.length) return;
+    recomputeVerifyBomBomQtyCostBatchAction(pending).then((res) => {
+      if (!res?.success) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(
+          (res.data ?? []).map((d) => [d.id, d.bomItemQtyCost ?? ""]),
+        );
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined) return row;
+            const next = [...row];
+            next[bomItemQtyCostIdx] = v;
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
 
   const { yesRows, yesIds, noRows, noIds } = useMemo(() => {
     const yesRows: unknown[][] = [];

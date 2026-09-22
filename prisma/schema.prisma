@@ -16,6 +16,17 @@ model User {
   emailVerified DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  chatSessions  ChatSession[]
+}
+
+model ChatSession {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String   @default("New chat")
+  messages  Json     @default("[]") // serialized UIMessage[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Enquiry {
@@ -323,6 +334,7 @@ model ContractReview {
   status                           String?
   mcReceivedPending                String?
   inspection                       String?
+  offerPendingDone       String?
   remarks                          String?
   offerNumber                      String[] @default([])
   inspectionNumber                 String[] @default([])
@@ -360,14 +372,15 @@ model VerifyBom {
   currentReqt          String?
   merged               String?
   duplicateMergerCount String?
-  bomNature            String?
-  consumption1         String?
-  consumption2         String?
-  consumption3         String?
-  cost                 String?
-  syncedAt             DateTime @default(now())
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  bomNature     String?
+  consumption1  String?
+  consumption2  String?
+  consumption3  String?
+  cost         String?
+  bomItemQtyCost String?
+  syncedAt   DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@unique([bomId, itemCode, rmItemCode])
   @@index([itemCode])

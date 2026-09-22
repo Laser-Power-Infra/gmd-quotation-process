@@ -94,6 +94,8 @@ CONTRACT NO, ITEM_CODE, MC NO, ITEM_NAME, PARTY ITEM NAME, RATE, ORDER QTY, FREE
 | `BAL DI VAL` | `balDiVal :278` | DUMP col 7 | String | |
 | `DI VAL` | `diVal :279` | DUMP col 8 | String | |
 | `ic qty` | `icQty :280` | DUMP col 9 | String | |
+| `Inspection` | `inspection :319` | — | String | Editable dropdown DONE/PENDING; auto-backfilled on load (blank-only): DONE iff `offerNumber` and `inspectionNumber` both have a non-`'0'` value, else PENDING — `backfillContractReviewInspectionBatchAction` |
+| `OFFER PENDING/DONE` | `offerPendingDone` | — | String | Editable dropdown DONE/PENDING (shown after Inspection); auto-backfilled on load (blank-only): DONE iff `itemCode` + `mcNo` + `offerNumber` (non-`'0'`) all present, else PENDING — `backfillContractReviewOfferPendingDoneBatchAction` |
 | — | `syncedAt :281` | — | DateTime | set `new Date()` on sync |
 
 **Mapper detail:** `mapContractReviewRow(contractRow,dumpRow, contractsColumnMap, dumpColumnMap)` `lib/gmd_lib/contract-review-columns.ts:mapContractReviewRow` uses `field(idx)=getVal(contractRow,contractsColumnMap[idx])` where idx 0-36 is `CONTRACTS_SHEET_COLUMNS` index (note swap `itemCode field(2), mcNo field(1)` to align display order). Dump via `getVal(dumpRow, dumpColumnMap[idx])`. Column maps built with `lastIndexOf` for Contracts (to handle duplicates) and `findIndex` for Dump.
@@ -136,6 +138,7 @@ CONTRACT NO, ITEM_CODE, MC NO, ITEM_NAME, PARTY ITEM NAME, RATE, ORDER QTY, FREE
 - **Sidebar filter — STATUS** (left panel):
   - Options: `Blanks, Closed, Completed, Duplicate, Hold, Shortclosed, To be closed` — but **currently only `Completed` is wired** via `isZeroBal(balBillAgCont)==0` logic (`balBillAgCont` zero → completed). `BAL BILL AG CONT` filter is commented out in page. `STATUS` filter stub `app/contract_review/page.tsx`.
 - **Main table:** `GMDUpdateTable title="Contract Review"` showing 37 display cols + rows from DB, client-side filters/pagination via `gmdUpdate` slice pattern.
+- **Auto-backfills (on load, fill blanks only — manual edits preserved):** `Inspection` and `OFFER PENDING/DONE` are computed by server actions `backfillContractReviewInspectionBatchAction` / `backfillContractReviewOfferPendingDoneBatchAction` and written back into the rows via `useEffect`. Rules above (§3.2).
 
 ## 6. Logic: Contract Rate → Quotation PD Validation
 
