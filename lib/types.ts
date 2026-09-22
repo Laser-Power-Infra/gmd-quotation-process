@@ -119,7 +119,6 @@ export interface FiltersState {
   moc: string[];
   mocSearch: string;
   size: string[];
-  sizeAndHeight: string[];
   pnRating: string[];
   operationType: string[];
   extension: string[];
