@@ -81,3 +81,25 @@ export const COL_INDEX_TO_DB_FIELD: Record<number, string> = {
   24: "indianImported",
   25: "orderDelivery",
 };
+
+export function resolveGMDUpdateField(
+  headers: string[],
+  colIndex: number,
+): string | null {
+  const header = headers[colIndex];
+  if (!header) return null;
+  switch (header) {
+    case "ITEM NAME (derived)":
+      return "itemNameDerived";
+    case "BOM ID":
+      return "bomId";
+    case "Vendor Reference":
+      return "vendorReference";
+    case "Attachment":
+      return "attachmentUrl";
+  }
+  const derivedIdx = headers.indexOf("ITEM NAME (derived)");
+  const canonical =
+    derivedIdx !== -1 && colIndex > derivedIdx ? colIndex - 1 : colIndex;
+  return COL_INDEX_TO_DB_FIELD[canonical] ?? null;
+}

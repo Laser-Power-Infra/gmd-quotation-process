@@ -10,6 +10,7 @@ import {
   hydrateGMDUpdate,
   upsertGMDUpdateItems,
   applyTransferCostMatch,
+  updateGMDUpdateField,
   selectAllGMDUpdateRows,
   selectGMDUpdateBomId,
   uploadGMDUpdateAttachment,
@@ -22,6 +23,7 @@ import {
   FIXED_DROPDOWN_OPTIONS,
   CANONICAL_COLUMNS,
   COL_INDEX_TO_DB_FIELD,
+  resolveGMDUpdateField,
 } from "@/lib/gmd_lib/sheet-columns";
 import {
   getUsdInrRateAction,
@@ -697,6 +699,53 @@ export default function Home() {
     [],
   );
 
+  const handleCellUpdate = useCallback(
+    async (id: string, colIndex: number, value: string) => {
+      const header = headers[colIndex];
+      if (!header) return;
+      const field = resolveGMDUpdateField(headers, colIndex);
+      if (!field) return;
+      const toastId = toast.loading(`Updating ${header}...`);
+      try {
+        await dispatch(
+          updateGMDUpdateField({ id, field, value: value || null }),
+        ).unwrap();
+        toast.success(`${header} updated`, { id: toastId });
+      } catch (err: any) {
+        toast.error(
+          err?.message || err || `Failed to update ${header}`,
+          { id: toastId },
+        );
+      }
+    },
+    [headers, dispatch],
+  );
+
+  const handleTransferredCellUpdate = useCallback(
+    async (id: string, colIndex: number, value: string) => {
+      const header = transferredHeaders[colIndex];
+      if (!header) return;
+      const field = resolveGMDUpdateField(transferredHeaders, colIndex);
+      if (!field) return;
+      const toastId = toast.loading(`Updating ${header}...`);
+      try {
+        await dispatch(
+          updateGMDUpdateField({ id, field, value: value || null }),
+        ).unwrap();
+        toast.success(`${header} updated`, { id: toastId });
+      } catch (err: any) {
+        toast.error(
+          err?.message || err || `Failed to update ${header}`,
+          { id: toastId },
+        );
+      }
+      if (header === "ERP ITEM CODE" && value) {
+        handleTransferredErpCodeChange(id, value);
+      }
+    },
+    [transferredHeaders, dispatch, handleTransferredErpCodeChange],
+  );
+
   const handleUploadAttachment = useCallback(
     async (id: string, file: File) => {
       const toastId = toast.loading("Uploading attachment...");
@@ -1251,6 +1300,7 @@ export default function Home() {
                   ]}
                   uniqueKeyColumns={["ERP ITEM CODE"]}
                   onFilteredRowsChange={setFirstFilteredRows}
+                  onCellUpdate={handleCellUpdate}
                   filterState={filterState}
                   filterActions={filterActions}
                   onReset={() => {
@@ -1285,6 +1335,7 @@ export default function Home() {
                   editable
                   categoryOptions={enhancedCategoryOptions}
                   uniqueKeyColumns={["ERP ITEM CODE"]}
+                  onCellUpdate={handleCellUpdate}
                   lockedCostIds={lockedCostIds}
                   bomIdOptionsById={bomIdOptionsById}
                   onSelectBomId={handleSelectBomId}
@@ -1317,7 +1368,7 @@ export default function Home() {
                   usdInrRate={usdInrRate}
                   onRefreshRate={refreshRate}
                   hiddenColumns={["BOM ID"]}
-                  fieldOverride={{ "Vendor Reference": "vendorReference" }}
+                  onCellUpdate={handleTransferredCellUpdate}
                   pasteErpCodes={{
                     draft: pasteDraft,
                     setDraft: setPasteDraft,

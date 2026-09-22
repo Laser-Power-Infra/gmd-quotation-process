@@ -837,10 +837,10 @@ export default function ContractReviewPage() {
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
       if (!id || autoSavedBomIdsRef.current.has(id)) return;
-      if (String(row[BOM_ID_IDX] ?? "").trim() !== "") return;
       const options = bomIdOptionsById[id];
       if (!options || options.length === 0) return;
       if (options.length === 1) {
+        if (String(row[BOM_ID_IDX] ?? "").trim() === options[0]) return;
         autoSavedBomIdsRef.current.add(id);
         pending.push({ id, bomId: options[0] });
         return;
@@ -939,7 +939,6 @@ export default function ContractReviewPage() {
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
       if (!id || autoOrderListRef.current.has(id)) return;
-      if (String(row[ORDER_LIST_IDX] ?? "").trim() !== "") return;
       autoOrderListRef.current.add(id);
       pending.push(id);
     });
@@ -1036,8 +1035,8 @@ export default function ContractReviewPage() {
     });
   }, [data, headers]);
 
-  // Auto-backfill OFFER PENDING/DONE for rows whose value is still blank
-  // (DONE iff itemCode + mcNo + offerNumber present, else PENDING). Manual edits preserved.
+  // Auto-backfill OFFER PENDING/DONE for ALL rows, rewriting when different
+  // (DONE iff itemCode + mcNo + offerNumber present, else PENDING).
   const autoOfferPendingDoneRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!data) return;
@@ -1046,8 +1045,7 @@ export default function ContractReviewPage() {
       const id = data.ids[i];
       if (!id || autoOfferPendingDoneRef.current.has(id)) return;
       autoOfferPendingDoneRef.current.add(id);
-      if (String(row[OFFER_PENDING_DONE_IDX] ?? "").trim() === "")
-        pending.push(id);
+      pending.push(id);
     });
     if (!pending.length) return;
     backfillContractReviewOfferPendingDoneBatchAction(pending).then((res) => {
@@ -1072,8 +1070,8 @@ export default function ContractReviewPage() {
     });
   }, [data, headers]);
 
-  // Auto-backfill Inspection for rows whose value is still blank
-  // (DONE iff offerNumber + inspectionNumber both have a value, else PENDING). Manual edits preserved.
+  // Auto-backfill Inspection for ALL rows, rewriting when different
+  // (DONE iff offerNumber + inspectionNumber both have a value, else PENDING).
   const autoInspectionRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!data) return;
@@ -1082,7 +1080,7 @@ export default function ContractReviewPage() {
       const id = data.ids[i];
       if (!id || autoInspectionRef.current.has(id)) return;
       autoInspectionRef.current.add(id);
-      if (String(row[INSPECTION_IDX] ?? "").trim() === "") pending.push(id);
+      pending.push(id);
     });
     if (!pending.length) return;
     backfillContractReviewInspectionBatchAction(pending).then((res) => {

@@ -2877,13 +2877,14 @@ export async function autoAssignContractReviewBomIdFromActuator(ids: string[]) {
       where: { id: { in: unique } },
       select: { id: true, itemCode: true, actuator: true, bomId: true, orderQty: true },
     });
-    const unresolved = rows.filter((r) => !r.bomId && r.actuator?.includes("@"));
+    const unresolved = rows.filter((r) => r.actuator?.includes("@"));
     const bomIdByRow = await resolveContractReviewBomIdsFromActuator(unresolved);
 
     const results: { id: string; bomId: string; itemType: string; noUse: string | null }[] = [];
     for (const row of unresolved) {
       const bomId = bomIdByRow.get(row.id);
       if (!bomId) continue;
+      if (row.bomId === bomId) continue;
       const vbRow = await prisma.verifyBom.findFirst({
         where: { itemCode: row.itemCode, bomId },
         select: { bomIdType: true },
@@ -2924,7 +2925,7 @@ export async function backfillContractReviewNoUseBatchAction(ids: string[]) {
     if (unique.length === 0) return { success: true, data: [] };
     const items = await prisma.contractReview.findMany({
       where: { id: { in: unique } },
-      select: { id: true, bomId: true, orderQty: true },
+      select: { id: true, bomId: true, orderQty: true, noUse: true },
     });
     const bomIds = [
       ...new Set(
@@ -2935,6 +2936,7 @@ export async function backfillContractReviewNoUseBatchAction(ids: string[]) {
     const availMap = computeContractReviewRmAvail(items, bomAvail);
     const updates = items
       .filter((i) => availMap.has(i.id))
+      .filter((i) => (availMap.get(i.id) ?? null) !== (i.noUse ?? null))
       .map((i) =>
         prisma.contractReview.update({
           where: { id: i.id },
@@ -2980,7 +2982,6 @@ export async function backfillContractReviewOfferPendingDoneBatchAction(
       },
     });
     const updates = items
-      .filter((i) => !String(i.offerPendingDone ?? "").trim())
       .map((i) => {
         const hasItemCode = !!String(i.itemCode ?? "").trim();
         const hasMcNo = !!String(i.mcNo ?? "").trim();
@@ -2989,6 +2990,7 @@ export async function backfillContractReviewOfferPendingDoneBatchAction(
         );
         const value =
           hasItemCode && hasMcNo && hasOffer ? "DONE" : "PENDING";
+        if (String(i.offerPendingDone ?? "").trim() === value) return null;
         return {
           id: i.id,
           value,
@@ -2997,7 +2999,8 @@ export async function backfillContractReviewOfferPendingDoneBatchAction(
             data: { offerPendingDone: value },
           }),
         };
-      });
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null);
     if (updates.length > 0) {
       const chunkSize = 200;
       for (let i = 0; i < updates.length; i += chunkSize) {
@@ -3033,7 +3036,6 @@ export async function backfillContractReviewInspectionBatchAction(ids: string[])
       },
     });
     const updates = items
-      .filter((i) => !String(i.inspection ?? "").trim())
       .map((i) => {
         const hasOffer = (i.offerNumber ?? []).some(
           (v) => v.trim() && v.trim() !== "0",
@@ -3042,6 +3044,7 @@ export async function backfillContractReviewInspectionBatchAction(ids: string[])
           (v) => v.trim() && v.trim() !== "0",
         );
         const value = hasOffer && hasInspectionNumber ? "DONE" : "PENDING";
+        if (String(i.inspection ?? "").trim() === value) return null;
         return {
           id: i.id,
           value,
@@ -3050,7 +3053,8 @@ export async function backfillContractReviewInspectionBatchAction(ids: string[])
             data: { inspection: value },
           }),
         };
-      });
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null);
     if (updates.length > 0) {
       const chunkSize = 200;
       for (let i = 0; i < updates.length; i += chunkSize) {
