@@ -7,8 +7,10 @@ import {
   MessageSquareText,
   Trash2,
 } from "lucide-react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export interface ChatSessionMeta {
   id: string;
@@ -32,6 +34,9 @@ export function SessionList({
   onDelete,
   onBack,
 }: SessionListProps) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const pendingSession = sessions.find((s) => s.id === confirmDeleteId);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-auto shrink-0 items-center justify-between border-b border-border px-4 py-3">
@@ -122,7 +127,7 @@ export function SessionList({
                   className="shrink-0 opacity-0 transition-opacity duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover/session:opacity-100 focus-visible:opacity-100 hover:text-destructive"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDelete(s.id);
+                    setConfirmDeleteId(s.id);
                   }}
                 >
                   <Trash2 />
@@ -132,6 +137,23 @@ export function SessionList({
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        onOpenChange={(o) => {
+          if (!o) setConfirmDeleteId(null);
+        }}
+        title="Delete conversation?"
+        description={
+          pendingSession
+            ? `This permanently removes "${pendingSession.title}" and its messages.`
+            : "This permanently removes the conversation and its messages."
+        }
+        confirmLabel="Delete"
+        onConfirm={() => {
+          if (confirmDeleteId) onDelete(confirmDeleteId);
+        }}
+      />
     </div>
   );
 }

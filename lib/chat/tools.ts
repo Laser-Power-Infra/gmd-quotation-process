@@ -1,6 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
+import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
+import {
+  sanitizeAttachmentFileName,
+  uploadToS3,
+} from "@/lib/s3";
 import type { Prisma } from "@/app/generated/prisma";
 
 const CONTRACT_REVIEW_FILTER_COLUMNS = [
@@ -161,6 +166,40 @@ export function buildChatTools(userId: string) {
           data: { userId, memory },
         });
         return `Saved to memory: ${memory}`;
+      },
+    }),
+    prepare_excel: tool({
+      description:
+        "Generate an Excel file (.xlsx) from the given file name, headers, and row data, upload it to storage, and return a downloadable file (fileName + downloadUrl). Use when the user wants an Excel export of data.",
+      inputSchema: z.object({
+        fileName: z
+          .string()
+          .describe("File name without extension, e.g. contract_review_export"),
+        headers: z
+          .array(z.string())
+          .describe("Column headers, in order"),
+        rows: z
+          .array(z.array(z.string()))
+          .describe("Rows of data, each cell aligned to the headers. Values as strings."),
+      }),
+      execute: async ({ fileName, headers, rows }) => {
+        const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+        const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+        const base = fileName.replace(/\.xlsx$/i, "");
+        const safeName = sanitizeAttachmentFileName(`${base}.xlsx`);
+        const key = `chat-export/${Date.now()}-${safeName}`;
+        const contentType =
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        await uploadToS3({ key, body: buf, contentType });
+
+        const endpoint = (process.env.S3_ENDPOINT_URL || "").replace(/\/+$/, "");
+        const bucket = process.env.S3_BUCKET || "";
+        const downloadUrl = `${endpoint}/${bucket}/${key}`;
+
+        return { fileName: `${base}.xlsx`, downloadUrl };
       },
     }),
     remember: tool({

@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "./Markdown";
+import { DownloadFileCard } from "./DownloadFileCard";
 
 const TOOL_LABELS: Record<string, string> = {
   lookup_contract_review: "Contract review lookup",
@@ -96,6 +97,20 @@ export const ChatBubble = memo(function ChatBubble({
                 part.state === "input-streaming" ||
                 part.state === "input-available";
               const failed = part.state === "output-error";
+              if (part.state === "output-available") {
+                const output = (part as { output?: unknown }).output as
+                  | { fileName?: string; downloadUrl?: string }
+                  | undefined;
+                if (output?.fileName && output?.downloadUrl) {
+                  return (
+                    <DownloadFileCard
+                      key={part.toolCallId}
+                      fileName={output.fileName}
+                      downloadUrl={output.downloadUrl}
+                    />
+                  );
+                }
+              }
               const ToolIcon = TOOL_ICONS[name] ?? Wrench;
               return (
                 <span
@@ -127,7 +142,7 @@ export const ChatBubble = memo(function ChatBubble({
             {TYPING_DOT_DELAYS.map((d) => (
               <span
                 key={d}
-                className="size-1.5 animate-pulse rounded-[2px] bg-[#0f62fe]"
+                className="size-1.5 animate-pulse rounded-xs bg-[#0f62fe]"
                 style={{ animationDelay: `${d}ms` }}
               />
             ))}

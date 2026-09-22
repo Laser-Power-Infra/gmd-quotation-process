@@ -89,7 +89,7 @@ export default async function Navbar() {
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
               </span>
             </button>
-            <ChatPanel />
+            <ChatPanel enabled={!!session && (role === "admin" || role === "developer")} />
           </div>
 
         </div>
