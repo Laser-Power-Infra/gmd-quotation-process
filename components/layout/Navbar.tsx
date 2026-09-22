@@ -4,6 +4,7 @@ import { Bell } from "lucide-react";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { LogoutButton } from "./LogoutButton";
+import { ChatPanel } from "@/components/chat/ChatPanel";
 
 export default async function Navbar() {
   const session = await auth();
@@ -106,6 +107,7 @@ export default async function Navbar() {
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
               </span>
             </button>
+            <ChatPanel />
           </div>
 
         </div>

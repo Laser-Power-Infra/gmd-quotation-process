@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getLookupOptions } from "./actions";
 import LookupOptionsManager from "./LookupOptionsManager";
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function LookupOptionsAdminPage() {
   const session = await auth();
   const role = (session?.user as any)?.role as string | undefined;
+  if (role !== "developer") redirect("/login");
   const canEdit = role === "developer";
 
   const options = await getLookupOptions();
@@ -20,7 +22,7 @@ export default async function LookupOptionsAdminPage() {
   const types = Array.from(new Set(options.map((o) => o.type))).sort();
 
   return (
-    <div className="flex flex-col gap-4 p-6 flex-1 min-h-0 overflow-hidden">
+    <div className="flex flex-col gap-4 p-6 flex-1 min-h-0 overflow-y-auto">
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-bold text-foreground">Lookup Options Admin</h1>
