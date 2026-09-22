@@ -17,6 +17,15 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   chatSessions  ChatSession[]
+  userMemories  UserMemory[]
+}
+
+model UserMemory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  memory    String
+  createdAt DateTime @default(now())
 }
 
 model ChatSession {
