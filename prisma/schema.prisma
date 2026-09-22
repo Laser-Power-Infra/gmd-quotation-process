@@ -94,6 +94,7 @@ model EnquiryItem {
   itemTypeSource       String?
   mocSource            String?
   size                 String?
+  sizeAndHeight           String?
   pnRating             String?
   erpItemCode          String?
   operationType        String?

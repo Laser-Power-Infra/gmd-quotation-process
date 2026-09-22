@@ -20,38 +20,39 @@ export const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
   15: 230, // Item Type
   16: 220, // MOC
   17: 100, // Size
-  18: 120, // PN Rating
-  19: 140, // Item Code
-  20: 140, // BOM ID
-  21: 110, // Operation Type
-  22: 100, // Extension
-  23: 110, // Bypass
-  24: 130, // Other
-  25: 110, // Product Cost
-  26: 120, // Cost Ref Code
-  27: 130, // Cost
-  28: 100, // Cost Logic
-  29: 120, // Stock Status
-  30: 120, // Stock Quantity
-  31: 140, // Available Stock
-  32: 140, // RM Type
-  33: 120, // View Image
-  34: 100, // Stock Against Contract
-  35: 120, // Discount
-  36: 150, // VA%
-  37: 120, // Quoted Rate
-  38: 140, // Rate (Contract Review)
-  39: 140, // PD Cost Val
-  40: 140, // QR incl. GST
-  41: 240, // Item Name (Merge)
-  42: 140, // Total Value incl. GST
-  43: 140, // Itemwise Total Value
-  44: 170, // Validation
-  45: 180, // Attachment
-  46: 140, // Delivery Schedule
-  47: 170, // APM
-  48: 150, // Offer PDF
-  49: 80,  // Actions
+  18: 130, // Size And Height
+  19: 120, // PN Rating
+  20: 140, // Item Code
+  21: 140, // BOM ID
+  22: 110, // Operation Type
+  23: 100, // Extension
+  24: 110, // Bypass
+  25: 130, // Other
+  26: 110, // Product Cost
+  27: 120, // Cost Ref Code
+  28: 130, // Cost
+  29: 100, // Cost Logic
+  30: 120, // Stock Status
+  31: 120, // Stock Quantity
+  32: 140, // Available Stock
+  33: 140, // RM Type
+  34: 120, // View Image
+  35: 100, // Stock Against Contract
+  36: 120, // Discount
+  37: 150, // VA%
+  38: 120, // Quoted Rate
+  39: 140, // Rate (Contract Review)
+  40: 140, // PD Cost Val
+  41: 140, // QR incl. GST
+  42: 240, // Item Name (Merge)
+  43: 140, // Total Value incl. GST
+  44: 140, // Itemwise Total Value
+  45: 170, // Validation
+  46: 180, // Attachment
+  47: 140, // Delivery Schedule
+  48: 170, // APM
+  49: 150, // Offer PDF
+  50: 80,  // Actions
 };
 
 const initialState: UiState = {

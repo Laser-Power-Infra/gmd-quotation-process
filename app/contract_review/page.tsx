@@ -2621,6 +2621,7 @@ export default function ContractReviewPage() {
                   "Issuing bank name",
                   "PAYMENT TERMS",
                   "PROD ORDER NO",
+                  "VA % FROM COST",
                 ]}
                 blankOnlyEditableColumns={["DATE OF CONTRACT"]}
                 dropdownRowCondition={(header, row) => {

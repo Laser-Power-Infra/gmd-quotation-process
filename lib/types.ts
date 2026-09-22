@@ -9,6 +9,7 @@ export interface EnquiryItemData {
   itemType: string | null;
   moc: string | null;
   size: string | null;
+  sizeAndHeight: string | null;
   pnRating: string | null;
   operationType: string | null;
   extension: string | null;
@@ -118,6 +119,7 @@ export interface FiltersState {
   moc: string[];
   mocSearch: string;
   size: string[];
+  sizeAndHeight: string[];
   pnRating: string[];
   operationType: string[];
   extension: string[];
