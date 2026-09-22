@@ -108,6 +108,14 @@ export async function POST(req: Request) {
   }
 
   const tools = buildChatTools(userId);
+  console.log("[chat] POST userId", userId, "sessionId", id);
+
+  const today = new Date().toLocaleDateString("en-IN", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
   const validated = await validateUIMessages({
     messages: clientMessages,
@@ -116,7 +124,7 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: openai("gpt-5.6-luna"),
-    instructions: SYSTEM_INSTRUCTIONS,
+    instructions: `${SYSTEM_INSTRUCTIONS}\n\nToday's date is ${today}.`,
     messages: await convertToModelMessages(validated),
     tools,
     stopWhen: isStepCount(6),

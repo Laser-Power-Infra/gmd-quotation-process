@@ -156,6 +156,7 @@ export function buildChatTools(userId: string) {
           .describe("The fact to remember, one concise sentence"),
       }),
       execute: async ({ memory }) => {
+        console.log("[memorize]", JSON.stringify({ userId, memory }));
         await prisma.userMemory.create({
           data: { userId, memory },
         });
@@ -164,7 +165,7 @@ export function buildChatTools(userId: string) {
     }),
     remember: tool({
       description:
-        "Recall the user's long-term memories relevant to a query (preferences, saved facts, notes). Returns matching memories; with no query, returns the most recent memories.",
+        "Recall the user's long-term memories relevant to a query (preferences, saved facts, notes). Returns matching memories; with no query, returns the most recent memories. If a query returns nothing, recent memories are returned as fallback.",
       inputSchema: z.object({
         query: z
           .string()
@@ -172,18 +173,42 @@ export function buildChatTools(userId: string) {
           .describe("What to search memories for"),
       }),
       execute: async ({ query }) => {
+        const tokens = query
+          ? query.split(/\s+/).filter(Boolean).slice(0, 6)
+          : [];
         const memories = await prisma.userMemory.findMany({
           where: {
             userId,
-            ...(query
-              ? { memory: { contains: query, mode: "insensitive" } }
+            ...(tokens.length
+              ? {
+                  OR: tokens.map((t) => ({
+                    memory: { contains: t, mode: "insensitive" },
+                  })),
+                }
               : {}),
           },
           orderBy: { createdAt: "desc" },
           take: 10,
           select: { memory: true, createdAt: true },
         });
+        console.log(
+          "[remember]",
+          JSON.stringify({ userId, query, tokens, found: memories.length }),
+        );
         if (memories.length === 0) {
+          if (query) {
+            const recent = await prisma.userMemory.findMany({
+              where: { userId },
+              orderBy: { createdAt: "desc" },
+              take: 5,
+              select: { memory: true },
+            });
+            if (recent.length > 0) {
+              return `No memories matched "${query}". Recent memories: ${recent
+                .map((m) => m.memory)
+                .join(" | ")}`;
+            }
+          }
           return "No memories found.";
         }
         return memories.map((m) => m.memory);
