@@ -3059,7 +3059,7 @@ tileSize,
           </button>
         </aside>
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          <GMDUpdateHeader
+          {/* <GMDUpdateHeader
             title="CONTRACT REVIEW"
             totalRows={data?.totalRows ?? 0}
             syncedAt={data?.syncedAt ?? undefined}
@@ -3082,15 +3082,15 @@ tileSize,
               </button>
             }
           />
-          {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+          {error && <div className="mt-2 text-sm text-red-600">{error}</div>} */}
           <ResizablePanelGroup
             orientation="vertical"
             id="contract-review-vertical"
             defaultLayout={verticalLayout}
             onLayoutChanged={onVerticalLayoutChanged}
-            className="flex-1 min-h-0 mt-4"
+            className="flex-1 min-h-0 "
           >
-            <ResizablePanel id="graph" defaultSize="32" minSize="12" maxSize="38">
+            <ResizablePanel id="graph" defaultSize="32" minSize="12" maxSize="32">
               <div className="h-full overflow-hidden rounded-lg border border-[#1e3d59] bg-[#0a2540]">
                 <FlowDiagram
                   trees={CONTRACT_REVIEW_TREES}

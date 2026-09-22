@@ -121,22 +121,22 @@ export default function DataSourcesPage() {
 
           <CardContent className="min-h-0 flex-1 overflow-hidden p-0">
             <div className="h-full w-full overflow-auto">
-              <Table className="min-w-[1100px]">
+              <Table className="min-w-275">
                 <TableHeader className="sticky top-0 z-10 bg-background shadow-sm ">
                   <TableRow>
-                    <TableHead className="w-[12%] min-w-[130px] whitespace-nowrap px-4 py-3  text-base font-semibold">
+                    <TableHead className="w-[12%] min-w-32.5 whitespace-nowrap px-4 py-3  text-base font-semibold">
                       Page
                     </TableHead>
 
-                    <TableHead className="w-[30%] min-w-[220px] whitespace-nowrap px-4 py-3  text-base font-semibold">
+                    <TableHead className="w-[30%] min-w-55 whitespace-nowrap px-4 py-3  text-base font-semibold">
                       Dashboard &amp; Sheet
                     </TableHead>
 
-                    <TableHead className="w-[25%] min-w-[260px] whitespace-nowrap px-4 py-3  text-base font-semibold">
+                    <TableHead className="w-[25%] min-w-65 whitespace-nowrap px-4 py-3  text-base font-semibold">
                       Google Sheet
                     </TableHead>
 
-                    <TableHead className="w-[33%] min-w-[240px] whitespace-nowrap px-4 py-3  text-base font-semibold">
+                    <TableHead className="w-[33%] min-w-60 whitespace-nowrap px-4 py-3  text-base font-semibold">
                       Inner Sheet / Tab
                     </TableHead>
                     {/* 
