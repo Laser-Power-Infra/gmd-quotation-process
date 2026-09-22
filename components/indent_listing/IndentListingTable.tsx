@@ -12,16 +12,27 @@ interface IndentListingTableProps {
   onUpdateCell: (id: string, field: string, value: string) => Promise<void>;
 }
 
-const COLUMNS = [
-  { label: "ITEM NAME", key: "item", filterable: true },
-  { label: "SIZE", key: "size", filterable: true },
-  { label: "PN RATING", key: "pnRating", filterable: true },
-  { label: "Total Bal bill ag cont", key: "total", filterable: false },
-  { label: "V1", key: "v1", filterable: false },
-  { label: "V2", key: "v2", filterable: false },
-  { label: "V3", key: "v3", filterable: false },
-  { label: "V4", key: "v4", filterable: false },
-] as const;
+interface ColumnDef {
+  label: string;
+  key: string;
+  dataIdx: number;
+  numeric: boolean;
+  editable: boolean;
+}
+
+// Display columns. `dataIdx` maps the display index to the raw row index
+// (rows carry 9 fields: item, size, pnRating, mcReceivedPending, total, v1..v4;
+// the MC RECEIVED/PENDING field is skipped in the UI).
+const COLUMNS: ColumnDef[] = [
+  { label: "ITEM NAME", key: "item", dataIdx: 0, numeric: false, editable: false },
+  { label: "SIZE", key: "size", dataIdx: 1, numeric: false, editable: false },
+  { label: "PN RATING", key: "pnRating", dataIdx: 2, numeric: false, editable: false },
+  { label: "Total Bal bill ag cont", key: "total", dataIdx: 4, numeric: true, editable: false },
+  { label: "V1", key: "v1", dataIdx: 5, numeric: false, editable: true },
+  { label: "V2", key: "v2", dataIdx: 6, numeric: false, editable: true },
+  { label: "V3", key: "v3", dataIdx: 7, numeric: false, editable: true },
+  { label: "V4", key: "v4", dataIdx: 8, numeric: false, editable: true },
+];
 
 const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
   0: 280,
@@ -33,6 +44,10 @@ const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
   6: 110,
   7: 110,
 };
+
+function cellText(row: unknown[], dataIdx: number): string {
+  return String(row[dataIdx] ?? "").trim();
+}
 
 function EditableCell({
   value,
@@ -92,6 +107,21 @@ function EditableCell({
   );
 }
 
+function compareCell(a: string, b: string, numeric: boolean): number {
+  if (a === b) return 0;
+  if (numeric) {
+    const an = parseFloat(a);
+    const bn = parseFloat(b);
+    const aNaN = Number.isNaN(an);
+    const bNaN = Number.isNaN(bn);
+    if (aNaN && bNaN) return a.localeCompare(b, undefined, { numeric: true });
+    if (aNaN) return 1; // blanks/non-numeric last
+    if (bNaN) return -1;
+    return an - bn;
+  }
+  return a.localeCompare(b, undefined, { numeric: true });
+}
+
 export default function IndentListingTable({
   title,
   rows,
@@ -149,10 +179,9 @@ export default function IndentListingTable({
   const columnOptions = useMemo(() => {
     const options: Record<number, string[]> = {};
     COLUMNS.forEach((col, idx) => {
-      if (!col.filterable) return;
       const values = new Set<string>();
       for (const row of rows) {
-        const v = String(row[idx] ?? "").trim();
+        const v = cellText(row, col.dataIdx);
         if (v !== "") values.add(v);
       }
       options[idx] = [...values].sort((a, b) =>
@@ -166,9 +195,10 @@ export default function IndentListingTable({
     let out = rows;
     for (const [colIdxStr, selected] of Object.entries(filters)) {
       const colIdx = Number(colIdxStr);
-      if (selected.length === 0) continue;
+      const col = COLUMNS[colIdx];
+      if (!col || selected.length === 0) continue;
       out = out.filter((row) => {
-        const v = String(row[colIdx] ?? "").trim();
+        const v = cellText(row, col.dataIdx);
         const selectedSet = new Set(selected);
         if (selectedSet.has(BLANK)) return v === "";
         return selectedSet.has(v);
@@ -180,10 +210,11 @@ export default function IndentListingTable({
   const sorted = useMemo(() => {
     const out = [...filtered];
     if (sortIdx !== null) {
+      const col = COLUMNS[sortIdx];
       out.sort((a, b) => {
-        const av = String(a[sortIdx] ?? "").toLowerCase();
-        const bv = String(b[sortIdx] ?? "").toLowerCase();
-        const cmp = av.localeCompare(bv, undefined, { numeric: true });
+        const av = cellText(a, col.dataIdx).toLowerCase();
+        const bv = cellText(b, col.dataIdx).toLowerCase();
+        const cmp = compareCell(av, bv, col.numeric);
         return sortAsc ? cmp : -cmp;
       });
     }
@@ -219,6 +250,23 @@ export default function IndentListingTable({
     ) : null;
 
   const hasActiveFilters = Object.values(filters).some((v) => v.length > 0);
+
+  const idForRow = (row: unknown[]) => {
+    const idx = rows.indexOf(row);
+    return idx === -1 ? "" : ids[idx] ?? "";
+  };
+
+  const renderCell = (row: unknown[], col: ColumnDef) => {
+    if (col.editable) {
+      return (
+        <EditableCell
+          value={String(row[col.dataIdx] ?? "")}
+          onCommit={(value) => onUpdateCell(idForRow(row), col.key, value)}
+        />
+      );
+    }
+    return String(row[col.dataIdx] ?? "") || "—";
+  };
 
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0">
@@ -267,21 +315,19 @@ export default function IndentListingTable({
                       {sortArrow(idx)}
                     </button>
                   </div>
-                  {col.filterable && (
-                    <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                      <MultiSelectFilter
-                        label={col.label}
-                        allLabel={`${col.label}: All`}
-                        options={columnOptions[idx] ?? []}
-                        cascadedOptions={columnOptions[idx] ?? []}
-                        selected={filters[idx] ?? []}
-                        onChange={(v) =>
-                          setFilters((prev) => ({ ...prev, [idx]: v }))
-                        }
-                        includeBlank
-                      />
-                    </div>
-                  )}
+                  <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                    <MultiSelectFilter
+                      label={col.label}
+                      allLabel={`${col.label}: All`}
+                      options={columnOptions[idx] ?? []}
+                      cascadedOptions={columnOptions[idx] ?? []}
+                      selected={filters[idx] ?? []}
+                      onChange={(v) =>
+                        setFilters((prev) => ({ ...prev, [idx]: v }))
+                      }
+                      includeBlank
+                    />
+                  </div>
                   <div
                     onMouseDown={(e) => handleMouseDown(idx, e)}
                     className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -322,29 +368,18 @@ export default function IndentListingTable({
                     key={id || rowIdx}
                     className="hover:bg-muted/20 transition-colors"
                   >
-                    <td className="py-2.5 px-4 text-xs font-semibold text-foreground border-r border-b border-border last:border-r-0 truncate">
-                      {String(row[0] ?? "") || "—"}
-                    </td>
-                    <td className="py-2.5 px-4 text-xs text-muted-foreground border-r border-b border-border last:border-r-0 truncate">
-                      {String(row[1] ?? "") || "—"}
-                    </td>
-                    <td className="py-2.5 px-4 text-xs text-muted-foreground border-r border-b border-border last:border-r-0 truncate">
-                      {String(row[2] ?? "") || "—"}
-                    </td>
-                    <td className="py-2.5 px-4 text-xs font-bold text-foreground border-r border-b border-border last:border-r-0 text-right tabular-nums">
-                      {String(row[4] ?? "") || "—"}
-                    </td>
-                    {[5, 6, 7, 8].map((colIdx) => (
+                    {COLUMNS.map((col, idx) => (
                       <td
-                        key={colIdx}
-                        className="py-1 px-1 border-r border-b border-border last:border-r-0"
+                        key={col.key}
+                        className={`py-2.5 px-4 text-xs border-r border-b border-border last:border-r-0 truncate ${
+                          col.numeric
+                            ? "font-bold text-foreground text-right tabular-nums"
+                            : col.editable
+                              ? "py-1 px-1"
+                              : "text-muted-foreground"
+                        } ${idx === 0 ? "font-semibold text-foreground" : ""}`}
                       >
-                        <EditableCell
-                          value={String(row[colIdx] ?? "")}
-                          onCommit={(value) =>
-                            onUpdateCell(id, COLUMNS[colIdx].key, value)
-                          }
-                        />
+                        {renderCell(row, col)}
                       </td>
                     ))}
                   </tr>
