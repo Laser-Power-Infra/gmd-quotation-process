@@ -317,6 +317,7 @@ model ContractReview {
   status                 String?
   mcReceivedPending      String?
   inspection             String?
+  offerPendingDone       String?
   remarks                String?
   offerNumber            String[] @default([])
   inspectionNumber       String[] @default([])
@@ -356,6 +357,7 @@ model VerifyBom {
   consumption2  String?
   consumption3  String?
   cost         String?
+  bomItemQtyCost String?
   syncedAt   DateTime @default(now())
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

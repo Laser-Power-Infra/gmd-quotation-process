@@ -54,6 +54,7 @@ export const CONTRACT_REVIEW_HEADERS = [
   "STATUS",
   "MC Received/Pending",
   "Inspection",
+  "OFFER PENDING/DONE",
   "Remarks",
   "STATE",
   "UTILITY",
@@ -307,6 +308,7 @@ export function dbContractReviewToRow(item: {
   status: string | null;
   mcReceivedPending: string | null;
   inspection: string | null;
+  offerPendingDone: string | null;
   remarks: string | null;
   state: string | null;
   utility: string | null;
@@ -350,6 +352,7 @@ export function dbContractReviewToRow(item: {
     item.status,
     item.mcReceivedPending,
     item.inspection,
+    item.offerPendingDone,
     item.remarks,
     item.state,
     item.utility,
@@ -418,6 +421,7 @@ export const CONTRACT_REVIEW_HEADER_TO_DB_FIELD: Record<string, string> = {
   "STATUS": "status",
   "MC Received/Pending": "mcReceivedPending",
   "Inspection": "inspection",
+  "OFFER PENDING/DONE": "offerPendingDone",
   "Remarks": "remarks",
   "ORDER LIST": "orderList",
   "PROD ORDER NO": "productionOrderNumber",

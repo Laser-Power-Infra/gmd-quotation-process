@@ -12,6 +12,7 @@ import {
   updateVerifyBomFieldBatchAction,
   syncNullVerifyBomStockAction,
   deriveVerifyBomItemNameBatchAction,
+  recomputeVerifyBomBomQtyCostBatchAction,
 } from "@/app/actions";
 import { VERIFY_BOM_HEADER_TO_DB_FIELD } from "@/lib/gmd_lib/verify-bom-columns";
 
@@ -184,6 +185,60 @@ export default function BomPage() {
             if (v === undefined) return row;
             const next = [...row];
             next[newItemNameIdx] = v;
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
+
+  const autoBomQtyCostRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!data) return;
+    const bomItemQtyIdx = headers.indexOf("BOM ITEM QTY");
+    const costIdx = headers.indexOf("COST");
+    const bomItemQtyCostIdx = headers.indexOf("BOM ITEM QTY * COST");
+    if ([bomItemQtyIdx, costIdx, bomItemQtyCostIdx].some((i) => i < 0)) {
+      return;
+    }
+    const parseNum = (v: unknown): number | null => {
+      const s = String(v ?? "").replace(/,/g, "").trim();
+      if (!s || s === "-") return null;
+      const n = parseFloat(s);
+      return isNaN(n) ? null : n;
+    };
+    const compute = (row: unknown[]): string => {
+      const qty = parseNum(row[bomItemQtyIdx]);
+      const cost = parseNum(row[costIdx]);
+      if (qty === null) return "";
+      if (cost === null) return "RM COST NOT AVAILABLE";
+      return (Math.round(qty * cost * 100) / 100).toString();
+    };
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoBomQtyCostRef.current.has(id)) return;
+      const current = String(row[bomItemQtyCostIdx] ?? "").trim();
+      if (current === compute(row)) return;
+      autoBomQtyCostRef.current.add(id);
+      pending.push(id);
+    });
+    if (!pending.length) return;
+    recomputeVerifyBomBomQtyCostBatchAction(pending).then((res) => {
+      if (!res?.success) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(
+          (res.data ?? []).map((d) => [d.id, d.bomItemQtyCost ?? ""]),
+        );
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined) return row;
+            const next = [...row];
+            next[bomItemQtyCostIdx] = v;
             return next;
           }),
         };

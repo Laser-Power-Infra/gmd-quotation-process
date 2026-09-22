@@ -13,6 +13,8 @@ import {
   updateContractReviewFieldAction,
   backfillContractReviewNoUseBatchAction,
   backfillContractReviewOrderListBatchAction,
+  backfillContractReviewOfferPendingDoneBatchAction,
+  backfillContractReviewInspectionBatchAction,
   backfillContractReviewCostFromQuotationAction,
   syncContractReviewEnquiryFieldsBatchAction,
   syncContractReviewEnquiryFieldsAllAction,
@@ -117,6 +119,10 @@ const CONTRACT_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("CONTRACT NO");
 const STATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATE");
 const UTILITY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("UTILITY");
 const PROJECT_REFERENCE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PROJECT REFERENCE");
+const INSPECTION_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Inspection");
+const OFFER_NUMBER_IDX = CONTRACT_REVIEW_HEADERS.indexOf("OFFER NUMBER");
+const OFFER_PENDING_DONE_IDX =
+  CONTRACT_REVIEW_HEADERS.indexOf("OFFER PENDING/DONE");
 
 type RateTileKey =
   | "rateXOrderQty"
@@ -967,6 +973,74 @@ export default function ContractReviewPage() {
             if (UTILITY_IDX !== -1) next[UTILITY_IDX] = v.utility ?? "";
             if (PROJECT_REFERENCE_IDX !== -1)
               next[PROJECT_REFERENCE_IDX] = v.projectReference ?? "";
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
+
+  // Auto-backfill OFFER PENDING/DONE for rows whose value is still blank
+  // (DONE iff itemCode + mcNo + offerNumber present, else PENDING). Manual edits preserved.
+  const autoOfferPendingDoneRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!data) return;
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoOfferPendingDoneRef.current.has(id)) return;
+      autoOfferPendingDoneRef.current.add(id);
+      if (String(row[OFFER_PENDING_DONE_IDX] ?? "").trim() === "")
+        pending.push(id);
+    });
+    if (!pending.length) return;
+    backfillContractReviewOfferPendingDoneBatchAction(pending).then((res) => {
+      if (!res?.success || !res.data) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(
+          res.data.map((d) => [d.id, d.offerPendingDone]),
+        );
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined) return row;
+            const next = [...row];
+            if (OFFER_PENDING_DONE_IDX !== -1)
+              next[OFFER_PENDING_DONE_IDX] = v ?? "";
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
+
+  // Auto-backfill Inspection for rows whose value is still blank
+  // (DONE iff offerNumber + inspectionNumber both have a value, else PENDING). Manual edits preserved.
+  const autoInspectionRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!data) return;
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoInspectionRef.current.has(id)) return;
+      autoInspectionRef.current.add(id);
+      if (String(row[INSPECTION_IDX] ?? "").trim() === "") pending.push(id);
+    });
+    if (!pending.length) return;
+    backfillContractReviewInspectionBatchAction(pending).then((res) => {
+      if (!res?.success || !res.data) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(res.data.map((d) => [d.id, d.inspection]));
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined) return row;
+            const next = [...row];
+            if (INSPECTION_IDX !== -1) next[INSPECTION_IDX] = v ?? "";
             return next;
           }),
         };
@@ -2538,6 +2612,7 @@ export default function ContractReviewPage() {
                   "Actuator",
                   "MC Received/Pending",
                   "Inspection",
+                  "OFFER PENDING/DONE",
                   "Remarks",
                   "PN RATING",
                   "LC/RTGS REF NO",
@@ -2570,6 +2645,7 @@ export default function ContractReviewPage() {
                 fixedDropdownOptions={{
                   "MC Received/Pending": ["Received", "Pending"],
                   Inspection: ["DONE", "PENDING"],
+                  "OFFER PENDING/DONE": ["DONE", "PENDING"],
                   Actuator: actuatorOptions,
                   "PAYMENT TERMS": [
                     "CREDIT 45",

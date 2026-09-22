@@ -2961,6 +2961,115 @@ export async function backfillContractReviewNoUseBatchAction(ids: string[]) {
   }
 }
 
+export async function backfillContractReviewOfferPendingDoneBatchAction(
+  ids: string[],
+) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+    const items = await prisma.contractReview.findMany({
+      where: { id: { in: unique } },
+      select: {
+        id: true,
+        itemCode: true,
+        mcNo: true,
+        offerNumber: true,
+        offerPendingDone: true,
+      },
+    });
+    const updates = items
+      .filter((i) => !String(i.offerPendingDone ?? "").trim())
+      .map((i) => {
+        const hasItemCode = !!String(i.itemCode ?? "").trim();
+        const hasMcNo = !!String(i.mcNo ?? "").trim();
+        const hasOffer = (i.offerNumber ?? []).some(
+          (v) => v.trim() && v.trim() !== "0",
+        );
+        const value =
+          hasItemCode && hasMcNo && hasOffer ? "DONE" : "PENDING";
+        return {
+          id: i.id,
+          value,
+          promise: prisma.contractReview.update({
+            where: { id: i.id },
+            data: { offerPendingDone: value },
+          }),
+        };
+      });
+    if (updates.length > 0) {
+      const chunkSize = 200;
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize);
+        await prisma.$transaction(chunk.map((u) => u.promise));
+      }
+    }
+    return {
+      success: true,
+      data: updates.map((u) => ({ id: u.id, offerPendingDone: u.value })),
+    };
+  } catch (error: any) {
+    console.error("Error backfilling ContractReview OFFER PENDING/DONE:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to backfill OFFER PENDING/DONE.",
+    };
+  }
+}
+
+export async function backfillContractReviewInspectionBatchAction(ids: string[]) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+    const items = await prisma.contractReview.findMany({
+      where: { id: { in: unique } },
+      select: {
+        id: true,
+        offerNumber: true,
+        inspectionNumber: true,
+        inspection: true,
+      },
+    });
+    const updates = items
+      .filter((i) => !String(i.inspection ?? "").trim())
+      .map((i) => {
+        const hasOffer = (i.offerNumber ?? []).some(
+          (v) => v.trim() && v.trim() !== "0",
+        );
+        const hasInspectionNumber = (i.inspectionNumber ?? []).some(
+          (v) => v.trim() && v.trim() !== "0",
+        );
+        const value = hasOffer && hasInspectionNumber ? "DONE" : "PENDING";
+        return {
+          id: i.id,
+          value,
+          promise: prisma.contractReview.update({
+            where: { id: i.id },
+            data: { inspection: value },
+          }),
+        };
+      });
+    if (updates.length > 0) {
+      const chunkSize = 200;
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize);
+        await prisma.$transaction(chunk.map((u) => u.promise));
+      }
+    }
+    return {
+      success: true,
+      data: updates.map((u) => ({ id: u.id, inspection: u.value })),
+    };
+  } catch (error: any) {
+    console.error("Error backfilling ContractReview Inspection:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to backfill Inspection.",
+    };
+  }
+}
+
 export async function backfillContractReviewOrderListBatchAction(ids: string[]) {
   "use server";
   try {
@@ -3484,6 +3593,77 @@ export async function deriveVerifyBomItemNameBatchAction(ids: string[]) {
     return {
       success: false,
       error: error.message || "Failed to derive VerifyBom item names.",
+    };
+  }
+}
+
+function parseNumericCell(value: string | null | undefined): number | null {
+  const s = String(value ?? "")
+    .replace(/,/g, "")
+    .trim();
+  if (!s || s === "-") return null;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+// Computes VerifyBom BOM ITEM QTY * COST (bomItemQtyCost) and persists it.
+// - qty + numeric cost -> qty * cost rounded to 2 decimals
+// - qty present but cost missing/non-numeric -> "RM COST NOT AVAILABLE"
+// - qty blank -> null
+export async function recomputeVerifyBomBomQtyCostBatchAction(ids: string[]) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+    const items = await prisma.verifyBom.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, bomItemQty: true, cost: true, bomItemQtyCost: true },
+    });
+    const updates = items
+      .map((item) => {
+        const qty = parseNumericCell(item.bomItemQty);
+        const cost = parseNumericCell(item.cost);
+        let next: string | null;
+        if (qty === null) {
+          next = null;
+        } else if (cost === null) {
+          next = "RM COST NOT AVAILABLE";
+        } else {
+          next = (Math.round(qty * cost * 100) / 100).toString();
+        }
+        const current = (item.bomItemQtyCost ?? "").trim();
+        if (current === (next ?? "")) return null;
+        return prisma.verifyBom.update({
+          where: { id: item.id },
+          data: { bomItemQtyCost: next },
+        });
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null);
+    if (updates.length > 0) {
+      await prisma.$transaction(updates);
+    }
+    return {
+      success: true,
+      data: items
+        .map((item) => {
+          const qty = parseNumericCell(item.bomItemQty);
+          const cost = parseNumericCell(item.cost);
+          let next: string | null;
+          if (qty === null) {
+            next = null;
+          } else if (cost === null) {
+            next = "RM COST NOT AVAILABLE";
+          } else {
+            next = (Math.round(qty * cost * 100) / 100).toString();
+          }
+          return { id: item.id, bomItemQtyCost: next };
+        }),
+    };
+  } catch (error: any) {
+    console.error("Error recomputing VerifyBom BOM ITEM QTY * COST:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to recompute VerifyBom BOM ITEM QTY * COST.",
     };
   }
 }
