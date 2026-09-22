@@ -50,7 +50,9 @@ export function ChatMessageList({
 
   useEffect(() => {
     if (nearBottom) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      bottomRef.current?.scrollIntoView({
+        behavior: streaming ? "auto" : "smooth",
+      });
     }
   }, [messages, streaming, nearBottom]);
 
@@ -64,7 +66,7 @@ export function ChatMessageList({
 
   if (messages.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6 py-10 text-center">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-6 overflow-y-auto px-6 py-10 text-center">
         <div className="rounded-xl border border-border bg-muted/60 p-1.5">
           <div className="flex size-11 items-center justify-center rounded-lg bg-[#0f62fe]/10 text-[#0f62fe] shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
             <Bot className="size-5 stroke-[1.5]" />
@@ -102,7 +104,7 @@ export function ChatMessageList({
   }
 
   return (
-    <div className="relative flex-1">
+    <div className="relative min-h-0 flex-1">
       <div
         ref={containerRef}
         onScroll={handleScroll}
@@ -123,13 +125,13 @@ export function ChatMessageList({
         )}
         {messages.map((m, i) => (
           <div
-            key={m.id}
-            className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+            key={`${m.id}-${i}`}
+            className="animate-in fade-in slide-in-from-bottom-2 fill-mode-both duration-500 ease-[cubic-bezier(0.32,0.72,0,1)] [contain-intrinsic-size:auto_48px] [content-visibility:auto]"
             style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
           >
             <ChatBubble
               message={m}
-              streaming={streaming}
+              streaming={streaming && i === messages.length - 1}
               onCopy={onCopy}
               onRetry={onRetry}
             />

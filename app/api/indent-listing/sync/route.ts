@@ -26,6 +26,9 @@ export async function POST() {
         balBillAgCont: true,
       },
     });
+    console.log(
+      `[indent-listing-sync] Source ContractReview rows: ${source.length}`,
+    );
 
     const groups = new Map<
       string,
@@ -84,6 +87,9 @@ export async function POST() {
     const syncedAt = new Date();
     let created = 0;
     let updated = 0;
+    let unchanged = 0;
+    const createdKeys: string[] = [];
+    const changedDetails: { key: string; old: number | null; next: number }[] = [];
 
     for (const [key, group] of groups) {
       const existing = existingByKey.get(key);
@@ -99,33 +105,81 @@ export async function POST() {
           },
         });
         created++;
+        createdKeys.push(key);
         continue;
       }
 
       // Update only when the new total is a real value; never blank out or
       // zero an existing non-null total. v1..v4 are UI-managed and preserved.
       const data: { totalBalBillAgCont?: number; syncedAt: Date } = { syncedAt };
+      const oldTotal = existing.totalBalBillAgCont;
       if (
         existing.totalBalBillAgCont == null ||
         (group.sum !== 0 && !isNaN(group.sum))
       ) {
         data.totalBalBillAgCont = group.sum;
       }
-      await prisma.indentListing.update({
-        where: { id: existing.id },
-        data,
-      });
-      updated++;
+
+      const nextTotal = data.totalBalBillAgCont;
+      const realChange =
+        nextTotal !== undefined &&
+        (existing.totalBalBillAgCont == null ||
+          Number(existing.totalBalBillAgCont) !== nextTotal);
+
+      if (realChange) {
+        await prisma.indentListing.update({
+          where: { id: existing.id },
+          data,
+        });
+        updated++;
+        changedDetails.push({
+          key,
+          old: oldTotal,
+          next: nextTotal as number,
+        });
+      } else {
+        // No data change — just touch syncedAt so the dashboard shows a fresh
+        // sync time. Not counted as an update.
+        await prisma.indentListing.update({
+          where: { id: existing.id },
+          data: { syncedAt },
+        });
+        unchanged++;
+      }
     }
+
+    console.log(
+      `[indent-listing-sync] Groups: ${groups.size} | created=${created} updated=${updated} unchanged=${unchanged}`,
+    );
+    if (createdKeys.length > 0) {
+      console.log(`[indent-listing-sync] Created keys:\n  ${createdKeys.join("\n  ")}`);
+    }
+    if (changedDetails.length > 0) {
+      console.log(
+        `[indent-listing-sync] Updated totals (old -> next):\n  ${changedDetails
+          .map((c) => `${c.key}: ${c.old ?? "null"} -> ${c.next}`)
+          .join("\n  ")}`,
+      );
+    }
+
+    const reason =
+      groups.size === 0
+        ? "No Contract Review rows with RECEIVED/PENDING status to sync."
+        : created === 0 && updated === 0
+          ? `All ${unchanged} existing indent rows are already up to date (no total changes).`
+          : undefined;
 
     return NextResponse.json({
       created,
       updated,
+      unchanged,
       total: groups.size,
+      reason,
       syncedAt: syncedAt.toISOString(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
+    console.error(`[indent-listing-sync] Failed: ${message}`);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

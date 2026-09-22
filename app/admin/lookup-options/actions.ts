@@ -36,34 +36,50 @@ export async function addLookupOptionAction(formData: FormData) {
     return { success: false, error: "Unauthorized: developer only" };
   }
   const type = (formData.get("type") as string)?.trim();
-  const value = (formData.get("value") as string)?.trim();
-
-  if (!type || !value) {
-    return { success: false, error: "Type and value are required." };
+  if (!type) {
+    return { success: false, error: "Type is required." };
   }
 
-  const existing = await prisma.lookupOption.findUnique({
-    where: { type_value: { type, value } },
-  });
-  if (existing) {
-    return { success: false, error: `"${value}" already exists for ${type}.` };
+  const rawValues = formData
+    .getAll("value")
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+
+  if (rawValues.length === 0) {
+    return { success: false, error: "At least one value is required." };
   }
 
-  const maxSort = await prisma.lookupOption.aggregate({
-    where: { type },
-    _max: { sortOrder: true },
-  });
+  // Dedupe within the input itself (exact match, mirroring the DB unique key)
+  const uniqueValues = [...new Set(rawValues)];
 
-  await prisma.lookupOption.create({
-    data: {
-      type,
-      value,
-      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
-    },
+  // Existing values for this type, for duplicate detection
+  const existingRows = await prisma.lookupOption.findMany({
+    where: { type, value: { in: uniqueValues } },
+    select: { value: true },
   });
+  const existingSet = new Set(existingRows.map((r) => r.value));
+
+  const toCreate = uniqueValues.filter((v) => !existingSet.has(v));
+  const skipped = uniqueValues.length - toCreate.length;
+
+  if (toCreate.length > 0) {
+    const maxSort = await prisma.lookupOption.aggregate({
+      where: { type },
+      _max: { sortOrder: true },
+    });
+    let sortOrder = (maxSort._max.sortOrder ?? -1) + 1;
+
+    await prisma.lookupOption.createMany({
+      data: toCreate.map((value) => ({
+        type,
+        value,
+        sortOrder: sortOrder++,
+      })),
+    });
+  }
 
   revalidatePath("/admin/lookup-options");
-  return { success: true };
+  return { success: true, added: toCreate.length, skipped };
 }
 
 export async function updateLookupOptionAction(formData: FormData) {

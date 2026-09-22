@@ -19,6 +19,7 @@ import {
   backfillContractReviewCostFromQuotationAction,
   syncContractReviewEnquiryFieldsBatchAction,
   syncContractReviewEnquiryFieldsAllAction,
+  syncContractReviewRmAvailAction,
   autoAssignContractReviewBomIdFromActuator,
   getActuatorOptionsAction,
   saveActuatorWithRmCodeAction,
@@ -472,6 +473,7 @@ export default function ContractReviewPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [enquirySyncing, setEnquirySyncing] = useState(false);
+  const [rmAvailSyncing, setRmAvailSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [balBillFilter, setBalBillFilter] = useState<BalBillFilter>("all");
@@ -643,6 +645,32 @@ export default function ContractReviewPage() {
       );
     } finally {
       setEnquirySyncing(false);
+    }
+  }, [fetchData]);
+
+  const handleRmAvailSync = useCallback(async () => {
+    setRmAvailSyncing(true);
+    const toastId = toast.loading(
+      "Syncing RM AVAIL from stock-phys / VerifyBom...",
+    );
+    try {
+      const res = await syncContractReviewRmAvailAction();
+      if (res?.success) {
+        toast.success(
+          `RM AVAIL synced: ${res.data?.rmAvailUpdated ?? 0} updated, ${res.data?.stockFilled ?? 0} stock filled`,
+          { id: toastId },
+        );
+        await fetchData();
+      } else {
+        toast.error(res?.error || "Sync failed", { id: toastId });
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Sync failed",
+        { id: toastId },
+      );
+    } finally {
+      setRmAvailSyncing(false);
     }
   }, [fetchData]);
 
@@ -2397,6 +2425,20 @@ tileSize,
     <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
       <div className="flex-1 flex p-6 min-h-0 gap-4">
         <aside className="w-64 shrink-0 self-stretch min-h-0 max-h-full overflow-y-auto overscroll-contain bg-[#0a2540] border border-[#1e3d59] rounded-lg shadow-sm p-4 flex flex-col gap-4 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent hover:scrollbar-thumb-white/30 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:bg-transparent pr-3">
+          <button
+            type="button"
+            onClick={handleRmAvailSync}
+            disabled={rmAvailSyncing}
+            className="flex items-center justify-center gap-1.5 bg-[#38ef7d]/10 hover:bg-[#38ef7d]/20 border border-[#38ef7d]/40 rounded px-3 py-2 text-[11px] font-semibold text-[#38ef7d] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Refresh stock from stock-phys, recompute VerifyBom, and update RM AVAIL"
+          >
+            {rmAvailSyncing ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <RefreshCw size={12} />
+            )}
+            {rmAvailSyncing ? "Syncing RM AVAIL..." : "Sync RM AVAIL"}
+          </button>
           <span className="text-xs font-bold uppercase tracking-wider text-white">
             Filters
           </span>

@@ -57,11 +57,14 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
 
   const activeCount = filtered.filter((o) => o.isActive).length;
 
-  const runAction = (fn: () => Promise<{ success: boolean; error?: string }>, successMsg: string) => {
+  const runAction = (
+    fn: () => Promise<{ success: boolean; error?: string; added?: number; skipped?: number }>,
+    successMsg: string | ((res: { success: boolean; error?: string; added?: number; skipped?: number }) => string),
+  ) => {
     startTransition(async () => {
       const res = await fn();
       if (res.success) {
-        toast.success(successMsg);
+        toast.success(typeof successMsg === "function" ? successMsg(res) : successMsg);
       } else {
         toast.error(res.error || "Action failed.");
       }
@@ -78,10 +81,23 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
       toast.error("Value is required.");
       return;
     }
+    // Split on tab, space, or newline; trim and drop empties
+    const values = newValue
+      .split(/\s+/)
+      .map((v) => v.trim())
+      .filter(Boolean);
     const fd = new FormData();
     fd.set("type", selectedType);
-    fd.set("value", newValue);
-    runAction(() => addLookupOptionAction(fd), "Option added.");
+    values.forEach((v) => fd.append("value", v));
+    runAction(
+      () => addLookupOptionAction(fd),
+      (res) => {
+        const added = res.added ?? 0;
+        const skipped = res.skipped ?? 0;
+        if (skipped > 0) return `Added ${added} option(s), skipped ${skipped} duplicate(s).`;
+        return `Added ${added} option(s).`;
+      },
+    );
     setNewValue("");
   };
 
@@ -137,7 +153,7 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
                     type="text"
                     value={newValue}
                     onChange={(e) => setNewValue(e.target.value)}
-                    placeholder={`Enter new ${(TYPE_LABELS[selectedType] || selectedType).toLowerCase()}...`}
+                    placeholder={`Enter value(s) — separate with tab, space or newline`}
                     className="w-72"
                   />
                 </div>

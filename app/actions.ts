@@ -3557,36 +3557,70 @@ export async function recomputeIndentListingVersionsAction() {
         pnRating: true,
         mcReceivedPending: true,
         totalBalBillAgCont: true,
+        v1: true,
+        v2: true,
+        v3: true,
+        v4: true,
       },
     });
 
     const { updates, deletes } = planIndentRecompute(rows);
     const syncedAt = new Date();
 
-    await prisma.$transaction([
-      ...updates.map((u) =>
-        prisma.indentListing.update({
-          where: { id: u.id },
-          data: {
-            item: u.item,
-            totalBalBillAgCont: u.totalBalBillAgCont,
-            v1: u.v1,
-            v2: u.v2,
-            v3: u.v3,
-            v4: u.v4,
-            syncedAt,
-          },
-        }),
-      ),
-      ...deletes.map((id) => prisma.indentListing.delete({ where: { id } })),
-    ]);
+    // Only write rows where the derived values actually differ from what is
+    // currently stored — never rewrite already-correct rows.
+    const currentById = new Map(rows.map((r) => [r.id, r]));
+    const realUpdates = updates.filter((u) => {
+      const cur = currentById.get(u.id);
+      if (!cur) return true;
+      return (
+        String(cur.item ?? "") !== u.item ||
+        Number(cur.totalBalBillAgCont ?? 0) !== u.totalBalBillAgCont ||
+        String(cur.v1 ?? "") !== u.v1 ||
+        String(cur.v2 ?? "") !== u.v2 ||
+        String(cur.v3 ?? "") !== u.v3 ||
+        String(cur.v4 ?? "") !== u.v4
+      );
+    });
+
+    if (realUpdates.length > 0 || deletes.length > 0) {
+      await prisma.$transaction([
+        ...realUpdates.map((u) =>
+          prisma.indentListing.update({
+            where: { id: u.id },
+            data: {
+              item: u.item,
+              totalBalBillAgCont: u.totalBalBillAgCont,
+              v1: u.v1,
+              v2: u.v2,
+              v3: u.v3,
+              v4: u.v4,
+              syncedAt,
+            },
+          }),
+        ),
+        ...deletes.map((id) => prisma.indentListing.delete({ where: { id } })),
+      ]);
+    }
+
+    console.log(
+      `[indent-listing-recompute] rows=${rows.length} planned=${updates.length} realUpdates=${realUpdates.length} deletes=${deletes.length}`,
+    );
+
+    const reason =
+      updates.length === 0
+        ? "No indent rows matched any base item (SLV, TPAV+SLV, SLV METAL, BFV, DPCV, CF, DV, GV, NRV, PRV, TPAV)."
+        : realUpdates.length === 0 && deletes.length === 0
+          ? "All indent rows already have the correct base item and V1-V4 values."
+          : undefined;
 
     return {
       success: true,
       data: {
-        updated: updates.length,
+        updated: realUpdates.length,
         deleted: deletes.length,
         total: rows.length,
+        reason,
       },
     };
   } catch (error: any) {
@@ -3610,11 +3644,38 @@ export async function updateIndentListingFieldAction(
     if (!INDENT_LISTING_EDITABLE_FIELDS.has(field)) {
       return { success: false, error: `Field "${field}" is not editable.` };
     }
+    const existing = await prisma.indentListing.findUnique({
+      where: { id },
+      select: { [field]: true },
+    });
+    if (!existing) {
+      return { success: false, error: "Indent listing row not found." };
+    }
+    const prev = (existing as unknown as Record<string, string | null>)[field] ?? "";
+    const next = value ?? "";
+    if (String(prev).trim() === String(next).trim()) {
+      return {
+        success: true,
+        data: {
+          id,
+          field,
+          value,
+          changed: false,
+          reason: `Value already set to "${next}" in the database.`,
+        },
+      };
+    }
     await prisma.indentListing.update({
       where: { id },
-      data: { [field]: value },
+      data: { [field]: value, syncedAt: new Date() },
     });
-    return { success: true, data: { id, field, value } };
+    console.log(
+      `[indent-listing-update] id=${id} field=${field} "${String(prev).trim()}" -> "${String(next).trim()}"`,
+    );
+    return {
+      success: true,
+      data: { id, field, value, changed: true },
+    };
   } catch (error: any) {
     console.error("Error updating IndentListing field:", error);
     return {
@@ -3883,6 +3944,102 @@ export async function syncNullVerifyBomStockAction() {
     return {
       success: false,
       error: error.message || "Failed to sync available stock from sheet.",
+    };
+  }
+}
+
+export async function syncContractReviewRmAvailAction() {
+  "use server";
+  try {
+    const {
+      getBomRmAvailBatch,
+      computeContractReviewRmAvail,
+      recomputeVerifyBomValues,
+    } = await import("@/lib/verifyBomLookup");
+    const { fetchStockPhysicalSheet } = await import(
+      "@/lib/gmd_lib/google-sheets"
+    );
+
+    // 1. Blank-fill GMDUpdateItem.availableStock from the stock-phys sheet
+    const stockPhysMap = await fetchStockPhysicalSheet();
+    const stockPhysCodes = Object.keys(stockPhysMap);
+    const blankStockRows = await prisma.gMDUpdateItem.findMany({
+      where: {
+        OR: [{ availableStock: null }, { availableStock: "" }],
+      },
+      select: { id: true, erpItemCode: true, availableStock: true },
+    });
+    let stockFilled = 0;
+    const stockUpdates: { id: string; stock: string }[] = [];
+    for (const row of blankStockRows) {
+      const code = (row.erpItemCode ?? "").trim();
+      if (!code) continue;
+      const currentStock = (row.availableStock ?? "").trim();
+      if (currentStock !== "") continue;
+      const found = stockPhysMap[code];
+      if (found !== undefined && found !== null && String(found).trim() !== "") {
+        stockUpdates.push({ id: row.id, stock: String(found).trim() });
+      }
+    }
+    if (stockUpdates.length > 0) {
+      const chunkSize = 200;
+      for (let i = 0; i < stockUpdates.length; i += chunkSize) {
+        const chunk = stockUpdates.slice(i, i + chunkSize);
+        await prisma.$transaction(
+          chunk.map((u) =>
+            prisma.gMDUpdateItem.update({
+              where: { id: u.id },
+              data: { availableStock: u.stock },
+            }),
+          ),
+        );
+      }
+      stockFilled = stockUpdates.length;
+    }
+
+    // 2. Refresh VerifyBom (availableStock + USE/NO USE) from GMDUpdateItem
+    await recomputeVerifyBomValues();
+
+    // 3. Recompute RM AVAIL for all Contract Review rows with a bomId
+    const withBom = await prisma.contractReview.findMany({
+      where: { bomId: { not: null } },
+      select: { id: true, bomId: true, orderQty: true, noUse: true },
+    });
+    const bomIds = [
+      ...new Set(
+        withBom.map((i) => i.bomId).filter((b): b is string => !!b),
+      ),
+    ];
+    const bomAvail = await getBomRmAvailBatch(bomIds);
+    const availMap = computeContractReviewRmAvail(
+      withBom.map((i) => ({ id: i.id, bomId: i.bomId, orderQty: i.orderQty })),
+      bomAvail,
+    );
+    const rmAvailUpdates = withBom
+      .filter((i) => (availMap.get(i.id) ?? null) !== i.noUse)
+      .map((i) =>
+        prisma.contractReview.update({
+          where: { id: i.id },
+          data: { noUse: availMap.get(i.id) ?? null },
+        }),
+      );
+    if (rmAvailUpdates.length > 0) {
+      await prisma.$transaction(rmAvailUpdates);
+    }
+
+    return {
+      success: true,
+      data: {
+        stockFilled,
+        stockPhysCodes: stockPhysCodes.length,
+        rmAvailUpdated: rmAvailUpdates.length,
+      },
+    };
+  } catch (error: any) {
+    console.error("Error syncing ContractReview RM AVAIL:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to sync RM AVAIL.",
     };
   }
 }

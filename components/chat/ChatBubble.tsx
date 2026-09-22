@@ -1,11 +1,40 @@
 "use client";
 
-import { useState } from "react";
-import type { UIMessage } from "ai";
-import { Check, Copy, RotateCcw } from "lucide-react";
+import { memo, useState } from "react";
+import { isToolUIPart, type UIMessage } from "ai";
+import {
+  Bookmark,
+  Check,
+  Copy,
+  GitBranch,
+  Loader2,
+  RotateCcw,
+  Search,
+  Wrench,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Markdown } from "./Markdown";
+
+const TOOL_LABELS: Record<string, string> = {
+  lookup_contract_review: "Contract review lookup",
+  memorize: "Saving to memory",
+  remember: "Recalling memory",
+};
+
+const TOOL_ICONS: Record<string, typeof GitBranch> = {
+  lookup_contract_review: GitBranch,
+  memorize: Bookmark,
+  remember: Search,
+};
+
+function toolLabel(name: string): string {
+  return (
+    TOOL_LABELS[name] ??
+    name.split("_").join(" ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
 
 interface ChatBubbleProps {
   message: UIMessage;
@@ -23,7 +52,7 @@ function messageText(m: UIMessage): string {
     .join("");
 }
 
-export function ChatBubble({
+export const ChatBubble = memo(function ChatBubble({
   message,
   streaming,
   onCopy,
@@ -42,7 +71,7 @@ export function ChatBubble({
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] transition-transform duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-[0.99]">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-[#0a2540] px-3 py-2 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] transition-transform duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] active:scale-[0.99]">
           {text}
         </div>
       </div>
@@ -53,10 +82,45 @@ export function ChatBubble({
     <div className="group/bubble flex flex-col items-start">
       <div
         className={cn(
-          "max-w-[85%] rounded-lg border border-border bg-card px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-colors duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] hover:border-ring",
+          "max-w-[85%] min-w-0 rounded-lg border border-border bg-card px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] transition-colors duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] hover:border-ring",
           streaming && "border-[#0f62fe]/50"
         )}
       >
+        {message.parts.filter(isToolUIPart).length > 0 && (
+          <div className="mb-2 flex flex-col gap-1">
+            {message.parts.filter(isToolUIPart).map((part, i) => {
+              const name = part.type.startsWith("tool-")
+                ? part.type.slice(5)
+                : "tool";
+              const running =
+                part.state === "input-streaming" ||
+                part.state === "input-available";
+              const failed = part.state === "output-error";
+              const ToolIcon = TOOL_ICONS[name] ?? Wrench;
+              return (
+                <span
+                  key={`${part.toolCallId}-${i}`}
+                  className={cn(
+                    "inline-flex w-fit items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium",
+                    failed
+                      ? "border border-destructive/30 bg-destructive/10 text-destructive"
+                      : "border border-[#0f62fe]/40 bg-white text-[#0a2540]"
+                  )}
+                >
+                  {running ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : failed ? (
+                    <X className="size-4" />
+                  ) : (
+                    <Check className="size-4" />
+                  )}
+                  <ToolIcon className="size-4" />
+                  {toolLabel(name)}
+                </span>
+              );
+            })}
+          </div>
+        )}
         {text && <Markdown>{text}</Markdown>}
         {streaming && !text && (
           <span className="flex items-center gap-1 py-0.5">
@@ -69,16 +133,11 @@ export function ChatBubble({
             ))}
           </span>
         )}
-        {streaming && text && (
-          <span className="ml-0.5 inline-block animate-pulse text-[#0f62fe]">
-            ▍
-          </span>
-        )}
       </div>
       <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] group-hover/bubble:opacity-100 focus-within:opacity-100">
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="icon"
           aria-label={copied ? "Copied" : "Copy message"}
           onClick={handleCopy}
           disabled={!text}
@@ -87,7 +146,7 @@ export function ChatBubble({
         </Button>
         <Button
           variant="ghost"
-          size="icon-xs"
+          size="icon"
           aria-label="Regenerate answer"
           onClick={onRetry}
         >
@@ -96,4 +155,4 @@ export function ChatBubble({
       </div>
     </div>
   );
-}
+});

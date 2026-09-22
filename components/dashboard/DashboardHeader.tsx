@@ -1,12 +1,14 @@
 "use client";
 
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { Search, PanelLeftOpen, PanelLeftClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { openAddItemsDialog, openNewEnquiryDialog } from "@/lib/dialogsSlice";
 import { setFilter } from "@/lib/filtersSlice";
 import { toggleAnalyticsSidebar } from "@/lib/uiSlice";
+import { selectAllEnquiries } from "@/lib/enquiriesSlice";
+import { BLANK, filterEnquiries } from "@/lib/filterUtils";
 import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import AddItemsDialog from "./AddItemsDialog";
 import NewEnquiryDialog from "./NewEnquiryDialog";
@@ -32,6 +34,48 @@ export default function DashboardHeader({
     (val: string) => dispatch(setFilter({ field: "globalSearch", value: val })),
     [dispatch]
   );
+
+  const allEnquiries = useAppSelector(selectAllEnquiries);
+  const closureFilter = useAppSelector((s) => s.filters.closureStatus);
+  const filters = useAppSelector((s) => s.filters);
+  const generatedImages = useAppSelector((s) => s.ui.generatedImages);
+
+  const filteredEnquiries = useMemo(
+    () =>
+      filterEnquiries(
+        allEnquiries,
+        filters,
+        filters.globalSearch.trim(),
+        generatedImages
+      ),
+    [allEnquiries, filters, generatedImages]
+  );
+
+  const sentCount = useMemo(
+    () =>
+      filteredEnquiries.filter(
+        (e) => String(e.closureStatus || "").trim().toLowerCase() === "sent"
+      ).length,
+    [filteredEnquiries]
+  );
+
+  const notSentCount = useMemo(
+    () =>
+      filteredEnquiries.filter((e) => {
+        const v = String(e.closureStatus || "").trim();
+        return v === "" || v === "-";
+      }).length,
+    [filteredEnquiries]
+  );
+
+  const sentActive = closureFilter.some((v) => v.toLowerCase() === "sent");
+  const notSentActive = closureFilter.includes(BLANK);
+
+  const toggleSent = () =>
+    dispatch(setFilter({ field: "closureStatus", value: sentActive ? [] : ["sent"] }));
+
+  const toggleNotSent = () =>
+    dispatch(setFilter({ field: "closureStatus", value: notSentActive ? [] : [BLANK] }));
 
   return (
     <div className="flex flex-col gap-4 py-3 px-6 bg-card sm:flex-row sm:items-center sm:justify-between border-b border-border shrink-0">
@@ -66,6 +110,33 @@ export default function DashboardHeader({
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center rounded-md border border-border bg-background p-0.5">
+          <button
+            type="button"
+            onClick={toggleSent}
+            title="Show enquiries with Closure Status 'sent'"
+            className={`h-7 rounded-md px-3 text-sm font-semibold transition-colors cursor-pointer ${
+              sentActive
+                ? "bg-[#0f62fe] text-white"
+                : "text-muted-foreground hover:bg-accent"
+            }`}
+          >
+            Sent ({sentCount})
+          </button>
+          <button
+            type="button"
+            onClick={toggleNotSent}
+            title="Show enquiries with blank Closure Status"
+            className={`h-7 rounded-md px-3 text-sm font-semibold transition-colors cursor-pointer ${
+              notSentActive
+                ? "bg-[#0f62fe] text-white"
+                : "text-muted-foreground hover:bg-accent"
+            }`}
+          >
+            Not Sent ({notSentCount})
+          </button>
+        </div>
+
         <Button
           onClick={() => dispatch(openAddItemsDialog())}
           className="flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800"
