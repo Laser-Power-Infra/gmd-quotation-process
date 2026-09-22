@@ -30,12 +30,12 @@ export interface FlowLayout {
 export const FLOW_NODE_WIDTH = 138;
 export const FLOW_NODE_HEIGHT = 56;
 export const FLOW_COL_GAP = 32;
-export const FLOW_ROW_GAP = 12;
+export const FLOW_ROW_GAP = 8;
 
 /** Indented-rail geometry (narrow sidebar). */
-export const RAIL_NODE_HEIGHT = 38;
-export const RAIL_ROW_GAP = 6;
-export const RAIL_INDENT = 16;
+export const RAIL_NODE_HEIGHT = 20;
+export const RAIL_ROW_GAP = 3;
+export const RAIL_INDENT = 10;
 export const RAIL_STEM = 8;
 
 /** Corner radius for the orthogonal elbows. Clamped per-edge so tight
@@ -97,6 +97,75 @@ export function layoutFlow(root: FlowNode): FlowLayout {
     width: (maxDepth + 1) * FLOW_NODE_WIDTH + maxDepth * FLOW_COL_GAP,
     height: Math.max(0, leafCursor * stride - FLOW_ROW_GAP),
   };
+}
+
+/**
+ * Container-filling horizontal (linked-list) layout: depth levels are spread
+ * evenly across `width` (left -> right), and sibling nodes in each level are
+ * stacked vertically, centered and spread to fill `height`. Node boxes are
+ * sized adaptively so the fullest level always fits the box.
+ */
+export function layoutFlowFill(
+  root: FlowNode,
+  width: number,
+  height: number,
+): FlowLayout {
+  const nodes: PositionedNode[] = [];
+  const byId = new Map<string, PositionedNode>();
+
+  const depthOf = new Map<string, number>();
+  const byDepth = new Map<number, FlowNode[]>();
+  const walk = (node: FlowNode, depth: number) => {
+    depthOf.set(node.id, depth);
+    const list = byDepth.get(depth) ?? [];
+    list.push(node);
+    byDepth.set(depth, list);
+    for (const kid of childrenOf(node)) walk(kid, depth + 1);
+  };
+  walk(root, 0);
+
+  const safeW = Math.max(width, 1);
+  const safeH = Math.max(height, 1);
+  const maxDepth = Math.max(0, ...byDepth.keys());
+  const levels = [...byDepth.entries()].sort((a, b) => a[0] - b[0]);
+  const kMax = Math.max(
+    1,
+    ...levels.map(([, list]) => list.length),
+  );
+
+  const colWidth = safeW / (maxDepth + 1);
+  const nodeW = Math.min(
+    FLOW_NODE_WIDTH,
+    Math.max(96, colWidth - 12),
+  );
+  const gap = FLOW_ROW_GAP;
+  const nodeH = Math.min(
+    FLOW_NODE_HEIGHT,
+    Math.max(28, (safeH - (kMax - 1) * gap) / kMax),
+  );
+
+  for (const [depth, list] of levels) {
+    const colX = depth * colWidth + (colWidth - nodeW) / 2;
+    const totalH = list.length * nodeH + (list.length - 1) * gap;
+    const startY = Math.max(0, (safeH - totalH) / 2);
+    list.forEach((node, i) => {
+      const y = startY + i * (nodeH + gap);
+      const positioned: PositionedNode = {
+        node,
+        depth,
+        x: colX,
+        y,
+        width: nodeW,
+        height: nodeH,
+      };
+      nodes.push(positioned);
+      byId.set(node.id, positioned);
+    });
+  }
+
+  const edges = buildEdges(root, byId, elbowLeftToRight);
+
+  return { mode: "flow", nodes, edges, width: safeW, height: safeH };
 }
 
 /**

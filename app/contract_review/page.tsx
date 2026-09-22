@@ -15,6 +15,7 @@ import {
   backfillContractReviewOrderListBatchAction,
   backfillContractReviewOfferPendingDoneBatchAction,
   backfillContractReviewInspectionBatchAction,
+  backfillContractReviewPnRatingBatchAction,
   backfillContractReviewCostFromQuotationAction,
   syncContractReviewEnquiryFieldsBatchAction,
   syncContractReviewEnquiryFieldsAllAction,
@@ -121,6 +122,7 @@ const STATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATE");
 const UTILITY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("UTILITY");
 const PROJECT_REFERENCE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PROJECT REFERENCE");
 const INSPECTION_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Inspection");
+const MC_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC Received/Pending");
 const OFFER_NUMBER_IDX = CONTRACT_REVIEW_HEADERS.indexOf("OFFER NUMBER");
 const OFFER_PENDING_DONE_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf("OFFER PENDING/DONE");
@@ -232,9 +234,21 @@ function matchesSidebar(
   item: string[],
   size: string,
   pn: string[],
+  mc: string[],
+  inspection: string[],
   balBillIdx: number,
   clearanceIdx: number,
-  exclude?: "balBill" | "status" | "clearance" | "item" | "size" | "pn",
+  mcIdx: number,
+  inspectionIdx: number,
+  exclude?:
+    | "balBill"
+    | "status"
+    | "clearance"
+    | "item"
+    | "size"
+    | "pn"
+    | "mc"
+    | "inspection",
 ): boolean {
   if (exclude !== "balBill" && balBill !== "all") {
     const isYes = isZeroBal(row[balBillIdx]);
@@ -270,6 +284,20 @@ function matchesSidebar(
   if (exclude !== "pn" && pn.length > 0) {
     const cell = String(row[PN_IDX] ?? "").trim();
     if (!pn.includes(cell)) return false;
+  }
+  if (exclude !== "mc" && mc.length > 0) {
+    const cell = String(row[mcIdx] ?? "").trim();
+    const isBlank = cell === "";
+    const matchesBlank = mc.includes("(Blank)") && isBlank;
+    const matchesVal = mc.includes(cell);
+    if (!(matchesBlank || matchesVal)) return false;
+  }
+  if (exclude !== "inspection" && inspection.length > 0) {
+    const cell = String(row[inspectionIdx] ?? "").trim();
+    const isBlank = cell === "";
+    const matchesBlank = inspection.includes("(Blank)") && isBlank;
+    const matchesVal = inspection.includes(cell);
+    if (!(matchesBlank || matchesVal)) return false;
   }
   return true;
 }
@@ -460,6 +488,12 @@ export default function ContractReviewPage() {
   const [pnOpen, setPnOpen] = useState(false);
   const pnRef = useRef<HTMLDivElement>(null);
   const pnMenuRef = useRef<HTMLDivElement>(null);
+  const [mcOpen, setMcOpen] = useState(false);
+  const mcRef = useRef<HTMLDivElement>(null);
+  const mcMenuRef = useRef<HTMLDivElement>(null);
+  const [inspectionOpen, setInspectionOpen] = useState(false);
+  const inspectionRef = useRef<HTMLDivElement>(null);
+  const inspectionMenuRef = useRef<HTMLDivElement>(null);
   const [activeRateTile, setActiveRateTile] = useState<RateTileKey | null>(
     null,
   );
@@ -670,11 +704,20 @@ export default function ContractReviewPage() {
       if (pnRef.current && !pnRef.current.contains(e.target as Node)) {
         setPnOpen(false);
       }
+      if (mcRef.current && !mcRef.current.contains(e.target as Node)) {
+        setMcOpen(false);
+      }
+      if (
+        inspectionRef.current &&
+        !inspectionRef.current.contains(e.target as Node)
+      ) {
+        setInspectionOpen(false);
+      }
     }
-    if (clearanceOpen || itemOpen || pnOpen)
+    if (clearanceOpen || itemOpen || pnOpen || mcOpen || inspectionOpen)
       document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [clearanceOpen, itemOpen, pnOpen]);
+  }, [clearanceOpen, itemOpen, pnOpen, mcOpen, inspectionOpen]);
 
   // Bring the dropdown popover fully into the sidebar's visible area on open,
   // so its scrollable list (including the last value) is reachable.
@@ -684,12 +727,25 @@ export default function ContractReviewPage() {
   useEffect(() => {
     if (pnOpen) pnMenuRef.current?.scrollIntoView({ block: "nearest" });
   }, [pnOpen]);
+  useEffect(() => {
+    if (mcOpen) mcMenuRef.current?.scrollIntoView({ block: "nearest" });
+  }, [mcOpen]);
+  useEffect(() => {
+    if (inspectionOpen)
+      inspectionMenuRef.current?.scrollIntoView({ block: "nearest" });
+  }, [inspectionOpen]);
 
   // Single source of truth: sidebar CLEARANCE STATUS mirrors column multiFilters["CLEARANCE STATUS"]
   const clearanceFilter = multiFilters["CLEARANCE STATUS"] ?? [];
 
   // Single source of truth: sidebar PN RATING mirrors column multiFilters["PN RATING"] (clearance-style)
   const tilePns = multiFilters["PN RATING"] ?? [];
+
+  // Single source of truth: sidebar MC RECEIVED/PENDING mirrors column multiFilters["MC Received/Pending"]
+  const mcFilter = multiFilters["MC Received/Pending"] ?? [];
+
+  // Single source of truth: sidebar INSPECTION mirrors column multiFilters["Inspection"]
+  const inspectionFilter = multiFilters["Inspection"] ?? [];
 
   const handleSelectBomId = useCallback(
     (id: string, bomId: string | null) => {
@@ -1076,6 +1132,38 @@ export default function ContractReviewPage() {
     });
   }, [data, headers]);
 
+  // Auto-derive PN RATING from ITEM_NAME for ALL rows (server action applies the
+  // exact-match-against-dropdown rule and only updates mismatches). Ref guard runs once per load.
+  const autoPnRatingRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!data) return;
+    const pending: string[] = [];
+    data.rows.forEach((row, i) => {
+      const id = data.ids[i];
+      if (!id || autoPnRatingRef.current.has(id)) return;
+      autoPnRatingRef.current.add(id);
+      pending.push(id);
+    });
+    if (!pending.length) return;
+    backfillContractReviewPnRatingBatchAction(pending).then((res) => {
+      if (!res?.success || !res.data) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const map = new Map(res.data.map((d) => [d.id, d.pnRating]));
+        return {
+          ...prev,
+          rows: prev.rows.map((row, i) => {
+            const v = map.get(prev.ids[i]);
+            if (v === undefined) return row;
+            const next = [...row];
+            if (PN_IDX !== -1) next[PN_IDX] = v ?? "";
+            return next;
+          }),
+        };
+      });
+    });
+  }, [data, headers]);
+
   const categoryOptions = useMemo<Record<string, string[]>>(() => {
     if (!data) return {};
     const items = [
@@ -1144,8 +1232,12 @@ export default function ContractReviewPage() {
           tileItems,
           tileSize,
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           "balBill",
         )
       )
@@ -1161,6 +1253,8 @@ export default function ContractReviewPage() {
     tileItems,
     tileSize,
     tilePns,
+    mcFilter,
+    inspectionFilter,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1177,8 +1271,12 @@ export default function ContractReviewPage() {
           tileItems,
           tileSize,
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           "status",
         )
       )
@@ -1196,6 +1294,8 @@ export default function ContractReviewPage() {
     tileItems,
     tileSize,
     tilePns,
+    mcFilter,
+    inspectionFilter,
     balBillIdx,
     clearanceIdx,
     STATUS_IDX,
@@ -1240,8 +1340,12 @@ export default function ContractReviewPage() {
           tileItems,
           tileSize,
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           "clearance",
         )
       )
@@ -1265,6 +1369,8 @@ export default function ContractReviewPage() {
     tileItems,
     tileSize,
     tilePns,
+    mcFilter,
+    inspectionFilter,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1283,6 +1389,150 @@ export default function ContractReviewPage() {
       return a.localeCompare(b, undefined, { numeric: true });
     });
   }, [clearanceCounts, clearanceFilter]);
+
+  const mcCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: 0 };
+    const base = allRows.filter(
+      (row) =>
+        matchesTableFilters(
+          row,
+          headers,
+          columnFilters,
+          multiFilters,
+          globalSearch,
+          dateRanges,
+          "MC Received/Pending",
+        ) && matchesRateTile(row, activeRateTile),
+    );
+    for (const row of base) {
+      if (
+        !matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          clearanceFilter,
+          tileItems,
+          tileSize,
+          tilePns,
+          [],
+          inspectionFilter,
+          balBillIdx,
+          clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
+          "mc",
+        )
+      )
+        continue;
+      counts.all++;
+      const cell = String(row[MC_IDX] ?? "").trim();
+      const key = cell === "" ? "(Blank)" : cell;
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }, [
+    allRows,
+    headers,
+    columnFilters,
+    multiFilters,
+    globalSearch,
+    dateRanges,
+    activeRateTile,
+    balBillFilter,
+    statusFilter,
+    clearanceFilter,
+    tileItems,
+    tileSize,
+    tilePns,
+    inspectionFilter,
+    balBillIdx,
+    clearanceIdx,
+  ]);
+
+  const mcOptions = useMemo(() => {
+    const keys = Object.keys(mcCounts).filter((k) => k !== "all");
+    if (!keys.includes("(Blank)")) keys.push("(Blank)");
+    for (const s of mcFilter) {
+      if (s !== "(Blank)" && !keys.includes(s)) keys.push(s);
+    }
+    return keys.sort((a, b) => {
+      if (a === "(Blank)") return 1;
+      if (b === "(Blank)") return -1;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+  }, [mcCounts, mcFilter]);
+
+  const inspectionCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: 0 };
+    const base = allRows.filter(
+      (row) =>
+        matchesTableFilters(
+          row,
+          headers,
+          columnFilters,
+          multiFilters,
+          globalSearch,
+          dateRanges,
+          "Inspection",
+        ) && matchesRateTile(row, activeRateTile),
+    );
+    for (const row of base) {
+      if (
+        !matchesSidebar(
+          row,
+          balBillFilter,
+          statusFilter,
+          clearanceFilter,
+          tileItems,
+          tileSize,
+          tilePns,
+          mcFilter,
+          [],
+          balBillIdx,
+          clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
+          "inspection",
+        )
+      )
+        continue;
+      counts.all++;
+      const cell = String(row[INSPECTION_IDX] ?? "").trim();
+      const key = cell === "" ? "(Blank)" : cell;
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }, [
+    allRows,
+    headers,
+    columnFilters,
+    multiFilters,
+    globalSearch,
+    dateRanges,
+    activeRateTile,
+    balBillFilter,
+    statusFilter,
+    clearanceFilter,
+    tileItems,
+    tileSize,
+    tilePns,
+    mcFilter,
+    balBillIdx,
+    clearanceIdx,
+  ]);
+
+  const inspectionOptions = useMemo(() => {
+    const keys = Object.keys(inspectionCounts).filter((k) => k !== "all");
+    if (!keys.includes("(Blank)")) keys.push("(Blank)");
+    for (const s of inspectionFilter) {
+      if (s !== "(Blank)" && !keys.includes(s)) keys.push(s);
+    }
+    return keys.sort((a, b) => {
+      if (a === "(Blank)") return 1;
+      if (b === "(Blank)") return -1;
+      return a.localeCompare(b, undefined, { numeric: true });
+    });
+  }, [inspectionCounts, inspectionFilter]);
 
   const itemOptions = useMemo(() => {
     // Exclude the Item column filter from the base (clearance-style cascading):
@@ -1312,8 +1562,12 @@ export default function ContractReviewPage() {
           [],
           tileSize,
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           "item",
         ),
     );
@@ -1342,6 +1596,8 @@ export default function ContractReviewPage() {
     tileItems,
     tileSize,
     tilePns,
+    mcFilter,
+    inspectionFilter,
     balBillIdx,
     clearanceIdx,
     effectiveBalBillIdx,
@@ -1358,8 +1614,12 @@ export default function ContractReviewPage() {
           tileItems,
           "",
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           "size",
         ),
       ),
@@ -1368,10 +1628,12 @@ export default function ContractReviewPage() {
       balBillFilter,
       statusFilter,
       clearanceFilter,
-      tileItems,
-      tilePns,
-      balBillIdx,
-      clearanceIdx,
+tileItems,
+    tilePns,
+    mcFilter,
+    inspectionFilter,
+    balBillIdx,
+    clearanceIdx,
     ],
   );
 
@@ -1399,8 +1661,12 @@ export default function ContractReviewPage() {
         tileItems,
         tileSize,
         [],
+        mcFilter,
+        inspectionFilter,
         balBillIdx,
         clearanceIdx,
+        MC_IDX,
+        INSPECTION_IDX,
         "pn",
       ),
     );
@@ -1425,6 +1691,8 @@ export default function ContractReviewPage() {
     tileItems,
     tileSize,
     tilePns,
+    mcFilter,
+    inspectionFilter,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1442,8 +1710,12 @@ export default function ContractReviewPage() {
           tileItems,
           tileSize,
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           undefined,
         )
       )
@@ -1463,6 +1735,8 @@ export default function ContractReviewPage() {
     tileItems,
     tileSize,
     tilePns,
+    mcFilter,
+    inspectionFilter,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1481,8 +1755,12 @@ export default function ContractReviewPage() {
             tileItems,
             tileSize,
             tilePns,
+            mcFilter,
+            inspectionFilter,
             balBillIdx,
             clearanceIdx,
+            MC_IDX,
+            INSPECTION_IDX,
             undefined,
           )
         )
@@ -1507,10 +1785,12 @@ export default function ContractReviewPage() {
       statusFilter,
       clearanceFilter,
       tileItems,
-      tileSize,
-      tilePns,
-      balBillIdx,
-      clearanceIdx,
+tileSize,
+    tilePns,
+    mcFilter,
+    inspectionFilter,
+    balBillIdx,
+    clearanceIdx,
     ],
   );
 
@@ -1532,8 +1812,12 @@ export default function ContractReviewPage() {
           tileItems,
           tileSize,
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           undefined,
         )
       )
@@ -1552,6 +1836,8 @@ export default function ContractReviewPage() {
     tileItems,
     tileSize,
     tilePns,
+    mcFilter,
+    inspectionFilter,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1569,8 +1855,12 @@ export default function ContractReviewPage() {
           tileItems,
           tileSize,
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           undefined,
         )
       )
@@ -1589,6 +1879,8 @@ export default function ContractReviewPage() {
     tileItems,
     tileSize,
     tilePns,
+    mcFilter,
+    inspectionFilter,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1606,8 +1898,12 @@ export default function ContractReviewPage() {
           tileItems,
           tileSize,
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           undefined,
         )
       )
@@ -1626,6 +1922,8 @@ export default function ContractReviewPage() {
     tileItems,
     tileSize,
     tilePns,
+    mcFilter,
+    inspectionFilter,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1643,8 +1941,12 @@ export default function ContractReviewPage() {
           tileItems,
           tileSize,
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           undefined,
         )
       )
@@ -1663,6 +1965,8 @@ export default function ContractReviewPage() {
     tileItems,
     tileSize,
     tilePns,
+    mcFilter,
+    inspectionFilter,
     balBillIdx,
     clearanceIdx,
   ]);
@@ -1695,8 +1999,12 @@ export default function ContractReviewPage() {
             tileItems,
             tileSize,
             tilePns,
+            mcFilter,
+            inspectionFilter,
             balBillIdx,
             clearanceIdx,
+            MC_IDX,
+            INSPECTION_IDX,
             undefined,
           )
             ? 1
@@ -1709,15 +2017,21 @@ export default function ContractReviewPage() {
       statusFilter,
       clearanceFilter,
       tileItems,
-      tileSize,
-      tilePns,
-      balBillIdx,
-      clearanceIdx,
+tileSize,
+    tilePns,
+    mcFilter,
+    inspectionFilter,
+    balBillIdx,
+    clearanceIdx,
     ],
   );
 
   const hasTileFilter =
-    tileItems.length > 0 || tileSize !== "" || tilePns.length > 0;
+    tileItems.length > 0 ||
+    tileSize !== "" ||
+    tilePns.length > 0 ||
+    mcFilter.length > 0 ||
+    inspectionFilter.length > 0;
 
   const filteredData = useMemo(() => {
     if (
@@ -1741,8 +2055,12 @@ export default function ContractReviewPage() {
           tileItems,
           tileSize,
           tilePns,
+          mcFilter,
+          inspectionFilter,
           balBillIdx,
           clearanceIdx,
+          MC_IDX,
+          INSPECTION_IDX,
           undefined,
         )
       )
@@ -1985,8 +2303,12 @@ export default function ContractReviewPage() {
             [],
             tileSize,
             tilePns,
+            mcFilter,
+            inspectionFilter,
             balBillIdx,
             clearanceIdx,
+            MC_IDX,
+            INSPECTION_IDX,
             "item",
           )
             ? 1
@@ -2003,8 +2325,12 @@ export default function ContractReviewPage() {
             [],
             tileSize,
             tilePns,
+            mcFilter,
+            inspectionFilter,
             balBillIdx,
             clearanceIdx,
+            MC_IDX,
+            INSPECTION_IDX,
             "item",
           )
         )
@@ -2023,8 +2349,12 @@ export default function ContractReviewPage() {
             tileItems,
             "",
             tilePns,
+            mcFilter,
+            inspectionFilter,
             balBillIdx,
             clearanceIdx,
+            MC_IDX,
+            INSPECTION_IDX,
             "size",
           )
             ? 1
@@ -2042,8 +2372,12 @@ export default function ContractReviewPage() {
             tileItems,
             tileSize,
             [],
+            mcFilter,
+            inspectionFilter,
             balBillIdx,
             clearanceIdx,
+            MC_IDX,
+            INSPECTION_IDX,
             "pn",
           )
             ? 1
@@ -2057,10 +2391,12 @@ export default function ContractReviewPage() {
       statusFilter,
       clearanceFilter,
       tileItems,
-      tileSize,
-      tilePns,
-      balBillIdx,
-      clearanceIdx,
+tileSize,
+    tilePns,
+    mcFilter,
+    inspectionFilter,
+    balBillIdx,
+    clearanceIdx,
       effectiveBalBillIdx,
     ],
   );
@@ -2406,6 +2742,178 @@ export default function ContractReviewPage() {
               )}
             </div>
           </div>
+          <div className="flex flex-col gap-1.5" ref={mcRef}>
+            <span className="text-[11px] font-semibold text-white/60">
+              MC Received/Pending
+            </span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setMcOpen((v) => !v)}
+                className="w-full text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-2 py-1.5 text-left outline-none cursor-pointer flex items-center justify-between gap-1"
+              >
+                <span className="truncate">
+                  {mcFilter.length === 0
+                    ? `All (${mcCounts.all ?? 0})`
+                    : `${mcFilter.length} selected`}
+                </span>
+                <span className="text-[10px] text-[#0a2540]/60 shrink-0">
+                  {mcOpen ? "▲" : "▼"}
+                </span>
+              </button>
+              {mcOpen && (
+                <div
+                  ref={mcMenuRef}
+                  className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-[#e1e6eb] rounded shadow-lg overflow-hidden"
+                >
+                  <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-[#e1e6eb] bg-[#f8f9fa]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        filterActions.onMultiFilter(
+                          "MC Received/Pending",
+                          mcOptions.map((o) => o),
+                        )
+                      }
+                      className="text-blue-600 font-bold hover:underline cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        filterActions.onMultiFilter("MC Received/Pending", [])
+                      }
+                      className="text-red-600 font-semibold hover:underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto overscroll-contain py-1">
+                    {mcOptions.length === 0 ? (
+                      <div className="px-2 py-2 text-[11px] text-muted-foreground">
+                        No options
+                      </div>
+                    ) : (
+                      mcOptions.map((o) => (
+                        <label
+                          key={o}
+                          className="flex items-center gap-1.5 px-2 py-1 hover:bg-gray-50 cursor-pointer text-[11px] text-[#0a2540]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={mcFilter.includes(o)}
+                            onChange={() => {
+                              filterActions.onMultiFilter(
+                                "MC Received/Pending",
+                                mcFilter.includes(o)
+                                  ? mcFilter.filter((v) => v !== o)
+                                  : [...mcFilter, o],
+                              );
+                            }}
+                            className="accent-blue-600 shrink-0"
+                          />
+                          <span
+                            className={`truncate flex-1 ${o === "(Blank)" ? "italic text-gray-400" : ""}`}
+                          >
+                            {o}
+                          </span>
+                          <span className="text-[10px] text-[#0a2540]/50 shrink-0">
+                            ({mcCounts[o] ?? 0})
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5" ref={inspectionRef}>
+            <span className="text-[11px] font-semibold text-white/60">
+              Inspection
+            </span>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setInspectionOpen((v) => !v)}
+                className="w-full text-xs border border-[#e1e6eb] rounded bg-white text-[#0a2540] px-2 py-1.5 text-left outline-none cursor-pointer flex items-center justify-between gap-1"
+              >
+                <span className="truncate">
+                  {inspectionFilter.length === 0
+                    ? `All (${inspectionCounts.all ?? 0})`
+                    : `${inspectionFilter.length} selected`}
+                </span>
+                <span className="text-[10px] text-[#0a2540]/60 shrink-0">
+                  {inspectionOpen ? "▲" : "▼"}
+                </span>
+              </button>
+              {inspectionOpen && (
+                <div
+                  ref={inspectionMenuRef}
+                  className="absolute left-0 right-0 top-full mt-1 z-50 bg-white border border-[#e1e6eb] rounded shadow-lg overflow-hidden"
+                >
+                  <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-[#e1e6eb] bg-[#f8f9fa]">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        filterActions.onMultiFilter(
+                          "Inspection",
+                          inspectionOptions.map((o) => o),
+                        )
+                      }
+                      className="text-blue-600 font-bold hover:underline cursor-pointer"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => filterActions.onMultiFilter("Inspection", [])}
+                      className="text-red-600 font-semibold hover:underline cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto overscroll-contain py-1">
+                    {inspectionOptions.length === 0 ? (
+                      <div className="px-2 py-2 text-[11px] text-muted-foreground">
+                        No options
+                      </div>
+                    ) : (
+                      inspectionOptions.map((o) => (
+                        <label
+                          key={o}
+                          className="flex items-center gap-1.5 px-2 py-1 hover:bg-gray-50 cursor-pointer text-[11px] text-[#0a2540]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={inspectionFilter.includes(o)}
+                            onChange={() => {
+                              filterActions.onMultiFilter(
+                                "Inspection",
+                                inspectionFilter.includes(o)
+                                  ? inspectionFilter.filter((v) => v !== o)
+                                  : [...inspectionFilter, o],
+                              );
+                            }}
+                            className="accent-blue-600 shrink-0"
+                          />
+                          <span
+                            className={`truncate flex-1 ${o === "(Blank)" ? "italic text-gray-400" : ""}`}
+                          >
+                            {o}
+                          </span>
+                          <span className="text-[10px] text-[#0a2540]/50 shrink-0">
+                            ({inspectionCounts[o] ?? 0})
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
           <button
             type="button"
             onClick={() => handleRateTileClick("rateXOrderQty")}
@@ -2593,7 +3101,7 @@ export default function ContractReviewPage() {
           </button>
         </aside>
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          <GMDUpdateHeader
+          {/* <GMDUpdateHeader
             title="CONTRACT REVIEW"
             totalRows={data?.totalRows ?? 0}
             syncedAt={data?.syncedAt ?? undefined}
@@ -2616,15 +3124,15 @@ export default function ContractReviewPage() {
               </button>
             }
           />
-          {error && <div className="mt-2 text-sm text-red-600">{error}</div>}
+          {error && <div className="mt-2 text-sm text-red-600">{error}</div>} */}
           <ResizablePanelGroup
             orientation="vertical"
             id="contract-review-vertical"
             defaultLayout={verticalLayout}
             onLayoutChanged={onVerticalLayoutChanged}
-            className="flex-1 min-h-0 mt-4"
+            className="flex-1 min-h-0 "
           >
-            <ResizablePanel id="graph" defaultSize="32" minSize="12" maxSize="38">
+            <ResizablePanel id="graph" defaultSize="32" minSize="12" maxSize="32">
               <div className="h-full overflow-hidden rounded-lg border border-[#1e3d59] bg-[#0a2540]">
                 <FlowDiagram
                   trees={CONTRACT_REVIEW_TREES}
@@ -2684,6 +3192,12 @@ export default function ContractReviewPage() {
                   ),
                   "PN RATING": pnOptions.map((o) => o.value),
                   Item: itemOptions.map((o) => o.value),
+                  "MC Received/Pending": mcOptions.filter(
+                    (o) => o !== "(Blank)",
+                  ),
+                  Inspection: inspectionOptions.filter(
+                    (o) => o !== "(Blank)",
+                  ),
                 }}
                 fixedDropdownOptions={{
                   "MC Received/Pending": ["Received", "Pending"],
@@ -2739,6 +3253,8 @@ export default function ContractReviewPage() {
                   filterActions.onMultiFilter("CLEARANCE STATUS", []);
                   filterActions.onMultiFilter("STATUS", []);
                   filterActions.onMultiFilter("PN RATING", []);
+                  filterActions.onMultiFilter("MC Received/Pending", []);
+                  filterActions.onMultiFilter("Inspection", []);
                 }}
                 hiddenColumns={[
                   "VA %",
