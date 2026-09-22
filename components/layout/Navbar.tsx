@@ -5,6 +5,7 @@ import Link from "next/link";
 import { auth } from "@/auth";
 import { LogoutButton } from "./LogoutButton";
 import { ChatPanel } from "@/components/chat/ChatPanel";
+import ActiveNavLink from "./ActiveNavLink";
 
 export default async function Navbar() {
   const session = await auth();
@@ -24,65 +25,46 @@ export default async function Navbar() {
             />
          
           </div>
-          <Link href="/" className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
-          >
+          <ActiveNavLink href="/">
             Quotation Process
-          </Link>
+          </ActiveNavLink>
           
-          <Link
-            href="/raw_material"
-            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
-          >
+          <ActiveNavLink href="/raw_material">
             Raw Material
-          </Link>
-          <Link
-            href="/supply_history"
-            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
-          >
+          </ActiveNavLink>
+          <ActiveNavLink href="/supply_history">
             Supply History
-          </Link>
-          <Link
-            href="/contract_review"
-            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
-          >
+          </ActiveNavLink>
+          <ActiveNavLink href="/contract_review">
             Contract Review
-          </Link>
-          <Link
-            href="/indent_listing"
-            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
-          >
+          </ActiveNavLink>
+          <ActiveNavLink href="/indent_listing">
             Indent Checking
-          </Link>
-          <Link
-            href="/bom"
-            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
-          >
+          </ActiveNavLink>
+          <ActiveNavLink href="/bom">
              FG BOM
-          </Link>
-          <Link
-            href="/bis-status"
-            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
-          >
+          </ActiveNavLink>
+          <ActiveNavLink href="/bis-status">
             BIS Status
-          </Link>
-          <Link
-            href="/upload-image"
-            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
-          >
+          </ActiveNavLink>
+          <ActiveNavLink href="/upload-image">
             Upload Image
-          </Link>
+          </ActiveNavLink>
           <Link
             href="http://192.168.1.190:6012/" target="_blank"
-            className="inline-flex h-9 items-center gap-1.5 bg-[#0f62fe] px-4 text-sm font-semibold text-white hover:bg-[#0353e9] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
+            className="inline-flex h-9 items-center gap-1.5 bg-[#0353e9] px-4 text-sm font-semibold text-white hover:bg-[#034ad0] dark:bg-blue-700 dark:hover:bg-blue-800 rounded-md"
           >
             GEM BID & RA
           </Link>
-          <Link
+          <ActiveNavLink href="/data-sources">
+            Data Sources
+          </ActiveNavLink>
+          <ActiveNavLink
             href="/admin/lookup-options"
-            className="inline-flex h-9 items-center gap-1.5 bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-800 rounded-md"
+            className="bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-800"
           >
             Admin
-          </Link>
+          </ActiveNavLink>
         </div>
 
         <div className="flex items-center gap-6">
