@@ -8,7 +8,7 @@ import { openAddItemsDialog, openNewEnquiryDialog } from "@/lib/dialogsSlice";
 import { setFilter } from "@/lib/filtersSlice";
 import { toggleAnalyticsSidebar } from "@/lib/uiSlice";
 import { selectAllEnquiries } from "@/lib/enquiriesSlice";
-import { BLANK } from "@/lib/filterUtils";
+import { BLANK, filterEnquiries } from "@/lib/filterUtils";
 import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import AddItemsDialog from "./AddItemsDialog";
 import NewEnquiryDialog from "./NewEnquiryDialog";
@@ -37,22 +37,35 @@ export default function DashboardHeader({
 
   const allEnquiries = useAppSelector(selectAllEnquiries);
   const closureFilter = useAppSelector((s) => s.filters.closureStatus);
+  const filters = useAppSelector((s) => s.filters);
+  const generatedImages = useAppSelector((s) => s.ui.generatedImages);
+
+  const filteredEnquiries = useMemo(
+    () =>
+      filterEnquiries(
+        allEnquiries,
+        filters,
+        filters.globalSearch.trim(),
+        generatedImages
+      ),
+    [allEnquiries, filters, generatedImages]
+  );
 
   const sentCount = useMemo(
     () =>
-      allEnquiries.filter(
+      filteredEnquiries.filter(
         (e) => String(e.closureStatus || "").trim().toLowerCase() === "sent"
       ).length,
-    [allEnquiries]
+    [filteredEnquiries]
   );
 
   const notSentCount = useMemo(
     () =>
-      allEnquiries.filter((e) => {
+      filteredEnquiries.filter((e) => {
         const v = String(e.closureStatus || "").trim();
         return v === "" || v === "-";
       }).length,
-    [allEnquiries]
+    [filteredEnquiries]
   );
 
   const sentActive = closureFilter.some((v) => v.toLowerCase() === "sent");
