@@ -16,6 +16,7 @@ import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, getRmTypeMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 import { makeImageKey } from "@/lib/imageKey";
 import { parseAndValidateProdOrderNumber } from "@/lib/contractValidation";
+import { matchPnRating } from "@/lib/pnRatingMatcher";
 import {
   uploadToS3,
   deleteFromS3,
@@ -3066,6 +3067,62 @@ export async function backfillContractReviewInspectionBatchAction(ids: string[])
     return {
       success: false,
       error: error.message || "Failed to backfill Inspection.",
+    };
+  }
+}
+
+export async function backfillContractReviewPnRatingBatchAction(ids: string[]) {
+  "use server";
+  try {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return { success: true, data: [] };
+    const items = await prisma.contractReview.findMany({
+      where: { id: { in: unique } },
+      select: { id: true, itemName: true, pnRating: true },
+    });
+    // Current dropdown = distinct non-blank pnRating values in the DB (decision-maker).
+    const dropdownRows = await prisma.contractReview.findMany({
+      select: { pnRating: true },
+      distinct: ["pnRating"],
+    });
+    const dropdown = new Set(
+      dropdownRows
+        .map((r) => (r.pnRating ?? "").trim())
+        .filter(Boolean),
+    );
+    const updates = items
+      .map((i) => {
+        const derived = matchPnRating(i.itemName ?? "");
+        // Exact-match rule: apply only if derived exists in the dropdown and differs.
+        if (!derived || !dropdown.has(derived)) return null;
+        const cur = (i.pnRating ?? "").trim();
+        if (derived === cur) return null;
+        return {
+          id: i.id,
+          value: derived,
+          promise: prisma.contractReview.update({
+            where: { id: i.id },
+            data: { pnRating: derived },
+          }),
+        };
+      })
+      .filter((u): u is NonNullable<typeof u> => u !== null);
+    if (updates.length > 0) {
+      const chunkSize = 200;
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize);
+        await prisma.$transaction(chunk.map((u) => u.promise));
+      }
+    }
+    return {
+      success: true,
+      data: updates.map((u) => ({ id: u.id, pnRating: u.value })),
+    };
+  } catch (error: any) {
+    console.error("Error backfilling ContractReview PN RATING:", error);
+    return {
+      success: false,
+      error: error.message || "Failed to backfill PN RATING.",
     };
   }
 }
