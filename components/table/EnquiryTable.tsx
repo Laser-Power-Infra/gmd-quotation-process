@@ -4649,21 +4649,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     {/* Delivery Schedule */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-deliverySchedule-" + (firstItem.deliverySchedule || "")}
-                          type="text"
-                          defaultValue={firstItem.deliverySchedule || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.deliverySchedule || "")) {
-                              handleItemFieldChange(firstItem.id, "deliverySchedule", e.target.value);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
-                        />
+                        <select
+                          value={firstItem.deliverySchedule || ""}
+                          onChange={(e) => handleItemFieldChange(firstItem.id, "deliverySchedule", e.target.value)}
+                          className={cellItemSelectClass}
+                        >
+                          <option value="">-</option>
+                          {dropdownOptions.deliverySchedules
+                            .filter((opt) => opt !== "-")
+                            .map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                        </select>
                       ) : "-"}
                     </td>
 
@@ -5310,22 +5307,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
                         {/* Delivery Schedule */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                          <input
-                            key={item.id + "-deliverySchedule-" + (item.deliverySchedule || "")}
-                            type="text"
-                            defaultValue={item.deliverySchedule || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.deliverySchedule || "")) {
-                              handleItemFieldChange(item.id, "deliverySchedule", e.target.value);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
-                        />
-                      </td>
+                          <select
+                            value={item.deliverySchedule || ""}
+                            onChange={(e) => handleItemFieldChange(item.id, "deliverySchedule", e.target.value)}
+                            className={cellItemSelectClass}
+                          >
+                            <option value="">-</option>
+                            {dropdownOptions.deliverySchedules
+                              .filter((opt) => opt !== "-")
+                              .map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                          </select>
+                        </td>
 
                       {/* Empty APM column - enquiry-based, only parent row has controls */}
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>

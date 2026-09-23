@@ -130,6 +130,7 @@ export default async function Page() {
     extensions: sortOptions(lookup.EXTENSION ?? []),
     bypasses: sortOptions(lookup.BYPASS ?? []),
     others: sortOptions(lookup.OTHERS ?? ["flange", "gasket", "nut and bolt"]),
+    deliverySchedules: sortOptions(lookup.DELIVERY ?? []),
   };
 
   return (
