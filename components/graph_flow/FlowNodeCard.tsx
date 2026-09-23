@@ -63,7 +63,7 @@ export function FlowNodeCard({
         isEmpty && !active ? "opacity-55" : "",
         mode === "rail"
           ? "items-center justify-between gap-2 px-2.5 py-1.5"
-          : "flex-col justify-center px-3 py-2",
+          : "items-center justify-between gap-2 px-2 py-1",
       ].join(" ")}
     >
       {mode === "rail" ? (
@@ -86,20 +86,20 @@ export function FlowNodeCard({
         </>
       ) : (
         <>
-          <span className="truncate text-[9.5px] font-semibold uppercase leading-tight tracking-wider text-white/55">
+          <span className="min-w-0 flex-1 truncate text-[9.5px] font-semibold uppercase leading-tight tracking-wider text-white/55">
             {node.label}
           </span>
-          <span className="mt-1 flex items-baseline gap-1.5">
-            <span
-              className={`text-lg font-bold tabular-nums leading-none ${node.accent}`}
-            >
-              {bigNumber}
-            </span>
+          <span className="flex shrink-0 items-baseline gap-1.5">
             {secondary !== null && (
               <span className="text-[9px] font-medium tabular-nums text-white/35">
                 {secondary}
               </span>
             )}
+            <span
+              className={`text-sm font-bold tabular-nums leading-none ${node.accent}`}
+            >
+              {bigNumber}
+            </span>
           </span>
         </>
       )}
