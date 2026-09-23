@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const { statusMap, stockMap, rmNameMap, itemNameMap, costMap } =
+    const { stockMap, rmNameMap, itemNameMap, costMap } =
       await recomputeVerifyBomValues();
 
     const items = await prisma.verifyBom.findMany({
@@ -31,7 +31,7 @@ export async function GET() {
     const rows = items.map((item) =>
       dbVerifyBomToRow({
         ...item,
-        noUse: item.bomId ? (statusMap.get(item.bomId) ?? "") : "",
+        noUse: item.noUse ?? "",
         availableStock: item.rmItemCode
           ? (stockMap.get(item.rmItemCode) ?? "")
           : "",
