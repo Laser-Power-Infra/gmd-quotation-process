@@ -1105,7 +1105,7 @@ export async function updateItemFieldAction(
         }
       }
 
-      const MERGE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "itemName"];
+      const MERGE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "others", "itemName"];
       if (MERGE_FIELDS.includes(field)) {
         const merged = getItemNameMerge(dbItem);
         dbItem = await prisma.enquiryItem.update({

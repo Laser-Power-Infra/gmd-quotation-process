@@ -81,9 +81,9 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
       toast.error("Value is required.");
       return;
     }
-    // Split on tab, space, or newline; trim and drop empties
+    // Split on tab or newline only; spaces/commas/symbols stay part of the value
     const values = newValue
-      .split(/\s+/)
+      .split(/[\t\r\n]+/)
       .map((v) => v.trim())
       .filter(Boolean);
     const fd = new FormData();
@@ -153,7 +153,7 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
                     type="text"
                     value={newValue}
                     onChange={(e) => setNewValue(e.target.value)}
-                    placeholder={`Enter value(s) — separate with tab, space or newline`}
+                    placeholder={`Enter value(s) — separate with tab or newline`}
                     className="w-72"
                   />
                 </div>

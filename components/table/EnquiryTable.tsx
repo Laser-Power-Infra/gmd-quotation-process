@@ -1060,10 +1060,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       item.extension,
       item.bypass
     ];
-    return orderedFields
+    const base = orderedFields
       .map(val => (val || "").trim())
       .filter(Boolean)
       .join("-");
+
+    const others = Array.isArray(item.others) ? item.others : [];
+    const othersStr = others
+      .map(v => String(v).trim())
+      .filter(Boolean)
+      .join("-");
+
+    if (!othersStr) return base;
+    return base ? `${base}-WITH-${othersStr}` : `WITH-${othersStr}`;
   };
 
   const handleItemFieldChange = async (itemId: string, field: string, val: string) => {
