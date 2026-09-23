@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import {
@@ -151,6 +152,7 @@ function ChatView({
 }
 
 export function ChatPanel({ enabled = true }: { enabled?: boolean }) {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("chat");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -344,7 +346,7 @@ export function ChatPanel({ enabled = true }: { enabled?: boolean }) {
       </div>
     </SheetContent>
       </Sheet>
-      {enabled && (
+      {enabled && pathname === "/contract_review" && (
         <Button
           size="icon"
           aria-label="Open AI assistant"
