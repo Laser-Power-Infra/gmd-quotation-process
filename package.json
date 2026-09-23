@@ -27,7 +27,9 @@
     "bom:stock:dry-run": "tsx scripts/dry-run-verify-bom-missing-stock.ts",
     "bom:stock:apply": "tsx scripts/dry-run-verify-bom-missing-stock.ts --apply",
     "bom:cost:derive": "tsx scripts/backfill-verify-bom-cost.ts",
-    "bom:cost:derive:apply": "tsx scripts/backfill-verify-bom-cost.ts --apply"
+    "bom:cost:derive:apply": "tsx scripts/backfill-verify-bom-cost.ts --apply",
+    "bom:mark-to-date": "tsx scripts/mark-no-use-from-to-date.ts",
+    "bom:mark-to-date:apply": "tsx scripts/mark-no-use-from-to-date.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",
