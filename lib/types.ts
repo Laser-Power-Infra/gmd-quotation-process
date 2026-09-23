@@ -95,6 +95,7 @@ export interface DropdownOptions {
   extensions: string[];
   bypasses: string[];
   others: string[];
+  deliverySchedules: string[];
 }
 
 export interface FiltersState {

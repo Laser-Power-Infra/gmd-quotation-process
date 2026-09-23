@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import {
@@ -24,6 +25,20 @@ import { MemoryView, type ChatMemory } from "./MemoryView";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 type View = "chat" | "sessions" | "memory";
+
+function newId(): string {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
 
 interface ChatViewProps {
   sessionId: string;
@@ -137,6 +152,7 @@ function ChatView({
 }
 
 export function ChatPanel({ enabled = true }: { enabled?: boolean }) {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<View>("chat");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -166,7 +182,7 @@ export function ChatPanel({ enabled = true }: { enabled?: boolean }) {
     if (!hasOpenedRef.current) {
       hasOpenedRef.current = true;
       setInitialMessages([]);
-      setSessionId(crypto.randomUUID());
+      setSessionId(newId());
       setReady(true);
       return;
     }
@@ -178,10 +194,10 @@ export function ChatPanel({ enabled = true }: { enabled?: boolean }) {
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((data) => {
         setInitialMessages((data.messages as UIMessage[]) ?? []);
-        if (!sessionId) setSessionId((data.id as string) ?? crypto.randomUUID());
+        if (!sessionId) setSessionId((data.id as string) ?? newId());
       })
       .catch(() => {
-        if (!sessionId) setSessionId(crypto.randomUUID());
+        if (!sessionId) setSessionId(newId());
       })
       .finally(() => setReady(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,7 +211,7 @@ export function ChatPanel({ enabled = true }: { enabled?: boolean }) {
 
   const resetToNewChat = () => {
     setInitialMessages([]);
-    setSessionId(crypto.randomUUID());
+    setSessionId(newId());
     setReady(true);
     setView("chat");
   };
@@ -330,7 +346,7 @@ export function ChatPanel({ enabled = true }: { enabled?: boolean }) {
       </div>
     </SheetContent>
       </Sheet>
-      {enabled && (
+      {enabled && pathname === "/contract_review" && (
         <Button
           size="icon"
           aria-label="Open AI assistant"
