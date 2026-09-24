@@ -5,7 +5,7 @@ import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, S
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
 import Pagination from "./Pagination";
-import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
+import MultiSelectFilter, { BLANK, AVAILABLE } from "./MultiSelectFilter";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";
 import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiryItems, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock } from "@/lib/enquiriesSlice";
@@ -115,6 +115,20 @@ function matchesMultiCI(values: string[], actual: unknown, blankCheck: (v: unkno
   return values.some((v) => v.toLowerCase() === actualLower);
 }
 
+// contractNo filter states: blank = no candidate contracts (contractNo empty);
+// available = candidates exist but none selected (selectedContractNo empty);
+// specific values match user-selected contracts.
+function contractNoMatches(filterValue: string[], enquiry: EnquiryData): boolean {
+  if (!filterValue || filterValue.length === 0) return true;
+  const candidates = enquiry.contractNo ?? [];
+  const selected = (enquiry as any).selectedContractNo ?? [];
+  const specific = filterValue.filter((v) => v !== BLANK && v !== AVAILABLE);
+  if (filterValue.includes(BLANK) && candidates.length === 0) return true;
+  if (filterValue.includes(AVAILABLE) && candidates.length > 0 && selected.length === 0) return true;
+  if (specific.length === 0) return false;
+  return matchesMulti(specific, selected);
+}
+
 // Helper for cascading filter evaluation
 function itemFieldMatches(item: EnquiryItemData, field: string, filterValue: string[]): boolean {
   const blankCheck = field === "size" ? isBlankSize : field === "others" ? isBlankOthers : isBlankValue;
@@ -128,7 +142,7 @@ function itemFieldMatches(item: EnquiryItemData, field: string, filterValue: str
 
 function enquiryFieldMatches(enquiry: EnquiryData, field: string, filterValue: string[]): boolean {
   if (field === "closureStatus") return matchesMultiCI(filterValue, enquiry[field as keyof EnquiryData]);
-  if (field === "contractNo") return matchesMulti(filterValue, (enquiry as any).selectedContractNo ?? []);
+  if (field === "contractNo") return contractNoMatches(filterValue, enquiry);
   return matchesMulti(filterValue, enquiry[field as keyof EnquiryData]);
 }
 
@@ -1304,7 +1318,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     if (!matchesMulti(filters.apm, (enquiry as any).apm)) {
       return false;
     }
-    if (!matchesMulti(filters.contractNo as unknown as string[], (enquiry as any).selectedContractNo ?? [])) {
+    if (!contractNoMatches(filters.contractNo as unknown as string[], enquiry)) {
       return false;
     }
 
@@ -2288,6 +2302,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                   selected={(filters as any).contractNo || []}
                   onChange={(v) => dispatch(setFilter({ field: "contractNo" as any, value: v }))}
                   includeBlank
+                  includeAvailable
                 />
               </div>
               <div
