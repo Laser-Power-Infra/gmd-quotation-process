@@ -704,6 +704,44 @@ export async function updateEnquiryOrderStatusAction(enquiryId: string, orderSta
   }
 }
 
+// Find ContractReview rows matching any of the given contract numbers
+export async function updateOrderStatus(contractNos: string[], docketNo: string) {
+  try {
+    const rows = await prisma.contractReview.findMany({
+      where: { contractNo: { in: contractNos } },
+      select: { id: true, contractNo: true, itemCode: true, rate: true, orderQty: true },
+      orderBy: { contractNo: "asc" },
+    });
+
+    const contractTotal = rows.reduce((sum, r) => {
+      const rate = Number(String(r.rate ?? "").replace(/,/g, "").trim());
+      const qty = Number(String(r.orderQty ?? "").replace(/,/g, "").trim());
+      return sum + (Number.isFinite(rate) && Number.isFinite(qty) ? rate * qty : 0);
+    }, 0);
+
+    const enquiry = await prisma.enquiry.findUnique({
+      where: { docketNumber: docketNo },
+      include: { items: { select: { totalValue: true } } },
+    });
+
+    if (!enquiry) {
+      return { success: false, error: `Enquiry not found for docket: ${docketNo}` };
+    }
+
+    const enquiryTotal = enquiry.items.reduce((sum, it) => {
+      const v = Number(String(it.totalValue ?? "").replace(/,/g, "").trim());
+      return sum + (Number.isFinite(v) ? v : 0);
+    }, 0);
+
+    const difference = contractTotal - enquiryTotal;
+
+    return { success: true, rows, contractTotal, enquiryTotal, difference };
+  } catch (error: any) {
+    console.error("Error updating order status:", error);
+    return { success: false, error: error.message || "Failed to update order status." };
+  }
+}
+
 // Delete an item. Enquiry is retained even if it becomes empty.
 export async function deleteEnquiryItemAction(itemId: string) {
   try {
