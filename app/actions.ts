@@ -14,6 +14,7 @@ import { getDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromA
 import { splitCsvLinks } from "@/lib/gmd_lib/contract-order-links";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, getRmTypeMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
+import { computeDeliverySchedule, syncDeliveryScheduleForItem } from "@/lib/deliverySchedule";
 import { makeImageKey } from "@/lib/imageKey";
 import { parseAndValidateProdOrderNumber } from "@/lib/contractValidation";
 import { matchPnRating } from "@/lib/pnRatingMatcher";
@@ -164,6 +165,7 @@ export async function createNewEnquiryAction(formData: {
               stockQuantity: (item as any).stockQuantity || null,
               availableStock: (item as any).availableStock || null,
               stockAgainstContract: (item as any).stockAgainstContract || null,
+              deliverySchedule: computeDeliverySchedule(item.quantity, item.availableStock),
               discount: item.discount || null,
               vaPercent: itemVa !== null ? String(itemVa) : null,
               quotedRate: itemQR,
@@ -299,6 +301,7 @@ export async function addItemsAction(formData: {
           stockQuantity: (item as any).stockQuantity || null,
           availableStock: (item as any).availableStock || null,
           stockAgainstContract: (item as any).stockAgainstContract || null,
+          deliverySchedule: computeDeliverySchedule(item.quantity, item.availableStock),
           discount: item.discount || null,
           vaPercent: itemVa !== null ? String(itemVa) : null,
           quotedRate: itemQR,
@@ -539,6 +542,7 @@ export async function updateEnquiryItemAction(formData: {
         stockQuantity: (formData as any).stockQuantity || null,
         availableStock: (formData as any).availableStock || null,
         stockAgainstContract: (formData as any).stockAgainstContract || null,
+        deliverySchedule: computeDeliverySchedule(updatedQty, formData.availableStock !== undefined ? formData.availableStock : item.availableStock),
         discount: formData.discount || null,
         vaPercent: finalVa !== null ? String(finalVa) : null,
         quotedRate: finalQuotedRate,
@@ -698,6 +702,44 @@ export async function updateEnquiryOrderStatusAction(enquiryId: string, orderSta
     });
 
     return { success: true };
+  } catch (error: any) {
+    console.error("Error updating order status:", error);
+    return { success: false, error: error.message || "Failed to update order status." };
+  }
+}
+
+// Find ContractReview rows matching any of the given contract numbers
+export async function updateOrderStatus(contractNos: string[], docketNo: string) {
+  try {
+    const rows = await prisma.contractReview.findMany({
+      where: { contractNo: { in: contractNos } },
+      select: { id: true, contractNo: true, itemCode: true, rate: true, orderQty: true },
+      orderBy: { contractNo: "asc" },
+    });
+
+    const contractTotal = rows.reduce((sum, r) => {
+      const rate = Number(String(r.rate ?? "").replace(/,/g, "").trim());
+      const qty = Number(String(r.orderQty ?? "").replace(/,/g, "").trim());
+      return sum + (Number.isFinite(rate) && Number.isFinite(qty) ? rate * qty : 0);
+    }, 0);
+
+    const enquiry = await prisma.enquiry.findUnique({
+      where: { docketNumber: docketNo },
+      include: { items: { select: { totalValue: true } } },
+    });
+
+    if (!enquiry) {
+      return { success: false, error: `Enquiry not found for docket: ${docketNo}` };
+    }
+
+    const enquiryTotal = enquiry.items.reduce((sum, it) => {
+      const v = Number(String(it.totalValue ?? "").replace(/,/g, "").trim());
+      return sum + (Number.isFinite(v) ? v : 0);
+    }, 0);
+
+    const difference = contractTotal - enquiryTotal;
+
+    return { success: true, rows, contractTotal, enquiryTotal, difference };
   } catch (error: any) {
     console.error("Error updating order status:", error);
     return { success: false, error: error.message || "Failed to update order status." };
@@ -1193,6 +1235,11 @@ export async function updateItemFieldAction(
       } catch (e) {
         console.warn(`[updateItemField] auto-recompute code failed for ${itemId}:`, e);
       }
+    }
+
+    // Auto-set delivery schedule when quantity or availableStock changes (both present, stock >= qty)
+    if (field === "quantity" || field === "availableStock") {
+      await syncDeliveryScheduleForItem(itemId);
     }
 
     // Always fetch authoritative latest record directly from database before returning

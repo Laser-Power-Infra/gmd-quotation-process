@@ -627,7 +627,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (excludeField !== "pdcostValidationSearch" && (filters.pdcostValidationSearch as string) && !matchesText(filters.pdcostValidationSearch, getPdCostValidation(item) || "")) return false;
       if (excludeField !== "costRefCodeSearch" && filters.costRefCodeSearch && !matchesText(filters.costRefCodeSearch, item.costRefCode || "")) return false;
       if (excludeField !== "othersSearch" && (filters as any).othersSearch && !matchesText((filters as any).othersSearch, (item as any).others || "")) return false;
-      if (excludeField !== "costLogic" && filters.costLogic && !matchesText(filters.costLogic, item.costLogic || "")) return false;
       if (excludeField !== "stockStatus" && filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;
       if (excludeField !== "stockQuantity" && filters.stockQuantity && !matchesText(filters.stockQuantity, item.stockQuantity || "")) return false;
       if (excludeField !== "stockAgainstContract" && filters.stockAgainstContract && !matchesText(filters.stockAgainstContract, item.stockAgainstContract || "")) return false;
@@ -869,12 +868,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (
         filters.cost.length > 0 &&
         !matchesMulti(filters.cost, item.cost != null ? String(item.cost) : null)
-      ) {
-        return false;
-      }
-      if (
-        filters.costLogic &&
-        !(item.costLogic || "").toLowerCase().includes(filters.costLogic.toLowerCase())
       ) {
         return false;
       }
@@ -1431,12 +1424,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.costLogic &&
-        !(item.costLogic || "").toLowerCase().includes(filters.costLogic.toLowerCase())
-      ) {
-        return false;
-      }
-      if (
         filters.stockStatus &&
         !(item.stockStatus || "").toLowerCase().includes(filters.stockStatus.toLowerCase())
       ) {
@@ -1726,9 +1713,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             "Other": "",
             "Product Cost": "",
             "Cost Ref Code": "",
-            "Cost": "",
-            "Cost Logic": "",
-            "Stock Status": "",
+"Cost": "",
+              "Stock Status": "",
             "Stock Quantity": "",
             "Available Stock": "",
             "RM Type": "",
@@ -1777,7 +1763,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               "Product Cost": item.productCost ? Number(item.productCost) : "",
               "Cost Ref Code": item.costRefCode || "",
               "Cost": item.cost ? Number(item.cost) : "",
-              "Cost Logic": item.costLogic || "",
               "Stock Status": item.stockStatus || "",
               "Stock Quantity": item.stockQuantity || "",
               "Available Stock": item.availableStock || "",
@@ -2039,7 +2024,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   }
 
-  const TOTAL_COLUMNS = 50;
+  const TOTAL_COLUMNS = 38;
   const SELECT_COL_WIDTH = 44;
   const getColWidth = (idx: number) => columnWidths[idx] ?? DEFAULT_COLUMN_WIDTHS[idx] ?? 120;
   const totalTableWidth =
@@ -2330,22 +2315,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 4. State Dropdown */}
+            {/* State/Utility */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
-                <span>State</span>
-                {renderSortArrow("state")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="State"
-                  allLabel="All States"
-                  options={dropdownOptions.states}
-                  cascadedOptions={cascadedOptions.state}
-                  selected={filters.state}
-                  onChange={(v) => dispatch(setFilter({ field: "state", value: v }))}
-                  includeBlank
-                />
+                <span>State/Utility</span>
               </div>
               <div
                 onMouseDown={(e) => handleMouseDown(5, e)}
@@ -2357,22 +2330,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 5. Payment Terms Dropdown */}
+            {/* 6. Payment Terms / PBG / Inspection */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
-                <span>Payment Terms</span>
-                {renderSortArrow("paymentTerms")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Payment Terms"
-                  allLabel="All Terms"
-                  options={dropdownOptions.paymentTerms}
-                  cascadedOptions={cascadedOptions.paymentTerms}
-                  selected={filters.paymentTerms}
-                  onChange={(v) => dispatch(setFilter({ field: "paymentTerms", value: v }))}
-                  includeBlank
-                />
+                <span>Payment Terms / PBG / Inspection</span>
               </div>
               <div
                 onMouseDown={(e) => handleMouseDown(6, e)}
@@ -2384,86 +2345,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 6. Inspection Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Inspection</span>
-                {renderSortArrow("inspection")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Inspection"
-                  allLabel="All"
-                  options={dropdownOptions.inspections}
-                  cascadedOptions={cascadedOptions.inspection}
-                  selected={filters.inspection}
-                  onChange={(v) => dispatch(setFilter({ field: "inspection", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(7, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
+            
 
-            {/* 7. PBG Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>PBG</span>
-                {renderSortArrow("pbg")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="PBG"
-                  allLabel="All"
-                  options={dropdownOptions.pbgs}
-                  cascadedOptions={cascadedOptions.pbg}
-                  selected={filters.pbg}
-                  onChange={(v) => dispatch(setFilter({ field: "pbg", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(8, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
+            
 
-            {/* 8. Utility Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Utility</span>
-                {renderSortArrow("utility")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Utility"
-                  allLabel="All Utilities"
-                  options={dropdownOptions.utilities}
-                  cascadedOptions={cascadedOptions.utility}
-                  selected={filters.utility}
-                  onChange={(v) => dispatch(setFilter({ field: "utility", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(9, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
+            
 
 
 
@@ -2485,7 +2371,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(10, e)}
+                onMouseDown={(e) => handleMouseDown(7, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2513,7 +2399,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(11, e)}
+                onMouseDown={(e) => handleMouseDown(8, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2536,7 +2422,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(12, e)}
+                onMouseDown={(e) => handleMouseDown(9, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2557,7 +2443,22 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(13, e)}
+                onMouseDown={(e) => handleMouseDown(10, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* Details */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Details</span>
+              </div>
+              <div
+                onMouseDown={(e) => handleMouseDown(11, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2578,125 +2479,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(14, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 13. Item Type Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Item Type</span>
-                {renderSortArrow("itemType")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Item Type"
-                  allLabel="All Types"
-                  options={dropdownOptions.itemTypes}
-                  cascadedOptions={cascadedOptions.itemType}
-                  selected={filters.itemType}
-                  onChange={(v) => dispatch(setFilter({ field: "itemType", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <FilterTextInput
-                field="itemTypeSearch"
-                placeholder="Search item type..."
-                className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
-              />
-              <div
-                onMouseDown={(e) => handleMouseDown(15, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 14. MOC Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>MOC</span>
-                {renderSortArrow("moc")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="MOC"
-                  allLabel="All MOCs"
-                  options={dropdownOptions.mocs}
-                  cascadedOptions={cascadedOptions.moc}
-                  selected={filters.moc}
-                  onChange={(v) => dispatch(setFilter({ field: "moc", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <FilterTextInput
-                field="mocSearch"
-                placeholder="Search MOC..."
-                className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
-              />
-              <div
-                onMouseDown={(e) => handleMouseDown(16, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 15. Size Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Size</span>
-                {renderSortArrow("size")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Size"
-                  allLabel="All Sizes"
-                  options={dropdownOptions.sizes}
-                  cascadedOptions={cascadedOptions.size}
-                  selected={filters.size}
-                  onChange={(v) => dispatch(setFilter({ field: "size", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(17, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 16. PN Rating Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>PN Rating</span>
-                {renderSortArrow("pnRating")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="PN Rating"
-                  allLabel="All Ratings"
-                  options={dropdownOptions.pnRatings}
-                  cascadedOptions={cascadedOptions.pnRating}
-                  selected={filters.pnRating}
-                  onChange={(v) => dispatch(setFilter({ field: "pnRating", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(18, e)}
+                onMouseDown={(e) => handleMouseDown(12, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2729,7 +2512,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(19, e)}
+                onMouseDown={(e) => handleMouseDown(13, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2762,121 +2545,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(20, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 18. Operation Type Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Operation Type</span>
-                {renderSortArrow("operationType")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Operation Type"
-                  allLabel="All Operations"
-                  options={dropdownOptions.operationTypes}
-                  cascadedOptions={cascadedOptions.operationType}
-                  selected={filters.operationType}
-                  onChange={(v) => dispatch(setFilter({ field: "operationType", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(21, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 19. Extension Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Extension</span>
-                {renderSortArrow("extension")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Extension"
-                  allLabel="All"
-                  options={dropdownOptions.extensions}
-                  cascadedOptions={cascadedOptions.extension}
-                  selected={filters.extension}
-                  onChange={(v) => dispatch(setFilter({ field: "extension", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(22, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 21. Bypass Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Bypass</span>
-                {renderSortArrow("bypass")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Bypass"
-                  allLabel="All"
-                  options={dropdownOptions.bypasses}
-                  cascadedOptions={cascadedOptions.bypass}
-                  selected={filters.bypass}
-                  onChange={(v) => dispatch(setFilter({ field: "bypass", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(23, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 23. Other */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Other</span>
-                {renderSortArrow("others")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Other"
-                  allLabel="All"
-                  options={cascadedOptions.others || []}
-                  cascadedOptions={cascadedOptions.others || []}
-                  selected={(filters as any).others || []}
-                  onChange={(v) => dispatch(setFilter({ field: "others" as any, value: v }))}
-                  includeBlank
-                  searchPlaceholder="Search other..."
-                />
-              </div>
-              <FilterTextInput
-                field={"othersSearch" as any}
-                placeholder="Search..."
-                className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
-              />
-              <div
-                onMouseDown={(e) => handleMouseDown(24, e)}
+                onMouseDown={(e) => handleMouseDown(14, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2903,7 +2572,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(25, e)}
+                onMouseDown={(e) => handleMouseDown(15, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2936,7 +2605,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(26, e)}
+                onMouseDown={(e) => handleMouseDown(16, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2963,28 +2632,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 panelClassName="w-56 z-80"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(27, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 26. Cost Logic */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Cost Logic</span>
-                {renderSortArrow("costLogic")}
-              </div>
-              <FilterTextInput
-                field="costLogic"
-                placeholder="Search..."
-                className={inputClass}
-              />
-              <div
-                onMouseDown={(e) => handleMouseDown(28, e)}
+                onMouseDown={(e) => handleMouseDown(17, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3005,7 +2653,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(29, e)}
+                onMouseDown={(e) => handleMouseDown(18, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3026,7 +2674,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(30, e)}
+                onMouseDown={(e) => handleMouseDown(19, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3053,34 +2701,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(31, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* RM Type */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>RM Type</span>
-                {renderSortArrow("rmType")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="RM Type"
-                  allLabel="All RM Type"
-                  options={cascadedOptions.rmType ?? []}
-                  cascadedOptions={cascadedOptions.rmType ?? []}
-                  selected={filters.rmType}
-                  onChange={(v) => dispatch(setFilter({ field: "rmType", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(32, e)}
+                onMouseDown={(e) => handleMouseDown(20, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3107,7 +2728,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(33, e)}
+                onMouseDown={(e) => handleMouseDown(21, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3128,7 +2749,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(34, e)}
+                onMouseDown={(e) => handleMouseDown(22, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3149,7 +2770,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(35, e)}
+                onMouseDown={(e) => handleMouseDown(23, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3176,7 +2797,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(36, e)}
+                onMouseDown={(e) => handleMouseDown(24, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3208,7 +2829,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(37, e)}
+                onMouseDown={(e) => handleMouseDown(25, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3241,7 +2862,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(38, e)}
+                onMouseDown={(e) => handleMouseDown(26, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3274,7 +2895,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(39, e)}
+                onMouseDown={(e) => handleMouseDown(27, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3295,7 +2916,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(40, e)}
+                onMouseDown={(e) => handleMouseDown(28, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3316,7 +2937,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(41, e)}
+                onMouseDown={(e) => handleMouseDown(29, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3337,7 +2958,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(42, e)}
+                onMouseDown={(e) => handleMouseDown(30, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3358,7 +2979,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(43, e)}
+                onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3414,7 +3035,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(44, e)}
+                onMouseDown={(e) => handleMouseDown(32, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3437,7 +3058,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(45, e)}
+                onMouseDown={(e) => handleMouseDown(33, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3453,7 +3074,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(46, e)}
+                onMouseDown={(e) => handleMouseDown(34, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3509,7 +3130,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(47, e)}
+                onMouseDown={(e) => handleMouseDown(35, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3525,7 +3146,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(48, e)}
+                onMouseDown={(e) => handleMouseDown(36, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3539,7 +3160,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(49, e)}
+                onMouseDown={(e) => handleMouseDown(37, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3847,99 +3468,82 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       </select>
                     </td>
 
-                    {/* 4. State Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      <select
-                        value={enquiry.state || ""}
-                        onChange={(e) => handleEnquiryFieldChange(enquiry.id, "state", e.target.value)}
-                        className={cellSelectClass}
-                      >
-                        <option value="">-</option>
-                        {dropdownOptions.states.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
+                    {/* State/Utility */}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0 align-top">
+                      <div className="flex flex-wrap gap-x-1.5 gap-y-1">
+                        <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5 w-full">
+                          state:
+                          <select
+                            value={enquiry.state || ""}
+                            onChange={(e) => handleEnquiryFieldChange(enquiry.id, "state", e.target.value)}
+                            className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium w-full"
+                          >
+                            <option value="">-</option>
+                            {dropdownOptions.states.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5 w-full">
+                          utility:
+                          <select
+                            value={enquiry.utility || ""}
+                            onChange={(e) => handleEnquiryFieldChange(enquiry.id, "utility", e.target.value)}
+                            className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium w-full"
+                          >
+                            <option value="">-</option>
+                            {dropdownOptions.utilities.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
                     </td>
 
-                    {/* 5. Payment Terms Inline Select */}
-                    <td className="py-1 px-1 border-r border-b border-border last:border-r-0 align-top group">
-                      <div className="flex gap-0.5 items-start w-full">
-                        <textarea
-                          key={enquiry.paymentTerms || ""}
-                          defaultValue={enquiry.paymentTerms || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (enquiry.paymentTerms || "")) {
-                              handleEnquiryFieldChange(enquiry.id, "paymentTerms", e.target.value);
-                            }
-                          }}
-                          placeholder="-"
-                          rows={2}
-                          className="w-full resize-none bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium cell-scrollable leading-normal max-h-12 overflow-y-auto"
-                        />
-                        <div className="relative shrink-0 w-4 h-7 flex items-center justify-center cursor-pointer">
+                    {/* Payment Terms / PBG / Inspection */}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0 align-top">
+                      <div className="flex flex-wrap gap-x-1.5 gap-y-1">
+                        <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5 w-full">
+                          payment_terms:
                           <select
                             value={enquiry.paymentTerms || ""}
-                            onChange={(e) => {
-                              handleEnquiryFieldChange(enquiry.id, "paymentTerms", e.target.value);
-                              const flexContainer = e.target.closest('.flex');
-                              const textarea = flexContainer ? flexContainer.querySelector('textarea') : null;
-                              if (textarea) textarea.value = e.target.value;
-                            }}
-                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                            onChange={(e) => handleEnquiryFieldChange(enquiry.id, "paymentTerms", e.target.value)}
+                            className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium w-full"
                           >
                             <option value="">-</option>
                             {dropdownOptions.paymentTerms.map((opt) => (
                               <option key={opt} value={opt}>{opt}</option>
                             ))}
                           </select>
-                          <ChevronDown className="h-3 w-3 text-muted-foreground pointer-events-none group-hover:text-muted-foreground z-0" />
-                        </div>
+                        </label>
+                        <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5 w-full">
+                          inspection:
+                          <select
+                            value={enquiry.inspection || ""}
+                            onChange={(e) => handleEnquiryFieldChange(enquiry.id, "inspection", e.target.value)}
+                            className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium w-full"
+                          >
+                            <option value="">-</option>
+                            {dropdownOptions.inspections.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5 w-full">
+                          pbg:
+                          <select
+                            value={enquiry.pbg || ""}
+                            onChange={(e) => handleEnquiryFieldChange(enquiry.id, "pbg", e.target.value)}
+                            className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium w-full"
+                          >
+                            <option value="">-</option>
+                            {dropdownOptions.pbgs.map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                          </select>
+                        </label>
                       </div>
                     </td>
-
-                    {/* 6. Inspection Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      <select
-                        value={enquiry.inspection || ""}
-                        onChange={(e) => handleEnquiryFieldChange(enquiry.id, "inspection", e.target.value)}
-                        className={cellSelectClass}
-                      >
-                        <option value="">-</option>
-                        {dropdownOptions.inspections.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </td>
-
-                    {/* 7. PBG Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      <select
-                        value={enquiry.pbg || ""}
-                        onChange={(e) => handleEnquiryFieldChange(enquiry.id, "pbg", e.target.value)}
-                        className={cellSelectClass}
-                      >
-                        <option value="">-</option>
-                        {dropdownOptions.pbgs.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </td>
-
-                    {/* 8. Utility Inline Dropdown */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      <select
-                        value={enquiry.utility || ""}
-                        onChange={(e) => handleEnquiryFieldChange(enquiry.id, "utility", e.target.value)}
-                        className={cellSelectClass}
-                      >
-                        <option value="">-</option>
-                        {dropdownOptions.utilities.map((opt) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    </td>
-
-
 
                     {/* 10. Order Status Inline Select */}
                     <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
@@ -4022,7 +3626,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           />
                         ) : (
                           <div className="flex items-center justify-between w-full group truncate">
-                            <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable wrap-break-word whitespace-normal leading-normal">
+                            <div className="w-full pr-1 wrap-break-word whitespace-normal leading-normal">
                               {firstItem.itemName}
                             </div>
                             <button
@@ -4038,6 +3642,137 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       ) : (
                         "No items"
                       )}
+                    </td>
+
+                    {/* Details */}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0 align-top">
+                      {firstItem ? (
+                        <div className="flex flex-wrap gap-x-1.5 gap-y-1">
+                          <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                            type:
+                            <select
+                              value={firstItem.itemType || ""}
+                              onChange={(e) => handleItemFieldChange(firstItem.id, "itemType", e.target.value)}
+                              className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                            >
+                              <option value="">-</option>
+                              {dropdownOptions.itemTypes.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                            moc:
+                            <select
+                              value={firstItem.moc || ""}
+                              onChange={(e) => handleItemFieldChange(firstItem.id, "moc", e.target.value)}
+                              className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                            >
+                              <option value="">-</option>
+                              {dropdownOptions.mocs.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                            size:
+                            <select
+                              value={firstItem.size || ""}
+                              onChange={(e) => handleItemFieldChange(firstItem.id, "size", e.target.value)}
+                              className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                            >
+                              <option value="">-</option>
+                              {dropdownOptions.sizes.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                            pn_rating:
+                            <select
+                              value={firstItem.pnRating || ""}
+                              onChange={(e) => handleItemFieldChange(firstItem.id, "pnRating", e.target.value)}
+                              className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                            >
+                              <option value="">-</option>
+                              {dropdownOptions.pnRatings.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                            operation_type:
+                            <select
+                              value={firstItem.operationType || ""}
+                              onChange={(e) => handleItemFieldChange(firstItem.id, "operationType", e.target.value)}
+                              className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                            >
+                              <option value="">-</option>
+                              {dropdownOptions.operationTypes.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                            extension:
+                            <select
+                              value={firstItem.extension || ""}
+                              onChange={(e) => handleItemFieldChange(firstItem.id, "extension", e.target.value)}
+                              className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                            >
+                              <option value="">-</option>
+                              {dropdownOptions.extensions.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                            bypass:
+                            <select
+                              value={firstItem.bypass || ""}
+                              onChange={(e) => handleItemFieldChange(firstItem.id, "bypass", e.target.value)}
+                              className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                            >
+                              <option value="">-</option>
+                              {dropdownOptions.bypasses.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <div className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                            other:
+                            <div className="min-w-28">
+                              <OthersInlineMultiSelect
+                                value={(firstItem as any).others || []}
+                                options={(dropdownOptions as any).others || ["flange", "gasket", "nut and bolt"]}
+                                onChange={(next) => {
+                                  const prev = ((firstItem as any).others || []) as string[];
+                                  if (JSON.stringify(prev.slice().sort()) !== JSON.stringify(next.slice().sort())) {
+                                    handleItemFieldChange(firstItem.id, "others", JSON.stringify(next));
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+                          <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                            rm_type:
+                            <select
+                              value={firstItem.rmType || ""}
+                              disabled={isFrozen}
+                              onChange={(e) => handleItemFieldChange(firstItem.id, "rmType", e.target.value)}
+                              className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                            >
+                              <option value="">-</option>
+                              {firstItem.rmType && !RM_TYPE_OPTIONS.includes(firstItem.rmType) && (
+                                <option value={firstItem.rmType}>{firstItem.rmType}</option>
+                              )}
+                              {RM_TYPE_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      ) : "-"}
                     </td>
 
                     {/* First Item Quantity */}
@@ -4060,70 +3795,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-semibold text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
-                      ) : "-"}
-                    </td>
-
-                    {/* 13. First Item Type Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      {firstItem ? (
-                        <select
-                          value={firstItem.itemType || ""}
-                          onChange={(e) => handleItemFieldChange(firstItem.id, "itemType", e.target.value)}
-                          className={cellItemSelectClass}
-                        >
-                          <option value="">-</option>
-                          {dropdownOptions.itemTypes.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      ) : "-"}
-                    </td>
-
-                    {/* 14. First Item MOC Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      {firstItem ? (
-                        <select
-                          value={firstItem.moc || ""}
-                          onChange={(e) => handleItemFieldChange(firstItem.id, "moc", e.target.value)}
-                          className={cellItemSelectClass}
-                        >
-                          <option value="">-</option>
-                          {dropdownOptions.mocs.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      ) : "-"}
-                    </td>
-
-                    {/* 15. First Item Size Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      {firstItem ? (
-                        <select
-                          value={firstItem.size || ""}
-                          onChange={(e) => handleItemFieldChange(firstItem.id, "size", e.target.value)}
-                          className={cellItemSelectClass}
-                        >
-                          <option value="">-</option>
-                          {dropdownOptions.sizes.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      ) : "-"}
-                    </td>
-
-                    {/* 16. First Item PN Rating Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      {firstItem ? (
-                        <select
-                          value={firstItem.pnRating || ""}
-                          onChange={(e) => handleItemFieldChange(firstItem.id, "pnRating", e.target.value)}
-                          className={cellItemSelectClass}
-                        >
-                          <option value="">-</option>
-                          {dropdownOptions.pnRatings.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
                       ) : "-"}
                     </td>
 
@@ -4168,70 +3839,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           }
                           return <span className="block text-[10px] text-muted-foreground p-1 font-mono truncate" title={(firstItem as any).bomId || ""}>{(firstItem as any).bomId || "-"}</span>;
                         })()
-                      ) : "-"}
-                    </td>
-
-                    {/* 19. First Item Operation Type Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      {firstItem ? (
-                        <select
-                          value={firstItem.operationType || ""}
-                          onChange={(e) => handleItemFieldChange(firstItem.id, "operationType", e.target.value)}
-                          className={cellItemSelectClass}
-                        >
-                          <option value="">-</option>
-                          {dropdownOptions.operationTypes.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      ) : "-"}
-                    </td>
-
-                    {/* 19. First Item Extension Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      {firstItem ? (
-                        <select
-                          value={firstItem.extension || ""}
-                          onChange={(e) => handleItemFieldChange(firstItem.id, "extension", e.target.value)}
-                          className={cellItemSelectClass}
-                        >
-                          <option value="">-</option>
-                          {dropdownOptions.extensions.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      ) : "-"}
-                    </td>
-
-                    {/* 20. First Item Bypass Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      {firstItem ? (
-                        <select
-                          value={firstItem.bypass || ""}
-                          onChange={(e) => handleItemFieldChange(firstItem.id, "bypass", e.target.value)}
-                          className={cellItemSelectClass}
-                        >
-                          <option value="">-</option>
-                          {dropdownOptions.bypasses.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      ) : "-"}
-                    </td>
-
-                    {/* First Item Other - multi-select dropdown */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      {firstItem ? (
-                        <OthersInlineMultiSelect
-                          value={(firstItem as any).others || []}
-                          options={(dropdownOptions as any).others || ["flange", "gasket", "nut and bolt"]}
-                          onChange={(next) => {
-                            const prev = ((firstItem as any).others || []) as string[];
-                            if (JSON.stringify(prev.slice().sort()) !== JSON.stringify(next.slice().sort())) {
-                              handleItemFieldChange(firstItem.id, "others", JSON.stringify(next));
-                            }
-                          }}
-                        />
                       ) : "-"}
                     </td>
 
@@ -4305,29 +3912,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       ) : "-"}
                     </td>
 
-                    {/* First Item Cost Logic */}
-                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
-                      {firstItem ? (
-                        <input
-                          key={firstItem.id + "-costLogic-" + (firstItem.costLogic || "")}
-                          type="text"
-                          defaultValue={firstItem.costLogic || ""}
-                          disabled={isFrozen}
-                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.costLogic || "")) {
-                              handleItemFieldChange(firstItem.id, "costLogic", e.target.value);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
-                      ) : "-"}
-                    </td>
-
                     {/* First Item Stock Status */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
@@ -4388,26 +3972,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
                         />
-                      ) : "-"}
-                    </td>
-
-                    {/* First Item RM Type */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      {firstItem ? (
-                        <select
-                          value={firstItem.rmType || ""}
-                          disabled={isFrozen}
-                          onChange={(e) => handleItemFieldChange(firstItem.id, "rmType", e.target.value)}
-                          className={cellItemSelectClass}
-                        >
-                          <option value="">-</option>
-                          {firstItem.rmType && !RM_TYPE_OPTIONS.includes(firstItem.rmType) && (
-                            <option value={firstItem.rmType}>{firstItem.rmType}</option>
-                          )}
-                          {RM_TYPE_OPTIONS.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
                       ) : "-"}
                     </td>
 
@@ -4751,9 +4315,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
-                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
-                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
-                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
 
                         {/* Additional Item Name */}
                         <td className="py-2 px-2 text-xs text-muted-foreground font-medium border-r border-b border-border last:border-r-0 align-top">
@@ -4779,7 +4340,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             />
                           ) : (
                             <div className="flex items-center justify-between w-full group truncate">
-                              <div className="max-h-12 overflow-y-auto w-full pr-1 cell-scrollable wrap-break-word whitespace-normal leading-normal">
+                              <div className="w-full pr-1 wrap-break-word whitespace-normal leading-normal">
                                 {item.itemName}
                               </div>
                               <button
@@ -4794,6 +4355,135 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           )}
                         </td>
                         
+                        {/* Details */}
+                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0 align-top">
+                          <div className="flex flex-wrap gap-x-1.5 gap-y-1">
+                            <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                              type:
+                              <select
+                                value={item.itemType || ""}
+                                onChange={(e) => handleItemFieldChange(item.id, "itemType", e.target.value)}
+                                className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                              >
+                                <option value="">-</option>
+                                {dropdownOptions.itemTypes.map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                              moc:
+                              <select
+                                value={item.moc || ""}
+                                onChange={(e) => handleItemFieldChange(item.id, "moc", e.target.value)}
+                                className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                              >
+                                <option value="">-</option>
+                                {dropdownOptions.mocs.map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                              size:
+                              <select
+                                value={item.size || ""}
+                                onChange={(e) => handleItemFieldChange(item.id, "size", e.target.value)}
+                                className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                              >
+                                <option value="">-</option>
+                                {dropdownOptions.sizes.map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                              pn_rating:
+                              <select
+                                value={item.pnRating || ""}
+                                onChange={(e) => handleItemFieldChange(item.id, "pnRating", e.target.value)}
+                                className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                              >
+                                <option value="">-</option>
+                                {dropdownOptions.pnRatings.map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                              operation_type:
+                              <select
+                                value={item.operationType || ""}
+                                onChange={(e) => handleItemFieldChange(item.id, "operationType", e.target.value)}
+                                className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                              >
+                                <option value="">-</option>
+                                {dropdownOptions.operationTypes.map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                              extension:
+                              <select
+                                value={item.extension || ""}
+                                onChange={(e) => handleItemFieldChange(item.id, "extension", e.target.value)}
+                                className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                              >
+                                <option value="">-</option>
+                                {dropdownOptions.extensions.map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                              bypass:
+                              <select
+                                value={item.bypass || ""}
+                                onChange={(e) => handleItemFieldChange(item.id, "bypass", e.target.value)}
+                                className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                              >
+                                <option value="">-</option>
+                                {dropdownOptions.bypasses.map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <div className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                              other:
+                              <div className="min-w-28">
+                                <OthersInlineMultiSelect
+                                  value={(item as any).others || []}
+                                  options={(dropdownOptions as any).others || ["flange", "gasket", "nut and bolt"]}
+                                  onChange={(next) => {
+                                    const prev = ((item as any).others || []) as string[];
+                                    if (JSON.stringify(prev.slice().sort()) !== JSON.stringify(next.slice().sort())) {
+                                      handleItemFieldChange(item.id, "others", JSON.stringify(next));
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </div>
+                            <label className="flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5">
+                              rm_type:
+                              <select
+                                value={item.rmType || ""}
+                                disabled={isFrozen}
+                                onChange={(e) => handleItemFieldChange(item.id, "rmType", e.target.value)}
+                                className="bg-transparent border-none text-xs text-foreground outline-none cursor-pointer rounded px-0.5 py-0 hover:bg-muted/80 transition-colors normal-case font-medium"
+                              >
+                                <option value="">-</option>
+                                {item.rmType && !RM_TYPE_OPTIONS.includes(item.rmType) && (
+                                  <option value={item.rmType}>{item.rmType}</option>
+                                )}
+                                {RM_TYPE_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                        </td>
+
                         {/* Additional Item Quantity */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
                           <input
@@ -4813,62 +4503,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-semibold text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
-                        </td>
-
-                        {/* 13. Item Type Inline Select */}
-                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                          <select
-                            value={item.itemType || ""}
-                            onChange={(e) => handleItemFieldChange(item.id, "itemType", e.target.value)}
-                            className={cellItemSelectClass}
-                          >
-                            <option value="">-</option>
-                            {dropdownOptions.itemTypes.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </td>
-
-                        {/* 14. MOC Inline Select */}
-                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                          <select
-                            value={item.moc || ""}
-                            onChange={(e) => handleItemFieldChange(item.id, "moc", e.target.value)}
-                            className={cellItemSelectClass}
-                          >
-                            <option value="">-</option>
-                            {dropdownOptions.mocs.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </td>
-
-                        {/* 15. Size Inline Select */}
-                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                          <select
-                            value={item.size || ""}
-                            onChange={(e) => handleItemFieldChange(item.id, "size", e.target.value)}
-                            className={cellItemSelectClass}
-                          >
-                            <option value="">-</option>
-                            {dropdownOptions.sizes.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </td>
-
-                        {/* 16. PN Rating Inline Select */}
-                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                          <select
-                            value={item.pnRating || ""}
-                            onChange={(e) => handleItemFieldChange(item.id, "pnRating", e.target.value)}
-                            className={cellItemSelectClass}
-                          >
-                            <option value="">-</option>
-                            {dropdownOptions.pnRatings.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
                         </td>
 
                         {/* Item Code (read-only) */}
@@ -4909,62 +4543,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                             }
                             return <span className="block text-[10px] text-muted-foreground p-1 font-mono truncate" title={(item as any).bomId || ""}>{(item as any).bomId || "-"}</span>;
                           })()}
-                        </td>
-
-                        {/* 18. Operation Type Inline Select */}
-                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                          <select
-                            value={item.operationType || ""}
-                            onChange={(e) => handleItemFieldChange(item.id, "operationType", e.target.value)}
-                            className={cellItemSelectClass}
-                          >
-                            <option value="">-</option>
-                            {dropdownOptions.operationTypes.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </td>
-
-                        {/* 19. Extension Inline Select */}
-                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                          <select
-                            value={item.extension || ""}
-                            onChange={(e) => handleItemFieldChange(item.id, "extension", e.target.value)}
-                            className={cellItemSelectClass}
-                          >
-                            <option value="">-</option>
-                            {dropdownOptions.extensions.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </td>
-
-                        {/* 20. Bypass Inline Select */}
-                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                          <select
-                            value={item.bypass || ""}
-                            onChange={(e) => handleItemFieldChange(item.id, "bypass", e.target.value)}
-                            className={cellItemSelectClass}
-                          >
-                            <option value="">-</option>
-                            {dropdownOptions.bypasses.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </td>
-
-                        {/* Other - multi-select */}
-                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                          <OthersInlineMultiSelect
-                            value={(item as any).others || []}
-                            options={(dropdownOptions as any).others || ["flange", "gasket", "nut and bolt"]}
-                            onChange={(next) => {
-                              const prev = ((item as any).others || []) as string[];
-                              if (JSON.stringify(prev.slice().sort()) !== JSON.stringify(next.slice().sort())) {
-                                handleItemFieldChange(item.id, "others", JSON.stringify(next));
-                              }
-                            }}
-                          />
                         </td>
 
                         {/* Product Cost */}
@@ -5031,27 +4609,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         />
                       </td>
 
-                      {/* Cost Logic */}
-                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
-                          <input
-                            key={item.id + "-costLogic-" + (item.costLogic || "")}
-                            type="text"
-                            defaultValue={item.costLogic || ""}
-                            disabled={isFrozen}
-                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.costLogic || "")) {
-                              handleItemFieldChange(item.id, "costLogic", e.target.value);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
-                      </td>
-
                       {/* Stock Status */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                           <input
@@ -5108,24 +4665,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
                         />
                       </td>
-
-                      {/* RM Type */}
-                        <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                          <select
-                            value={item.rmType || ""}
-                            disabled={isFrozen}
-                            onChange={(e) => handleItemFieldChange(item.id, "rmType", e.target.value)}
-                            className={cellItemSelectClass}
-                          >
-                            <option value="">-</option>
-                            {item.rmType && !RM_TYPE_OPTIONS.includes(item.rmType) && (
-                              <option value={item.rmType}>{item.rmType}</option>
-                            )}
-                            {RM_TYPE_OPTIONS.map((opt) => (
-                              <option key={opt} value={opt}>{opt}</option>
-                            ))}
-                          </select>
-                        </td>
 
                       {/* View Image */}
                       <ItemImageCells item={item} image={getItemImage(item)} />
