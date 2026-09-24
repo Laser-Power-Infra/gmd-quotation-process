@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/popover";
 
 export const BLANK = "__blank__";
+export const AVAILABLE = "__available__";
 
 interface MultiSelectFilterProps {
   label: string;
@@ -20,6 +21,7 @@ interface MultiSelectFilterProps {
   onChange: (values: string[]) => void;
   counts?: Record<string, number>;
   includeBlank?: boolean;
+  includeAvailable?: boolean;
   searchPlaceholder?: string;
   className?: string;
   panelClassName?: string;
@@ -36,6 +38,7 @@ export default function MultiSelectFilter({
   onChange,
   counts,
   includeBlank = false,
+  includeAvailable = false,
   searchPlaceholder,
   className,
   panelClassName,
@@ -69,6 +72,7 @@ export default function MultiSelectFilter({
     : `${selected.length} Selected`;
 
   const blankChecked = selected.includes(BLANK);
+  const availableChecked = selected.includes(AVAILABLE);
 
   return (
     <Popover
@@ -138,6 +142,17 @@ export default function MultiSelectFilter({
               <span className="truncate flex-1">(Blank)</span>
             </label>
           )}
+          {includeAvailable && (
+            <label className="flex items-center gap-2 py-1 px-1 hover:bg-accent cursor-pointer select-none text-[10px] text-foreground font-medium truncate">
+              <input
+                type="checkbox"
+                checked={availableChecked}
+                onChange={() => toggle(AVAILABLE)}
+                className="h-3 w-3 rounded text-blue-600 focus:ring-blue-500 border-border cursor-pointer"
+              />
+              <span className="truncate flex-1">(Available)</span>
+            </label>
+          )}
           {visibleOptions.map((opt) => {
             const isChecked = selected.includes(opt);
             const count = counts?.[opt];
@@ -161,7 +176,7 @@ export default function MultiSelectFilter({
               </label>
             );
           })}
-          {visibleOptions.length === 0 && !includeBlank && (
+          {visibleOptions.length === 0 && !includeBlank && !includeAvailable && (
             <div className="py-2 px-3 text-xs text-muted-foreground italic">
               No options found
             </div>
