@@ -1,3 +1,5 @@
+import { pnRatingBucket } from "./pnRatingMatcher";
+
 export const BASE_ITEMS = [
   "SLV",
   "TPAV+SLV",
@@ -30,7 +32,22 @@ export interface ItemVersionResult {
   baseItem: string | null;
   slot: VersionSlot | null;
   variant: VariantKey | null;
+  label: string;
   hasVersionExtras: boolean;
+}
+
+/**
+ * Human-readable category for a variant, derived from the detected suffixes.
+ * Plain base items are labelled "Base".
+ */
+function variantLabel(flags: VariantFlags): string {
+  const parts: string[] = [];
+  if (flags.hasRising) parts.push("Rising");
+  if (flags.hasWafer) parts.push("Wafer");
+  if (flags.hasDi) parts.push("DI");
+  if (flags.hasCs) parts.push("CS");
+  if (flags.has9523) parts.push("9523");
+  return parts.length > 0 ? parts.join(" ") : "Base";
 }
 
 function normalize(value: string): string {
@@ -146,6 +163,7 @@ export function parseItem(item: string | null | undefined): ItemVersionResult {
     baseItem: null,
     slot: null,
     variant: null,
+    label: "",
     hasVersionExtras: false,
   };
   if (!item) return empty;
@@ -170,6 +188,7 @@ export function parseItem(item: string | null | undefined): ItemVersionResult {
     baseItem,
     slot,
     variant,
+    label: variantLabel(flags),
     hasVersionExtras:
       flags.has9523 ||
       flags.hasRising ||
@@ -191,11 +210,16 @@ export interface IndentRecomputeInput {
 export interface IndentRecomputeUpdate {
   id: string;
   item: string;
+  pnRating: string;
   totalBalBillAgCont: number;
   v1: string;
   v2: string;
   v3: string;
   v4: string;
+  v1Category: string;
+  v2Category: string;
+  v3Category: string;
+  v4Category: string;
 }
 
 export interface IndentRecomputePlan {
@@ -225,7 +249,7 @@ export function planIndentRecompute(rows: IndentRecomputeInput[]): IndentRecompu
     const key = [
       parsed.baseItem,
       normalizeKeyPart(row.size),
-      normalizeKeyPart(row.pnRating),
+      pnRatingBucket(row.pnRating),
       normalizeKeyPart(row.mcReceivedPending),
     ].join("||");
 
@@ -247,6 +271,7 @@ export function planIndentRecompute(rows: IndentRecomputeInput[]): IndentRecompu
     let total = 0;
     const slotSums = [0, 0, 0, 0];
     const slotPresent = [false, false, false, false];
+    const slotLabels: string[][] = [[], [], [], []];
 
     for (const row of members) {
       const p = parseItem(row.item);
@@ -257,6 +282,9 @@ export function planIndentRecompute(rows: IndentRecomputeInput[]): IndentRecompu
       if (p.slot !== null) {
         slotSums[p.slot - 1] += value;
         slotPresent[p.slot - 1] = true;
+        if (p.label && !slotLabels[p.slot - 1].includes(p.label)) {
+          slotLabels[p.slot - 1].push(p.label);
+        }
       }
     }
 
@@ -271,11 +299,16 @@ export function planIndentRecompute(rows: IndentRecomputeInput[]): IndentRecompu
     updates.push({
       id: survivor.id,
       item: baseItem,
+      pnRating: pnRatingBucket(survivor.pnRating),
       totalBalBillAgCont: total,
       v1: slotPresent[0] ? formatAmount(slotSums[0]) : "",
       v2: slotPresent[1] ? formatAmount(slotSums[1]) : "",
       v3: slotPresent[2] ? formatAmount(slotSums[2]) : "",
       v4: slotPresent[3] ? formatAmount(slotSums[3]) : "",
+      v1Category: slotLabels[0].join(", "),
+      v2Category: slotLabels[1].join(", "),
+      v3Category: slotLabels[2].join(", "),
+      v4Category: slotLabels[3].join(", "),
     });
 
     for (const row of members) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import MultiSelectFilter, { BLANK } from "@/components/table/MultiSelectFilter";
 import Pagination from "@/components/table/Pagination";
@@ -16,21 +16,24 @@ interface ColumnDef {
   key: string;
   dataIdx: number;
   numeric: boolean;
+  categoryIdx?: number;
 }
 
 // Display columns. `dataIdx` maps the display index to the raw row index
-// (rows carry 9 fields: item, size, pnRating, mcReceivedPending, total, v1..v4;
-// the MC RECEIVED/PENDING field is skipped in the UI). V1..V4 hold the
-// BAL BILL AG CONT for each variant of the item, derived on recompute.
+// (rows carry 13 fields: item, size, pnRating, mcReceivedPending, total, v1..v4,
+// then v1Category..v4Category; the MC RECEIVED/PENDING field is skipped in the
+// UI). V1..V4 hold the BAL BILL AG CONT for each variant of the item, derived on
+// recompute, and the matching category is shown beside the value and used by the
+// column filter.
 const COLUMNS: ColumnDef[] = [
   { label: "ITEM NAME", key: "item", dataIdx: 0, numeric: false },
   { label: "SIZE", key: "size", dataIdx: 1, numeric: false },
   { label: "PN RATING", key: "pnRating", dataIdx: 2, numeric: false },
   { label: "Total Bal bill ag cont", key: "total", dataIdx: 4, numeric: true },
-  { label: "V1", key: "v1", dataIdx: 5, numeric: true },
-  { label: "V2", key: "v2", dataIdx: 6, numeric: true },
-  { label: "V3", key: "v3", dataIdx: 7, numeric: true },
-  { label: "V4", key: "v4", dataIdx: 8, numeric: true },
+  { label: "V1", key: "v1", dataIdx: 5, numeric: true, categoryIdx: 9 },
+  { label: "V2", key: "v2", dataIdx: 6, numeric: true, categoryIdx: 10 },
+  { label: "V3", key: "v3", dataIdx: 7, numeric: true, categoryIdx: 11 },
+  { label: "V4", key: "v4", dataIdx: 8, numeric: true, categoryIdx: 12 },
 ];
 
 const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
@@ -46,6 +49,12 @@ const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
 
 function cellText(row: unknown[], dataIdx: number): string {
   return String(row[dataIdx] ?? "").trim();
+}
+
+// Value used for filtering a column: the category for V1..V4, otherwise the
+// cell value itself.
+function filterText(row: unknown[], col: ColumnDef): string {
+  return cellText(row, col.categoryIdx ?? col.dataIdx);
 }
 
 function compareCell(a: string, b: string, numeric: boolean): number {
@@ -116,36 +125,57 @@ export default function IndentListingTable({
     document.addEventListener("mouseup", handleMouseUp);
   };
 
-  const columnOptions = useMemo(() => {
-    const options: Record<number, string[]> = {};
-    COLUMNS.forEach((col, idx) => {
-      const values = new Set<string>();
-      for (const row of rows) {
-        const v = cellText(row, col.dataIdx);
-        if (v !== "") values.add(v);
-      }
-      options[idx] = [...values].sort((a, b) =>
-        a.localeCompare(b, undefined, { numeric: true }),
-      );
-    });
-    return options;
-  }, [rows]);
-
-  const filtered = useMemo(() => {
-    let out = rows;
-    for (const [colIdxStr, selected] of Object.entries(filters)) {
-      const colIdx = Number(colIdxStr);
-      const col = COLUMNS[colIdx];
-      if (!col || selected.length === 0) continue;
-      out = out.filter((row) => {
-        const v = cellText(row, col.dataIdx);
+  // Apply every active filter except `excludeIdx`. Used both for the visible
+  // rows (excludeIdx = -1) and to compute each column's cascading options.
+  const applyFilters = useCallback(
+    (excludeIdx: number, source: unknown[][]) => {
+      let out = source;
+      for (const [colIdxStr, selected] of Object.entries(filters)) {
+        const colIdx = Number(colIdxStr);
+        const col = COLUMNS[colIdx];
+        if (!col || colIdx === excludeIdx || selected.length === 0) continue;
         const selectedSet = new Set(selected);
-        if (selectedSet.has(BLANK)) return v === "";
-        return selectedSet.has(v);
-      });
-    }
-    return out;
-  }, [rows, filters]);
+        out = out.filter((row) => {
+          const v = filterText(row, col);
+          if (selectedSet.has(BLANK)) return v === "";
+          return selectedSet.has(v);
+        });
+      }
+      return out;
+    },
+    [filters],
+  );
+
+  const filtered = useMemo(
+    () => applyFilters(-1, rows),
+    [applyFilters, rows],
+  );
+
+  // Cascading options/counts: each column offers only the values present among
+  // rows matching all other active filters (plus its own current selection, so
+  // a selected value can still be deselected).
+  const { cascadedOptions, cascadedCounts } = useMemo(() => {
+    const options: Record<number, string[]> = {};
+    const counts: Record<number, Record<string, number>> = {};
+    COLUMNS.forEach((col, idx) => {
+      const scoped = applyFilters(idx, rows);
+      const valueCounts = new Map<string, number>();
+      for (const row of scoped) {
+        const v = filterText(row, col);
+        valueCounts.set(v, (valueCounts.get(v) ?? 0) + 1);
+      }
+      const selectedSet = new Set(filters[idx] ?? []);
+      for (const v of selectedSet) {
+        if (v === BLANK) continue;
+        if (!valueCounts.has(v)) valueCounts.set(v, 0);
+      }
+      options[idx] = [...valueCounts.keys()]
+        .filter((v) => v !== "")
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      counts[idx] = Object.fromEntries(valueCounts);
+    });
+    return { cascadedOptions: options, cascadedCounts: counts };
+  }, [applyFilters, rows, filters]);
 
   const sorted = useMemo(() => {
     const out = [...filtered];
@@ -192,7 +222,19 @@ export default function IndentListingTable({
   const hasActiveFilters = Object.values(filters).some((v) => v.length > 0);
 
   const renderCell = (row: unknown[], col: ColumnDef) => {
-    return String(row[col.dataIdx] ?? "") || "—";
+    const value = String(row[col.dataIdx] ?? "").trim();
+    if (value === "") return "—";
+    if (col.categoryIdx === undefined) return value;
+    const category = String(row[col.categoryIdx] ?? "").trim();
+    if (category === "") return value;
+    return (
+      <span className="inline-flex items-baseline justify-end gap-1">
+        <span>{value}</span>
+        <span className="text-[10px] font-medium text-muted-foreground">
+          -({category})
+        </span>
+      </span>
+    );
   };
 
   return (
@@ -246,8 +288,9 @@ export default function IndentListingTable({
                     <MultiSelectFilter
                       label={col.label}
                       allLabel={`${col.label}: All`}
-                      options={columnOptions[idx] ?? []}
-                      cascadedOptions={columnOptions[idx] ?? []}
+                      options={cascadedOptions[idx] ?? []}
+                      cascadedOptions={cascadedOptions[idx] ?? []}
+                      counts={cascadedCounts[idx] ?? {}}
                       selected={filters[idx] ?? []}
                       onChange={(v) =>
                         setFilters((prev) => ({ ...prev, [idx]: v }))

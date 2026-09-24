@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { pnRatingBucket } from "@/lib/pnRatingMatcher";
 
 function normalizeKey(value: unknown): string {
   return String(value ?? "")
@@ -47,7 +48,7 @@ export async function POST() {
 
       const item = row.item?.trim() || null;
       const size = row.size?.trim() || null;
-      const pnRating = row.pnRating?.trim() || null;
+      const pnRating = pnRatingBucket(row.pnRating) || null;
 
       const key = [
         normalizeKey(item),
@@ -77,7 +78,7 @@ export async function POST() {
         [
           normalizeKey(r.item),
           normalizeKey(r.size),
-          normalizeKey(r.pnRating),
+          normalizeKey(pnRatingBucket(r.pnRating) || null),
           normalizeKey(r.mcReceivedPending),
         ].join("||"),
         r,

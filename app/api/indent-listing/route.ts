@@ -11,6 +11,10 @@ export const INDENT_LISTING_HEADERS = [
   "V2",
   "V3",
   "V4",
+  "V1 CATEGORY",
+  "V2 CATEGORY",
+  "V3 CATEGORY",
+  "V4 CATEGORY",
 ] as const;
 
 export async function GET() {
@@ -40,6 +44,10 @@ export async function GET() {
       item.v2,
       item.v3,
       item.v4,
+      item.v1Category,
+      item.v2Category,
+      item.v3Category,
+      item.v4Category,
     ]);
 
     return NextResponse.json({

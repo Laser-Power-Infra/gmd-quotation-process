@@ -33,3 +33,18 @@ export function matchPnRating(text: string | null | undefined): string | null {
   }
   return null
 }
+
+/**
+ * Normalized bucket used for grouping/merging PN ratings. Recognized ratings
+ * collapse to their canonical bucket (e.g. "PN - 10" and "PN - 16" both become
+ * "PN-10/16"); unrecognized values fall back to the normalized raw text.
+ * Blank/empty values bucket to "".
+ */
+export function pnRatingBucket(text: string | null | undefined): string {
+  const raw = String(text ?? '').trim()
+  if (!raw) return ''
+  const matched = matchPnRating(raw)
+  if (matched) return matched
+  return raw.replace(/\s+/g, ' ').toUpperCase()
+}
+

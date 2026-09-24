@@ -33,26 +33,37 @@ test('SLV family: plain -> V1, 9523 -> V2, RISING -> V3, RISING+9523 -> V4', () 
     baseItem: 'SLV',
     slot: 1,
     variant: 'PLAIN',
+    label: 'Base',
     hasVersionExtras: false,
   })
   assert.deepEqual(parseItem('SLV-9523'), {
     baseItem: 'SLV',
     slot: 2,
     variant: '9523',
+    label: '9523',
     hasVersionExtras: true,
   })
   assert.deepEqual(parseItem('SLV RISING'), {
     baseItem: 'SLV',
     slot: 3,
     variant: 'RISING',
+    label: 'Rising',
     hasVersionExtras: true,
   })
   assert.deepEqual(parseItem('SLV-RISING-9523'), {
     baseItem: 'SLV',
     slot: 4,
     variant: 'RISING_9523',
+    label: 'Rising 9523',
     hasVersionExtras: true,
   })
+})
+
+test('variant labels cover DI/CS/Wafer and combine multiple suffixes', () => {
+  assert.equal(parseItem('BFV-DI').label, 'DI')
+  assert.equal(parseItem('DPCV-CS').label, 'CS')
+  assert.equal(parseItem('BFV-WAFER').label, 'Wafer')
+  assert.equal(parseItem('SLV RISING-CS').label, 'Rising CS')
 })
 
 test('TPAV+SLV and SLV METAL follow the same SLV-family slot mapping', () => {
@@ -171,6 +182,7 @@ test('returns empty result for null/undefined/empty', () => {
     baseItem: null,
     slot: null,
     variant: null,
+    label: '',
     hasVersionExtras: false,
   }
   assert.deepEqual(parseItem(null), empty)
@@ -183,6 +195,7 @@ test('returns baseItem null for unknown item', () => {
     baseItem: null,
     slot: null,
     variant: null,
+    label: '',
     hasVersionExtras: false,
   })
 })

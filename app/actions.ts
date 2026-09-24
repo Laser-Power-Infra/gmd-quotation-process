@@ -3635,6 +3635,10 @@ export async function recomputeIndentListingVersionsAction() {
         v2: true,
         v3: true,
         v4: true,
+        v1Category: true,
+        v2Category: true,
+        v3Category: true,
+        v4Category: true,
       },
     });
 
@@ -3649,11 +3653,16 @@ export async function recomputeIndentListingVersionsAction() {
       if (!cur) return true;
       return (
         String(cur.item ?? "") !== u.item ||
+        String(cur.pnRating ?? "") !== u.pnRating ||
         Number(cur.totalBalBillAgCont ?? 0) !== u.totalBalBillAgCont ||
         String(cur.v1 ?? "") !== u.v1 ||
         String(cur.v2 ?? "") !== u.v2 ||
         String(cur.v3 ?? "") !== u.v3 ||
-        String(cur.v4 ?? "") !== u.v4
+        String(cur.v4 ?? "") !== u.v4 ||
+        String(cur.v1Category ?? "") !== u.v1Category ||
+        String(cur.v2Category ?? "") !== u.v2Category ||
+        String(cur.v3Category ?? "") !== u.v3Category ||
+        String(cur.v4Category ?? "") !== u.v4Category
       );
     });
 
@@ -3664,11 +3673,16 @@ export async function recomputeIndentListingVersionsAction() {
             where: { id: u.id },
             data: {
               item: u.item,
+              pnRating: u.pnRating,
               totalBalBillAgCont: u.totalBalBillAgCont,
               v1: u.v1,
               v2: u.v2,
               v3: u.v3,
               v4: u.v4,
+              v1Category: u.v1Category,
+              v2Category: u.v2Category,
+              v3Category: u.v3Category,
+              v4Category: u.v4Category,
               syncedAt,
             },
           }),
