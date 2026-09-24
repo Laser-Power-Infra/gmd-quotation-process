@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X, PackageCheck, ExternalLink, ImageIcon } from "lucide-react";
@@ -770,6 +770,30 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     dispatch(resetFilters());
     toast.success("All filters reset successfully.");
   };
+
+  const activeDetailsFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.itemType && filters.itemType.length > 0) count++;
+    if (filters.moc && filters.moc.length > 0) count++;
+    if (filters.size && filters.size.length > 0) count++;
+    if (filters.pnRating && filters.pnRating.length > 0) count++;
+    if (filters.operationType && filters.operationType.length > 0) count++;
+    if (filters.extension && filters.extension.length > 0) count++;
+    if (filters.bypass && filters.bypass.length > 0) count++;
+    if (filters.others && filters.others.length > 0) count++;
+    return count;
+  }, [filters]);
+
+  const handleClearDetailsFilters = useCallback(() => {
+    dispatch(setFilter({ field: "itemType", value: [] }));
+    dispatch(setFilter({ field: "moc", value: [] }));
+    dispatch(setFilter({ field: "size", value: [] }));
+    dispatch(setFilter({ field: "pnRating", value: [] }));
+    dispatch(setFilter({ field: "operationType", value: [] }));
+    dispatch(setFilter({ field: "extension", value: [] }));
+    dispatch(setFilter({ field: "bypass", value: [] }));
+    dispatch(setFilter({ field: "others", value: [] }));
+  }, [dispatch]);
 
   const getFilteredItems = useCallback((enquiry: EnquiryData) => {
     if (!enquiry.items) return [];
@@ -2480,10 +2504,176 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             </th>
 
             {/* Details */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Details</span>
+            <th className="relative py-2.5 px-2.5 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span>Details</span>
+                  {activeDetailsFilterCount > 0 && (
+                    <span className="inline-flex items-center justify-center h-4 px-1.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+                      {activeDetailsFilterCount}
+                    </span>
+                  )}
+                </div>
+                {activeDetailsFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearDetailsFilters}
+                    className="inline-flex items-center gap-0.5 text-[9px] font-medium text-muted-foreground hover:text-red-500 dark:hover:text-red-400 cursor-pointer transition-colors normal-case"
+                    title="Clear all details filters"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                    <span>Clear</span>
+                  </button>
+                )}
               </div>
+
+              {/* Side-by-side compact dropdown filters for all 8 categories */}
+              <div className="grid grid-cols-4 gap-1 mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Item Type"
+                  allLabel="Type"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "Type" : `Type (${sel.length})`)}
+                  options={dropdownOptions.itemTypes}
+                  cascadedOptions={cascadedOptions.itemType}
+                  selected={filters.itemType}
+                  onChange={(v) => dispatch(setFilter({ field: "itemType", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search type..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.itemType.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="start"
+                />
+
+                <MultiSelectFilter
+                  label="MOC"
+                  allLabel="MOC"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "MOC" : `MOC (${sel.length})`)}
+                  options={dropdownOptions.mocs}
+                  cascadedOptions={cascadedOptions.moc}
+                  selected={filters.moc}
+                  onChange={(v) => dispatch(setFilter({ field: "moc", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search MOC..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.moc.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="start"
+                />
+
+                <MultiSelectFilter
+                  label="Size"
+                  allLabel="Size"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "Size" : `Size (${sel.length})`)}
+                  options={dropdownOptions.sizes}
+                  cascadedOptions={cascadedOptions.size}
+                  selected={filters.size}
+                  onChange={(v) => dispatch(setFilter({ field: "size", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search size..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.size.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="start"
+                />
+
+                <MultiSelectFilter
+                  label="PN Rating"
+                  allLabel="PN"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "PN" : `PN (${sel.length})`)}
+                  options={dropdownOptions.pnRatings}
+                  cascadedOptions={cascadedOptions.pnRating}
+                  selected={filters.pnRating}
+                  onChange={(v) => dispatch(setFilter({ field: "pnRating", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search PN rating..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.pnRating.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="end"
+                />
+
+                <MultiSelectFilter
+                  label="Operation Type"
+                  allLabel="Op Type"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "Op Type" : `Op (${sel.length})`)}
+                  options={dropdownOptions.operationTypes}
+                  cascadedOptions={cascadedOptions.operationType}
+                  selected={filters.operationType}
+                  onChange={(v) => dispatch(setFilter({ field: "operationType", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search operation..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.operationType.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="start"
+                />
+
+                <MultiSelectFilter
+                  label="Extension"
+                  allLabel="Ext"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "Ext" : `Ext (${sel.length})`)}
+                  options={dropdownOptions.extensions}
+                  cascadedOptions={cascadedOptions.extension}
+                  selected={filters.extension}
+                  onChange={(v) => dispatch(setFilter({ field: "extension", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search extension..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.extension.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="center"
+                />
+
+                <MultiSelectFilter
+                  label="Bypass"
+                  allLabel="Bypass"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "Bypass" : `Byp (${sel.length})`)}
+                  options={dropdownOptions.bypasses}
+                  cascadedOptions={cascadedOptions.bypass}
+                  selected={filters.bypass}
+                  onChange={(v) => dispatch(setFilter({ field: "bypass", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search bypass..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.bypass.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="end"
+                />
+
+                <MultiSelectFilter
+                  label="Other"
+                  allLabel="Other"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "Other" : `Oth (${sel.length})`)}
+                  options={dropdownOptions.others || ["flange", "gasket", "nut and bolt"]}
+                  cascadedOptions={cascadedOptions.others || []}
+                  selected={filters.others || []}
+                  onChange={(v) => dispatch(setFilter({ field: "others", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search other..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    (filters.others || []).length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="end"
+                />
+              </div>
+
               <div
                 onMouseDown={(e) => handleMouseDown(11, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
