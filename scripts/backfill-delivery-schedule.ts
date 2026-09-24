@@ -2,6 +2,7 @@ import "dotenv/config";
 import { PrismaClient } from "../app/generated/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { computeDeliverySchedule, DEFAULT_DELIVERY_SCHEDULE } from "../lib/deliverySchedule";
+import { resolveImportedInhouse } from "../lib/importInhouseMapping";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -20,8 +21,12 @@ async function main() {
   const items = await prisma.enquiryItem.findMany({
     select: {
       id: true,
+      itemName: true,
+      itemType: true,
+      size: true,
       quantity: true,
       availableStock: true,
+      importedInhouse: true,
       deliverySchedule: true,
     },
   });
@@ -38,7 +43,9 @@ async function main() {
   }[] = [];
 
   for (const item of items) {
-    const next = computeDeliverySchedule(item.quantity, item.availableStock);
+    const importedInhouse =
+      item.importedInhouse ?? resolveImportedInhouse(item.itemType, item.size, item.itemName);
+    const next = computeDeliverySchedule(item.quantity, item.availableStock, item.size, importedInhouse);
     if (next === null) {
       if (item.deliverySchedule !== null) {
         rows.push({

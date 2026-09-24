@@ -235,7 +235,23 @@ const STATIC_PBGS = [
 
 const STATIC_ORDER_STATUSES = ["PENDING", "LOST", "ORDER RECVD"];
 
+const STATIC_CLOSURE_STATUSES = ["Sent", "Rejected", "Pending"];
+
 const STATIC_OTHERS = ["flange", "gasket", "nut and bolt"];
+
+// Single source of truth for the Delivery Schedule dropdown. Computed schedules
+// from lib/deliverySchedule.ts ("2-3 weeks", "2 months", "3 months", "Min. 3 to 4 months")
+// must all be present here.
+const STATIC_DELIVERY_SCHEDULES = [
+  "-",
+  "2-3 weeks",
+  "2 months",
+  "3 months",
+  "Min. 3 to 4 months",
+  "Ready Stock",
+  "Within 2 months",
+  "30 Days FRom the Date of MFC",
+];
 
 const lists: Record<string, string[]> = {
   PARTY: PARTY_NAMES,
@@ -250,10 +266,12 @@ const lists: Record<string, string[]> = {
   INSPECTION: STATIC_INSPECTIONS,
   PBG: STATIC_PBGS,
   ORDER_STATUS: STATIC_ORDER_STATUSES,
+  CLOSURE_STATUS: STATIC_CLOSURE_STATUSES,
   OPERATION_TYPE: [...ALLOWED_OPERATION_TYPES],
   EXTENSION: [...ALLOWED_EXTENSIONS],
   BYPASS: [...ALLOWED_BYPASSES],
   OTHERS: [...STATIC_OTHERS],
+  DELIVERY: [...STATIC_DELIVERY_SCHEDULES],
 };
 
 async function main() {

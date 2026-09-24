@@ -215,13 +215,15 @@ export default function DashboardContainer({
       inspections: mergeArrays(dropdownOptions.inspections, extractUniqueStringValues(enquiries, "inspection")),
       pbgs: mergeArrays(dropdownOptions.pbgs, extractUniqueStringValues(enquiries, "pbg")),
       orderStatuses: mergeArrays(dropdownOptions.orderStatuses, extractUniqueStringValues(enquiries, "orderStatus")),
+      closureStatuses: mergeArrays(dropdownOptions.closureStatuses, extractUniqueStringValues(enquiries, "closureStatus")),
       pnRatings: mergeArrays(dropdownOptions.pnRatings, extractUniqueStringValues(allItems, "pnRating")),
       operationTypes: mergeArrays(dropdownOptions.operationTypes, extractUniqueStringValues(allItems, "operationType")),
       extensions: mergeArrays(dropdownOptions.extensions, extractUniqueStringValues(allItems, "extension")),
       bypasses: mergeArrays(dropdownOptions.bypasses, extractUniqueStringValues(allItems, "bypass")),
       others: mergeArrays((dropdownOptions as any).others ?? [], allItems.flatMap((i:any)=>Array.isArray(i.others)?i.others:[])),
       vaPercents: mergeArrays(dropdownOptions.vaPercents, extractUniqueStringValues(allItems, "vaPercent")),
-      deliverySchedules: mergeArrays(dropdownOptions.deliverySchedules, extractUniqueStringValues(allItems, "deliverySchedule")),
+      // Delivery Schedules are sourced solely from LookupOption type=DELIVERY
+      // (single source of truth), so no merge with item values here.
     };
   }, [enquiries, dropdownOptions]);
 

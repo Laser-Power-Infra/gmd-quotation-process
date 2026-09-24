@@ -51,13 +51,12 @@ export default function DashboardHeader({
     [allEnquiries, filters, generatedImages]
   );
 
-  const sentCount = useMemo(
-    () =>
-      filteredEnquiries.filter(
-        (e) => String(e.closureStatus || "").trim().toLowerCase() === "sent"
-      ).length,
-    [filteredEnquiries]
-  );
+  const closureOptions: string[] = (dropdownOptions?.closureStatuses as string[]) ?? [];
+
+  const countForStatus = (status: string) =>
+    filteredEnquiries.filter(
+      (e) => String(e.closureStatus || "").trim().toLowerCase() === status.toLowerCase()
+    ).length;
 
   const notSentCount = useMemo(
     () =>
@@ -68,11 +67,12 @@ export default function DashboardHeader({
     [filteredEnquiries]
   );
 
-  const sentActive = closureFilter.some((v) => v.toLowerCase() === "sent");
+  const isStatusActive = (status: string) =>
+    closureFilter.some((v) => v.toLowerCase() === status.toLowerCase());
   const notSentActive = closureFilter.includes(BLANK);
 
-  const toggleSent = () =>
-    dispatch(setFilter({ field: "closureStatus", value: sentActive ? [] : ["sent"] }));
+  const toggleStatus = (status: string) =>
+    dispatch(setFilter({ field: "closureStatus", value: isStatusActive(status) ? [] : [status] }));
 
   const toggleNotSent = () =>
     dispatch(setFilter({ field: "closureStatus", value: notSentActive ? [] : [BLANK] }));
@@ -111,18 +111,24 @@ export default function DashboardHeader({
 
       <div className="flex items-center gap-3 shrink-0">
         <div className="flex items-center rounded-md border border-border bg-background p-0.5">
-          <button
-            type="button"
-            onClick={toggleSent}
-            title="Show enquiries with Closure Status 'sent'"
-            className={`h-7 rounded-md px-3 text-sm font-semibold transition-colors cursor-pointer ${
-              sentActive
-                ? "bg-[#0f62fe] text-white"
-                : "text-muted-foreground hover:bg-accent"
-            }`}
-          >
-            Sent ({sentCount})
-          </button>
+          {closureOptions.map((status) => {
+            const active = isStatusActive(status);
+            return (
+              <button
+                key={status}
+                type="button"
+                onClick={() => toggleStatus(status)}
+                title={`Show enquiries with Closure Status '${status}'`}
+                className={`h-7 rounded-md px-3 text-sm font-semibold transition-colors cursor-pointer ${
+                  active
+                    ? "bg-[#0f62fe] text-white"
+                    : "text-muted-foreground hover:bg-accent"
+                }`}
+              >
+                {status} ({countForStatus(status)})
+              </button>
+            );
+          })}
           <button
             type="button"
             onClick={toggleNotSent}

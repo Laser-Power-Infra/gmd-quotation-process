@@ -122,6 +122,7 @@ export default async function Page() {
     utilities: sortOptions(lookup.UTILITY ?? []),
     vaPercents: [],
     orderStatuses: sortOptions(lookup.ORDER_STATUS ?? []),
+    closureStatuses: sortOptions(lookup.CLOSURE_STATUS ?? []),
     itemTypes: sortOptions(lookup.ITEM_TYPE ?? []),
     mocs: sortOptions(lookup.MOC ?? []),
     sizes: sortOptions(lookup.SIZE ?? []),

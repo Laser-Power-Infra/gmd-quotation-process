@@ -15,6 +15,7 @@ import { splitCsvLinks } from "@/lib/gmd_lib/contract-order-links";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, getRmTypeMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
 import { computeDeliverySchedule, syncDeliveryScheduleForItem } from "@/lib/deliverySchedule";
+import { resolveImportedInhouse } from "@/lib/importInhouseMapping";
 import { makeImageKey } from "@/lib/imageKey";
 import { parseAndValidateProdOrderNumber } from "@/lib/contractValidation";
 import { matchPnRating } from "@/lib/pnRatingMatcher";
@@ -144,6 +145,7 @@ export async function createNewEnquiryAction(formData: {
             if (itemCost !== null && itemCost > 0 && itemVa !== null) {
               itemQR = roundUp(itemCost * (1 + (itemVa / 100))).toFixed(2);
             }
+            const importedInhouse = resolveImportedInhouse(item.resolved.itemType, item.resolved.size, item.itemName);
             return {
               position: index,
               itemName: item.itemName,
@@ -165,7 +167,8 @@ export async function createNewEnquiryAction(formData: {
               stockQuantity: (item as any).stockQuantity || null,
               availableStock: (item as any).availableStock || null,
               stockAgainstContract: (item as any).stockAgainstContract || null,
-              deliverySchedule: computeDeliverySchedule(item.quantity, item.availableStock),
+              importedInhouse,
+              deliverySchedule: computeDeliverySchedule(item.quantity, item.availableStock, item.resolved.size, importedInhouse),
               discount: item.discount || null,
               vaPercent: itemVa !== null ? String(itemVa) : null,
               quotedRate: itemQR,
@@ -279,6 +282,7 @@ export async function addItemsAction(formData: {
         if (itemCost !== null && itemCost > 0 && itemVa !== null) {
           itemQR = roundUp(itemCost * (1 + (itemVa / 100))).toFixed(2);
         }
+        const importedInhouse = resolveImportedInhouse(item.resolved.itemType, item.resolved.size, item.itemName);
         return {
           position: startPos + index,
           enquiryId: formData.enquiryId,
@@ -301,7 +305,8 @@ export async function addItemsAction(formData: {
           stockQuantity: (item as any).stockQuantity || null,
           availableStock: (item as any).availableStock || null,
           stockAgainstContract: (item as any).stockAgainstContract || null,
-          deliverySchedule: computeDeliverySchedule(item.quantity, item.availableStock),
+          importedInhouse,
+          deliverySchedule: computeDeliverySchedule(item.quantity, item.availableStock, item.resolved.size, importedInhouse),
           discount: item.discount || null,
           vaPercent: itemVa !== null ? String(itemVa) : null,
           quotedRate: itemQR,
@@ -480,6 +485,14 @@ export async function updateEnquiryItemAction(formData: {
     });
 
     const finalOperationType = formData.operationType || null;
+    // Re-derive import/in-house only when the source specs changed; otherwise keep
+    // any existing (possibly manual) value, filling it in if still empty.
+    const importInhouseSpecsChanged =
+      resolved.itemType !== item.itemType || (resolved.size ?? null) !== (item.size ?? null);
+    const derivedImportedInhouse = resolveImportedInhouse(resolved.itemType, resolved.size, formData.itemName);
+    const itemImportedInhouse = importInhouseSpecsChanged
+      ? derivedImportedInhouse
+      : item.importedInhouse ?? derivedImportedInhouse;
     // Recompute erpItemCode with BOM gate if any derived field changed
     const oldCodeForDialog = item.erpItemCode;
     let erpItemCode: string | null = oldCodeForDialog;
@@ -542,7 +555,8 @@ export async function updateEnquiryItemAction(formData: {
         stockQuantity: (formData as any).stockQuantity || null,
         availableStock: (formData as any).availableStock || null,
         stockAgainstContract: (formData as any).stockAgainstContract || null,
-        deliverySchedule: computeDeliverySchedule(updatedQty, formData.availableStock !== undefined ? formData.availableStock : item.availableStock),
+        importedInhouse: itemImportedInhouse,
+        deliverySchedule: computeDeliverySchedule(updatedQty, formData.availableStock !== undefined ? formData.availableStock : item.availableStock, resolved.size, itemImportedInhouse),
         discount: formData.discount || null,
         vaPercent: finalVa !== null ? String(finalVa) : null,
         quotedRate: finalQuotedRate,
@@ -1127,6 +1141,18 @@ export async function updateItemFieldAction(
         data: updateData,
       });
 
+      // Re-derive import/in-house classification when a source field changes.
+      // A direct `importedInhouse` edit is left untouched (manual override).
+      if (field === "itemType" || field === "size" || field === "itemName") {
+        const derived = resolveImportedInhouse(dbItem.itemType, dbItem.size, dbItem.itemName);
+        if (derived !== dbItem.importedInhouse) {
+          dbItem = await prisma.enquiryItem.update({
+            where: { id: itemId },
+            data: { importedInhouse: derived },
+          });
+        }
+      }
+
       // If rmType changed and bomId is blank, back-calculate and fill bomId
       if (field === "rmType" && parsedVal) {
         try {
@@ -1237,8 +1263,9 @@ export async function updateItemFieldAction(
       }
     }
 
-    // Auto-set delivery schedule when quantity or availableStock changes (both present, stock >= qty)
-    if (field === "quantity" || field === "availableStock") {
+    // Auto-set delivery schedule when any input to the schedule logic changes
+    // (quantity, availableStock, size, itemType, itemName or import/in-house class).
+    if (["quantity", "availableStock", "size", "itemType", "itemName", "importedInhouse"].includes(field)) {
       await syncDeliveryScheduleForItem(itemId);
     }
 
@@ -3675,59 +3702,6 @@ export async function recomputeIndentListingVersionsAction() {
     return {
       success: false,
       error: error.message || "Failed to recompute IndentListing versions.",
-    };
-  }
-}
-
-const INDENT_LISTING_EDITABLE_FIELDS = new Set(["v1", "v2", "v3", "v4"]);
-
-export async function updateIndentListingFieldAction(
-  id: string,
-  field: string,
-  value: string | null,
-) {
-  "use server";
-  try {
-    if (!INDENT_LISTING_EDITABLE_FIELDS.has(field)) {
-      return { success: false, error: `Field "${field}" is not editable.` };
-    }
-    const existing = await prisma.indentListing.findUnique({
-      where: { id },
-      select: { [field]: true },
-    });
-    if (!existing) {
-      return { success: false, error: "Indent listing row not found." };
-    }
-    const prev = (existing as unknown as Record<string, string | null>)[field] ?? "";
-    const next = value ?? "";
-    if (String(prev).trim() === String(next).trim()) {
-      return {
-        success: true,
-        data: {
-          id,
-          field,
-          value,
-          changed: false,
-          reason: `Value already set to "${next}" in the database.`,
-        },
-      };
-    }
-    await prisma.indentListing.update({
-      where: { id },
-      data: { [field]: value, syncedAt: new Date() },
-    });
-    console.log(
-      `[indent-listing-update] id=${id} field=${field} "${String(prev).trim()}" -> "${String(next).trim()}"`,
-    );
-    return {
-      success: true,
-      data: { id, field, value, changed: true },
-    };
-  } catch (error: any) {
-    console.error("Error updating IndentListing field:", error);
-    return {
-      success: false,
-      error: error.message || "Failed to update IndentListing field.",
     };
   }
 }

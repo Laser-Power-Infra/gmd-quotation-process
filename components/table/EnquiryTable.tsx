@@ -141,7 +141,7 @@ function matchesText(filterVal: string, actual: unknown): boolean {
 const ALL_DROPDOWN_FIELDS = [
   "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "others",
-  "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "costRefCode", "cost", "contractReviewRate", "pdcostValidation", "availableStock", "rmType",
+  "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "costRefCode", "cost", "contractReviewRate", "pdcostValidation", "availableStock", "rmType", "deliverySchedule",
   "contractNo",
 ] as const;
 
@@ -896,6 +896,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
+        filters.deliverySchedule.length > 0 &&
+        !matchesMulti(filters.deliverySchedule, item.deliverySchedule ?? null)
+      ) {
+        return false;
+      }
+      if (
         filters.stockAgainstContract &&
         !(item.stockAgainstContract || "").toLowerCase().includes(filters.stockAgainstContract.toLowerCase())
       ) {
@@ -1444,6 +1450,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (
         filters.rmType.length > 0 &&
         !matchesMulti(filters.rmType, item.rmType ?? null)
+      ) {
+        return false;
+      }
+      if (
+        filters.deliverySchedule.length > 0 &&
+        !matchesMulti(filters.deliverySchedule, item.deliverySchedule ?? null)
       ) {
         return false;
       }
@@ -2390,7 +2402,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <MultiSelectFilter
                   label="Closure Status"
                   allLabel="All"
-                  options={["Sent"]}
+                  options={dropdownOptions.closureStatuses}
                   cascadedOptions={cascadedOptions.closureStatus}
                   selected={filters.closureStatus}
                   onChange={(v) => dispatch(setFilter({ field: "closureStatus", value: v }))}
@@ -3071,8 +3083,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Delivery Schedule</span>
+                {renderSortArrow("deliverySchedule")}
               </div>
-              <div className="h-7 mt-1.5" />
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Delivery Schedule"
+                  allLabel="All"
+                  options={cascadedOptions.deliverySchedule ?? []}
+                  cascadedOptions={cascadedOptions.deliverySchedule ?? []}
+                  selected={filters.deliverySchedule}
+                  onChange={(v) => dispatch(setFilter({ field: "deliverySchedule", value: v }))}
+                  includeBlank
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(34, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -3561,23 +3584,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
                     {/* Closure Status */}
                     <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      <input
-                        key={enquiry.id + "-closureStatus-" + (enquiry.closureStatus || "")}
-                        type="text"
-                        defaultValue={enquiry.closureStatus || ""}
-                        onBlur={(e) => {
-                          if (e.target.value !== (enquiry.closureStatus || "")) {
-                            handleEnquiryFieldChange(enquiry.id, "closureStatus", e.target.value);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            (e.target as HTMLInputElement).blur();
-                          }
-                        }}
-                        placeholder="-"
-                        className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-center"
-                      />
+                      <select
+                        value={enquiry.closureStatus || ""}
+                        onChange={(e) => handleEnquiryFieldChange(enquiry.id, "closureStatus", e.target.value)}
+                        className={cellSelectClass}
+                      >
+                        <option value="">-</option>
+                        {dropdownOptions.closureStatuses.map((opt) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                        {enquiry.closureStatus && !dropdownOptions.closureStatuses.includes(enquiry.closureStatus) && (
+                          <option value={enquiry.closureStatus}>{enquiry.closureStatus}</option>
+                        )}
+                      </select>
                     </td>
 
                     {/* Project Reference */}

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import GMDUpdateHeader from "@/components/gmd_dashboard/GMDUpdateHeader";
 import GMDUpdateSkeleton from "@/components/gmd_dashboard/skeletons/GMDUpdateSkeleton";
 import IndentListingTable from "@/components/indent_listing/IndentListingTable";
-import { updateIndentListingFieldAction, recomputeIndentListingVersionsAction } from "@/app/actions";
+import { recomputeIndentListingVersionsAction } from "@/app/actions";
 
 const STATUS_IDX = 3;
 
@@ -69,37 +69,6 @@ export default function IndentListingPage() {
       setSyncing(false);
     }
   }, [fetchData]);
-
-  const handleUpdateCell = useCallback(
-    async (id: string, field: string, value: string) => {
-      const res = await updateIndentListingFieldAction(id, field, value);
-      if (!res?.success) {
-        toast.error(res?.error ?? "Failed to update field");
-        throw new Error(res?.error ?? "Failed to update field");
-      }
-      toast.success(`${field.toUpperCase()} updated`);
-      setData((prev) => {
-        if (!prev) return prev;
-        const idx = prev.ids.indexOf(id);
-        if (idx === -1) return prev;
-        const rows = prev.rows.map((r) => [...r]);
-        const col = [
-          "ITEM NAME",
-          "SIZE",
-          "PN RATING",
-          "MC RECEIVED/PENDING",
-          "TOTAL (BAL BILL AG CONT)",
-          "V1",
-          "V2",
-          "V3",
-          "V4",
-        ].indexOf(field.toUpperCase());
-        if (col !== -1) rows[idx][col] = value;
-        return { ...prev, rows };
-      });
-    },
-    [],
-  );
 
   const handleRecompute = useCallback(async () => {
     setSyncing(true);
@@ -195,13 +164,11 @@ export default function IndentListingPage() {
           title="MC RECEIVED"
           rows={received.rows}
           ids={received.ids}
-          onUpdateCell={handleUpdateCell}
         />
         <IndentListingTable
           title="MC PENDING"
           rows={pending.rows}
           ids={pending.ids}
-          onUpdateCell={handleUpdateCell}
         />
       </div>
     </main>

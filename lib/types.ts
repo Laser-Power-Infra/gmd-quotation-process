@@ -42,6 +42,7 @@ export interface EnquiryItemData {
   costLogic?: string | null;
   availableStock?: string | null;
   stockAgainstContract?: string | null;
+  importedInhouse?: string | null;
 }
 
 export interface AttachmentData {
@@ -87,6 +88,7 @@ export interface DropdownOptions {
   utilities: string[];
   vaPercents: string[];
   orderStatuses: string[];
+  closureStatuses: string[];
   itemTypes: string[];
   mocs: string[];
   sizes: string[];
@@ -151,6 +153,7 @@ export interface FiltersState {
   stockQuantity: string;
   availableStock: string[];
   rmType: string[];
+  deliverySchedule: string[];
   stockAgainstContract: string;
   contractNo: string[];
   image: string[];

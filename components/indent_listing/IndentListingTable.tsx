@@ -9,7 +9,6 @@ interface IndentListingTableProps {
   title: string;
   rows: unknown[][];
   ids: string[];
-  onUpdateCell: (id: string, field: string, value: string) => Promise<void>;
 }
 
 interface ColumnDef {
@@ -17,21 +16,21 @@ interface ColumnDef {
   key: string;
   dataIdx: number;
   numeric: boolean;
-  editable: boolean;
 }
 
 // Display columns. `dataIdx` maps the display index to the raw row index
 // (rows carry 9 fields: item, size, pnRating, mcReceivedPending, total, v1..v4;
-// the MC RECEIVED/PENDING field is skipped in the UI).
+// the MC RECEIVED/PENDING field is skipped in the UI). V1..V4 hold the
+// BAL BILL AG CONT for each variant of the item, derived on recompute.
 const COLUMNS: ColumnDef[] = [
-  { label: "ITEM NAME", key: "item", dataIdx: 0, numeric: false, editable: false },
-  { label: "SIZE", key: "size", dataIdx: 1, numeric: false, editable: false },
-  { label: "PN RATING", key: "pnRating", dataIdx: 2, numeric: false, editable: false },
-  { label: "Total Bal bill ag cont", key: "total", dataIdx: 4, numeric: true, editable: false },
-  { label: "V1", key: "v1", dataIdx: 5, numeric: false, editable: true },
-  { label: "V2", key: "v2", dataIdx: 6, numeric: false, editable: true },
-  { label: "V3", key: "v3", dataIdx: 7, numeric: false, editable: true },
-  { label: "V4", key: "v4", dataIdx: 8, numeric: false, editable: true },
+  { label: "ITEM NAME", key: "item", dataIdx: 0, numeric: false },
+  { label: "SIZE", key: "size", dataIdx: 1, numeric: false },
+  { label: "PN RATING", key: "pnRating", dataIdx: 2, numeric: false },
+  { label: "Total Bal bill ag cont", key: "total", dataIdx: 4, numeric: true },
+  { label: "V1", key: "v1", dataIdx: 5, numeric: true },
+  { label: "V2", key: "v2", dataIdx: 6, numeric: true },
+  { label: "V3", key: "v3", dataIdx: 7, numeric: true },
+  { label: "V4", key: "v4", dataIdx: 8, numeric: true },
 ];
 
 const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
@@ -47,64 +46,6 @@ const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
 
 function cellText(row: unknown[], dataIdx: number): string {
   return String(row[dataIdx] ?? "").trim();
-}
-
-function EditableCell({
-  value,
-  onCommit,
-}: {
-  value: string;
-  onCommit: (value: string) => void;
-}) {
-  const [draft, setDraft] = useState<string>(value);
-  const [saving, setSaving] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  if (value !== draft && !saving) {
-    setDraft(value);
-  }
-
-  const commit = async () => {
-    const next = draft.trim();
-    const prev = String(value ?? "").trim();
-    if (next === prev) return;
-    setSaving(true);
-    setFailed(false);
-    try {
-      await onCommit(next);
-    } catch {
-      setFailed(true);
-      setDraft(prev);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <input
-      value={draft}
-      disabled={saving}
-      onChange={(e) => {
-        setDraft(e.target.value);
-        setFailed(false);
-      }}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") {
-          setDraft(String(value ?? ""));
-          (e.target as HTMLInputElement).blur();
-        }
-      }}
-      className={`w-full h-7 rounded border bg-background px-2 py-1 text-xs font-medium outline-none transition-colors focus:ring-1 focus:ring-blue-500 ${
-        failed
-          ? "border-red-300 text-red-600"
-          : saving
-            ? "border-transparent text-muted-foreground"
-            : "border-transparent hover:border-border focus:border-blue-400 text-foreground"
-      }`}
-    />
-  );
 }
 
 function compareCell(a: string, b: string, numeric: boolean): number {
@@ -126,7 +67,6 @@ export default function IndentListingTable({
   title,
   rows,
   ids,
-  onUpdateCell,
 }: IndentListingTableProps) {
   const [sortIdx, setSortIdx] = useState<number | null>(null);
   const [sortAsc, setSortAsc] = useState(true);
@@ -251,20 +191,7 @@ export default function IndentListingTable({
 
   const hasActiveFilters = Object.values(filters).some((v) => v.length > 0);
 
-  const idForRow = (row: unknown[]) => {
-    const idx = rows.indexOf(row);
-    return idx === -1 ? "" : ids[idx] ?? "";
-  };
-
   const renderCell = (row: unknown[], col: ColumnDef) => {
-    if (col.editable) {
-      return (
-        <EditableCell
-          value={String(row[col.dataIdx] ?? "")}
-          onCommit={(value) => onUpdateCell(idForRow(row), col.key, value)}
-        />
-      );
-    }
     return String(row[col.dataIdx] ?? "") || "—";
   };
 
@@ -374,9 +301,7 @@ export default function IndentListingTable({
                         className={`py-2.5 px-4 text-xs border-r border-b border-border last:border-r-0 truncate ${
                           col.numeric
                             ? "font-bold text-foreground text-right tabular-nums"
-                            : col.editable
-                              ? "py-1 px-1"
-                              : "text-muted-foreground"
+                            : "text-muted-foreground"
                         } ${idx === 0 ? "font-semibold text-foreground" : ""}`}
                       >
                         {renderCell(row, col)}

@@ -27,9 +27,11 @@ const TYPE_LABELS: Record<string, string> = {
   INSPECTION: "Inspections",
   PBG: "PBG",
   ORDER_STATUS: "Order Statuses",
+  CLOSURE_STATUS: "Closure Status",
   OPERATION_TYPE: "Operation Types",
   EXTENSION: "Extensions",
   BYPASS: "Bypasses",
+  DELIVERY: "Delivery Schedules",
   GMD_CASTING_RATE: "GMD Casting Rates",
 };
 
