@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { computeDeliverySchedule } from "@/lib/deliverySchedule";
 
 /**
  * Returns a map of rmItemCode -> availableStock for all given RM codes,
@@ -71,7 +72,7 @@ export async function syncDirectM2MAvailableStock(itemIds?: string[]): Promise<{
 
   const items = await prisma.enquiryItem.findMany({
     where: whereClause,
-    select: { id: true, rmItemCode: true, availableStock: true, rmType: true },
+    select: { id: true, rmItemCode: true, availableStock: true, rmType: true, quantity: true, deliverySchedule: true },
   });
 
   if (!items.length) {
@@ -88,9 +89,13 @@ export async function syncDirectM2MAvailableStock(itemIds?: string[]): Promise<{
     if (!item.rmItemCode) continue;
     const stock = stockMap.get(item.rmItemCode);
     const rmType = rmTypeMap.get(item.rmItemCode);
-    const data: { availableStock?: string; rmType?: string } = {};
+    const data: { availableStock?: string; rmType?: string; deliverySchedule?: string } = {};
     if (stock !== undefined && stock !== item.availableStock) {
       data.availableStock = stock;
+      const nextSchedule = computeDeliverySchedule(item.quantity, stock);
+      if (nextSchedule !== null && nextSchedule !== item.deliverySchedule) {
+        data.deliverySchedule = nextSchedule;
+      }
     }
     if (rmType !== undefined && rmType !== item.rmType) {
       data.rmType = rmType;

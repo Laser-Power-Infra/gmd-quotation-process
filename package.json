@@ -15,6 +15,7 @@
     "stock:sync": "tsx scripts/sync-available-stock-from-stock-phys.ts",
     "stock:sync:apply": "tsx scripts/sync-available-stock-from-stock-phys.ts --apply",
     "bom:item-name": "tsx scripts/backfill-verify-bom-item-name.ts",
+      "backfill:item-name-merge": "tsx scripts/backfill-item-name-merge.ts",
     "contract:sync": "tsx scripts/sync-contract-numbers.ts",
     "ic:sync": "tsx scripts/sync-ic-dump.ts",
     "ic:sync:apply": "tsx scripts/sync-ic-dump.ts --apply",
@@ -27,7 +28,11 @@
     "bom:stock:dry-run": "tsx scripts/dry-run-verify-bom-missing-stock.ts",
     "bom:stock:apply": "tsx scripts/dry-run-verify-bom-missing-stock.ts --apply",
     "bom:cost:derive": "tsx scripts/backfill-verify-bom-cost.ts",
-    "bom:cost:derive:apply": "tsx scripts/backfill-verify-bom-cost.ts --apply"
+    "bom:cost:derive:apply": "tsx scripts/backfill-verify-bom-cost.ts --apply",
+    "bom:mark-to-date": "tsx scripts/mark-no-use-from-to-date.ts",
+    "bom:mark-to-date:apply": "tsx scripts/mark-no-use-from-to-date.ts --apply",
+    "delivery:backfill": "tsx scripts/backfill-delivery-schedule.ts",
+    "delivery:backfill:apply": "tsx scripts/backfill-delivery-schedule.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",

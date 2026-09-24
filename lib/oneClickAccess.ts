@@ -28,7 +28,6 @@ export const FROZEN_ITEM_FIELDS = [
   "productCost",
   "costRefCode",
   "cost",
-  "costLogic",
   "discount",
   "vaPercent",
   "quotedRate",

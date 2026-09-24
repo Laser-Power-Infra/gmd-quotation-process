@@ -20,27 +20,26 @@ export const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
   15: 110, // Product Cost
   16: 120, // Cost Ref Code
   17: 130, // Cost
-  18: 100, // Cost Logic
-  19: 120, // Stock Status
-  20: 120, // Stock Quantity
-  21: 140, // Available Stock
-  22: 140, // View Image
-  23: 100, // Stock Against Contract
-  24: 120, // Discount
-  25: 150, // VA%
-  26: 120, // Quoted Rate
-  27: 140, // Rate (Contract Review)
-  28: 140, // PD Cost Val
-  29: 140, // QR incl. GST
-  30: 240, // Item Name (Merge)
-  31: 140, // Total Value incl. GST
-  32: 140, // Itemwise Total Value
-  33: 170, // Validation
-  34: 180, // Attachment
-  35: 140, // Delivery Schedule
-  36: 170, // APM
-  37: 150, // Offer PDF
-  38: 80,  // Actions
+  18: 120, // Stock Status
+  19: 120, // Stock Quantity
+  20: 140, // Available Stock
+  21: 140, // View Image
+  22: 100, // Stock Against Contract
+  23: 120, // Discount
+  24: 150, // VA%
+  25: 120, // Quoted Rate
+  26: 140, // Rate (Contract Review)
+  27: 140, // PD Cost Val
+  28: 140, // QR incl. GST
+  29: 240, // Item Name (Merge)
+  30: 140, // Total Value incl. GST
+  31: 140, // Itemwise Total Value
+  32: 170, // Validation
+  33: 180, // Attachment
+  34: 140, // Delivery Schedule
+  35: 170, // APM
+  36: 150, // Offer PDF
+  37: 80,  // Actions
 };
 
 const initialState: UiState = {

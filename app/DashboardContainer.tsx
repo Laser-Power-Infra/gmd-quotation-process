@@ -221,6 +221,7 @@ export default function DashboardContainer({
       bypasses: mergeArrays(dropdownOptions.bypasses, extractUniqueStringValues(allItems, "bypass")),
       others: mergeArrays((dropdownOptions as any).others ?? [], allItems.flatMap((i:any)=>Array.isArray(i.others)?i.others:[])),
       vaPercents: mergeArrays(dropdownOptions.vaPercents, extractUniqueStringValues(allItems, "vaPercent")),
+      deliverySchedules: mergeArrays(dropdownOptions.deliverySchedules, extractUniqueStringValues(allItems, "deliverySchedule")),
     };
   }, [enquiries, dropdownOptions]);
 

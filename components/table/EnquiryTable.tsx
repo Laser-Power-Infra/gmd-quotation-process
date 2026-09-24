@@ -627,7 +627,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (excludeField !== "pdcostValidationSearch" && (filters.pdcostValidationSearch as string) && !matchesText(filters.pdcostValidationSearch, getPdCostValidation(item) || "")) return false;
       if (excludeField !== "costRefCodeSearch" && filters.costRefCodeSearch && !matchesText(filters.costRefCodeSearch, item.costRefCode || "")) return false;
       if (excludeField !== "othersSearch" && (filters as any).othersSearch && !matchesText((filters as any).othersSearch, (item as any).others || "")) return false;
-      if (excludeField !== "costLogic" && filters.costLogic && !matchesText(filters.costLogic, item.costLogic || "")) return false;
       if (excludeField !== "stockStatus" && filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;
       if (excludeField !== "stockQuantity" && filters.stockQuantity && !matchesText(filters.stockQuantity, item.stockQuantity || "")) return false;
       if (excludeField !== "stockAgainstContract" && filters.stockAgainstContract && !matchesText(filters.stockAgainstContract, item.stockAgainstContract || "")) return false;
@@ -873,12 +872,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.costLogic &&
-        !(item.costLogic || "").toLowerCase().includes(filters.costLogic.toLowerCase())
-      ) {
-        return false;
-      }
-      if (
         filters.stockStatus &&
         !(item.stockStatus || "").toLowerCase().includes(filters.stockStatus.toLowerCase())
       ) {
@@ -1060,10 +1053,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       item.extension,
       item.bypass
     ];
-    return orderedFields
+    const base = orderedFields
       .map(val => (val || "").trim())
       .filter(Boolean)
       .join("-");
+
+    const others = Array.isArray(item.others) ? item.others : [];
+    const othersStr = others
+      .map(v => String(v).trim())
+      .filter(Boolean)
+      .join("-");
+
+    if (!othersStr) return base;
+    return base ? `${base}-WITH-${othersStr}` : `WITH-${othersStr}`;
   };
 
   const handleItemFieldChange = async (itemId: string, field: string, val: string) => {
@@ -1422,12 +1424,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
         return false;
       }
       if (
-        filters.costLogic &&
-        !(item.costLogic || "").toLowerCase().includes(filters.costLogic.toLowerCase())
-      ) {
-        return false;
-      }
-      if (
         filters.stockStatus &&
         !(item.stockStatus || "").toLowerCase().includes(filters.stockStatus.toLowerCase())
       ) {
@@ -1717,9 +1713,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             "Other": "",
             "Product Cost": "",
             "Cost Ref Code": "",
-            "Cost": "",
-            "Cost Logic": "",
-            "Stock Status": "",
+"Cost": "",
+              "Stock Status": "",
             "Stock Quantity": "",
             "Available Stock": "",
             "RM Type": "",
@@ -1768,7 +1763,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               "Product Cost": item.productCost ? Number(item.productCost) : "",
               "Cost Ref Code": item.costRefCode || "",
               "Cost": item.cost ? Number(item.cost) : "",
-              "Cost Logic": item.costLogic || "",
               "Stock Status": item.stockStatus || "",
               "Stock Quantity": item.stockQuantity || "",
               "Available Stock": item.availableStock || "",
@@ -2030,7 +2024,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     }
   }
 
-  const TOTAL_COLUMNS = 39;
+  const TOTAL_COLUMNS = 38;
   const SELECT_COL_WIDTH = 44;
   const getColWidth = (idx: number) => columnWidths[idx] ?? DEFAULT_COLUMN_WIDTHS[idx] ?? 120;
   const totalTableWidth =
@@ -2647,27 +2641,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
             </th>
 
-            {/* 26. Cost Logic */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Cost Logic</span>
-                {renderSortArrow("costLogic")}
-              </div>
-              <FilterTextInput
-                field="costLogic"
-                placeholder="Search..."
-                className={inputClass}
-              />
-              <div
-                onMouseDown={(e) => handleMouseDown(18, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
             {/* 27. Stock Status */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
@@ -2680,7 +2653,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(19, e)}
+                onMouseDown={(e) => handleMouseDown(18, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2701,7 +2674,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(20, e)}
+                onMouseDown={(e) => handleMouseDown(19, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2728,7 +2701,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(21, e)}
+                onMouseDown={(e) => handleMouseDown(20, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2755,7 +2728,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(22, e)}
+                onMouseDown={(e) => handleMouseDown(21, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2776,7 +2749,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(23, e)}
+                onMouseDown={(e) => handleMouseDown(22, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2797,7 +2770,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(24, e)}
+                onMouseDown={(e) => handleMouseDown(23, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2824,7 +2797,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(25, e)}
+                onMouseDown={(e) => handleMouseDown(24, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2856,7 +2829,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(26, e)}
+                onMouseDown={(e) => handleMouseDown(25, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2889,7 +2862,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(27, e)}
+                onMouseDown={(e) => handleMouseDown(26, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2922,7 +2895,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(28, e)}
+                onMouseDown={(e) => handleMouseDown(27, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2943,7 +2916,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(29, e)}
+                onMouseDown={(e) => handleMouseDown(28, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2964,7 +2937,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(30, e)}
+                onMouseDown={(e) => handleMouseDown(29, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2985,7 +2958,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(31, e)}
+                onMouseDown={(e) => handleMouseDown(30, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3006,7 +2979,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(32, e)}
+                onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3062,7 +3035,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(33, e)}
+                onMouseDown={(e) => handleMouseDown(32, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3085,7 +3058,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(34, e)}
+                onMouseDown={(e) => handleMouseDown(33, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3101,7 +3074,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(35, e)}
+                onMouseDown={(e) => handleMouseDown(34, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3157,7 +3130,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(36, e)}
+                onMouseDown={(e) => handleMouseDown(35, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3173,7 +3146,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(37, e)}
+                onMouseDown={(e) => handleMouseDown(36, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3187,7 +3160,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(38, e)}
+                onMouseDown={(e) => handleMouseDown(37, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3939,29 +3912,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       ) : "-"}
                     </td>
 
-                    {/* First Item Cost Logic */}
-                    <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
-                      {firstItem ? (
-                        <input
-                          key={firstItem.id + "-costLogic-" + (firstItem.costLogic || "")}
-                          type="text"
-                          defaultValue={firstItem.costLogic || ""}
-                          disabled={isFrozen}
-                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.costLogic || "")) {
-                              handleItemFieldChange(firstItem.id, "costLogic", e.target.value);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
-                      ) : "-"}
-                    </td>
-
                     {/* First Item Stock Status */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
@@ -4272,21 +4222,18 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     {/* Delivery Schedule */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-deliverySchedule-" + (firstItem.deliverySchedule || "")}
-                          type="text"
-                          defaultValue={firstItem.deliverySchedule || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.deliverySchedule || "")) {
-                              handleItemFieldChange(firstItem.id, "deliverySchedule", e.target.value);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
-                        />
+                        <select
+                          value={firstItem.deliverySchedule || ""}
+                          onChange={(e) => handleItemFieldChange(firstItem.id, "deliverySchedule", e.target.value)}
+                          className={cellItemSelectClass}
+                        >
+                          <option value="">-</option>
+                          {dropdownOptions.deliverySchedules
+                            .filter((opt) => opt !== "-")
+                            .map((opt) => (
+                              <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                        </select>
                       ) : "-"}
                     </td>
 
@@ -4662,27 +4609,6 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         />
                       </td>
 
-                      {/* Cost Logic */}
-                        <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-zinc-100 dark:bg-zinc-900/40" : ""}`}>
-                          <input
-                            key={item.id + "-costLogic-" + (item.costLogic || "")}
-                            type="text"
-                            defaultValue={item.costLogic || ""}
-                            disabled={isFrozen}
-                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.costLogic || "")) {
-                              handleItemFieldChange(item.id, "costLogic", e.target.value);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
-                      </td>
-
                       {/* Stock Status */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                           <input
@@ -4929,22 +4855,19 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
 
                         {/* Delivery Schedule */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                          <input
-                            key={item.id + "-deliverySchedule-" + (item.deliverySchedule || "")}
-                            type="text"
-                            defaultValue={item.deliverySchedule || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.deliverySchedule || "")) {
-                              handleItemFieldChange(item.id, "deliverySchedule", e.target.value);
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
-                        />
-                      </td>
+                          <select
+                            value={item.deliverySchedule || ""}
+                            onChange={(e) => handleItemFieldChange(item.id, "deliverySchedule", e.target.value)}
+                            className={cellItemSelectClass}
+                          >
+                            <option value="">-</option>
+                            {dropdownOptions.deliverySchedules
+                              .filter((opt) => opt !== "-")
+                              .map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                          </select>
+                        </td>
 
                       {/* Empty APM column - enquiry-based, only parent row has controls */}
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>

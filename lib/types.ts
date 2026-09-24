@@ -95,6 +95,7 @@ export interface DropdownOptions {
   extensions: string[];
   bypasses: string[];
   others: string[];
+  deliverySchedules: string[];
 }
 
 export interface FiltersState {
@@ -148,7 +149,6 @@ export interface FiltersState {
   pdcostValidation: string[];
   pdcostValidationSearch: string;
   stockQuantity: string;
-  costLogic: string;
   availableStock: string[];
   rmType: string[];
   stockAgainstContract: string;

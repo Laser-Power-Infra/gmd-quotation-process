@@ -212,7 +212,10 @@ export async function recomputeVerifyBomValues(): Promise<{
   const bomIds = [
     ...new Set(items.map((i) => i.bomId).filter((b): b is string => !!b)),
   ];
-  const statusMap = await getBomUseStatusBatch(bomIds);
+  // USE/NO USE is now authoritative from the stored TO_DATE mark; do NOT recompute
+  // from bomIdType + RM count (that would revert the TO_DATE "NO USE" marks on /bom).
+  // const statusMap = await getBomUseStatusBatch(bomIds);
+  const statusMap = new Map<string, BomUseStatus>();
 
   const itemCodes = [
     ...new Set(items.map((i) => i.itemCode).filter((c): c is string => !!c)),
@@ -302,7 +305,6 @@ export async function recomputeVerifyBomValues(): Promise<{
 
   const updates = items
     .map((item) => {
-      const noUse = item.bomId ? (statusMap.get(item.bomId) ?? "") : null;
       const stock = item.rmItemCode
         ? (stockMap.get(item.rmItemCode) ?? "")
         : null;
@@ -315,12 +317,10 @@ export async function recomputeVerifyBomValues(): Promise<{
       const cost = costMap.get(item.id) ?? item.cost ?? null;
       return {
         id: item.id,
-        noUse,
         stock,
         cost,
         rmItemName,
         itemName,
-        oldNoUse: item.noUse,
         oldStock: item.availableStock ?? null,
         oldCost: item.cost ?? null,
         oldRmItemName: item.rmItemName ?? null,
@@ -329,27 +329,24 @@ export async function recomputeVerifyBomValues(): Promise<{
     })
     .filter(
       ({
-        noUse,
         stock,
         cost,
         rmItemName,
         itemName,
-        oldNoUse,
         oldStock,
         oldCost,
         oldRmItemName,
         oldItemName,
       }) =>
-        oldNoUse !== noUse ||
         oldStock !== stock ||
         oldCost !== cost ||
         oldRmItemName !== rmItemName ||
         oldItemName !== itemName,
     )
-    .map(({ id, noUse, stock, cost, rmItemName, itemName }) =>
+    .map(({ id, stock, cost, rmItemName, itemName }) =>
       prisma.verifyBom.update({
         where: { id },
-        data: { noUse, availableStock: stock, cost, rmItemName, itemName },
+        data: { availableStock: stock, cost, rmItemName, itemName },
       }),
     );
 

@@ -14,6 +14,7 @@ import { getDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromA
 import { splitCsvLinks } from "@/lib/gmd_lib/contract-order-links";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
 import { getRmStockMap, getRmTypeMap, syncDirectM2MAvailableStock } from "@/lib/directM2MStockLookup";
+import { computeDeliverySchedule, syncDeliveryScheduleForItem } from "@/lib/deliverySchedule";
 import { makeImageKey } from "@/lib/imageKey";
 import { parseAndValidateProdOrderNumber } from "@/lib/contractValidation";
 import { matchPnRating } from "@/lib/pnRatingMatcher";
@@ -164,6 +165,7 @@ export async function createNewEnquiryAction(formData: {
               stockQuantity: (item as any).stockQuantity || null,
               availableStock: (item as any).availableStock || null,
               stockAgainstContract: (item as any).stockAgainstContract || null,
+              deliverySchedule: computeDeliverySchedule(item.quantity, item.availableStock),
               discount: item.discount || null,
               vaPercent: itemVa !== null ? String(itemVa) : null,
               quotedRate: itemQR,
@@ -299,6 +301,7 @@ export async function addItemsAction(formData: {
           stockQuantity: (item as any).stockQuantity || null,
           availableStock: (item as any).availableStock || null,
           stockAgainstContract: (item as any).stockAgainstContract || null,
+          deliverySchedule: computeDeliverySchedule(item.quantity, item.availableStock),
           discount: item.discount || null,
           vaPercent: itemVa !== null ? String(itemVa) : null,
           quotedRate: itemQR,
@@ -539,6 +542,7 @@ export async function updateEnquiryItemAction(formData: {
         stockQuantity: (formData as any).stockQuantity || null,
         availableStock: (formData as any).availableStock || null,
         stockAgainstContract: (formData as any).stockAgainstContract || null,
+        deliverySchedule: computeDeliverySchedule(updatedQty, formData.availableStock !== undefined ? formData.availableStock : item.availableStock),
         discount: formData.discount || null,
         vaPercent: finalVa !== null ? String(finalVa) : null,
         quotedRate: finalQuotedRate,
@@ -1143,7 +1147,7 @@ export async function updateItemFieldAction(
         }
       }
 
-      const MERGE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "itemName"];
+      const MERGE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "others", "itemName"];
       if (MERGE_FIELDS.includes(field)) {
         const merged = getItemNameMerge(dbItem);
         dbItem = await prisma.enquiryItem.update({
@@ -1231,6 +1235,11 @@ export async function updateItemFieldAction(
       } catch (e) {
         console.warn(`[updateItemField] auto-recompute code failed for ${itemId}:`, e);
       }
+    }
+
+    // Auto-set delivery schedule when quantity or availableStock changes (both present, stock >= qty)
+    if (field === "quantity" || field === "availableStock") {
+      await syncDeliveryScheduleForItem(itemId);
     }
 
     // Always fetch authoritative latest record directly from database before returning

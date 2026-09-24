@@ -154,7 +154,6 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState, 
   if (!matchesMulti(filters.costRefCode, item.costRefCode)) return false;
   if (filters.costRefCodeSearch && !matchesText(filters.costRefCodeSearch, item.costRefCode || "")) return false;
   if (filters.cost.length > 0 && !matchesMulti(filters.cost, item.cost != null ? String(item.cost) : null)) return false;
-  if (filters.costLogic && !matchesText(filters.costLogic, item.costLogic || "")) return false;
   if (filters.stockStatus && !matchesText(filters.stockStatus, item.stockStatus || "")) return false;
   if (filters.stockQuantity && !matchesText(filters.stockQuantity, item.stockQuantity || "")) return false;
   if (filters.availableStock.length > 0 && !matchesMulti(filters.availableStock, item.availableStock ?? null)) return false;

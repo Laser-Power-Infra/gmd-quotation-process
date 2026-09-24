@@ -37,10 +37,24 @@ export function getItemNameMerge(item: any) {
     item.extension,
     item.bypass
   ];
-  return orderedFields
+  const base = orderedFields
     .map(val => (val || "").trim())
     .filter(Boolean)
     .join("-");
+
+  let others: string[] = [];
+  if (Array.isArray(item.others)) {
+    others = item.others;
+  } else if (typeof item.others === "string" && item.others.trim() !== "") {
+    others = item.others.split(/[\t\r\n,]+/);
+  }
+  const othersStr = others
+    .map(v => String(v).trim())
+    .filter(Boolean)
+    .join("-");
+
+  if (!othersStr) return base;
+  return base ? `${base}-WITH-${othersStr}` : `WITH-${othersStr}`;
 }
 
 export function normalizeStateName(raw: string | null | undefined): string | null {
@@ -246,7 +260,8 @@ export async function recalculateItem(
     pnRating: item.pnRating,
     operationType: item.operationType,
     extension,
-    bypass
+    bypass,
+    others: item.others
   });
 
   // 7. Update Database
