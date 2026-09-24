@@ -971,25 +971,25 @@ export default function ContractReviewPage() {
       pending.push(id);
     });
     if (!pending.length) return;
-    backfillContractReviewOrderListBatchAction(pending).then((res) => {
-      if (!res?.success) return;
-      setData((prev) => {
-        if (!prev) return prev;
-        const map = new Map(
-          (res.data ?? []).map((d) => [d.id, (d.orderList ?? []).join(", ")]),
-        );
-        return {
-          ...prev,
-          rows: prev.rows.map((row, i) => {
-            const v = map.get(prev.ids[i]);
-            if (v === undefined || v === "") return row;
-            const next = [...row];
-            next[ORDER_LIST_IDX] = v;
-            return next;
-          }),
-        };
-      });
-    });
+    // backfillContractReviewOrderListBatchAction(pending).then((res) => {
+    //   if (!res?.success) return;
+    //   setData((prev) => {
+    //     if (!prev) return prev;
+    //     const map = new Map(
+    //       (res.data ?? []).map((d) => [d.id, (d.orderList ?? []).join(", ")]),
+    //     );
+    //     return {
+    //       ...prev,
+    //       rows: prev.rows.map((row, i) => {
+    //         const v = map.get(prev.ids[i]);
+    //         if (v === undefined || v === "") return row;
+    //         const next = [...row];
+    //         next[ORDER_LIST_IDX] = v;
+    //         return next;
+    //       }),
+    //     };
+    //   });
+    // });
   }, [data, headers]);
 
   const autoCostFromQuotationRef = useRef<Set<string>>(new Set());
@@ -1908,7 +1908,7 @@ tileSize,
         continue;
       const c = parseNum(row[COST_FROM_QUOTATION_IDX]);
       if (isNaN(c)) continue;
-      sum += c * 1.0118;
+      sum += c * 1.18;
       count++;
     }
     return { sum, count };
