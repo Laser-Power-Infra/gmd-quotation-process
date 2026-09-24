@@ -27,10 +27,10 @@ export interface FlowLayout {
 }
 
 /** Left-to-right diagram geometry (wide sidebar). */
-export const FLOW_NODE_WIDTH = 138;
-export const FLOW_NODE_HEIGHT = 56;
+export const FLOW_NODE_WIDTH = 170;
+export const FLOW_NODE_HEIGHT = 34;
 export const FLOW_COL_GAP = 32;
-export const FLOW_ROW_GAP = 8;
+export const FLOW_ROW_GAP = 3;
 
 /** Indented-rail geometry (narrow sidebar). */
 export const RAIL_NODE_HEIGHT = 20;
@@ -136,12 +136,12 @@ export function layoutFlowFill(
   const colWidth = safeW / (maxDepth + 1);
   const nodeW = Math.min(
     FLOW_NODE_WIDTH,
-    Math.max(96, colWidth - 12),
+    Math.max(110, colWidth - 8),
   );
   const gap = FLOW_ROW_GAP;
   const nodeH = Math.min(
     FLOW_NODE_HEIGHT,
-    Math.max(28, (safeH - (kMax - 1) * gap) / kMax),
+    Math.max(26, (safeH - (kMax - 1) * gap) / kMax),
   );
 
   for (const [depth, list] of levels) {

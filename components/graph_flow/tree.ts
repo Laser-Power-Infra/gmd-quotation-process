@@ -142,7 +142,7 @@ export const LIVE_TREE: FlowNode = {
             {
               id: "mcreceivedRmna",
               filter: { column: "RM AVAIL", values: ["Not available"] },
-              label: "RMNA",
+              label: "RM NA",
               accent: "text-rose-300",
               edge: "rgb(253 164 175)",
             },
@@ -165,7 +165,7 @@ export const LIVE_TREE: FlowNode = {
             {
               id: "mcpendingRmna",
               filter: { column: "RM AVAIL", values: ["Not available"] },
-              label: "RMNA",
+              label: "RM NA",
               accent: "text-rose-300",
               edge: "rgb(253 164 175)",
             },
@@ -191,7 +191,7 @@ export const LIVE_TREE: FlowNode = {
         {
           id: "pendingRmna",
           filter: { column: "RM AVAIL", values: ["Not available"] },
-          label: "RMNA",
+          label: "RM NA",
           accent: "text-rose-300",
           edge: "rgb(253 164 175)",
         },
