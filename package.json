@@ -30,7 +30,9 @@
     "bom:cost:derive": "tsx scripts/backfill-verify-bom-cost.ts",
     "bom:cost:derive:apply": "tsx scripts/backfill-verify-bom-cost.ts --apply",
     "bom:mark-to-date": "tsx scripts/mark-no-use-from-to-date.ts",
-    "bom:mark-to-date:apply": "tsx scripts/mark-no-use-from-to-date.ts --apply"
+    "bom:mark-to-date:apply": "tsx scripts/mark-no-use-from-to-date.ts --apply",
+    "delivery:backfill": "tsx scripts/backfill-delivery-schedule.ts",
+    "delivery:backfill:apply": "tsx scripts/backfill-delivery-schedule.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",

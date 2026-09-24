@@ -149,7 +149,6 @@ export interface FiltersState {
   pdcostValidation: string[];
   pdcostValidationSearch: string;
   stockQuantity: string;
-  costLogic: string;
   availableStock: string[];
   rmType: string[];
   stockAgainstContract: string;

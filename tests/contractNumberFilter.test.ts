@@ -35,7 +35,6 @@ const baseFilters = {
   costRefCode: [],
   costRefCodeSearch: '',
   cost: [],
-  costLogic: '',
   stockStatus: '',
   stockQuantity: '',
   availableStock: [],
