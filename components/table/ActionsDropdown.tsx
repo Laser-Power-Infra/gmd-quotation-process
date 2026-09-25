@@ -24,6 +24,7 @@ import { updateEnquiryItem, deleteEnquiryItem } from "@/lib/enquiriesSlice";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { openViewDialog, closeViewDialog, openEditDialog, closeEditDialog, openDeleteDialog, closeDeleteDialog } from "@/lib/dialogsSlice";
 import { isEnquiryFrozen } from "@/lib/oneClickAccess";
+import { formatIndianNumber } from "@/lib/formatCurrency";
 
 interface Attachment {
   id: string;
@@ -608,7 +609,7 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
                     Product Cost
                   </span>
                   <span className="text-foreground font-medium text-xs">
-                    {item.productCost ? Number(item.productCost).toLocaleString() : "-"}
+                    {item.productCost ? formatIndianNumber(item.productCost) : "-"}
                   </span>
                 </div>
                 <div>
@@ -624,7 +625,7 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
                     Cost
                   </span>
                   <span className="text-foreground font-medium text-xs">
-                    {item.cost ? Number(item.cost).toLocaleString() : "-"}
+                    {item.cost ? formatIndianNumber(item.cost) : "-"}
                   </span>
                 </div>
                 <div>

@@ -1091,7 +1091,7 @@ export async function updateItemFieldAction(
       const num = parseFloat(String(value).replace(/%/g, ""));
       parsedVal = !isNaN(num) ? String(num) : null;
     } else if (["quantity", "productCost", "cost", "discount"].includes(field) && value !== null) {
-      parsedVal = parseFloat(String(value)) || 0;
+      parsedVal = parseFloat(String(value).replace(/,/g, "")) || 0;
     }
 
     let updatedItem;
@@ -1100,7 +1100,7 @@ export async function updateItemFieldAction(
       if (field === "vaPercent") {
         updates.vaPercent = parsedVal !== null ? parseFloat(parsedVal) : null;
       } else if (field === "quotedRate") {
-        updates.quotedRate = parsedVal !== null ? parseFloat(parsedVal) : null;
+        updates.quotedRate = parsedVal !== null ? parseFloat(String(parsedVal).replace(/,/g, "")) : null;
       } else {
         updates[field] = parsedVal;
       }

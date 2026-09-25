@@ -26,6 +26,7 @@ import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatIndianNumber, cleanNumberInput, hasNumberChanged } from "@/lib/formatCurrency";
 
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
@@ -401,9 +402,11 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     dispatch(resetPage());
   }, [filters, dispatch]);
 
-  // Prune selected ids that no longer exist (after delete) — persist otherwise
-  useEffect(() => {
-    if (selectedItemIds.size === 0) return;
+  // Derive the effective selection instead of synchronizing it in an effect:
+  // ids/enquiry that no longer exist (after delete) are pruned during render, which
+  // avoids the cascading re-render of setState-in-effect.
+  const validSelectedItemIds = useMemo(() => {
+    if (selectedItemIds.size === 0) return selectedItemIds;
     const existingIds = new Set(allItems.map((i) => i.id));
     let changed = false;
     const next = new Set<string>();
@@ -411,29 +414,29 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (existingIds.has(id)) next.add(id);
       else changed = true;
     }
-    if (changed) {
-      if (next.size === 0) setSelectedEnquiryId(null);
-      setSelectedItemIds(next);
-    }
-    // If selected enquiry itself was deleted, clear
-    if (selectedEnquiryId && !enquiries.some((e) => e.id === selectedEnquiryId)) {
-      setSelectedEnquiryId(null);
-      setSelectedItemIds(new Set());
-    }
-  }, [allItems, enquiries, selectedItemIds, selectedEnquiryId]);
+    return changed ? next : selectedItemIds;
+  }, [allItems, selectedItemIds]);
 
-  const isItemSelected = (itemId: string) => selectedItemIds.has(itemId);
+  const validSelectedEnquiryId = useMemo(
+    () =>
+      selectedEnquiryId && enquiries.some((e) => e.id === selectedEnquiryId)
+        ? selectedEnquiryId
+        : null,
+    [enquiries, selectedEnquiryId]
+  );
+
+  const isItemSelected = (itemId: string) => validSelectedItemIds.has(itemId);
 
   const toggleItemSelection = (enquiryId: string, itemId: string) => {
-    if (selectedEnquiryId && selectedEnquiryId !== enquiryId) {
-      const prevDocket = enquiries.find((e) => e.id === selectedEnquiryId)?.docketNumber || selectedEnquiryId;
+    if (validSelectedEnquiryId && validSelectedEnquiryId !== enquiryId) {
+      const prevDocket = enquiries.find((e) => e.id === validSelectedEnquiryId)?.docketNumber || validSelectedEnquiryId;
       const nextDocket = enquiries.find((e) => e.id === enquiryId)?.docketNumber || enquiryId;
       if (!confirm(`Selection is currently for docket "${prevDocket}". Clear selection and select items from "${nextDocket}" instead?`)) return;
       setSelectedEnquiryId(enquiryId);
       setSelectedItemIds(new Set([itemId]));
       return;
     }
-    const next = new Set(selectedItemIds);
+    const next = new Set(validSelectedItemIds);
     if (next.has(itemId)) {
       next.delete(itemId);
       if (next.size === 0) setSelectedEnquiryId(null);
@@ -447,22 +450,22 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   const toggleSelectAllForEnquiry = (enquiry: EnquiryData, filteredItems: EnquiryItemData[]) => {
     const ids = filteredItems.map((i) => i.id);
     if (ids.length === 0) return;
-    if (selectedEnquiryId && selectedEnquiryId !== enquiry.id) {
-      const prevDocket = enquiries.find((e) => e.id === selectedEnquiryId)?.docketNumber || selectedEnquiryId;
+    if (validSelectedEnquiryId && validSelectedEnquiryId !== enquiry.id) {
+      const prevDocket = enquiries.find((e) => e.id === validSelectedEnquiryId)?.docketNumber || validSelectedEnquiryId;
       if (!confirm(`Selection is currently for docket "${prevDocket}". Clear and select all ${ids.length} items from "${enquiry.docketNumber}"?`)) return;
       setSelectedEnquiryId(enquiry.id);
       setSelectedItemIds(new Set(ids));
       return;
     }
-    const allSelected = ids.every((id) => selectedItemIds.has(id));
+    const allSelected = ids.every((id) => validSelectedItemIds.has(id));
     if (allSelected) {
-      const next = new Set(selectedItemIds);
+      const next = new Set(validSelectedItemIds);
       ids.forEach((id) => next.delete(id));
       setSelectedItemIds(next);
       if (next.size === 0) setSelectedEnquiryId(null);
     } else {
       setSelectedEnquiryId(enquiry.id);
-      const next = new Set(selectedItemIds);
+      const next = new Set(validSelectedItemIds);
       ids.forEach((id) => next.add(id));
       setSelectedItemIds(next);
     }
@@ -474,8 +477,8 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   };
 
   const handleBulkDeleteConfirm = async () => {
-    if (selectedItemIds.size === 0 || !selectedEnquiryId) return;
-    const ids = Array.from(selectedItemIds);
+    if (validSelectedItemIds.size === 0 || !validSelectedEnquiryId) return;
+    const ids = Array.from(validSelectedItemIds);
     setBulkDeleting(true);
     try {
       await dispatch(deleteEnquiryItems(ids)).unwrap();
@@ -1308,6 +1311,9 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
   };
 
   // Filter logic matching dropdown selections exactly
+  // This manual memo is intentionally kept for a large predicate; React Compiler cannot
+  // preserve it (and compiler is not enabled), so the diagnostic is suppressed locally.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const filteredEnquiries = useMemo(() => enquiries.filter((enquiry) => {
     // 0. Global search — same predicate the dashboard's Prisma `where` clause used to run
     if (!matchesGlobalSearch(enquiry, globalSearch)) return false;
@@ -2248,7 +2254,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           <tr className="bg-muted/80 select-none">
             {/* Select checkbox column */}
             <th className="py-2.5 px-2 sticky top-0 z-30 bg-muted/90 border-r border-b border-border text-center">
-              {selectedItemIds.size > 0 && selectedEnquiryId ? (
+              {validSelectedItemIds.size > 0 && validSelectedEnquiryId ? (
                 <button
                   type="button"
                   onClick={clearSelection}
@@ -3610,10 +3616,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
               const hasMultiple = displayItems.length > 1;
               const isExpanded = expandedRows[enquiry.id] ?? hasActiveFilters;
               const firstItem = displayItems[0];
-              const selectedCount = displayItems.filter((i) => selectedItemIds.has(i.id)).length;
+              const selectedCount = displayItems.filter((i) => validSelectedItemIds.has(i.id)).length;
               const isAllSelected = displayItems.length > 0 && selectedCount === displayItems.length;
               const isSomeSelected = selectedCount > 0 && selectedCount < displayItems.length;
-              const isThisEnquiryActive = selectedEnquiryId === enquiry.id;
+              const isThisEnquiryActive = validSelectedEnquiryId === enquiry.id;
               const isFrozen = isEnquiryFrozen((enquiry as any).apm, (enquiry as any).offerPdfGeneratedAt);
 
               // Setup custom brand avatar styles
@@ -4252,12 +4258,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         <input
                           key={firstItem.id + "-productCost-" + (firstItem.productCost !== null && firstItem.productCost !== undefined ? Number(firstItem.productCost).toString() : "")}
                           type="text"
-                          defaultValue={firstItem.productCost !== null && firstItem.productCost !== undefined ? Number(firstItem.productCost).toString() : ""}
+                          defaultValue={formatIndianNumber(firstItem.productCost)}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (firstItem.productCost !== null && firstItem.productCost !== undefined ? Number(firstItem.productCost).toString() : "")) {
-                              handleItemFieldChange(firstItem.id, "productCost", e.target.value);
+                            const next = cleanNumberInput(e.target.value);
+                            if (hasNumberChanged(next, firstItem.productCost)) {
+                              handleItemFieldChange(firstItem.id, "productCost", next);
                             }
                           }}
                           onKeyDown={(e) => {
@@ -4298,12 +4305,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         <input
                           key={firstItem.id + "-cost-" + (firstItem.cost !== null && firstItem.cost !== undefined ? Number(firstItem.cost).toString() : "")}
                           type="text"
-                          defaultValue={firstItem.cost !== null && firstItem.cost !== undefined ? Number(firstItem.cost).toString() : ""}
+                          defaultValue={formatIndianNumber(firstItem.cost)}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (firstItem.cost !== null && firstItem.cost !== undefined ? Number(firstItem.cost).toString() : "")) {
-                              handleItemFieldChange(firstItem.id, "cost", e.target.value);
+                            const next = cleanNumberInput(e.target.value);
+                            if (hasNumberChanged(next, firstItem.cost)) {
+                              handleItemFieldChange(firstItem.id, "cost", next);
                             }
                           }}
                           onPaste={(e) => handleBulkFieldPaste(enquiry, "cost", e, 0)}
@@ -4457,12 +4465,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         <input
                           key={firstItem.id + "-" + (firstItem.quotedRate || "")}
                           type="text"
-                          defaultValue={firstItem.quotedRate || ""}
+                          defaultValue={formatIndianNumber(firstItem.quotedRate)}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (firstItem.quotedRate || "")) {
-                              handleItemFieldChange(firstItem.id, "quotedRate", e.target.value);
+                            const next = cleanNumberInput(e.target.value);
+                            if (hasNumberChanged(next, firstItem.quotedRate)) {
+                              handleItemFieldChange(firstItem.id, "quotedRate", next);
                             }
                           }}
                           onPaste={(e) => handleBulkFieldPaste(enquiry, "quotedRate", e, 0)}
@@ -4478,7 +4487,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     {/* First Item CR Rate (Contract Review Rate — read-only) */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       <span className="block text-xs text-violet-700 dark:text-violet-400 p-1 font-medium text-right">
-                        {firstItem?.contractReviewRate || "-"}
+                        {formatIndianNumber(firstItem?.contractReviewRate) || "-"}
                       </span>
                     </td>
 
@@ -4493,7 +4502,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
                         <span className="block text-xs text-foreground p-1 font-medium text-right">
-                          {firstItem.quotedRateGst || "-"}
+                          {formatIndianNumber(firstItem.quotedRateGst) || "-"}
                         </span>
                       ) : "-"}
                     </td>
@@ -4509,12 +4518,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         <input
                           key={firstItem.id + "-totalValue-" + (firstItem.totalValue || "")}
                           type="text"
-                          defaultValue={firstItem.totalValue || ""}
+                          defaultValue={formatIndianNumber(firstItem.totalValue)}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (firstItem.totalValue || "")) {
-                              handleItemFieldChange(firstItem.id, "totalValue", e.target.value);
+                            const next = cleanNumberInput(e.target.value);
+                            if (hasNumberChanged(next, firstItem.totalValue)) {
+                              handleItemFieldChange(firstItem.id, "totalValue", next);
                             }
                           }}
                           onKeyDown={(e) => {
@@ -4532,12 +4542,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                         <input
                           key={firstItem.id + "-itemWiseTotalValue-" + (firstItem.itemWiseTotalValue || "")}
                           type="text"
-                          defaultValue={firstItem.itemWiseTotalValue || ""}
+                          defaultValue={formatIndianNumber(firstItem.itemWiseTotalValue)}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (firstItem.itemWiseTotalValue || "")) {
-                              handleItemFieldChange(firstItem.id, "itemWiseTotalValue", e.target.value);
+                            const next = cleanNumberInput(e.target.value);
+                            if (hasNumberChanged(next, firstItem.itemWiseTotalValue)) {
+                              handleItemFieldChange(firstItem.id, "itemWiseTotalValue", next);
                             }
                           }}
                           onKeyDown={(e) => {
@@ -4954,12 +4965,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           <input
                             key={item.id + "-productCost-" + (item.productCost !== null && item.productCost !== undefined ? Number(item.productCost).toString() : "")}
                             type="text"
-                            defaultValue={item.productCost !== null && item.productCost !== undefined ? Number(item.productCost).toString() : ""}
+                            defaultValue={formatIndianNumber(item.productCost)}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (item.productCost !== null && item.productCost !== undefined ? Number(item.productCost).toString() : "")) {
-                              handleItemFieldChange(item.id, "productCost", e.target.value);
+                            const next = cleanNumberInput(e.target.value);
+                            if (hasNumberChanged(next, item.productCost)) {
+                              handleItemFieldChange(item.id, "productCost", next);
                             }
                           }}
                           onKeyDown={(e) => {
@@ -4996,12 +5008,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           <input
                             key={item.id + "-cost-" + (item.cost !== null && item.cost !== undefined ? Number(item.cost).toString() : "")}
                             type="text"
-                            defaultValue={item.cost !== null && item.cost !== undefined ? Number(item.cost).toString() : ""}
+                            defaultValue={formatIndianNumber(item.cost)}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (item.cost !== null && item.cost !== undefined ? Number(item.cost).toString() : "")) {
-                              handleItemFieldChange(item.id, "cost", e.target.value);
+                            const next = cleanNumberInput(e.target.value);
+                            if (hasNumberChanged(next, item.cost)) {
+                              handleItemFieldChange(item.id, "cost", next);
                             }
                           }}
                           onPaste={(e) => handleBulkFieldPaste(enquiry, "cost", e, idx + 1)}
@@ -5141,12 +5154,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           <input
                             key={item.id + "-" + (item.quotedRate || "")}
                             type="text"
-                            defaultValue={item.quotedRate || ""}
+                            defaultValue={formatIndianNumber(item.quotedRate)}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (item.quotedRate || "")) {
-                              handleItemFieldChange(item.id, "quotedRate", e.target.value);
+                            const next = cleanNumberInput(e.target.value);
+                            if (hasNumberChanged(next, item.quotedRate)) {
+                              handleItemFieldChange(item.id, "quotedRate", next);
                             }
                           }}
                           onPaste={(e) => handleBulkFieldPaste(enquiry, "quotedRate", e, idx + 1)}
@@ -5161,7 +5175,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       {/* CR Rate (Contract Review Rate — read-only) */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                           <span className="block text-xs text-violet-700 dark:text-violet-400 p-1 font-medium text-right">
-                            {item.contractReviewRate || "-"}
+                            {formatIndianNumber(item.contractReviewRate) || "-"}
                           </span>
                         </td>
 
@@ -5175,7 +5189,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       {/* QR incl. GST */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                           <span className="block text-xs text-foreground p-1 font-medium text-right">
-                            {item.quotedRateGst || "-"}
+                            {formatIndianNumber(item.quotedRateGst) || "-"}
                           </span>
                         </td>
 
@@ -5189,12 +5203,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           <input
                             key={item.id + "-totalValue-" + (item.totalValue || "")}
                             type="text"
-                            defaultValue={item.totalValue || ""}
+                            defaultValue={formatIndianNumber(item.totalValue)}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (item.totalValue || "")) {
-                              handleItemFieldChange(item.id, "totalValue", e.target.value);
+                            const next = cleanNumberInput(e.target.value);
+                            if (hasNumberChanged(next, item.totalValue)) {
+                              handleItemFieldChange(item.id, "totalValue", next);
                             }
                           }}
                           onKeyDown={(e) => {
@@ -5210,12 +5225,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                           <input
                             key={item.id + "-itemWiseTotalValue-" + (item.itemWiseTotalValue || "")}
                             type="text"
-                            defaultValue={item.itemWiseTotalValue || ""}
+                            defaultValue={formatIndianNumber(item.itemWiseTotalValue)}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
-                            if (e.target.value !== (item.itemWiseTotalValue || "")) {
-                              handleItemFieldChange(item.id, "itemWiseTotalValue", e.target.value);
+                            const next = cleanNumberInput(e.target.value);
+                            if (hasNumberChanged(next, item.itemWiseTotalValue)) {
+                              handleItemFieldChange(item.id, "itemWiseTotalValue", next);
                             }
                           }}
                           onKeyDown={(e) => {
@@ -5321,15 +5337,15 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
           </DialogTitle>
         </DialogHeader>
         {(() => {
-          const selEnquiry = enquiries.find((e) => e.id === selectedEnquiryId);
-          const selItems = selEnquiry ? selEnquiry.items.filter((it) => selectedItemIds.has(it.id)) : [];
+          const selEnquiry = enquiries.find((e) => e.id === validSelectedEnquiryId);
+          const selItems = selEnquiry ? selEnquiry.items.filter((it) => validSelectedItemIds.has(it.id)) : [];
           const allFilteredForEnquiry = selEnquiry ? getFilteredItems(selEnquiry) : [];
           const willEmptyEnquiry = selEnquiry ? selItems.length === selEnquiry.items.length : false;
           return (
             <div className="py-3 space-y-3">
               <p className="text-sm text-muted-foreground">
                 {selEnquiry ? (
-                  <>Delete <span className="font-bold text-foreground">{selectedItemIds.size}</span> selected item(s) from docket <span className="font-bold text-foreground">"{selEnquiry.docketNumber}"</span>?</>
+                  <>Delete <span className="font-bold text-foreground">{validSelectedItemIds.size}</span> selected item(s) from docket <span className="font-bold text-foreground">"{selEnquiry.docketNumber}"</span>?</>
                 ) : (
                   <>No enquiry selected.</>
                 )}
@@ -5365,10 +5381,10 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             type="button"
             variant="destructive"
             size="sm"
-            disabled={bulkDeleting || selectedItemIds.size === 0}
+            disabled={bulkDeleting || validSelectedItemIds.size === 0}
             onClick={handleBulkDeleteConfirm}
           >
-            {bulkDeleting ? "Deleting..." : `Delete ${selectedItemIds.size} Item(s)`}
+            {bulkDeleting ? "Deleting..." : `Delete ${validSelectedItemIds.size} Item(s)`}
           </Button>
         </DialogFooter>
       </DialogContent>

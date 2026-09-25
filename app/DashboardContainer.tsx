@@ -10,6 +10,7 @@ import EnquiryTable from "@/components/table/EnquiryTable";
 import QuotationAnalyticsSidebar from "@/components/dashboard/QuotationAnalyticsSidebar";
 import QuotationTotalValueCard from "@/components/dashboard/QuotationTotalValueCard";
 import { enquiryPassesFilters, itemPassesFilters } from "@/lib/filterUtils";
+import { formatIndianNumber } from "@/lib/formatCurrency";
 
 interface DashboardContainerProps {
   enquiries: EnquiryData[];
@@ -115,10 +116,7 @@ export default function DashboardContainer({
   }, [analyticsItems]);
 
   const formattedSum = useMemo(() => {
-    return new Intl.NumberFormat("en-IN", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(totalValueGstSum);
+    return formatIndianNumber(totalValueGstSum, 2);
   }, [totalValueGstSum]);
 
   const totalValueExclGstSum = useMemo(() => {
@@ -134,10 +132,7 @@ export default function DashboardContainer({
   }, [analyticsItems]);
 
   const formattedExclSum = useMemo(() => {
-    return new Intl.NumberFormat("en-IN", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(totalValueExclGstSum);
+    return formatIndianNumber(totalValueExclGstSum, 2);
   }, [totalValueExclGstSum]);
 
   const totalCostSum = useMemo(() => {
@@ -164,10 +159,7 @@ export default function DashboardContainer({
   }, [analyticsItems]);
 
   const formattedTotalCost = useMemo(() => {
-    return new Intl.NumberFormat("en-IN", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(totalCostSum);
+    return formatIndianNumber(totalCostSum, 2);
   }, [totalCostSum]);
 
   const totalVaPercent = useMemo(() => {
@@ -194,9 +186,7 @@ export default function DashboardContainer({
   }, [analyticsItems]);
 
   const formattedTotalQuantity = useMemo(() => {
-    return new Intl.NumberFormat("en-IN", {
-      maximumFractionDigits: 2,
-    }).format(totalQuantity);
+    return formatIndianNumber(totalQuantity);
   }, [totalQuantity]);
 
   useEffect(() => {

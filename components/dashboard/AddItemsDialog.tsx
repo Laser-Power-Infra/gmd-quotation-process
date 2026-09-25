@@ -26,6 +26,7 @@ import { addItems } from "@/lib/enquiriesSlice";
 import { parseClipboardText } from "@/lib/pasteParser";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { closeAddItemsDialog } from "@/lib/dialogsSlice";
+import { formatIndianNumber, cleanNumberInput } from "@/lib/formatCurrency";
 
 interface AddItemsDialogProps {
   enquiries: { id: string; docketNumber: string; partyName: string }[];
@@ -41,6 +42,7 @@ export default function AddItemsDialog({
     { itemName: "", quantity: "", cost: "", vaPercent: "" },
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [focusedCostIndex, setFocusedCostIndex] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [isOpen, setIsOpen] = useState(false);
@@ -315,10 +317,15 @@ export default function AddItemsDialog({
                   <div className="w-24 space-y-1">
                     <Label className="text-xs text-muted-foreground">Cost</Label>
                     <Input
-                      type="number"
-                      step="any"
+                      type="text"
+                      inputMode="decimal"
                       placeholder="e.g. 120.5"
-                      value={item.cost}
+                      value={focusedCostIndex === index ? item.cost : formatIndianNumber(item.cost)}
+                      onFocus={() => setFocusedCostIndex(index)}
+                      onBlur={() => {
+                        setFocusedCostIndex(null);
+                        handleItemChange(index, "cost", cleanNumberInput(item.cost));
+                      }}
                       onChange={(e) =>
                         handleItemChange(index, "cost", e.target.value)
                       }
