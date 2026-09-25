@@ -8,7 +8,7 @@ export const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
   3: 160,  // Contract Review
   4: 130,  // Enquiry Type
   5: 200,  // State/Utility
-  6: 180,  // Payment Terms / PBG / Inspection
+  6: 210,  // Payment Terms / PBG / Inspection
   7: 130,  // Order Status
   8: 140,  // Closure Status
   9: 160,  // Project Reference

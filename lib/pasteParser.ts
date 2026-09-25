@@ -16,10 +16,12 @@ const alnum = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const cleanDescription = (desc: string): string => {
   return desc
     .replace(/^\d+[\s\.)\-]+/g, "") // Clean leading list numbers like "1.", "2)", "3-"
-    .replace(/^['"\s]+|['"\s]+$/g, "") // Strip leading/trailing quotes and spaces
+    .replace(/^['"“”\s]+|['"“”\s]+$/g, "") // Strip leading/trailing quotes and spaces
     .replace(/\s+/g, " ") // Normalize multiple spaces
     .trim();
 };
+
+const NUMERIC_PATTERN = /^\d+(\.\d+)?$/;
 
 const parseNumber = (s: string): number | undefined => {
   const clean = s.replace(/,/g, "").trim();
@@ -171,8 +173,9 @@ const tryParseTrailingCostVa = (
   let qtyIdx = -1;
   let qtyVal = NaN;
   for (let j = leading.length - 1; j >= 0; j--) {
-    const v = parseFloat(leading[j].replace(/,/g, ""));
-    if (!isNaN(v) && v > 0 && /^\d+$/.test(leading[j].replace(/,/g, ""))) {
+    const clean = leading[j].replace(/,/g, "").trim();
+    const v = parseFloat(clean);
+    if (!isNaN(v) && v > 0 && NUMERIC_PATTERN.test(clean)) {
       qtyIdx = j;
       qtyVal = v;
       break;
@@ -284,8 +287,9 @@ export function parseClipboardText(text: string): ParsedItem[] {
         let qtyVal = NaN;
 
         for (let j = cells.length - 1; j >= 0; j--) {
-          const val = parseFloat(cells[j].replace(/,/g, "")); // Handle commas in numbers like "1,000"
-          if (!isNaN(val) && val > 0 && /^\d+$/.test(cells[j].replace(/,/g, ""))) {
+          const cleanVal = cells[j].replace(/,/g, "").trim();
+          const val = parseFloat(cleanVal);
+          if (!isNaN(val) && val > 0 && NUMERIC_PATTERN.test(cleanVal)) {
             qtyIdx = j;
             qtyVal = val;
             break;
@@ -312,8 +316,9 @@ export function parseClipboardText(text: string): ParsedItem[] {
     }
 
     // Case 2: Purely numeric line (quantity on its own line after description)
-    const pureNum = parseFloat(trimmedLine.replace(/,/g, ""));
-    if (!isNaN(pureNum) && /^\d+$/.test(trimmedLine.replace(/,/g, ""))) {
+    const cleanNum = trimmedLine.replace(/,/g, "").trim();
+    const pureNum = parseFloat(cleanNum);
+    if (!isNaN(pureNum) && pureNum > 0 && NUMERIC_PATTERN.test(cleanNum)) {
       if (accumulatedDesc.length > 0) {
         flushAccumulator(pureNum);
       }
@@ -321,16 +326,18 @@ export function parseClipboardText(text: string): ParsedItem[] {
     }
 
     // Case 3: Line ends with a quantity (e.g. description followed by quantity)
-    // Matches whitespace followed by digits (allowing commas) at the end of the line
-    const match = trimmedLine.match(/(.*?)\s+(\d[\d,]*)$/);
+    // Matches whitespace followed by digits (allowing commas and decimals) at the end of the line
+    const match = trimmedLine.match(/(.*?)\s+(\d[\d,]*(?:\.\d+)?)$/);
     if (match) {
       const descPart = match[1].trim();
-      const qtyPart = parseInt(match[2].replace(/,/g, ""), 10);
-
-      if (descPart) {
-        accumulatedDesc.push(descPart);
+      const qtyPart = parseFloat(match[2].replace(/,/g, ""));
+      if (!isNaN(qtyPart) && qtyPart > 0) {
+        if (descPart) {
+          accumulatedDesc.push(descPart);
+        }
+        flushAccumulator(qtyPart);
+        continue;
       }
-      flushAccumulator(qtyPart);
     } else {
       // Case 4: Wrapped description line with no quantity
       accumulatedDesc.push(trimmedLine);

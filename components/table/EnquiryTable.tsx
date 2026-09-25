@@ -781,6 +781,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     if (filters.extension && filters.extension.length > 0) count++;
     if (filters.bypass && filters.bypass.length > 0) count++;
     if (filters.others && filters.others.length > 0) count++;
+    if (filters.rmType && filters.rmType.length > 0) count++;
     return count;
   }, [filters]);
 
@@ -793,6 +794,33 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
     dispatch(setFilter({ field: "extension", value: [] }));
     dispatch(setFilter({ field: "bypass", value: [] }));
     dispatch(setFilter({ field: "others", value: [] }));
+    dispatch(setFilter({ field: "rmType", value: [] }));
+  }, [dispatch]);
+
+  const activeStateUtilityFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.state && filters.state.length > 0) count++;
+    if (filters.utility && filters.utility.length > 0) count++;
+    return count;
+  }, [filters]);
+
+  const handleClearStateUtilityFilters = useCallback(() => {
+    dispatch(setFilter({ field: "state", value: [] }));
+    dispatch(setFilter({ field: "utility", value: [] }));
+  }, [dispatch]);
+
+  const activePaymentTermsFilterCount = useMemo(() => {
+    let count = 0;
+    if (filters.paymentTerms && filters.paymentTerms.length > 0) count++;
+    if (filters.pbg && filters.pbg.length > 0) count++;
+    if (filters.inspection && filters.inspection.length > 0) count++;
+    return count;
+  }, [filters]);
+
+  const handleClearPaymentTermsFilters = useCallback(() => {
+    dispatch(setFilter({ field: "paymentTerms", value: [] }));
+    dispatch(setFilter({ field: "pbg", value: [] }));
+    dispatch(setFilter({ field: "inspection", value: [] }));
   }, [dispatch]);
 
   const getFilteredItems = useCallback((enquiry: EnquiryData) => {
@@ -2367,10 +2395,68 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             </th>
 
             {/* State/Utility */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>State/Utility</span>
+            <th className="relative py-2.5 px-2.5 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="truncate">State / Utility</span>
+                  {activeStateUtilityFilterCount > 0 && (
+                    <span className="inline-flex items-center justify-center h-4 px-1.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+                      {activeStateUtilityFilterCount}
+                    </span>
+                  )}
+                </div>
+                {activeStateUtilityFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearStateUtilityFilters}
+                    className="inline-flex items-center gap-0.5 text-[9px] font-medium text-muted-foreground hover:text-red-500 dark:hover:text-red-400 cursor-pointer transition-colors normal-case"
+                    title="Clear State / Utility filters"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                    <span>Clear</span>
+                  </button>
+                )}
               </div>
+
+              {/* Side-by-side compact dropdown filters for State and Utility */}
+              <div className="grid grid-cols-2 gap-1 mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="State"
+                  allLabel="State"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "State" : `State (${sel.length})`)}
+                  options={dropdownOptions.states}
+                  cascadedOptions={cascadedOptions.state}
+                  selected={filters.state}
+                  onChange={(v) => dispatch(setFilter({ field: "state", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search state..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.state.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="start"
+                />
+
+                <MultiSelectFilter
+                  label="Utility"
+                  allLabel="Utility"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "Utility" : `Util (${sel.length})`)}
+                  options={dropdownOptions.utilities}
+                  cascadedOptions={cascadedOptions.utility}
+                  selected={filters.utility}
+                  onChange={(v) => dispatch(setFilter({ field: "utility", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search utility..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.utility.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="end"
+                />
+              </div>
+
               <div
                 onMouseDown={(e) => handleMouseDown(5, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -2382,10 +2468,86 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
             </th>
 
             {/* 6. Payment Terms / PBG / Inspection */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Payment Terms / PBG / Inspection</span>
+            <th className="relative py-2.5 px-2.5 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="truncate">Payment / PBG / Insp</span>
+                  {activePaymentTermsFilterCount > 0 && (
+                    <span className="inline-flex items-center justify-center h-4 px-1.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+                      {activePaymentTermsFilterCount}
+                    </span>
+                  )}
+                </div>
+                {activePaymentTermsFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleClearPaymentTermsFilters}
+                    className="inline-flex items-center gap-0.5 text-[9px] font-medium text-muted-foreground hover:text-red-500 dark:hover:text-red-400 cursor-pointer transition-colors normal-case"
+                    title="Clear Payment / PBG / Inspection filters"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                    <span>Clear</span>
+                  </button>
+                )}
               </div>
+
+              {/* Side-by-side compact dropdown filters for Payment Terms, PBG, Inspection */}
+              <div className="grid grid-cols-3 gap-1 mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Payment Terms"
+                  allLabel="Payment"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "Payment" : `Pay (${sel.length})`)}
+                  options={dropdownOptions.paymentTerms}
+                  cascadedOptions={cascadedOptions.paymentTerms}
+                  selected={filters.paymentTerms}
+                  onChange={(v) => dispatch(setFilter({ field: "paymentTerms", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search payment terms..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.paymentTerms.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="start"
+                />
+
+                <MultiSelectFilter
+                  label="PBG"
+                  allLabel="PBG"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "PBG" : `PBG (${sel.length})`)}
+                  options={dropdownOptions.pbgs}
+                  cascadedOptions={cascadedOptions.pbg}
+                  selected={filters.pbg}
+                  onChange={(v) => dispatch(setFilter({ field: "pbg", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search PBG..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.pbg.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="center"
+                />
+
+                <MultiSelectFilter
+                  label="Inspection"
+                  allLabel="Inspect"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "Inspect" : `Insp (${sel.length})`)}
+                  options={dropdownOptions.inspections}
+                  cascadedOptions={cascadedOptions.inspection}
+                  selected={filters.inspection}
+                  onChange={(v) => dispatch(setFilter({ field: "inspection", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search inspection..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.inspection.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="end"
+                />
+              </div>
+
               <div
                 onMouseDown={(e) => handleMouseDown(6, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -2527,7 +2689,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 )}
               </div>
 
-              {/* Side-by-side compact dropdown filters for all 8 categories */}
+              {/* Side-by-side compact dropdown filters (4 per row grid structure) */}
               <div className="grid grid-cols-4 gap-1 mt-1.5 normal-case font-normal text-left text-foreground">
                 <MultiSelectFilter
                   label="Item Type"
@@ -2580,7 +2742,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     filters.size.length > 0 &&
                       "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
                   )}
-                  align="start"
+                  align="center"
                 />
 
                 <MultiSelectFilter
@@ -2634,7 +2796,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     filters.extension.length > 0 &&
                       "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
                   )}
-                  align="center"
+                  align="start"
                 />
 
                 <MultiSelectFilter
@@ -2652,13 +2814,13 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                     filters.bypass.length > 0 &&
                       "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
                   )}
-                  align="end"
+                  align="center"
                 />
 
                 <MultiSelectFilter
                   label="Other"
                   allLabel="Other"
-                  renderButtonLabel={(sel) => (sel.length === 0 ? "Other" : `Oth (${sel.length})`)}
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "Other" : `Other (${sel.length})`)}
                   options={dropdownOptions.others || ["flange", "gasket", "nut and bolt"]}
                   cascadedOptions={cascadedOptions.others || []}
                   selected={filters.others || []}
@@ -2671,6 +2833,24 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                       "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
                   )}
                   align="end"
+                />
+
+                <MultiSelectFilter
+                  label="RM Type"
+                  allLabel="RM Type"
+                  renderButtonLabel={(sel) => (sel.length === 0 ? "RM Type" : `RM (${sel.length})`)}
+                  options={Array.from(new Set([...RM_TYPE_OPTIONS, ...(cascadedOptions.rmType ?? [])]))}
+                  cascadedOptions={cascadedOptions.rmType ?? []}
+                  selected={filters.rmType}
+                  onChange={(v) => dispatch(setFilter({ field: "rmType", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search RM type..."
+                  className={cn(
+                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
+                    filters.rmType.length > 0 &&
+                      "border-blue-500 bg-blue-50/80 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 font-semibold"
+                  )}
+                  align="start"
                 />
               </div>
 
