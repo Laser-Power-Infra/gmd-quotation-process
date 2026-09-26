@@ -55,8 +55,16 @@ export default function IndentListingPage() {
         throw new Error(body.error ?? `Sync failed (${res.status})`);
       }
       const result = await res.json();
+      const merged = Number(result.merged ?? 0);
+      const normalized = Number(result.canonicalized ?? 0);
+      const details = [
+        merged > 0 ? `${merged} merged` : null,
+        normalized - merged > 0 ? `${normalized - merged} PN normalized` : null,
+      ]
+        .filter(Boolean)
+        .join(", ");
       toast.success(
-        `Synced: ${result.created} created, ${result.updated} updated`,
+        `Synced: ${result.created} created, ${result.updated} updated${details ? `, ${details}` : ""}`,
         { id: toastId },
       );
       await fetchData();

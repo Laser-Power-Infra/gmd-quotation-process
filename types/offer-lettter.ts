@@ -1,4 +1,10 @@
 export interface OfferLetterItem {
+  /** SL NO column. Server-computed and contiguous — a "not our product" row does not consume a number. */
+  slNo?: number;
+
+  /** When true the row renders as a single "Not our product" cell spanning OUR ITEM NAME → DELIVERY SCHEDULE, and is excluded from all totals. */
+  isNotOurProduct?: boolean;
+
   /** Rendered in the "PARTY ITEM NAME" column. Sourced from dashboard <ITEM NAME>. */
   itemName: string;
 

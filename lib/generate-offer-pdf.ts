@@ -65,14 +65,24 @@ export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, e
       const rawItems = dbEnquiry.items || [];
       const baseItems = rawItems.map((item: any) => {
         const mergedName = getItemNameMerge(item) || item.itemNameMerge || "";
+        // No merged name at all -> the row is not a product we can quote. This covers both a
+        // null EnquiryItem.itemNameMerge and a row whose merge fields are all blank.
+        const isNotOurProduct = mergedName.trim() === "";
         const itemType = (item.itemType || "").trim();
         const operationType = (item.operationType || "").trim();
         const rmType = (item.rmType || "").trim();
-        const hasKeyParts = !!(itemType && operationType && rmType);
-        const imageKey = hasKeyParts ? makeImageKey(itemType, operationType, rmType) : `__no_key__${item.id}`;
+        // A "not our product" row never joins an image group, otherwise an image rowspan
+        // would span across its colspan=8 cell and break the table layout.
+        const hasKeyParts = !isNotOurProduct && !!(itemType && operationType && rmType);
+        const imageKey = hasKeyParts
+          ? makeImageKey(itemType, operationType, rmType)
+          : isNotOurProduct
+            ? `__nop__${item.id}`
+            : `__no_key__${item.id}`;
         return {
           itemName: item.itemName,
           partyItemName: mergedName,
+          isNotOurProduct,
           quantity: item.quantity ? Number(item.quantity) : 0,
           quotationRate: item.quotedRate ? parseFloat(item.quotedRate) : 0,
           quotedRateGst: item.quotedRateGst ? parseFloat(item.quotedRateGst) : 0,
@@ -143,9 +153,36 @@ export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, e
       // - Image: consecutive rows sharing the same non-empty imageKey are merged.
       // - Name: within each image group, consecutive rows sharing the exact same non-empty partyItemName are merged.
       //         Rows with different item names each receive nameRowspan = 1 so different names are never merged.
+      // - Not our product: a row with no merged name is emitted on its own as a single
+      //   colspan cell, terminates the group above it and starts a fresh one below.
+      // slNo is server-computed and only advances for quotable rows so the SL NO column
+      // stays contiguous instead of skipping a number for each "not our product" row.
       const items: any[] = [];
+      let slNo = 0;
       let idx = 0;
       while (idx < baseItems.length) {
+        if (baseItems[idx].isNotOurProduct) {
+          // Zeroed so the footer totals (totalItemwise / totalQuantity / totalItemwiseGst)
+          // and totalItemwiseValue all exclude this item.
+          items.push({
+            itemName: baseItems[idx].itemName,
+            partyItemName: "",
+            isNotOurProduct: true,
+            slNo: 0,
+            quantity: 0,
+            quotationRate: 0,
+            quotedRateGst: 0,
+            totalValue: 0,
+            unit: baseItems[idx].unit,
+            deliverySchedule: baseItems[idx].deliverySchedule,
+            imageDataUrl: null,
+            imageRowspan: 0,
+            nameRowspan: 0,
+          });
+          idx++;
+          continue;
+        }
+
         const curKey = baseItems[idx].__imageKey as string;
         const curHasParts = baseItems[idx].__hasKeyParts as boolean;
         let groupEnd = idx + 1;
@@ -174,6 +211,8 @@ export async function generateOfferPdfAction(rowData: OfferLetterTemplateData, e
             items.push({
               itemName: b.itemName,
               partyItemName: b.partyItemName,
+              isNotOurProduct: false,
+              slNo: ++slNo,
               quantity: b.quantity,
               quotationRate: b.quotationRate,
               quotedRateGst: b.quotedRateGst,

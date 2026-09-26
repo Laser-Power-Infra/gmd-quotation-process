@@ -169,7 +169,8 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState, 
   if (filters.stockAgainstContract && !matchesText(filters.stockAgainstContract, item.stockAgainstContract || "")) return false;
   if (filters.discount && !matchesText(filters.discount, item.discount != null ? String(item.discount) : "")) return false;
   if (filters.vaPercent.length > 0 && !matchesMulti(filters.vaPercent, item.vaPercent?.toString() ?? null)) return false;
-  if (filters.itemNameMerge && !matchesText(filters.itemNameMerge, item.itemNameMerge || "")) return false;
+  if (!matchesMulti(filters.itemNameMerge, item.itemNameMerge)) return false;
+  if (filters.itemNameMergeSearch && !matchesText(filters.itemNameMergeSearch, item.itemNameMerge || "")) return false;
   if (filters.totalValue && !matchesText(filters.totalValue, item.totalValue || "")) return false;
   if (filters.itemWiseTotalValue && !matchesText(filters.itemWiseTotalValue, item.itemWiseTotalValue || "")) return false;
   if (filters.validation.length > 0 && !matchesMulti(filters.validation, item.validation)) return false;

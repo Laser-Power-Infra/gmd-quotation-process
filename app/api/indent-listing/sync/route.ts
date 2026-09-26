@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { pnRatingBucket } from "@/lib/pnRatingMatcher";
+import { planIndentListingDedupe } from "@/lib/indentListingDedupe";
 
 function normalizeKey(value: unknown): string {
   return String(value ?? "")
@@ -72,7 +73,42 @@ export async function POST() {
       }
     }
 
-    const existingRows = await prisma.indentListing.findMany();
+    let existingRows = await prisma.indentListing.findMany();
+    const syncedAt = new Date();
+
+    // Canonicalize raw PN labels and merge rows that collapse to the same
+    // unique key under a PN bucket (e.g. "PN - 10" + "PN - 16" -> "PN-10/16")
+    // before matching source groups. Deletes run before updates so the
+    // [item, size, pnRating, mcReceivedPending] unique constraint never trips.
+    const { updates: dedupeUpdates, deletes: dedupeDeletes } =
+      planIndentListingDedupe(existingRows);
+    if (dedupeUpdates.length > 0 || dedupeDeletes.length > 0) {
+      await prisma.$transaction([
+        ...dedupeDeletes.map((id) =>
+          prisma.indentListing.delete({ where: { id } }),
+        ),
+        ...dedupeUpdates.map((u) =>
+          prisma.indentListing.update({
+            where: { id: u.id },
+            data: {
+              pnRating: u.pnRating,
+              totalBalBillAgCont: u.totalBalBillAgCont,
+              v1: u.v1,
+              v2: u.v2,
+              v3: u.v3,
+              v4: u.v4,
+              v1Category: u.v1Category,
+              v2Category: u.v2Category,
+              v3Category: u.v3Category,
+              v4Category: u.v4Category,
+              syncedAt,
+            },
+          }),
+        ),
+      ]);
+      existingRows = await prisma.indentListing.findMany();
+    }
+
     const existingByKey = new Map(
       existingRows.map((r) => [
         [
@@ -85,7 +121,6 @@ export async function POST() {
       ]),
     );
 
-    const syncedAt = new Date();
     let created = 0;
     let updated = 0;
     let unchanged = 0;
@@ -150,7 +185,7 @@ export async function POST() {
     }
 
     console.log(
-      `[indent-listing-sync] Groups: ${groups.size} | created=${created} updated=${updated} unchanged=${unchanged}`,
+      `[indent-listing-sync] Groups: ${groups.size} | created=${created} updated=${updated} unchanged=${unchanged} deduped=${dedupeDeletes.length} canonicalized=${dedupeUpdates.length}`,
     );
     if (createdKeys.length > 0) {
       console.log(`[indent-listing-sync] Created keys:\n  ${createdKeys.join("\n  ")}`);
@@ -174,6 +209,8 @@ export async function POST() {
       created,
       updated,
       unchanged,
+      merged: dedupeDeletes.length,
+      canonicalized: dedupeUpdates.length,
       total: groups.size,
       reason,
       syncedAt: syncedAt.toISOString(),
