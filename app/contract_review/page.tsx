@@ -23,6 +23,9 @@ import {
   autoAssignContractReviewBomIdFromActuator,
   getActuatorOptionsAction,
   saveActuatorWithRmCodeAction,
+  uploadContractReviewDiagramAction,
+  clearContractReviewDiagramAction,
+  setContractReviewDiagramVerdictAction,
 } from "@/app/actions";
 import {
   CONTRACT_REVIEW_HEADER_TO_DB_FIELD,
@@ -66,6 +69,7 @@ interface ContractReviewData {
   totalRows: number;
   syncedAt: string | null;
   bomIdOptions?: Record<string, string[]>;
+  diagramVerdicts?: Record<string, string>;
 }
 
 type BalBillFilter = "all" | "yes" | "no";
@@ -126,6 +130,9 @@ const MC_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC Received/Pending");
 const OFFER_NUMBER_IDX = CONTRACT_REVIEW_HEADERS.indexOf("OFFER NUMBER");
 const OFFER_PENDING_DONE_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf("OFFER PENDING/DONE");
+const UPLOAD_DIAGRAM_COLUMN = "Upload Diagram";
+const UPLOAD_DIAGRAM_IDX =
+  CONTRACT_REVIEW_HEADERS.indexOf(UPLOAD_DIAGRAM_COLUMN);
 
 type RateTileKey =
   | "rateXOrderQty"
@@ -500,6 +507,9 @@ export default function ContractReviewPage() {
   const [bomIdOptionsById, setBomIdOptionsById] = useState<
     Record<string, string[]>
   >({});
+  const [diagramVerdictsById, setDiagramVerdictsById] = useState<
+    Record<string, string>
+  >({});
   const [actuatorOptions, setActuatorOptions] = useState<string[]>([]);
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
     {},
@@ -598,6 +608,7 @@ export default function ContractReviewPage() {
       const json = await res.json();
       setData(json);
       if (json.bomIdOptions) setBomIdOptionsById(json.bomIdOptions);
+      if (json.diagramVerdicts) setDiagramVerdictsById(json.diagramVerdicts);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -854,6 +865,112 @@ export default function ContractReviewPage() {
       }
     },
     [headers],
+  );
+
+  const handleUploadDiagram = useCallback(
+    async (id: string, file: File) => {
+      const toastId = toast.loading("Uploading diagram...");
+      try {
+        const res = await uploadContractReviewDiagramAction(id, file);
+        if (!res?.success) {
+          toast.error(res?.error || "Failed to upload diagram.", { id: toastId });
+          return;
+        }
+        if (UPLOAD_DIAGRAM_IDX !== -1) {
+          setData((prev) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              rows: prev.rows.map((row, i) => {
+                if (prev.ids[i] !== id) return row;
+                const next = [...row];
+                next[UPLOAD_DIAGRAM_IDX] = res.data?.diagramUrl ?? "";
+                return next;
+              }),
+            };
+          });
+        }
+        setDiagramVerdictsById((prev) => {
+          if (!(id in prev)) return prev;
+          const next = { ...prev };
+          delete next[id];
+          return next;
+        });
+        toast.success("Diagram uploaded", { id: toastId });
+      } catch (err: any) {
+        toast.error(err?.message || "Failed to upload diagram.", { id: toastId });
+      }
+    },
+    [],
+  );
+
+  const handleClearDiagram = useCallback(async (id: string) => {
+    const toastId = toast.loading("Removing diagram...");
+    try {
+      const res = await clearContractReviewDiagramAction(id);
+      if (!res?.success) {
+        toast.error(res?.error || "Failed to remove diagram.", { id: toastId });
+        return;
+      }
+      if (UPLOAD_DIAGRAM_IDX !== -1) {
+        setData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rows: prev.rows.map((row, i) => {
+              if (prev.ids[i] !== id) return row;
+              const next = [...row];
+              next[UPLOAD_DIAGRAM_IDX] = "";
+              return next;
+            }),
+          };
+        });
+      }
+      setDiagramVerdictsById((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      toast.success("Diagram removed", { id: toastId });
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to remove diagram.", { id: toastId });
+    }
+  }, []);
+
+  const handleSetDiagramVerdict = useCallback(
+    async (id: string, verdict: string | null) => {
+      const prevVerdict = diagramVerdictsById[id] ?? null;
+      if (prevVerdict === verdict) return;
+      setDiagramVerdictsById((prev) => {
+        const next = { ...prev };
+        if (verdict === null) delete next[id];
+        else next[id] = verdict;
+        return next;
+      });
+      try {
+        const res = await setContractReviewDiagramVerdictAction(id, verdict);
+        if (!res?.success) {
+          setDiagramVerdictsById((prev) => {
+            const next = { ...prev };
+            if (prevVerdict === null) delete next[id];
+            else next[id] = prevVerdict;
+            return next;
+          });
+          toast.error(res?.error || "Failed to save diagram verdict.");
+          return;
+        }
+      } catch (err: any) {
+        setDiagramVerdictsById((prev) => {
+          const next = { ...prev };
+          if (prevVerdict === null) delete next[id];
+          else next[id] = prevVerdict;
+          return next;
+        });
+        toast.error(err?.message || "Failed to save diagram verdict.");
+      }
+    },
+    [diagramVerdictsById],
   );
 
   const autoSavedBomIdsRef = useRef<Set<string>>(new Set());
@@ -3229,6 +3346,13 @@ tileSize,
                   ],
                 }}
                 onCellUpdate={handleCellUpdate}
+                attachmentColumn={UPLOAD_DIAGRAM_COLUMN}
+                attachmentAccept=".pdf,application/pdf"
+                onUploadAttachment={handleUploadDiagram}
+                onClearAttachment={handleClearDiagram}
+                verdictColumn={UPLOAD_DIAGRAM_COLUMN}
+                verdictsById={diagramVerdictsById}
+                onSetVerdict={handleSetDiagramVerdict}
                 externalFiltersActive={
                   hasTileFilter ||
                   balBillFilter !== "all" ||

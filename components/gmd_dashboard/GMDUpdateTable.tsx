@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { ChevronUp, ChevronDown, Search, RotateCcw, X, Download, Files, FileText, ExternalLink, Copy, Upload, Eye, Paperclip, Trash2 } from "lucide-react";
+import { ChevronUp, ChevronDown, Search, RotateCcw, X, Download, Files, FileText, ExternalLink, Copy, Upload, Eye, Paperclip, Trash2, Check } from "lucide-react";
 import GMDUpdateStatusBadge from "./GMDUpdateStatusBadge";
 import {
   STATUS_COLUMNS,
@@ -172,10 +172,16 @@ function AttachmentCell({
   url,
   onUpload,
   onClear,
+  accept,
+  verdict,
+  onSetVerdict,
 }: {
   url: string;
   onUpload: (file: File) => void;
   onClear: () => void;
+  accept?: string;
+  verdict?: string | null;
+  onSetVerdict?: (verdict: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -184,12 +190,30 @@ function AttachmentCell({
   const buttonClass =
     "flex items-center gap-1 px-1.5 py-1 text-[10px] font-semibold rounded border cursor-pointer transition-colors";
 
+  const hasVerdict = onSetVerdict != null;
+  const verdictDisabled = hasVerdict && !url;
+
+  const verdictBoxClass = (active: boolean, tone: "emerald" | "rose") => {
+    if (verdictDisabled) {
+      return "flex h-[22px] w-[22px] items-center justify-center rounded-[4px] border border-[#e1e6eb] bg-[#f4f6f8] text-[#c2c9d0] cursor-not-allowed";
+    }
+    if (active) {
+      return tone === "emerald"
+        ? "flex h-[22px] w-[22px] items-center justify-center rounded-[4px] border border-emerald-500 bg-emerald-500 text-white cursor-pointer transition-colors hover:bg-emerald-600"
+        : "flex h-[22px] w-[22px] items-center justify-center rounded-[4px] border border-rose-500 bg-rose-500 text-white cursor-pointer transition-colors hover:bg-rose-600";
+    }
+    return tone === "emerald"
+      ? "flex h-[22px] w-[22px] items-center justify-center rounded-[4px] border border-emerald-200 bg-emerald-50 text-emerald-600 cursor-pointer transition-colors hover:bg-emerald-100"
+      : "flex h-[22px] w-[22px] items-center justify-center rounded-[4px] border border-rose-200 bg-rose-50 text-rose-600 cursor-pointer transition-colors hover:bg-rose-100";
+  };
+
   return (
-    <div className="flex items-center justify-center gap-1">
+    <div className="flex flex-col items-center justify-center gap-1">
+      <div className="flex items-center justify-center gap-1">
       <input
         ref={fileRef}
         type="file"
-        accept=".pdf,image/png,image/jpeg,image/webp"
+        accept={accept ?? ".pdf,image/png,image/jpeg,image/webp"}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -302,6 +326,51 @@ function AttachmentCell({
           </div>
         </DialogContent>
       </Dialog>
+      </div>
+      {hasVerdict ? (
+        <div className="flex items-center justify-center gap-1.5">
+          <button
+            type="button"
+            title={
+              verdictDisabled
+                ? "Upload a diagram first"
+                : verdict === "CORRECT"
+                  ? "Marked correct - click to clear"
+                  : "Mark diagram as correct"
+            }
+            aria-label="Mark diagram as correct"
+            aria-pressed={!verdictDisabled && verdict === "CORRECT"}
+            disabled={verdictDisabled}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSetVerdict(verdict === "CORRECT" ? null : "CORRECT");
+            }}
+            className={verdictBoxClass(verdict === "CORRECT", "emerald")}
+          >
+            <Check size={13} strokeWidth={3} />
+          </button>
+          <button
+            type="button"
+            title={
+              verdictDisabled
+                ? "Upload a diagram first"
+                : verdict === "WRONG"
+                  ? "Marked wrong - click to clear"
+                  : "Mark diagram as wrong"
+            }
+            aria-label="Mark diagram as wrong"
+            aria-pressed={!verdictDisabled && verdict === "WRONG"}
+            disabled={verdictDisabled}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSetVerdict(verdict === "WRONG" ? null : "WRONG");
+            }}
+            className={verdictBoxClass(verdict === "WRONG", "rose")}
+          >
+            <X size={13} strokeWidth={3} />
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -571,6 +640,10 @@ interface GMDUpdateTableProps {
   attachmentColumn?: string;
   onUploadAttachment?: (id: string, file: File) => Promise<void>;
   onClearAttachment?: (id: string) => Promise<void>;
+  attachmentAccept?: string;
+  verdictColumn?: string;
+  verdictsById?: Record<string, string | null | undefined>;
+  onSetVerdict?: (id: string, verdict: string | null) => Promise<void>;
   onDeleteRow?: (id: string) => Promise<void>;
   onMatchCosts?: () => void;
   blankOnlyEditableColumns?: string[];
@@ -617,6 +690,10 @@ castingRateInputs,
   attachmentColumn,
   onUploadAttachment,
   onClearAttachment,
+  attachmentAccept,
+  verdictColumn,
+  verdictsById,
+  onSetVerdict,
   onDeleteRow,
   onMatchCosts,
   blankOnlyEditableColumns,
@@ -772,7 +849,7 @@ castingRateInputs,
               ? 300
               : h === "ORDER LIST"
                 ? 160
-                : h === "CONTRACT NO"
+                  : h === "CONTRACT NO"
                   ? 360
                   : 180;
       });
@@ -1689,11 +1766,20 @@ castingRateInputs,
                     const isPnBlankDropdown =
                       header === "PN RATING" && !String(display).trim() && (fixedDropdownOptions?.[header]?.length ?? 0) > 0;
                     if (isAttachmentColumn) {
+                      const isVerdictColumn =
+                        verdictColumn === header && onSetVerdict != null;
                       cellContent = (
                         <AttachmentCell
                           url={display}
+                          accept={attachmentAccept}
                           onUpload={(file) => onUploadAttachment(id, file)}
                           onClear={() => onClearAttachment?.(id)}
+                          verdict={isVerdictColumn ? verdictsById?.[id] : undefined}
+                          onSetVerdict={
+                            isVerdictColumn
+                              ? (verdict) => onSetVerdict(id, verdict)
+                              : undefined
+                          }
                         />
                       );
                     } else if (header === "BOM ID" && onSelectBomId) {
