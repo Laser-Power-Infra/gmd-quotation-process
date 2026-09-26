@@ -167,6 +167,12 @@
     display: inline-block;
     object-fit: contain;
   }
+  table.price-table td.not-our-product {
+    text-align: center;
+    font-style: italic;
+    font-weight: 600;
+    color: #7a1f1f;
+  }
 </style>
 </head>
 <body>
@@ -253,8 +259,15 @@
     </thead>
     <tbody>
       {{#each items}}
+      {{#if this.isNotOurProduct}}
       <tr>
-        <td>{{inc @index}}</td>
+        <td></td>
+        <td class="item-name">{{this.itemName}}</td>
+        <td class="not-our-product" colspan="8">Not our product</td>
+      </tr>
+      {{else}}
+      <tr>
+        <td>{{this.slNo}}</td>
         <td class="item-name">{{this.itemName}}</td>
         {{#if this.nameRowspan}}<td class="item-name" rowspan="{{this.nameRowspan}}">{{this.partyItemName}}</td>{{/if}}
         {{#if this.imageRowspan}}<td class="item-img" rowspan="{{this.imageRowspan}}">{{#if this.imageDataUrl}}<img src="{{this.imageDataUrl}}" alt="Item image" />{{/if}}</td>{{/if}}
@@ -265,6 +278,7 @@
         <td>{{this.totalValue}}</td>
         <td>{{this.deliverySchedule}}</td>
       </tr>
+      {{/if}}
       {{/each}}
       <tr style="font-weight: bold; border-top: 2px solid #7a1f1f;">
         <td colspan="4" style="text-align: right;">Total</td>

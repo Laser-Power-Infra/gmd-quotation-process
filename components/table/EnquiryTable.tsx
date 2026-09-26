@@ -157,7 +157,7 @@ const ALL_DROPDOWN_FIELDS = [
   "enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm",
   "itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "others",
   "validation", "vaPercent", "erpItemCode", "bomId", "productCost", "costRefCode", "cost", "contractReviewRate", "pdcostValidation", "availableStock", "rmType", "deliverySchedule",
-  "contractNo",
+  "contractNo", "itemNameMerge",
 ] as const;
 
 const ENQUIRY_DROPDOWN_SET = new Set(["enquiryType", "state", "paymentTerms", "inspection", "pbg", "utility", "orderStatus", "closureStatus", "apm", "contractNo"]);
@@ -650,7 +650,7 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       if (excludeField !== "discount" && filters.discount && !matchesText(filters.discount, item.discount != null ? String(item.discount) : "")) return false;
       if (excludeField !== "quotedRate" && filters.quotedRate && !matchesText(filters.quotedRate, item.quotedRate || "")) return false;
       if (excludeField !== "quotedRateGst" && (filters.quotedRateGst as string) && !matchesText(filters.quotedRateGst, item.quotedRateGst || "")) return false;
-      if (excludeField !== "itemNameMerge" && filters.itemNameMerge && !matchesText(filters.itemNameMerge, item.itemNameMerge || "")) return false;
+      if (excludeField !== "itemNameMergeSearch" && filters.itemNameMergeSearch && !matchesText(filters.itemNameMergeSearch, item.itemNameMerge || "")) return false;
       if (excludeField !== "totalValue" && filters.totalValue && !matchesText(filters.totalValue, item.totalValue || "")) return false;
       if (excludeField !== "itemWiseTotalValue" && filters.itemWiseTotalValue && !matchesText(filters.itemWiseTotalValue, item.itemWiseTotalValue || "")) return false;
       // note: productCost/cost are dropdowns already handled
@@ -988,9 +988,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       ) {
         return false;
       }
+      if (!matchesMulti(filters.itemNameMerge, item.itemNameMerge)) {
+        return false;
+      }
       if (
-        filters.itemNameMerge &&
-        !(item.itemNameMerge || "").toLowerCase().includes(filters.itemNameMerge.toLowerCase())
+        filters.itemNameMergeSearch &&
+        !(item.itemNameMerge || "").toLowerCase().includes(filters.itemNameMergeSearch.toLowerCase())
       ) {
         return false;
       }
@@ -1561,9 +1564,12 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
       ) {
         return false;
       }
+      if (!matchesMulti(filters.itemNameMerge, item.itemNameMerge)) {
+        return false;
+      }
       if (
-        filters.itemNameMerge &&
-        !(item.itemNameMerge || "").toLowerCase().includes(filters.itemNameMerge.toLowerCase())
+        filters.itemNameMergeSearch &&
+        !(item.itemNameMerge || "").toLowerCase().includes(filters.itemNameMergeSearch.toLowerCase())
       ) {
         return false;
       }
@@ -3334,10 +3340,22 @@ export default function EnquiryTable({ dropdownOptions }: EnquiryTableProps) {
                 <span>Item Name (Merge)</span>
                 {renderSortArrow("itemNameMerge")}
               </div>
+              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Item Name (Merge)"
+                  allLabel="All Names"
+                  options={cascadedOptions.itemNameMerge ?? []}
+                  cascadedOptions={cascadedOptions.itemNameMerge ?? []}
+                  selected={filters.itemNameMerge}
+                  onChange={(v) => dispatch(setFilter({ field: "itemNameMerge", value: v }))}
+                  includeBlank
+                  searchPlaceholder="Search merged item names..."
+                />
+              </div>
               <FilterTextInput
-                field="itemNameMerge"
-                placeholder="Search..."
-                className={inputClass}
+                field="itemNameMergeSearch"
+                placeholder="Search item name..."
+                className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
                 onMouseDown={(e) => handleMouseDown(29, e)}

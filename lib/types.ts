@@ -136,7 +136,8 @@ export interface FiltersState {
   discount: string;
   quotedRate: string;
   quotedRateGst: string;
-  itemNameMerge: string;
+  itemNameMerge: string[];
+  itemNameMergeSearch: string;
   totalValue: string;
   itemWiseTotalValue: string;
   validation: string[];
