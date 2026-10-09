@@ -65,6 +65,8 @@ model Enquiry {
   contactNo           String?
   duplicate String?
   duplicateOfDocket String?
+  emailApproved    Boolean   @default(false)
+  emailSentBy      String?
 
   attachments Attachment[]
   items       EnquiryItem[]
