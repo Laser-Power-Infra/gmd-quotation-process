@@ -1379,6 +1379,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             "Order Status": enquiry.orderStatus || "",
             "Closure Status": enquiry.closureStatus || "",
             "Project Reference": enquiry.projectReference || "",
+            "Technical Evaluation": enquiry.technicalEvaluation || "",
+            "Reverse Auction": enquiry.reverseAuctionStatus || "",
             "Item Name": "",
             "Quantity": "",
             "Item Type": "",
@@ -1428,6 +1430,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               "Order Status": enquiry.orderStatus || "",
               "Closure Status": enquiry.closureStatus || "",
               "Project Reference": enquiry.projectReference || "",
+              "Technical Evaluation": enquiry.technicalEvaluation || "",
+              "Reverse Auction": enquiry.reverseAuctionStatus || "",
               "Item Name": item.itemName,
               "Quantity": item.quantity ? Number(item.quantity) : "",
               "Item Type": item.itemType || "",
@@ -1808,7 +1812,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     }
   }
 
-  const TOTAL_COLUMNS = 40;
+  const TOTAL_COLUMNS = 42;
   const SELECT_COL_WIDTH = 44;
   const getColWidth = (idx: number) => columnWidths[idx] ?? DEFAULT_COLUMN_WIDTHS[idx] ?? 120;
   const totalTableWidth =
@@ -2466,7 +2470,37 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               </div>
             </th>
 
-            {/* 12. Item Name As Per Party */}
+            {/* 12. Technical Evaluation */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Technical Evaluation</span>
+              </div>
+              <div
+                onMouseDown={(e) => handleMouseDown(12, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 13. Reverse Auction */}
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+              <div className="flex items-center justify-between">
+                <span>Reverse Auction</span>
+              </div>
+              <div
+                onMouseDown={(e) => handleMouseDown(13, e)}
+                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
+                style={{ marginRight: "-3px" }}
+              >
+                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
+                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
+              </div>
+            </th>
+
+            {/* 14. Item Name As Per Party */}
             <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Item Name</span>
@@ -2478,7 +2512,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(12, e)}
+                onMouseDown={(e) => handleMouseDown(14, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2686,7 +2720,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               </div>
 
               <div
-                onMouseDown={(e) => handleMouseDown(13, e)}
+                onMouseDown={(e) => handleMouseDown(15, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2707,7 +2741,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(14, e)}
+                onMouseDown={(e) => handleMouseDown(16, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2752,7 +2786,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(15, e)}
+                onMouseDown={(e) => handleMouseDown(17, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2798,7 +2832,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 Closed BOM only
               </label>
               <div
-                onMouseDown={(e) => handleMouseDown(16, e)}
+                onMouseDown={(e) => handleMouseDown(18, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2826,7 +2860,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(17, e)}
+                onMouseDown={(e) => handleMouseDown(19, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2860,7 +2894,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(18, e)}
+                onMouseDown={(e) => handleMouseDown(20, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2888,7 +2922,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 panelClassName="w-56 z-80"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(19, e)}
+                onMouseDown={(e) => handleMouseDown(21, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2909,7 +2943,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(20, e)}
+                onMouseDown={(e) => handleMouseDown(22, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2930,7 +2964,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(21, e)}
+                onMouseDown={(e) => handleMouseDown(23, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2958,7 +2992,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(22, e)}
+                onMouseDown={(e) => handleMouseDown(24, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2985,7 +3019,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(23, e)}
+                onMouseDown={(e) => handleMouseDown(25, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3006,7 +3040,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(24, e)}
+                onMouseDown={(e) => handleMouseDown(26, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3027,7 +3061,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(25, e)}
+                onMouseDown={(e) => handleMouseDown(27, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3055,7 +3089,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(26, e)}
+                onMouseDown={(e) => handleMouseDown(28, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3087,7 +3121,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(27, e)}
+                onMouseDown={(e) => handleMouseDown(29, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3121,7 +3155,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(28, e)}
+                onMouseDown={(e) => handleMouseDown(30, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3155,7 +3189,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(29, e)}
+                onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3176,7 +3210,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(30, e)}
+                onMouseDown={(e) => handleMouseDown(32, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3210,7 +3244,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(31, e)}
+                onMouseDown={(e) => handleMouseDown(33, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3231,7 +3265,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(32, e)}
+                onMouseDown={(e) => handleMouseDown(34, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3252,7 +3286,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(33, e)}
+                onMouseDown={(e) => handleMouseDown(35, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3309,7 +3343,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(34, e)}
+                onMouseDown={(e) => handleMouseDown(36, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3337,7 +3371,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(35, e)}
+                onMouseDown={(e) => handleMouseDown(37, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3394,7 +3428,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(36, e)}
+                onMouseDown={(e) => handleMouseDown(38, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3410,7 +3444,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(37, e)}
+                onMouseDown={(e) => handleMouseDown(39, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3426,7 +3460,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(38, e)}
+                onMouseDown={(e) => handleMouseDown(40, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3440,7 +3474,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(39, e)}
+                onMouseDown={(e) => handleMouseDown(41, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3916,6 +3950,64 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         placeholder="-"
                         className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-center"
                       />
+                    </td>
+
+                    {/* Technical Evaluation / Reverse Auction */}
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          title="Set Technical Evaluation Yes"
+                          onClick={() => handleEnquiryFieldChange(enquiry.id, "technicalEvaluation", enquiry.technicalEvaluation === "Yes" ? "" : "Yes")}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                            enquiry.technicalEvaluation === "Yes"
+                              ? "bg-emerald-500 dark:bg-emerald-500/80 text-white "
+                              : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/25 dark:hover:bg-emerald-500/20"
+                          }`}
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          title="Set Technical Evaluation No"
+                          onClick={() => handleEnquiryFieldChange(enquiry.id, "technicalEvaluation", enquiry.technicalEvaluation === "No" ? "" : "No")}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                            enquiry.technicalEvaluation === "No"
+                              ? "bg-rose-500 dark:bg-rose-500/80 text-white "
+                              : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/25 dark:hover:bg-rose-500/20"
+                          }`}
+                        >
+                          No
+                        </button>
+                      </div>
+                    </td>
+                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          title="Set Reverse Auction Yes"
+                          onClick={() => handleEnquiryFieldChange(enquiry.id, "reverseAuctionStatus", enquiry.reverseAuctionStatus === "Yes" ? "" : "Yes")}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                            enquiry.reverseAuctionStatus === "Yes"
+                              ? "bg-emerald-500 dark:bg-emerald-500/80 text-white "
+                              : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/25 dark:hover:bg-emerald-500/20"
+                          }`}
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          title="Set Reverse Auction No"
+                          onClick={() => handleEnquiryFieldChange(enquiry.id, "reverseAuctionStatus", enquiry.reverseAuctionStatus === "No" ? "" : "No")}
+                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                            enquiry.reverseAuctionStatus === "No"
+                              ? "bg-rose-500 dark:bg-rose-500/80 text-white "
+                              : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/25 dark:hover:bg-rose-500/20"
+                          }`}
+                        >
+                          No
+                        </button>
+                      </div>
                     </td>
 
                     {/* First Item Name */}
@@ -4459,6 +4551,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                       >
                         {/* Empty selection cell — selection is per docket */}
                         <td className="py-3 px-2 text-center border-r border-b border-border"></td>
+                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
+                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>

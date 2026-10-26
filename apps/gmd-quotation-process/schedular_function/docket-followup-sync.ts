@@ -151,6 +151,7 @@ export async function runDocketFollowupSync(
       userLabels: true,
       docketNo: true,
       pendingDocket: true,
+      duplicateOfDocket: true,
       partyName: true,
       attachNames: true,
       updatedAt: true,
@@ -173,6 +174,10 @@ export async function runDocketFollowupSync(
   }> = [];
 
   for (const t of threads) {
+    // Already folded onto an existing docket by the dedupe job. Re-flagging it
+    // pending would only make the UI show a mail that is already docketed.
+    if (t.duplicateOfDocket) continue;
+
     const text = `${t.subject || ""} ${t.body || ""} ${t.bodyPreview || ""}`;
     const isCandidate = isPendingDocketCandidate({
       userLabels: t.userLabels,

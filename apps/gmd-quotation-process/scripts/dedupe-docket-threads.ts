@@ -286,10 +286,16 @@ async function main() {
   for (const x of toDelete) {
     try {
       // Point every thread that referenced the duplicate at the keeper, and clear
-      // the flag so the same mail cannot be docketed again.
+      // the flag so the same mail cannot be docketed again. `duplicateOfDocket`
+      // is the durable part: the ingestion clears docketNo/pendingDocket, never
+      // this column, and docket-creation skips marked threads.
       const res = await prisma.docketQuotationThread.updateMany({
         where: { OR: [{ docketNo: x.docket.docketNumber }, { threadId: x.threadId }] },
-        data: { docketNo: x.keep.docketNumber, pendingDocket: false },
+        data: {
+          docketNo: x.keep.docketNumber,
+          pendingDocket: false,
+          duplicateOfDocket: x.keep.docketNumber,
+        },
       });
       restamped += res.count;
       await prisma.enquiry.delete({ where: { id: x.docket.id } });

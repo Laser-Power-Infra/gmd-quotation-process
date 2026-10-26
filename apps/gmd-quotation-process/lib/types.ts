@@ -77,6 +77,8 @@ export interface EnquiryData {
   orderStatus: string | null;
   closureStatus: string | null;
   projectReference: string | null;
+  technicalEvaluation?: string | null;
+  reverseAuctionStatus?: string | null;
   apm?: string | null;
   offerPdfGeneratedAt?: string | Date | null;
   offerPdfGeneratedBy?: string | null;

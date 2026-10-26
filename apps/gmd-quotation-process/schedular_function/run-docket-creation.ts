@@ -1,10 +1,14 @@
 /**
- * Scheduled job — pending docket creation.
+ * Scheduled job — pending docket creation, then duplicate cleanup.
  *
- * A single-step job, so this orchestrator is thin. It still owns an in-flight
- * latch, because ofelia's `no-overlap = true` cannot see a second app instance
- * (or a future manual caller) sharing one database; a concurrent run would
- * allocate the same docket serials twice.
+ * Two steps, both with their own containment: `runPendingDocketCreation` creates
+ * dockets for new mail, and `runPendingDocketDedupe` deletes pending copies that
+ * resolve to the same mail. The second step always runs, even when the first has
+ * nothing to create, because older duplicates may still exist.
+ *
+ * The orchestrator owns an in-flight latch, because ofelia's `no-overlap = true`
+ * cannot see a second app instance (or a future manual caller) sharing one
+ * database; a concurrent run would allocate the same docket serials twice.
  *
  * Scheduled at :20, between `supply-history` (:15) and `contract-review` (:30),
  * so contract-review's same-hour pass can backfill `contractNo` on the dockets
@@ -12,6 +16,7 @@
  */
 
 import { runPendingDocketCreation, type PendingDocketCreationResult } from "./docket-creation";
+import { runPendingDocketDedupe, type PendingDocketDedupeResult } from "./docket-dedupe";
 import { JobAlreadyRunningError } from "./run-gmd-update";
 
 export type JobName = "docket-creation";
@@ -23,6 +28,7 @@ export type ScheduledDocketCreationResult = {
   elapsedMs: number;
   steps: {
     creation?: PendingDocketCreationResult;
+    dedupe?: PendingDocketDedupeResult;
   };
 };
 
@@ -62,6 +68,7 @@ export async function runScheduledDocketCreation(
     console.log(`\n########## [SCHEDULER] ${job} start ${startedAt} ##########`);
 
     steps.creation = await runPendingDocketCreation({ dryRun: options.dryRun ?? false });
+    steps.dedupe = await runPendingDocketDedupe({ dryRun: options.dryRun ?? false });
 
     const elapsedMs = Date.now() - startedAtMs;
 
@@ -71,7 +78,11 @@ export async function runScheduledDocketCreation(
         `items=${steps.creation.itemsExtracted} withItems=${steps.creation.threadsWithItems} ` +
         `parserHits=${steps.creation.parserHits} aiFallbacks=${steps.creation.aiFallbacks} ` +
         `snapshotFailures=${steps.creation.snapshotFailures} ` +
-        `attachmentFetchFailures=${steps.creation.attachmentFetchFailures}`,
+        `attachmentFetchFailures=${steps.creation.attachmentFetchFailures} ` +
+        `dedupeDeleted=${steps.dedupe.deleted}/${steps.dedupe.planned} ` +
+        `dedupeSkippedWork=${steps.dedupe.skippedWork} ` +
+        `dedupeAmbiguous=${steps.dedupe.skippedAmbiguous} ` +
+        `dedupeFailed=${steps.dedupe.failed}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
 

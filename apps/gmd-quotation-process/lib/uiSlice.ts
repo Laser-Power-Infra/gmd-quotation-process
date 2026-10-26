@@ -14,34 +14,36 @@ export const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
   9: 130,  // Order Status
   10: 140, // Closure Status
   11: 160, // Project Reference
-  12: 300, // Item Name As Per Party
-  13: 400, // Details
-  14: 110, // Quantity
-  15: 140, // Item Code
-  16: 140, // BOM ID
-  17: 110, // Product Cost
-  18: 120, // Cost Ref Code
-  19: 130, // Cost
-  20: 120, // Stock Status
-  21: 120, // Stock Quantity
-  22: 140, // Available Stock
-  23: 140, // View Image
-  24: 100, // Stock Against Contract
-  25: 120, // Discount
-  26: 150, // VA%
-  27: 120, // Quoted Rate
-  28: 140, // Rate (Contract Review)
-  29: 140, // PD Cost Val
-  30: 140, // QR incl. GST
-  31: 240, // Item Name (Merge)
-  32: 140, // Total Value incl. GST
-  33: 140, // Itemwise Total Value
-  34: 170, // Validation
-  35: 140, // Delivery Schedule
-  36: 170, // APM
-  37: 150, // Offer PDF
-  38: 150, // Send Email
-  39: 80,  // Actions
+  12: 160, // Technical Evaluation
+  13: 160, // Reverse Auction
+  14: 300, // Item Name As Per Party
+  15: 400, // Details
+  16: 110, // Quantity
+  17: 140, // Item Code
+  18: 140, // BOM ID
+  19: 110, // Product Cost
+  20: 120, // Cost Ref Code
+  21: 130, // Cost
+  22: 120, // Stock Status
+  23: 120, // Stock Quantity
+  24: 140, // Available Stock
+  25: 140, // View Image
+  26: 100, // Stock Against Contract
+  27: 120, // Discount
+  28: 150, // VA%
+  29: 120, // Quoted Rate
+  30: 140, // Rate (Contract Review)
+  31: 140, // PD Cost Val
+  32: 140, // QR incl. GST
+  33: 240, // Item Name (Merge)
+  34: 140, // Total Value incl. GST
+  35: 140, // Itemwise Total Value
+  36: 170, // Validation
+  37: 140, // Delivery Schedule
+  38: 170, // APM
+  39: 150, // Offer PDF
+  40: 150, // Send Email
+  41: 80,  // Actions
 };
 
 const initialState: UiState = {

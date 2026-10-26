@@ -25,7 +25,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | BOM MAST ERP sync | `POST /api/scheduler/bom-mast` | `bom-mast-sync` | `BOM MAST ERP` |
 | Physical Stock cost / BOM ID | `POST /api/scheduler/physical-stock-cost-bom` | `physical-stock-cost-bom-sync` | local `FullItem` / `Bom` / `BomItem` → stock DB `PhysicalStock` |
 | Supply History MASTER sync | `POST /api/scheduler/supply-history` | `supply-history-sync` | `MASTER`, GMD Clientwise ORDER LIST, `SALE_BILL` (rate gap-fill) |
-| Pending docket creation | `POST /api/scheduler/docket-creation` | `docket-creation-sync` | `docket_quotation_threads`, `enquiries` |
+| Pending docket creation + duplicate cleanup | `POST /api/scheduler/docket-creation` | `docket-creation-sync` | `docket_quotation_threads`, `enquiries` |
 | Contract Review sync | `POST /api/scheduler/contract-review` | `contract-review-sync` | `CONTRACTS`, `DUMP`, `stock-phys`, `INSPECTION OFFER DUMP` |
 | ACC Master refresh | `POST /api/scheduler/acc-master` | `acc-master-sync` | `ACC_MASTER` |
 | Execution Tracking sync | `POST /api/scheduler/execution-tracking` | `execution-tracking-sync` | `SALE_BILL` (+ the local `acc_master`) |
@@ -485,12 +485,17 @@ Verify: `GET $GMD_APP_SERVER/api/scheduler/pbg` with `x-api-key` returns
 
 ## `docket-creation`
 
-Single step: `runPendingDocketCreation()` in `docket-creation.ts`. For **recent**
-`DocketQuotationThread` rows (today's IST calendar day plus the previous
-`BACKLOG_DAYS` = 5, via `istDayWindow` in `lib/docketPending`, because the
-container runs UTC) with `pendingDocket = true`, `docketNo = null` and no docket
-already linked to the mail, it creates an `Enquiry`, extracting line items from
-the mail content:
+Two steps in `run-docket-creation.ts`:
+
+1. `runPendingDocketCreation()` (`docket-creation.ts`) — creates dockets for new mail.
+2. `runPendingDocketDedupe()` (`docket-dedupe.ts`) — deletes pending duplicates of
+   a mail that already has a docket.
+
+Step 1: for **recent** `DocketQuotationThread` rows (today's IST calendar day plus
+the previous `BACKLOG_DAYS` = 5, via `istDayWindow` in `lib/docketPending`,
+because the container runs UTC) with `pendingDocket = true`, `docketNo = null`, no
+docket already linked to the mail and `duplicateOfDocket = null`, it creates an
+`Enquiry`, extracting line items from the mail content:
 
 1. Allocates the next fiscal docket number(s) via `nextDocketSerials`
    (`lib/docketNumber`) from the current fiscal year's existing dockets.
@@ -534,11 +539,50 @@ Two limits, both deliberate:
   a docket is created by hand. Skipped threads are counted in
   `skippedAlreadyDocketed`.
 
+### Scheduled duplicate cleanup (step 2)
+
+`runPendingDocketDedupe()` (`docket-dedupe.ts`) runs every hour immediately after
+creation, even when the creation step has nothing to create. It reads every
+zero-item docket — the dashboard's "pending dockets" — and every thread, resolves
+each docket back to its source mail by `Enquiry.sourceThreadId`,
+`thread.docketNo` or a unique attachment URL, and folds threads whose normalised
+snapshot fingerprint matches (subject + sender + exact mail date + body preview +
+attachment names). That last rule catches the mail ingestion importing the same
+mail under a second Gmail thread id, which `sourceThreadId` alone cannot.
+
+Only zero-item dockets are deleted, and only when a keeper exists. The keeper is
+the docket with items, else the one already linked to the thread, else the
+earliest. A pending docket carrying work (`selectedContractNo`,
+`offerPdfGeneratedAt`, `emailApproved`, `emailSentBy`, `duplicate` /
+`duplicateOfDocket`) is reported and left alone. Unresolved or ambiguous groups
+are reported, never deleted. The per-run cap is 50; the rest is picked up next
+hour. Forwarded copies with a changed subject or sender are out of scope — the
+manual `--rule-c-threads` path below remains for those.
+
+Every folded thread is stamped `docketNo = keeper`, `pendingDocket = false` and
+`duplicateOfDocket = keeper.docketNumber`. The ingestion clears the first two on
+its next re-sync but never the last one, and `docket-creation` skips threads
+where it is set, so a deleted duplicate cannot be recreated.
+
+Counters are in `steps.dedupe`: `deleted`/`planned`, `deferred`, `skippedWork`,
+`skippedAmbiguous`, `unresolved`, `failed`. A failing group is caught
+individually and counted; `docket-creation-sync.sh` fails the run on
+`"failed":[1-9]`.
+
+Preview without writing (both steps are dry-run):
+
+```sh
+curl -X POST "$GMD_APP_SERVER/api/scheduler/docket-creation?dryRun=1" \
+  -H "x-api-key: $GMD_SYNC_API_KEY"
+```
+
 ### Cleaning up dockets that were created more than once
 
-`scripts/dedupe-docket-threads.ts` (`npm run docket:dedupe` / `:apply`) repairs
-dockets created before those limits existed. It resolves every docket back to its
-source thread by three rules, in order:
+`scripts/dedupe-docket-threads.ts` (`npm run docket:dedupe` / `:apply`) is the
+manual repair for everything the scheduled step leaves alone — older groups, and
+rule C below. It also stamps `duplicateOfDocket` on the threads it re-points, so
+its repairs are durable too. It resolves every docket back to its source thread
+by three rules, in order:
 
 - **A** — `thread.docketNo == docketNumber`.
 - **B** — an exact match on the mail attachment URLs the job linked as-is.

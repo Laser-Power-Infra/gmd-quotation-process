@@ -30,7 +30,7 @@ export interface DocketSnapshotData {
 }
 
 /** Thread columns store arrays; tolerate a scalar or `{ value }` wrapper. */
-function toStringArray(value: unknown): string[] {
+export function toStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((v) => (typeof v === "string" ? v : v == null ? "" : String(v)));
   }

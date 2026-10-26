@@ -139,6 +139,13 @@ export {
 } from "./run-docket-creation";
 
 export {
+  runPendingDocketDedupe,
+  type DeletedDuplicate,
+  type PendingDocketDedupeOptions,
+  type PendingDocketDedupeResult,
+} from "./docket-dedupe";
+
+export {
   parseDocketItems,
   htmlToText,
   type ParsedDocketItem,

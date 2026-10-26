@@ -134,6 +134,9 @@ export async function runPendingDocketCreation(
     where: {
       pendingDocket: true,
       docketNo: null,
+      // Folded duplicates: the ingestion clears docketNo/pendingDocket but never
+      // duplicateOfDocket, so this is the durable "do not docket again" guard.
+      duplicateOfDocket: null,
       date: { gte: start, lt: end },
     },
     orderBy: { date: "asc" },

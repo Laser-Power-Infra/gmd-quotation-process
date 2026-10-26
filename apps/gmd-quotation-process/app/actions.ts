@@ -834,6 +834,7 @@ export async function deleteEnquiryAction(enquiryId: string) {
       select: {
         id: true,
         docketNumber: true,
+        sourceThreadId: true,
         duplicate: true,
         duplicateOfDocket: true,
       },
@@ -864,20 +865,46 @@ export async function deleteEnquiryAction(enquiryId: string) {
     }
     const originalExists = await prisma.enquiry.findUnique({
       where: { docketNumber: original },
-      select: { id: true },
+      select: { id: true, sourceThreadId: true },
     });
     if (!originalExists) {
       return { success: false as const, error: `Original docket "${original}" no longer exists.` };
     }
 
     // Link the source mail(s) to the original docket, then remove the duplicate
-    // and its items.
+    // and its items. `duplicateOfDocket` survives the ingestion's re-sync, so the
+    // mail cannot be docketed again even after docketNo is cleared.
     await prisma.docketQuotationThread.updateMany({
-      where: { docketNo: enquiry.docketNumber },
-      data: { docketNo: original, pendingDocket: false },
+      where: {
+        OR: [
+          { docketNo: enquiry.docketNumber },
+          ...(enquiry.sourceThreadId ? [{ threadId: enquiry.sourceThreadId }] : []),
+        ],
+      },
+      data: {
+        docketNo: original,
+        pendingDocket: false,
+        duplicateOfDocket: original,
+      },
     });
 
     await prisma.enquiry.delete({ where: { id: enquiryId } });
+
+    // The duplicate may be the row holding the durable mail link; move it to the
+    // original once the unique sourceThreadId is free.
+    if (enquiry.sourceThreadId && !originalExists.sourceThreadId) {
+      try {
+        await prisma.enquiry.update({
+          where: { id: originalExists.id },
+          data: { sourceThreadId: enquiry.sourceThreadId },
+        });
+      } catch (e) {
+        console.warn(
+          `[Server] could not move sourceThreadId to ${original}; thread is still folded:`,
+          e,
+        );
+      }
+    }
 
     console.log(
       `[Server] deleteEnquiry (duplicate) ${enquiry.docketNumber} -> original ${original}`,

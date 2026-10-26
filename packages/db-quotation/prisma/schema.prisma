@@ -769,6 +769,10 @@ model DocketQuotationThread {
   userLabels    Json?     @map("user_labels")
   pendingDocket Boolean?
   partyName     String?
+  /// Frozen fold target: this mail is the same as the docket named here.
+  /// The mail ingestion clears docketNo/pendingDocket but never this column,
+  /// so docket-creation can skip the thread durably.
+  duplicateOfDocket String? 
   msgCount      Int       @default(1) @map("msg_count")
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -1028,44 +1032,4 @@ model AccMaster {
 
   @@index([syncedAt])
   @@map("acc_master")
-}
-
-/// Backend record of one sync run, plus the per-row diff of what it added or
-/// changed (`details`). Written by `lib/syncLog.ts`.
-///
-/// `kind` keeps the table reusable for other syncs later — the execution
-/// tracking sync writes `"execution-tracking"`, the ACC_MASTER refresh writes
-/// `"acc-master"`. A dry run is recorded too (`mode = "dry-run"`), so the
-/// preview a user looked at is in the log next to the apply that followed it.
-model SyncLog {
-  id            String    @id @default(cuid())
-  kind          String
-  financialYear String?   @map("financial_year")
-  /// "dry-run" | "apply"
-  mode          String
-  /// "success" | "partial" | "failed"
-  status        String
-  startedAt     DateTime  @default(now()) @map("started_at")
-  finishedAt    DateTime? @map("finished_at")
-  scanned       Int       @default(0)
-  /// Sheet rows that resolved to a DB row.
-  matched       Int       @default(0)
-  inserted      Int       @default(0)
-  updated       Int       @default(0)
-  unchanged     Int       @default(0)
-  skipped       Int       @default(0)
-  /// Consignee codes that are absent from `acc_master`.
-  accMisses     Int       @default(0) @map("acc_misses")
-  /// Sheet rows whose invoice maps to several DB rows that ITEM_CODE cannot split.
-  ambiguous     Int       @default(0)
-  failedWrites  Int       @default(0) @map("failed_writes")
-  error         String?
-  /// `SyncLogChange[]` — one entry per added/changed row, capped (see
-  /// `DETAIL_CAP` in `lib/syncLog.ts`). Never null.
-  details       Json      @default("[]")
-  createdAt     DateTime  @default(now()) @map("created_at")
-
-  @@index([kind, financialYear])
-  @@index([startedAt])
-  @@map("sync_log")
 }

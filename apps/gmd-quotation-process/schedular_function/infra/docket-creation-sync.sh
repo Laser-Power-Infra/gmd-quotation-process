@@ -3,9 +3,11 @@
 # Materializes dockets for every recent DocketQuotationThread flagged
 # pendingDocket = true (today plus the previous 5 IST days): creates a
 # header-only Enquiry, links mail attachments, generates the snapshot
-# PDF, and stamps the thread with the new docket number.
+# PDF, and stamps the thread with the new docket number. The same run then
+# deletes duplicate zero-item dockets for a mail that already has a docket.
 #
-# Idempotent: a stamped thread leaves the pending set, so re-running is a no-op.
+# Idempotent: a stamped thread leaves the pending set, and a folded thread is
+# skipped by duplicateOfDocket, so re-running is a no-op.
 #
 # Scheduled at :20, between supply-history (:15) and contract-review (:30), so
 # contract-review's same-hour pass can backfill contractNo on the new dockets.

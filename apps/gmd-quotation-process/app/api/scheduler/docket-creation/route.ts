@@ -1,15 +1,16 @@
 /**
- * Ofelia entry point for the hourly pending-docket creation.
+ * Ofelia entry point for the hourly pending-docket creation and dedupe.
  *
  * Materializes dockets for recent `DocketQuotationThread` rows flagged
  * `pendingDocket = true` (today plus a few days of backlog, because the mail
  * ingestion can lag): creates a header-only `Enquiry`, links mail
  * attachments, generates the snapshot PDF, and stamps the thread with the new
- * docket number.
+ * docket number. The same run then deletes pending duplicates of a mail that
+ * already has a docket and folds their threads with `duplicateOfDocket`.
  *
  * One docket per mail: a candidate whose mail already has a docket is skipped on
- * `Enquiry.sourceThreadId`, because the thread stamp is cleared by the external
- * mail ingestion within the hour.
+ * `Enquiry.sourceThreadId` / the thread's `duplicateOfDocket`, because the thread
+ * stamp is cleared by the external mail ingestion within the hour.
  *
  * Deliberately thin: all logic lives in `@/schedular_function`.
  */
@@ -39,7 +40,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await runScheduledDocketCreation();
+    const url = new URL(request.url);
+    const dryRun = ["1", "true"].includes(
+      (url.searchParams.get("dryRun") ?? "").toLowerCase(),
+    );
+    const result = await runScheduledDocketCreation({ dryRun });
 
     return NextResponse.json(result);
   } catch (err) {
@@ -71,6 +76,6 @@ export async function GET(request: Request) {
     success: true,
     job: "docket-creation",
     auth: "ok",
-    note: "POST to run the job. Idempotent: threads leave the pending set once stamped.",
+    note: "POST to run the job (?dryRun=1 plans without writing). Idempotent: threads leave the pending set once stamped or folded by the dedupe step.",
   });
 }

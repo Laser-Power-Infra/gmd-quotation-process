@@ -147,6 +147,7 @@ export async function GET() {
         company: true,
         ocrText: true,
         pendingDocket: true,
+        duplicateOfDocket: true,
         partyName: true,
       },
     });
@@ -258,7 +259,8 @@ export async function GET() {
       const latestMsg = parsedMsgs.length > 1 ? parsedMsgs[parsedMsgs.length - 1] : firstMsg;
       const requestSnippet = (firstMsg?.body || t.bodyPreview || "").slice(0, 400).trim();
 
-      const hasDocketInDb = !!t.docketNo;
+      const hasDocketInDb = !!t.docketNo || !!t.duplicateOfDocket;
+      const linkedDocketNo = t.docketNo || t.duplicateOfDocket || null;
       const pendingStatus = hasDocketInDb ? "DOCKET_STAMPED" : "PENDING_DOCKET";
 
       if (!hasLaserReply) {
@@ -297,7 +299,7 @@ export async function GET() {
           isInternal: isSenderInternal,
         },
         mailType: t.mailType || "DOCKET",
-        docketNo: t.docketNo || null,
+        docketNo: linkedDocketNo,
         docketStatus: t.docketStatus || null,
         msgCount: t.msgCount || parsedMsgs.length || 1,
         hasLaserReply,
