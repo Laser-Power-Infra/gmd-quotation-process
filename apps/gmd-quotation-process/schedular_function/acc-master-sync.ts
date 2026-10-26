@@ -34,7 +34,17 @@ import {
   isBlankSheetValue,
   normalizeKey,
 } from "@/lib/gmd_lib/execution-tracking-columns";
-import { SYNC_LOG_KIND, writeSyncLog, type SyncLogChange } from "@/lib/syncLog";
+// import { SYNC_LOG_KIND, writeSyncLog, type SyncLogChange } from "@/lib/syncLog";
+
+// sync_log write disabled; local shapes keep the report typed.
+type SyncLogFieldChange = { field: string; from: string | null; to: string };
+type SyncLogChange = {
+  key: string;
+  action: "insert" | "update" | "skipped" | "merged";
+  fields: SyncLogFieldChange[];
+  rowIds?: string[];
+  reason?: string;
+};
 
 /** How many duplicate codes are listed in the report before it is just a count. */
 const SAMPLE_SIZE = 5;
@@ -129,7 +139,7 @@ export function parseAccMasterRows(
 export async function runAccMasterSync(
   options: AccMasterSyncOptions = {},
 ): Promise<AccMasterSyncResult> {
-  const { dryRun = false, log = true } = options;
+  const { dryRun = false } = options;
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs);
 
@@ -277,23 +287,8 @@ export async function runAccMasterSync(
   console.log(`[scheduler] elapsed          : ${elapsedMs}ms`);
   console.log("===== [SCHEDULER] ACC MASTER DONE =====\n");
 
-  const logId = log
-    ? await writeSyncLog({
-        kind: SYNC_LOG_KIND.accMaster,
-        financialYear: null,
-        mode: dryRun ? "dry-run" : "apply",
-        status: failedWrites > 0 ? "partial" : "success",
-        startedAt,
-        scanned: parsed.rows.length,
-        matched: parsed.rows.length,
-        inserted: created,
-        updated,
-        unchanged,
-        skipped: parsed.blankCodeRows + parsed.duplicateCodes,
-        failedWrites,
-        changes,
-      })
-    : null;
+  // sync_log write disabled; no logging for now.
+  const logId: string | null = null;
 
   return {
     tabTitle,

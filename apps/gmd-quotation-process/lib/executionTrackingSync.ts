@@ -73,12 +73,22 @@ import {
 import { getAccNameMap } from "@/lib/accMasterLookup";
 import { resolveItemNames, resolveMasterNames } from "@/lib/erpItemNameLookup";
 import { canonicalizeState } from "@/lib/supplyStateResolver";
-import {
-  SYNC_LOG_KIND,
-  writeSyncLog,
-  type SyncLogChange,
-  type SyncLogFieldChange,
-} from "@/lib/syncLog";
+// import {
+//   SYNC_LOG_KIND,
+//   writeSyncLog,
+//   type SyncLogChange,
+//   type SyncLogFieldChange,
+// } from "@/lib/syncLog";
+
+// sync_log write disabled; local shapes keep the report/CLI typed.
+type SyncLogFieldChange = { field: string; from: string | null; to: string };
+type SyncLogChange = {
+  key: string;
+  action: "insert" | "update" | "skipped" | "merged";
+  fields: SyncLogFieldChange[];
+  rowIds?: string[];
+  reason?: string;
+};
 
 /** Rows per write chunk, and how many may be in flight at once. */
 const WRITE_CHUNK = 200;
@@ -639,7 +649,8 @@ export async function runExecutionTrackingSync(
   options: ExecutionTrackingOptions,
 ): Promise<ExecutionTrackingReport> {
   const startedAtMs = Date.now();
-  const startedAt = new Date(startedAtMs);
+  // sync_log write disabled; startedAt is only needed when logging.
+  // const startedAt = new Date(startedAtMs);
   const apply = options.apply ?? false;
 
   const financialYearInput = String(options.financialYear ?? "").trim();
@@ -1153,26 +1164,8 @@ export async function runExecutionTrackingSync(
   console.log(`[scheduler] elapsed          : ${elapsedMs}ms`);
   console.log("===== [SCHEDULER] EXECUTION TRACKING DONE =====\n");
 
-  const logId =
-    options.log === false
-      ? null
-      : await writeSyncLog({
-          kind: SYNC_LOG_KIND.executionTracking,
-          financialYear,
-          mode: apply ? "apply" : "dry-run",
-          status: failedWrites > 0 ? "partial" : "success",
-          startedAt,
-          scanned: limited.length,
-          matched,
-          inserted,
-          updated,
-          unchanged,
-          skipped: skippedBlankInvoice + blockedInserts,
-          accMisses: records.filter((record) => record.accMiss).length,
-          ambiguous,
-          failedWrites,
-          changes,
-        });
+  // sync_log write disabled; no logging for now.
+  const logId: string | null = null;
 
   return {
     mode: apply ? "apply" : "dry-run",

@@ -52,7 +52,17 @@ import {
   SALE_BILL_TARGET_HEADERS,
   mcGid,
 } from "@/lib/gmd_lib/erp-contract-no-columns";
-import { SYNC_LOG_KIND, writeSyncLog, type SyncLogChange } from "@/lib/syncLog";
+// import { SYNC_LOG_KIND, writeSyncLog, type SyncLogChange } from "@/lib/syncLog";
+
+// sync_log write disabled; local shapes keep the report/CLI typed.
+type SyncLogFieldChange = { field: string; from: string | null; to: string };
+type SyncLogChange = {
+  key: string;
+  action: "insert" | "update" | "skipped" | "merged";
+  fields: SyncLogFieldChange[];
+  rowIds?: string[];
+  reason?: string;
+};
 
 /** Invoices per write chunk, and how many chunks may be in flight at once. */
 const WRITE_CHUNK = 200;
@@ -423,7 +433,8 @@ export async function runErpContractNoSync(
   options: ErpContractNoOptions,
 ): Promise<ErpContractNoReport> {
   const startedAtMs = Date.now();
-  const startedAt = new Date(startedAtMs);
+  // sync_log write disabled; startedAt is only needed when logging.
+  // const startedAt = new Date(startedAtMs);
   const apply = options.apply ?? false;
   const overwrite = options.overwrite ?? true;
 
@@ -591,26 +602,8 @@ export async function runErpContractNoSync(
   console.log(`[scheduler] elapsed         : ${elapsedMs}ms`);
   console.log("===== [SCHEDULER] ERP CONTRACT NO DONE =====\n");
 
-  const logId =
-    options.log === false
-      ? null
-      : await writeSyncLog({
-          kind: SYNC_LOG_KIND.erpContractNo,
-          financialYear,
-          mode: apply ? "apply" : "dry-run",
-          status: failedWrites > 0 ? "partial" : "success",
-          startedAt,
-          scanned: considered.length,
-          matched: plan.writes.length + plan.unchangedInvoices,
-          inserted: 0,
-          updated: rowsWritten,
-          unchanged: plan.unchangedInvoices,
-          skipped:
-            plan.noContractOnMc + plan.noOrderVrnoInSheet + plan.unmatchedOrderVrno,
-          ambiguous: lookup.conflicts.length,
-          failedWrites,
-          changes,
-        });
+  // sync_log write disabled; no logging for now.
+  const logId: string | null = null;
 
   return {
     mode: apply ? "apply" : "dry-run",
