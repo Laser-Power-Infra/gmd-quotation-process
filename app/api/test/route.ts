@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const baseUrl = process.env.EVOLUTION_API_BASE_URL ?? "http://evolution-api:8080";
+  const baseUrl = process.env.EVOLUTION_API_BASE_URL ?? "http://evolution-api-gmd:8080";
   const instance = encodeURIComponent(process.env.EVOLUTION_API_INSTANCE ?? "GMD(BOT)");
   const apikey = process.env.EVOLUTION_API_KEY ?? "";
 

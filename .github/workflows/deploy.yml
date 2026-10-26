@@ -1,4 +1,4 @@
-name: Build and Deploy gmd-quotation-process
+name: Build and Deploy Stock Physical 
 
 on:
   push:
@@ -47,17 +47,27 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            ghcr.io/${{ steps.repo_owner.outputs.owner }}/gmd-quotation-process:latest
-            ghcr.io/${{ steps.repo_owner.outputs.owner }}/gmd-quotation-process:${{ steps.vars.outputs.short_sha }}
+            ghcr.io/${{ steps.repo_owner.outputs.owner }}/stock-physical:latest
+            ghcr.io/${{ steps.repo_owner.outputs.owner }}/stock-physical:${{ steps.vars.outputs.short_sha }}
 
   deploy:
     name: Deploy to Server
     needs: build-and-push
     runs-on: self-hosted
     steps:
+     # 🟢 Step 1: Checkout the latest repo code on the server runner
+      - name: Checkout Latest Code
+        uses: actions/checkout@v4
+
+      # 🟢 Step 2: Copy the latest docker-compose.yml to D://
+      - name: Sync Latest docker-compose.yml
+        shell: powershell
+        run: |
+          Copy-Item -Path "docker-compose.yml" -Destination "D:/stock-physical/docker-compose.yml" -Force
+          Write-Host "✅ Synced latest docker-compose.yml to D:/stock-physical/"
       - name: Pull and Restart Container
         shell: powershell
-        working-directory: D:/gmd-quotation-process
+        working-directory: D:/stock-physical
         env:
           APP_VERSION: ${{ needs.build-and-push.outputs.short_sha }}
         run: |
@@ -65,11 +75,11 @@ jobs:
           $env:APP_VERSION = $env:APP_VERSION
 
           
-          docker compose pull gmd-quotation-process
-          docker compose up -d --no-deps gmd-quotation-process
+          docker compose pull stock-physical
+          docker compose up -d --no-deps stock-physical
 
          
-          $repo = "ghcr.io/laser-power-infra/gmd-quotation-process"
+          $repo = "ghcr.io/laser-power-infra/stock-physical"
           $allImages = docker images --filter "reference=$repo" --format "{{.ID}}" | Select-Object -Unique
           $oldImages = $allImages | Select-Object -Skip 2
 

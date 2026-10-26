@@ -7,7 +7,7 @@ export interface EvolutionMessageResult {
 }
 
 const EVOLUTION_BASE_URL =
-  process.env.EVOLUTION_API_BASE_URL ?? "http://evolution-api:8080";
+  process.env.EVOLUTION_API_BASE_URL ?? "http://evolution-api-gmd:8080";
 const EVOLUTION_INSTANCE =
   process.env.EVOLUTION_API_INSTANCE ?? "Bidyut Kr. Das";
 
