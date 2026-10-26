@@ -3,7 +3,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
-import GMDUpdateTable from "@gmd/dashboard/components/GMDUpdateTable";
+import GMDUpdateTable, {
+  type ServerTableMode,
+} from "@gmd/dashboard/components/GMDUpdateTable";
 import ErrorState from "@gmd/dashboard/components/ErrorState";
 import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
@@ -21,19 +23,39 @@ import {
 import { cBatchBadges, cBatchFilter } from "@gmd/dashboard/lib/verify-bom-columns";
 import type { ContractReviewImage } from "@gmd/dashboard/lib/types";
 import {
-  BOM_ID_COLUMN,
   getBomIdCategory,
   type BomIdCategory,
 } from "@gmd/dashboard/lib/bomCategory";
-import { parseGmdDate } from "@gmd/ui/lib/dateParse";
 import {
-  FLOW_HAS_VALUE,
-  FLOW_NO_VALUE,
-  FLOW_ZERO,
-  FLOW_NON_ZERO,
-  cellHasValue,
-  cellIsZero,
-} from "@gmd/dashboard/lib/flowFilter";
+  ACTUATOR_IDX,
+  BAL_BILL_AG_CONT_IDX,
+  BOM_ID_IDX,
+  CLEARANCE_STATUS_IDX,
+  CONTRACT_NO_IDX,
+  INSPECTION_IDX,
+  ITEM_CODE_IDX,
+  MC_IDX,
+  NO_USE_IDX,
+  OFFER_PENDING_DONE_IDX,
+  ORDER_LIST_IDX,
+  PENDING_ACTUATIONS_FILTER,
+  PN_IDX,
+  PROJECT_REFERENCE_IDX,
+  RM_CODE_FOR_ACTUATOR_IDX,
+  STATE_IDX,
+  UTILITY_IDX,
+  VA_PCT_FROM_COST_IDX,
+  buildCategoryOptions,
+  computeView,
+  fmt,
+  isActuatorItemRow,
+  pathToColumnFilters,
+  type BalBillFilter,
+  type ContractReviewView,
+  type RateTileKey,
+  type SortSpec,
+  type ViewQuery,
+} from "../lib/view";
 
 import {
   ResizableHandle,
@@ -58,439 +80,125 @@ const layoutStorage = {
 };
 
 
-type BalBillFilter = "all" | "yes" | "no";
-
-function statusTitle(value: string): string {
-  const s = value.trim();
-  if (!s) return "Blanks";
-  return s
-    .split(/\s+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
-}
-
-function isZeroBal(value: unknown): boolean {
-  let s = String(value ?? "").trim();
-  if (!s) return false;
-  s = s.replace(/^["']+|["']+$/g, "").trim();
-  const n = parseFloat(s.replace(/,/g, ""));
-  return !isNaN(n) && n === 0;
-}
-
-function parseNum(value: unknown): number {
-  let s = String(value ?? "").trim();
-  if (!s) return NaN;
-  s = s.replace(/^["']+|["']+$/g, "").replace(/,/g, "");
-  return parseFloat(s);
-}
-
-const ITEM_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Item");
-const EXTRA_ITEM_OPTION = "TPV + SLV METAL RISING - 9523";
-const SIZE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("SIZE");
-const PN_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PN RATING");
-const RATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RATE");
-const MC_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC QTY");
-const BOM_ID_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BOM ID");
-const NO_USE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("RM AVAIL");
-const ACTUATOR_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Actuator");
-const RM_CODE_FOR_ACTUATOR_IDX = CONTRACT_REVIEW_HEADERS.indexOf(
-  "RM CODE FOR ACTUATOR",
-);
-const ORDER_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER QTY");
-const DI_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("DI QTY");
-const BILLED_QTY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("BILLED QTY");
-const BAL_BILL_AG_CONT_IDX =
-  CONTRACT_REVIEW_HEADERS.indexOf("BAL BILL AG CONT");
-const STATUS_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATUS");
-const ORDER_LIST_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ORDER LIST");
-const ITEM_NAME_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ITEM_NAME");
-const VA_PCT_FROM_COST_IDX = CONTRACT_REVIEW_HEADERS.indexOf("VA % FROM COST");
-const COST_FROM_QUOTATION_IDX =
-  CONTRACT_REVIEW_HEADERS.indexOf("COST FROM QUOTATION");
-const CONTRACT_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("CONTRACT NO");
-const ITEM_CODE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("ITEM_CODE");
-const STATE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("STATE");
-const UTILITY_IDX = CONTRACT_REVIEW_HEADERS.indexOf("UTILITY");
-const PROJECT_REFERENCE_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PROJECT REFERENCE");
-const INSPECTION_IDX = CONTRACT_REVIEW_HEADERS.indexOf("Inspection");
-const CLEARANCE_STATUS_IDX = CONTRACT_REVIEW_HEADERS.indexOf("CLEARANCE STATUS");
-const MC_IDX = CONTRACT_REVIEW_HEADERS.indexOf("MC Received/Pending");
-const OFFER_NUMBER_IDX = CONTRACT_REVIEW_HEADERS.indexOf("OFFER NUMBER");
-const OFFER_PENDING_DONE_IDX =
-  CONTRACT_REVIEW_HEADERS.indexOf("OFFER PENDING/DONE");
 const UPLOAD_DIAGRAM_COLUMN = "Upload Drawing";
 const UPLOAD_DIAGRAM_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf(UPLOAD_DIAGRAM_COLUMN);
 
-// Stable descriptor list so the sidebar/graph filter mirror keeps a stable
-// dependency and the batch checkboxes + cascading share one definition.
+const EMPTY_VIEW: ContractReviewView = {
+  statusCounts: { all: 0 },
+  statusOptions: [],
+  clearanceCounts: { all: 0 },
+  clearanceOptions: ["(Blank)"],
+  mcCounts: { all: 0 },
+  mcOptions: ["(Blank)"],
+  inspectionCounts: { all: 0 },
+  inspectionOptions: ["(Blank)"],
+  itemOptions: [],
+  sizeOptions: [],
+  pnOptions: [],
+  rateMcCont: { sum: 0, count: 0 },
+  rateOrderQty: { sum: 0, count: 0 },
+  rateBalBillCont: { sum: 0, count: 0 },
+  rateBalDiQty: { sum: 0, count: 0 },
+  rateBalMspQty: { sum: 0, count: 0 },
+  balBillAgContTotal: { sum: 0, count: 0 },
+  totalCostExcGst: { sum: 0, count: 0 },
+  totalCostIncGst: { sum: 0, count: 0 },
+  totalVaPct: { sum: 0, count: 0 },
+  tileRowsCount: 0,
+  contractCount: 0,
+  tileAllCounts: { item: 0, itemBalBill: 0, size: 0, pn: 0 },
+  graphCounts: {},
+  graphValues: {},
+  contractNoMeta: {},
+};
 
-/**
- * Sentinel option shown in the Actuator column's filter dropdown, right after
- * `(Blank)`. Selects actuator item rows whose Actuator dropdown is still empty
- * - i.e. the actuations still pending data entry.
- */
-const PENDING_ACTUATIONS_FILTER = "Pending Actuations";
+const EDITABLE_COLUMN_CANDIDATES = [
+  "bom formula trial",
+  "Item",
+  "BOM ID",
+  "CLEARANCE STATUS",
+  "Actuator",
+  "MC Received/Pending",
+  "Inspection",
+  "OFFER PENDING/DONE",
+  "Remarks",
+  "PN RATING",
+  "LC/RTGS REF NO",
+  "LC DATE/RTGS DATE",
+  "LAST DATE OF SHIPMENT/DATE OF LC",
+  "Issuing bank name",
+  "PAYMENT TERMS",
+  "PROD ORDER NO",
+  "VA % FROM COST",
+];
 
-/** Whether this row's item is an actuator (so its Actuator dropdown renders). */
-function isActuatorItemRow(row: unknown[]): boolean {
-  const n = String(row[ITEM_NAME_IDX] ?? "")
-    .toLowerCase()
-    .replace(/\s+/g, "");
-  return n.includes("actuator") || n.includes("_act") || n.includes("act+gb");
-}
+const FIXED_DROPDOWN_OPTIONS: Record<string, string[]> = {
+  "MC Received/Pending": ["Received", "Pending"],
+  Inspection: ["DONE", "PENDING"],
+  "OFFER PENDING/DONE": ["DONE", "PENDING"],
+  "PAYMENT TERMS": [
+    "CREDIT 45",
+    "CREDIT 30",
+    "CREDIT 90",
+    "CREDIT LC-30",
+    "100% ADVANCE",
+    "CREDIT LC-60",
+    "CREDIT LC-90",
+    "CREDIT 15",
+    "CREDIT LC-45",
+    "Credit 21",
+    "PDC 45",
+    "Credit 7",
+    "CREDIT 60",
+    "10 ADV, BAL DELIVERY",
+    "20 ADV, BAL DELIVERY",
+    "20 ADV, BAL BEFORE DELIVERY",
+    "15 ADV, BAL BEFORE DELIVERY",
+    "25 ADV, BAL BEFORE DELIVERY",
+    "NA",
+    "20 ADV, BAL 30 DAYS DELIVERY",
+    "CREDIT LC-150",
+    "AFTER GRN",
+    "5 ADV, BAL LC 30",
+  ],
+};
 
-type RateTileKey =
-  | "rateXOrderQty"
-  | "rateXBalBillAgCont"
-  | "rateXMcQty"
-  | "rateXBalDiQty"
-  | "rateXBalMcQty"
-  | "balBillAgContSum"
-  | "totalCostExcGst"
-  | "totalCostIncGst"
-  | "totalVaPct";
-
-function isNumIdx(row: unknown[], idx: number): boolean {
-  return !isNaN(parseNum(row[idx]));
-}
-
-function matchesRateTile(row: unknown[], key: RateTileKey | null): boolean {
-  if (!key) return true;
-  switch (key) {
-    case "rateXOrderQty":
-      return isNumIdx(row, RATE_IDX) && isNumIdx(row, ORDER_QTY_IDX);
-    case "rateXBalBillAgCont":
-      return isNumIdx(row, RATE_IDX) && isNumIdx(row, BAL_BILL_AG_CONT_IDX);
-    case "rateXMcQty":
-      return isNumIdx(row, RATE_IDX) && isNumIdx(row, MC_QTY_IDX);
-    case "rateXBalDiQty":
-      return (
-        isNumIdx(row, RATE_IDX) &&
-        isNumIdx(row, DI_QTY_IDX) &&
-        isNumIdx(row, BILLED_QTY_IDX)
-      );
-    case "rateXBalMcQty":
-      return (
-        isNumIdx(row, RATE_IDX) &&
-        isNumIdx(row, MC_QTY_IDX) &&
-        isNumIdx(row, DI_QTY_IDX)
-      );
-    case "balBillAgContSum":
-      return isNumIdx(row, BAL_BILL_AG_CONT_IDX);
-    case "totalCostExcGst":
-    case "totalCostIncGst":
-      return isNumIdx(row, COST_FROM_QUOTATION_IDX);
-    case "totalVaPct":
-      return isNumIdx(row, VA_PCT_FROM_COST_IDX);
-    default:
-      return true;
-  }
-}
-
-interface TileOption {
-  value: string;
-  count: number;
-  sum?: number;
-}
-
-function groupCount(
-  rows: unknown[][],
-  colIdx: number,
-  filter: (row: unknown[]) => boolean,
-): TileOption[] {
-  const counts = new Map<string, number>();
-  for (const row of rows) {
-    if (!filter(row)) continue;
-    const v = String(row[colIdx] ?? "").trim();
-    if (!v) continue;
-    counts.set(v, (counts.get(v) ?? 0) + 1);
-  }
-  return [...counts.entries()]
-    .map(([value, count]) => ({ value, count }))
-    .sort((a, b) =>
-      a.value.localeCompare(b.value, undefined, { numeric: true }),
-    );
-}
-
-function groupItemBalBill(
-  rows: unknown[][],
-  itemColIdx: number,
-  balBillColIdx: number,
-  filter: (row: unknown[]) => boolean,
-): TileOption[] {
-  const map = new Map<string, { count: number; sum: number }>();
-  for (const row of rows) {
-    if (!filter(row)) continue;
-    const v = String(row[itemColIdx] ?? "").trim();
-    if (!v) continue;
-    const val = parseNum(balBillColIdx !== -1 ? row[balBillColIdx] : NaN);
-    const prev = map.get(v) ?? { count: 0, sum: 0 };
-    prev.count++;
-    if (!isNaN(val)) {
-      prev.sum += val;
-    }
-    map.set(v, prev);
-  }
-  return [...map.entries()]
-    .map(([value, data]) => ({ value, count: data.count, sum: data.sum }))
-    .sort((a, b) =>
-      a.value.localeCompare(b.value, undefined, { numeric: true }),
-    );
-}
-
-function matchesSidebar(
-  row: unknown[],
-  balBill: BalBillFilter,
-  status: string,
-  clearance: string[],
-  item: string[],
-  size: string,
-  pn: string[],
-  mc: string[],
-  inspection: string[],
-  balBillIdx: number,
-  clearanceIdx: number,
-  mcIdx: number,
-  inspectionIdx: number,
-  exclude?:
-    | "balBill"
-    | "status"
-    | "clearance"
-    | "item"
-    | "size"
-    | "pn"
-    | "mc"
-    | "inspection",
-): boolean {
-  if (exclude !== "balBill" && balBill !== "all") {
-    const isYes = isZeroBal(row[balBillIdx]);
-    const ok = balBill === "yes" ? isYes : !isYes;
-    if (!ok) return false;
-  }
-  if (exclude !== "status" && status !== "all") {
-    const cell = String(row[STATUS_IDX] ?? "").trim();
-    if (status === "Blanks") {
-      if (cell !== "") return false;
-    } else if (cell.toLowerCase() !== status.toLowerCase()) {
-      return false;
-    }
-  }
-  if (exclude !== "clearance" && clearance.length > 0) {
-    const cell = String(row[clearanceIdx] ?? "").trim();
-    const isBlank = cell === "";
-    const matchesBlank = clearance.includes("(Blank)") && isBlank;
-    const matchesVal = clearance.includes(cell);
-    if (!(matchesBlank || matchesVal)) return false;
-  }
-  if (exclude !== "item" && item.length > 0) {
-    const cell = String(row[ITEM_IDX] ?? "").trim();
-    if (!item.includes(cell)) return false;
-  }
-  if (
-    exclude !== "size" &&
-    size &&
-    String(row[SIZE_IDX] ?? "").trim() !== size
-  ) {
-    return false;
-  }
-  if (exclude !== "pn" && pn.length > 0) {
-    const cell = String(row[PN_IDX] ?? "").trim();
-    const isBlank = cell === "";
-    const matchesBlank = pn.includes("(Blank)") && isBlank;
-    const matchesVal = pn.includes(cell);
-    if (!(matchesBlank || matchesVal)) return false;
-  }
-  if (exclude !== "mc" && mc.length > 0) {
-    const cell = String(row[mcIdx] ?? "").trim();
-    const isBlank = cell === "";
-    const matchesBlank = mc.includes("(Blank)") && isBlank;
-    const matchesVal = mc.includes(cell);
-    if (!(matchesBlank || matchesVal)) return false;
-  }
-  if (exclude !== "inspection" && inspection.length > 0) {
-    const cell = String(row[inspectionIdx] ?? "").trim();
-    const isBlank = cell === "";
-    const matchesBlank = inspection.includes("(Blank)") && isBlank;
-    const matchesVal = inspection.includes(cell);
-    if (!(matchesBlank || matchesVal)) return false;
-  }
-  return true;
-}
-
-// Date parsing lives in lib/gmd_lib/dateParse.ts, shared with GMDUpdateTable and the
-// DatePicker, so the three copies cannot drift. See that file for why a bare numeric
-// string must never be treated as a date.
-function parseDateCR(str: string): Date | null {
-  return parseGmdDate(str);
-}
-
-/**
- * Contract Review's mirror of GMDUpdateTable's `rowPassesFilters`. Used to build the
- * sidebar aggregates, the flow-graph node counts and the CONTRACT NO option metadata.
- *
- * `bomCategoryByRow` supplies the BOM ID column's category (Blanks / Single / Dropdown)
- * per row. It is optional so the parameter stays backwards compatible; when supplied,
- * the BOM ID filter is evaluated as a category instead of falling through to the generic
- * text match below, which would reject every row (no BOM id contains "single"/"dropdown"/
- * "blanks"). See `lib/gmd_lib/bomCategory.ts`.
- */
-function matchesTableFilters(
-  row: unknown[],
-  headers: string[],
-  columnFilters: Record<string, string>,
-  multiFilters: Record<string, string[]>,
-  globalSearch: string,
-  dateRanges?: Record<string, { from: string; to: string; blank?: boolean }>,
-  excludeHeader?: string,
-  ignoreColumns?: Set<string>,
-  bomCategoryByRow?: WeakMap<unknown[], BomIdCategory>,
-): boolean {
-  if (globalSearch.trim()) {
-    const q = globalSearch.toLowerCase();
-    const hay = headers
-      .map((_, i) => String(row[i] ?? "").toLowerCase())
-      .join(" ");
-    if (!hay.includes(q)) return false;
-  }
-  for (const [colName, filterVal] of Object.entries(columnFilters)) {
-    if (excludeHeader && colName === excludeHeader) continue;
-    if (ignoreColumns?.has(colName)) continue;
-    if (!filterVal || filterVal === "All") continue;
-    if (colName === BOM_ID_COLUMN && bomCategoryByRow) {
-      const cat = bomCategoryByRow.get(row);
-      // Rows with no known category (no id yet) pass through, mirroring
-      // GMDUpdateTable's `if (!opts.id) continue`.
-      if (cat !== undefined && cat !== filterVal) return false;
-      continue;
-    }
-    const colIdx = headers.indexOf(colName);
-    if (colIdx === -1) continue;
-    const cellVal = String(row[colIdx] ?? "");
-    if (
-      filterVal === "(Blank)" ||
-      filterVal === "-" ||
-      filterVal === "—"
-    ) {
-      if (cellVal !== "") return false;
-    } else if (!cellVal.toLowerCase().includes(filterVal.toLowerCase())) {
-      return false;
-    }
-  }
-  for (const [colName, selected] of Object.entries(multiFilters)) {
-    if (excludeHeader && colName === excludeHeader) continue;
-    if (ignoreColumns?.has(colName)) continue;
-    if (!selected.length) continue;
-    const colIdx = headers.indexOf(colName);
-    if (colIdx === -1) continue;
-    const cellVal = String(row[colIdx] ?? "").trim();
-    const matchesBlank = selected.includes("(Blank)") && cellVal === "";
-    const matchesHasValue =
-      selected.includes(FLOW_HAS_VALUE) && cellHasValue(cellVal);
-    const matchesNoValue =
-      selected.includes(FLOW_NO_VALUE) && !cellHasValue(cellVal);
-    const matchesZero = selected.includes(FLOW_ZERO) && cellIsZero(cellVal);
-    const matchesNonZero =
-      selected.includes(FLOW_NON_ZERO) && !cellIsZero(cellVal);
-    const matchesPendingActuation =
-      colName === "Actuator" &&
-      selected.includes(PENDING_ACTUATIONS_FILTER) &&
-      isActuatorItemRow(row) &&
-      cellVal === "";
-    if (
-      !(
-        matchesBlank ||
-        matchesHasValue ||
-        matchesNoValue ||
-        matchesZero ||
-        matchesNonZero ||
-        matchesPendingActuation ||
-        selected.includes(cellVal)
-      )
-    )
-      return false;
-  }
-  if (dateRanges) {
-    for (const [colName, r] of Object.entries(dateRanges)) {
-      if (excludeHeader && colName === excludeHeader) continue;
-      if (ignoreColumns?.has(colName)) continue;
-      if (!r.from && !r.to && !r.blank) continue;
-      const colIdx = headers.indexOf(colName);
-      if (colIdx === -1) continue;
-      const dateStr = String(row[colIdx] ?? "");
-      if (r.blank) {
-        const isBlank =
-          dateStr === "" || dateStr === "-" || dateStr === "—";
-        if (!isBlank) return false;
-        continue;
-      }
-      if (!dateStr) return false;
-      const date = parseDateCR(dateStr);
-      if (!date) return false;
-      const fromDate = r.from ? new Date(r.from + "T00:00:00") : null;
-      const toEnd = r.to ? new Date(r.to + "T23:59:59") : null;
-      if (fromDate && date < fromDate) return false;
-      if (toEnd && date > toEnd) return false;
-    }
-  }
-  return true;
-}
-
-/** Whether a row satisfies a single graph node filter (exact cell match). */
-function matchesGraphFilter(row: unknown[], filter: FlowFilter): boolean {
-  const colIdx = (CONTRACT_REVIEW_HEADERS as readonly string[]).indexOf(
-    filter.column,
-  );
-  // Column not in the data yet (e.g. DI Received / Dispatch / DI Balance):
-  // pass through so partially-built tree levels don't zero out the subtree.
-  if (colIdx === -1) return true;
-  const cell = String(row[colIdx] ?? "").trim();
-  const matchesBlank = filter.values.includes("(Blank)") && cell === "";
-  const matchesHasValue =
-    filter.values.includes(FLOW_HAS_VALUE) && cellHasValue(cell);
-  const matchesNoValue =
-    filter.values.includes(FLOW_NO_VALUE) && !cellHasValue(cell);
-  const matchesZero = filter.values.includes(FLOW_ZERO) && cellIsZero(cell);
-  const matchesNonZero =
-    filter.values.includes(FLOW_NON_ZERO) && !cellIsZero(cell);
-  return (
-    matchesBlank ||
-    matchesHasValue ||
-    matchesNoValue ||
-    matchesZero ||
-    matchesNonZero ||
-    filter.values.includes(cell)
-  );
-}
-
-/**
- * Whether a row satisfies a tree-level scope. The mini-graphs carry
- * `LIVE_SCOPE`, so their counts and clicks only ever touch Live rows.
- */
-function matchesScope(row: unknown[], scope?: FlowFilter): boolean {
-  return !scope || matchesGraphFilter(row, scope);
-}
-
-/** Reduce a node path to one constraint per column (last level wins). */
-function pathToColumnFilters(
-  path: { filter: FlowFilter }[],
-  scope?: FlowFilter,
-): Record<string, string[]> {
-  const byCol: Record<string, string[]> = {};
-  // The scope is part of what a click means, so it has to reach the table too.
-  if (scope) byCol[scope.column] = scope.values;
-  for (const node of path) {
-    // Skip columns that don't exist yet — they can't filter the table.
-    if (
-      !(CONTRACT_REVIEW_HEADERS as readonly string[]).includes(
-        node.filter.column,
-      )
-    )
-      continue;
-    byCol[node.filter.column] = node.filter.values;
-  }
-  return byCol;
-}
+const HIDDEN_COLUMNS = [
+  "VA %",
+  "CV",
+  "C BATCH",
+  "N BATCH",
+  "COST FROM QUOTATION",
+  "FREE STOCK",
+  "FINAL REQ",
+  // "MC QTY",
+  "Balance mc",
+  "PROD ORD QTY",
+  "BALANCE TO PROD ORD",
+  "BALANCE TO PROD ENT",
+  // "DI QTY",
+  "BAL DI QTY",
+  "BAL MC VAL",
+  "BAL PROD ORD VAL",
+  "BAL TO PROD ORD ENT VAL",
+  "BAL BILL AG CONT VAL",
+  "BAL BILL AG MC VAL",
+  "BAL DI VAL",
+  "DI VAL",
+  "ERP PARTY NAME FROM GMD SUPPLY HISTORY",
+  "JOB Code",
+  "BAL BILL AG MC",
+  "ic qty",
+  "bom formula trial",
+  "BILLED QTY",
+  "DI QTY",
+  "MC QTY",
+  "OFFER NUMBER",
+  "INSPECTION NUMBER",
+  "DI DATE",
+  "STATUS",
+];
 
 export function ContractReviewPage({
   actions,
@@ -530,7 +238,20 @@ export function ContractReviewPage({
     saveActuatorWithRmCodeAction,
     recomputeIndentListingVersionsAction,
   } = actions;
-  const { load, sync, createDiagramUploadAction, confirmDiagramUploadAction } = actions;
+  const {
+    load,
+    sync,
+    createDiagramUploadAction,
+    confirmDiagramUploadAction,
+    loadView,
+    loadFacet,
+    loadAllRows,
+    runBackfillsAction,
+    backfillEndpoint,
+  } = actions;
+  // With a server view the browser only ever holds one page of rows; the
+  // filters, sidebar aggregates and flow-diagram counts are computed server-side.
+  const serverMode = !!loadView;
 
   // Browser uploads straight to S3 via a presigned PUT, so large PDFs never
   // pass through a Server Action body.
@@ -586,6 +307,20 @@ export function ContractReviewPage({
   >({});
   const [diagramVerdictsById, setDiagramVerdictsById] = useState<
     Record<string, string>
+  >({});
+  // Server-view state: the aggregates for the current filters, the table's sort
+  // and a refresh flag so a background reload never blanks the table.
+  const [serverView, setServerView] = useState<ContractReviewView | null>(null);
+  const [serverCategoryOptions, setServerCategoryOptions] = useState<
+    Record<string, string[]>
+  >({});
+  const [serverTotal, setServerTotal] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [dataEpoch, setDataEpoch] = useState(0);
+  const [sort, setSort] = useState<SortSpec | null>(null);
+  const [presence, setPresence] = useState({ drawing: false, image: false });
+  const [facets, setFacets] = useState<
+    Record<string, { values: string[]; key: string }>
   >({});
   // The BOM ID column filter is a category filter (Blanks / Single / Dropdown)
   // derived from the number of candidate BOM ids, not from the cell text. GMDUpdateTable
@@ -716,7 +451,95 @@ export function ContractReviewPage({
     [],
   );
 
-  const fetchData = useCallback(async () => {
+  const viewQuery = useMemo<ViewQuery>(
+    () => ({
+      columnFilters,
+      multiFilters,
+      batchFilters,
+      dateRanges,
+      globalSearch,
+      balBillFilter,
+      statusFilter,
+      tileItems,
+      tileSize,
+      activeRateTile,
+      presence,
+    }),
+    [
+      columnFilters,
+      multiFilters,
+      batchFilters,
+      dateRanges,
+      globalSearch,
+      balBillFilter,
+      statusFilter,
+      tileItems,
+      tileSize,
+      activeRateTile,
+      presence,
+    ],
+  );
+  const serverQuery = useMemo(
+    () => ({ ...viewQuery, sort, page: currentPage, pageSize }),
+    [viewQuery, sort, currentPage, pageSize],
+  );
+  const serverQueryKey = useMemo(() => JSON.stringify(serverQuery), [serverQuery]);
+  // Filters only (no sort / page): dropdown options depend on these alone.
+  const facetKey = useMemo(
+    () => `${dataEpoch}:${JSON.stringify(viewQuery)}`,
+    [viewQuery, dataEpoch],
+  );
+  const serverQueryRef = useRef(serverQuery);
+  useEffect(() => {
+    serverQueryRef.current = serverQuery;
+  }, [serverQuery]);
+  const viewRequestRef = useRef(0);
+
+  const loadServerView = useCallback(
+    async (fresh = false) => {
+      if (!loadView) return;
+      const request = ++viewRequestRef.current;
+      setRefreshing(true);
+      try {
+        const res = await loadView(serverQueryRef.current, { fresh });
+        // A newer request superseded this one; drop the late response.
+        if (request !== viewRequestRef.current) return;
+        if (!res.success || !res.data)
+          throw new Error(res.error ?? "Failed to load contract review");
+        const r = res.data;
+        setData({
+          headers: r.headers,
+          rows: r.rows,
+          ids: r.ids,
+          totalRows: r.total,
+          syncedAt: r.syncedAt,
+        });
+        setServerView(r.view);
+        setServerCategoryOptions(r.categoryOptions);
+        setServerTotal(r.total);
+        setBomIdOptionsById(r.bomIdOptions);
+        setItemImagesByCode(r.itemImages);
+        setDiagramVerdictsById(r.diagramVerdicts);
+        // The server clamps an out-of-range page (e.g. filters shrank the result).
+        if (r.page !== serverQueryRef.current.page) setCurrentPage(r.page);
+        if (fresh) setDataEpoch((n) => n + 1);
+        setError(null);
+      } catch (err) {
+        if (request !== viewRequestRef.current) return;
+        const message = err instanceof Error ? err.message : "Unknown error";
+        setError(message);
+        toast.error(message);
+      } finally {
+        if (request === viewRequestRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [loadView],
+  );
+
+  const legacyFetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -733,6 +556,12 @@ export function ContractReviewPage({
       setLoading(false);
     }
   }, [load]);
+
+  /** Reload after a sync / mutation: bypasses the server's row cache. */
+  const fetchData = useCallback(
+    () => (serverMode ? loadServerView(true) : legacyFetchData()),
+    [serverMode, loadServerView, legacyFetchData],
+  );
 
   const handleSync = useCallback(async () => {
     if (!sync) return;
@@ -838,9 +667,41 @@ export function ContractReviewPage({
     }
   }, [fetchData, syncContractReviewRmAvailAction]);
 
+  // Legacy mode loads everything once; server mode loads a page whenever the
+  // filters / sort / page change.
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!serverMode) legacyFetchData();
+  }, [serverMode, legacyFetchData]);
+
+  useEffect(() => {
+    if (serverMode) void loadServerView(false);
+  }, [serverMode, serverQueryKey, loadServerView]);
+
+  // First page is on screen: now fill the derived columns server-side (they
+  // persist), then reload once so the aggregates include them.
+  const backfillStartedRef = useRef(false);
+  useEffect(() => {
+    if (
+      !serverMode ||
+      !serverView ||
+      !(backfillEndpoint || runBackfillsAction) ||
+      backfillStartedRef.current
+    )
+      return;
+    backfillStartedRef.current = true;
+    const run = backfillEndpoint
+      ? () =>
+          fetch(backfillEndpoint, { method: "POST" }).then(
+            (r) => r.json() as ReturnType<NonNullable<typeof runBackfillsAction>>,
+          )
+      : runBackfillsAction!;
+    run()
+      .then((res) => {
+        // `ran: false` = the server skipped it (ran moments ago): nothing new.
+        if (res?.success && res.data?.ran !== false) void loadServerView(true);
+      })
+      .catch((err) => console.error("contract review backfill failed", err));
+  }, [serverMode, serverView, runBackfillsAction, backfillEndpoint, loadServerView]);
 
   useEffect(() => {
     getActuatorOptionsAction?.().then((res) => {
@@ -853,6 +714,85 @@ export function ContractReviewPage({
   const effectiveBalBillIdx =
     balBillIdx !== -1 ? balBillIdx : BAL_BILL_AG_CONT_IDX;
   const clearanceIdx = data ? headers.indexOf("CLEARANCE STATUS") : -1;
+
+  // Dropdown options for a column come from the server, cascaded on every
+  // active filter except the column's own; cached until the filters change.
+  const facetsRef = useRef(facets);
+  useEffect(() => {
+    facetsRef.current = facets;
+  }, [facets]);
+  const requestFacet = useCallback(
+    (header: string) => {
+      if (!loadFacet || facetsRef.current[header]?.key === facetKey) return;
+      const key = facetKey;
+      loadFacet(serverQueryRef.current, header)
+        .then((res) => {
+          if (!res.success || !res.data) return;
+          const values = res.data;
+          setFacets((prev) => ({ ...prev, [header]: { values, key } }));
+        })
+        .catch(() => {
+          /* keep the previous options */
+        });
+    },
+    [loadFacet, facetKey],
+  );
+  const getFacetOptions = useCallback(
+    (header: string) => facets[header]?.values ?? null,
+    [facets],
+  );
+  const getAllRows = useCallback(async () => {
+    if (!loadAllRows) return [];
+    const res = await loadAllRows(serverQueryRef.current);
+    if (!res.success || !res.data)
+      throw new Error(res.error ?? "Failed to export rows");
+    return res.data;
+  }, [loadAllRows]);
+  const handlePresenceChange = useCallback(
+    (next: { drawing: boolean; image: boolean }) =>
+      setPresence((prev) =>
+        prev.drawing === next.drawing && prev.image === next.image ? prev : next,
+      ),
+    [],
+  );
+  const tableServerMode = useMemo<ServerTableMode | undefined>(() => {
+    if (!serverMode) return undefined;
+    return {
+      total: serverTotal,
+      page: currentPage,
+      pageSize,
+      refreshing,
+      sort: sort
+        ? { column: headers.indexOf(sort.header), direction: sort.direction }
+        : null,
+      onSortChange: (next) => {
+        setSort(
+          next && headers[next.column]
+            ? { header: headers[next.column], direction: next.direction }
+            : null,
+        );
+        setCurrentPage(1);
+      },
+      onPageChange: setCurrentPage,
+      onPageSizeChange: setPageSize,
+      getFacetOptions,
+      requestFacet,
+      getAllRows,
+      onPresenceFiltersChange: handlePresenceChange,
+    };
+  }, [
+    serverMode,
+    serverTotal,
+    currentPage,
+    pageSize,
+    refreshing,
+    sort,
+    headers,
+    getFacetOptions,
+    requestFacet,
+    getAllRows,
+    handlePresenceChange,
+  ]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -937,6 +877,8 @@ export function ContractReviewPage({
               });
               return { ...prev, rows };
             });
+            // Filters, counts and the sort position may all have moved.
+            if (serverMode) void loadServerView(true);
             return "BOM ID saved";
           }
           return res?.error || "Failed to save BOM ID";
@@ -944,7 +886,7 @@ export function ContractReviewPage({
         error: (err) => err || "Failed to save BOM ID",
       });
     },
-    [headers],
+    [headers, serverMode, loadServerView],
   );
 
   const handleCellUpdate = useCallback(
@@ -983,6 +925,7 @@ export function ContractReviewPage({
               };
             });
             toast.success(`${header} updated`, { id: toastId });
+            if (serverMode) void loadServerView(true);
           } else {
             toast.error(res?.error || `Failed to update ${header}`, {
               id: toastId,
@@ -1007,6 +950,7 @@ export function ContractReviewPage({
             return { ...prev, rows };
           });
           toast.success(`${header} updated`, { id: toastId });
+          if (serverMode) void loadServerView(true);
         } else {
           toast.error(res?.error || `Failed to update ${header}`, {
             id: toastId,
@@ -1018,7 +962,7 @@ export function ContractReviewPage({
         });
       }
     },
-    [headers],
+    [headers, serverMode, loadServerView],
   );
 
   const handleUploadDiagram = useCallback(
@@ -1051,11 +995,12 @@ export function ContractReviewPage({
           return next;
         });
         toast.success("Drawing uploaded", { id: toastId });
+        if (serverMode) void loadServerView(true);
       } catch (err: any) {
         toast.error(err?.message || "Failed to upload drawing.", { id: toastId });
       }
     },
-    [],
+    [serverMode, loadServerView],
   );
 
   const handleClearDiagram = useCallback(async (id: string) => {
@@ -1087,10 +1032,11 @@ export function ContractReviewPage({
         return next;
       });
       toast.success("Diagram removed", { id: toastId });
+      if (serverMode) void loadServerView(true);
     } catch (err: any) {
       toast.error(err?.message || "Failed to remove diagram.", { id: toastId });
     }
-  }, []);
+  }, [serverMode, loadServerView]);
 
   const handleSetDiagramVerdict = useCallback(
     async (id: string, verdict: string | null) => {
@@ -1127,10 +1073,44 @@ export function ContractReviewPage({
     [diagramVerdictsById],
   );
 
+  // Backfill results arrive from many independent server calls. Collect their
+  // row patches and apply them in one pass so the page re-renders (and every
+  // data-derived memo recomputes) once per burst instead of once per backfill.
+  // A patch returns a modified copy of the row, or null when it doesn't apply.
+  const rowPatchQueueRef = useRef<((row: unknown[], id: string) => unknown[] | null)[]>([]);
+  const rowPatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queueRowPatch = useCallback(
+    (patch: (row: unknown[], id: string) => unknown[] | null) => {
+      rowPatchQueueRef.current.push(patch);
+      if (rowPatchTimerRef.current) return;
+      rowPatchTimerRef.current = setTimeout(() => {
+        rowPatchTimerRef.current = null;
+        const patches = rowPatchQueueRef.current;
+        rowPatchQueueRef.current = [];
+        if (!patches.length) return;
+        setData((prev) => {
+          if (!prev) return prev;
+          let changed = false;
+          const rows = prev.rows.map((row, i) => {
+            let cur = row;
+            for (const p of patches) {
+              const out = p(cur, prev.ids[i]);
+              if (out) cur = out;
+            }
+            if (cur !== row) changed = true;
+            return cur;
+          });
+          return changed ? { ...prev, rows } : prev;
+        });
+      }, 100);
+    },
+    [],
+  );
+
   const autoSavedBomIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!data || !selectContractReviewBomIdAction || !isEditable("BOM ID")) return;
+    if (serverMode || !data || !selectContractReviewBomIdAction || !isEditable("BOM ID")) return;
     const pending: { id: string; bomId: string }[] = [];
     const pendingActuator: string[] = [];
     data.rows.forEach((row, i) => {
@@ -1155,53 +1135,41 @@ export function ContractReviewPage({
     for (const { id, bomId } of pending) {
       selectContractReviewBomIdAction(id, bomId).then((res) => {
         if (!res?.success) return;
-        setData((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            rows: prev.rows.map((row, i) => {
-              if (prev.ids[i] !== id) return row;
-              const next = [...row];
-              next[BOM_ID_IDX] = bomId;
-              if (res.data?.itemType !== undefined && itemTypeIdx !== -1) {
-                next[itemTypeIdx] = res.data.itemType;
-              }
-              if (NO_USE_IDX !== -1) {
-                next[NO_USE_IDX] = res.data?.noUse ?? "";
-              }
-              return next;
-            }),
-          };
+        queueRowPatch((row, rowId) => {
+          if (rowId !== id) return null;
+          const next = [...row];
+          next[BOM_ID_IDX] = bomId;
+          if (res.data?.itemType !== undefined && itemTypeIdx !== -1) {
+            next[itemTypeIdx] = res.data.itemType;
+          }
+          if (NO_USE_IDX !== -1) {
+            next[NO_USE_IDX] = res.data?.noUse ?? "";
+          }
+          return next;
         });
       });
     }
     if (pendingActuator.length > 0 && autoAssignContractReviewBomIdFromActuator) {
       autoAssignContractReviewBomIdFromActuator(pendingActuator).then((res) => {
         if (!res?.success) return;
-        setData((prev) => {
-          if (!prev) return prev;
-          const map = new Map((res.data ?? []).map((d) => [d.id, d]));
-          return {
-            ...prev,
-            rows: prev.rows.map((row, i) => {
-              const d = map.get(prev.ids[i]);
-              if (!d) return row;
-              const next = [...row];
-              next[BOM_ID_IDX] = d.bomId;
-              if (itemTypeIdx !== -1) next[itemTypeIdx] = d.itemType;
-              if (NO_USE_IDX !== -1) next[NO_USE_IDX] = d.noUse ?? "";
-              return next;
-            }),
-          };
+        const map = new Map((res.data ?? []).map((d) => [d.id, d]));
+        queueRowPatch((row, rowId) => {
+          const d = map.get(rowId);
+          if (!d) return null;
+          const next = [...row];
+          next[BOM_ID_IDX] = d.bomId;
+          if (itemTypeIdx !== -1) next[itemTypeIdx] = d.itemType;
+          if (NO_USE_IDX !== -1) next[NO_USE_IDX] = d.noUse ?? "";
+          return next;
         });
       });
     }
-  }, [data, bomIdOptionsById, headers]);
+  }, [data, bomIdOptionsById, headers, queueRowPatch]);
 
   const autoNoUseRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!data) return;
+    if (serverMode || !data) return;
     const pending: string[] = [];
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
@@ -1213,27 +1181,21 @@ export function ContractReviewPage({
     if (!pending.length || !backfillContractReviewNoUseBatchAction || !isEnabled("RM AVAIL")) return;
     backfillContractReviewNoUseBatchAction(pending).then((res) => {
       if (!res?.success) return;
-      setData((prev) => {
-        if (!prev) return prev;
-        const map = new Map((res.data ?? []).map((d) => [d.id, d.noUse ?? ""]));
-        return {
-          ...prev,
-          rows: prev.rows.map((row, i) => {
-            const v = map.get(prev.ids[i]);
-            if (v === undefined || NO_USE_IDX === -1) return row;
-            const next = [...row];
-            next[NO_USE_IDX] = v;
-            return next;
-          }),
-        };
+      const map = new Map((res.data ?? []).map((d) => [d.id, d.noUse ?? ""]));
+      queueRowPatch((row, rowId) => {
+        const v = map.get(rowId);
+        if (v === undefined || NO_USE_IDX === -1) return null;
+        const next = [...row];
+        next[NO_USE_IDX] = v;
+        return next;
       });
     });
-  }, [data, headers]);
+  }, [data, headers, queueRowPatch]);
 
   const autoOrderListRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!data || ORDER_LIST_IDX === -1) return;
+    if (serverMode || !data || ORDER_LIST_IDX === -1) return;
     const pending: string[] = [];
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
@@ -1266,7 +1228,7 @@ export function ContractReviewPage({
   const autoCostFromQuotationRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!data || VA_PCT_FROM_COST_IDX === -1) return;
+    if (serverMode || !data || VA_PCT_FROM_COST_IDX === -1) return;
     const pending: string[] = [];
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
@@ -1278,32 +1240,23 @@ export function ContractReviewPage({
     if (!pending.length || !backfillContractReviewCostFromQuotationAction || !isEnabled("VA % FROM COST")) return;
     backfillContractReviewCostFromQuotationAction(pending).then((res) => {
       if (!res?.success) return;
-      setData((prev) => {
-        if (!prev) return prev;
-        const map = new Map(
-          (res.data ?? []).map((d) => [
-            d.id,
-            d.vaPercentfromcost ?? "",
-          ]),
-        );
-        return {
-          ...prev,
-          rows: prev.rows.map((row, i) => {
-            const v = map.get(prev.ids[i]);
-            if (v === undefined) return row;
-            const next = [...row];
-            next[VA_PCT_FROM_COST_IDX] = v;
-            return next;
-          }),
-        };
+      const map = new Map(
+        (res.data ?? []).map((d) => [d.id, d.vaPercentfromcost ?? ""]),
+      );
+      queueRowPatch((row, rowId) => {
+        const v = map.get(rowId);
+        if (v === undefined) return null;
+        const next = [...row];
+        next[VA_PCT_FROM_COST_IDX] = v;
+        return next;
       });
     });
-  }, [data, headers]);
+  }, [data, headers, queueRowPatch]);
 
   const autoEnquiryFieldsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!data) return;
+    if (serverMode || !data) return;
     const pending: string[] = [];
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
@@ -1319,31 +1272,25 @@ export function ContractReviewPage({
       return;
     syncContractReviewEnquiryFieldsBatchAction(pending).then((res) => {
       if (!res?.success || !res.data) return;
-      setData((prev) => {
-        if (!prev) return prev;
-        const map = new Map((res.data ?? []).map((d) => [d.id, d]));
-        return {
-          ...prev,
-          rows: prev.rows.map((row, i) => {
-            const v = map.get(prev.ids[i]);
-            if (!v) return row;
-            const next = [...row];
-            if (STATE_IDX !== -1) next[STATE_IDX] = v.state ?? "";
-            if (UTILITY_IDX !== -1) next[UTILITY_IDX] = v.utility ?? "";
-            if (PROJECT_REFERENCE_IDX !== -1)
-              next[PROJECT_REFERENCE_IDX] = v.projectReference ?? "";
-            return next;
-          }),
-        };
+      const map = new Map((res.data ?? []).map((d) => [d.id, d]));
+      queueRowPatch((row, rowId) => {
+        const v = map.get(rowId);
+        if (!v) return null;
+        const next = [...row];
+        if (STATE_IDX !== -1) next[STATE_IDX] = v.state ?? "";
+        if (UTILITY_IDX !== -1) next[UTILITY_IDX] = v.utility ?? "";
+        if (PROJECT_REFERENCE_IDX !== -1)
+          next[PROJECT_REFERENCE_IDX] = v.projectReference ?? "";
+        return next;
       });
     });
-  }, [data, headers]);
+  }, [data, headers, queueRowPatch]);
 
   // Auto-backfill OFFER PENDING/DONE for ALL rows, rewriting when different
   // (DONE iff itemCode + mcNo + offerNumber present, else PENDING).
   const autoOfferPendingDoneRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!data) return;
+    if (serverMode || !data) return;
     const pending: string[] = [];
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
@@ -1354,31 +1301,25 @@ export function ContractReviewPage({
     if (!pending.length || !isEnabled("OFFER PENDING/DONE")) return;
     backfillContractReviewOfferPendingDoneBatchAction(pending).then((res) => {
       if (!res?.success || !res.data) return;
-      setData((prev) => {
-        if (!prev) return prev;
-        const map = new Map(
-          (res.data ?? []).map((d) => [d.id, d.offerPendingDone]),
-        );
-        return {
-          ...prev,
-          rows: prev.rows.map((row, i) => {
-            const v = map.get(prev.ids[i]);
-            if (v === undefined) return row;
-            const next = [...row];
-            if (OFFER_PENDING_DONE_IDX !== -1)
-              next[OFFER_PENDING_DONE_IDX] = v ?? "";
-            return next;
-          }),
-        };
+      const map = new Map(
+        (res.data ?? []).map((d) => [d.id, d.offerPendingDone]),
+      );
+      queueRowPatch((row, rowId) => {
+        const v = map.get(rowId);
+        if (v === undefined) return null;
+        const next = [...row];
+        if (OFFER_PENDING_DONE_IDX !== -1)
+          next[OFFER_PENDING_DONE_IDX] = v ?? "";
+        return next;
       });
     });
-  }, [data, headers]);
+  }, [data, headers, queueRowPatch]);
 
   // Auto-backfill Inspection for ALL rows, rewriting when different
   // (DONE iff offerNumber + inspectionNumber both have a value, else PENDING).
   const autoInspectionRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!data) return;
+    if (serverMode || !data) return;
     const pending: string[] = [];
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
@@ -1389,22 +1330,16 @@ export function ContractReviewPage({
     if (!pending.length || !isEnabled("Inspection")) return;
     backfillContractReviewInspectionBatchAction(pending).then((res) => {
       if (!res?.success || !res.data) return;
-      setData((prev) => {
-        if (!prev) return prev;
-        const map = new Map((res.data ?? []).map((d) => [d.id, d.inspection]));
-        return {
-          ...prev,
-          rows: prev.rows.map((row, i) => {
-            const v = map.get(prev.ids[i]);
-            if (v === undefined) return row;
-            const next = [...row];
-            if (INSPECTION_IDX !== -1) next[INSPECTION_IDX] = v ?? "";
-            return next;
-          }),
-        };
+      const map = new Map((res.data ?? []).map((d) => [d.id, d.inspection]));
+      queueRowPatch((row, rowId) => {
+        const v = map.get(rowId);
+        if (v === undefined) return null;
+        const next = [...row];
+        if (INSPECTION_IDX !== -1) next[INSPECTION_IDX] = v ?? "";
+        return next;
       });
     });
-  }, [data, headers]);
+  }, [data, headers, queueRowPatch]);
 
   // Auto-backfill CLEARANCE STATUS and MC Received/Pending for rows whose field
   // is blank: CLEARANCE STATUS → "PENDING", MC Received/Pending → "Pending".
@@ -1413,7 +1348,7 @@ export function ContractReviewPage({
   // a deliberate later clear is not re-defaulted.
   const autoClearanceMcPendingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!data) return;
+    if (serverMode || !data) return;
     const pending: string[] = [];
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
@@ -1437,29 +1372,23 @@ export function ContractReviewPage({
     backfillContractReviewClearanceMcPendingBatchAction(pending).then((res) => {
       if (!res?.success || !res.data) return;
       const map = new Map(res.data.map((d) => [d.id, d]));
-      setData((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          rows: prev.rows.map((row, i) => {
-            const v = map.get(prev.ids[i]);
-            if (!v) return row;
-            const next = [...row];
-            if (CLEARANCE_STATUS_IDX !== -1)
-              next[CLEARANCE_STATUS_IDX] = v.clearanceStatus ?? "";
-            if (MC_IDX !== -1) next[MC_IDX] = v.mcReceivedPending ?? "";
-            return next;
-          }),
-        };
+      queueRowPatch((row, rowId) => {
+        const v = map.get(rowId);
+        if (!v) return null;
+        const next = [...row];
+        if (CLEARANCE_STATUS_IDX !== -1)
+          next[CLEARANCE_STATUS_IDX] = v.clearanceStatus ?? "";
+        if (MC_IDX !== -1) next[MC_IDX] = v.mcReceivedPending ?? "";
+        return next;
       });
     });
-  }, [data, headers]);
+  }, [data, headers, queueRowPatch]);
 
   // Auto-derive PN RATING from ITEM_NAME for ALL rows (server action applies the
   // exact-match-against-dropdown rule and only updates mismatches). Ref guard runs once per load.
   const autoPnRatingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!data) return;
+    if (serverMode || !data) return;
     const pending: string[] = [];
     data.rows.forEach((row, i) => {
       const id = data.ids[i];
@@ -1470,989 +1399,71 @@ export function ContractReviewPage({
     if (!pending.length || !isEnabled("PN RATING")) return;
     backfillContractReviewPnRatingBatchAction(pending).then((res) => {
       if (!res?.success || !res.data) return;
-      setData((prev) => {
-        if (!prev) return prev;
-        const map = new Map((res.data ?? []).map((d) => [d.id, d.pnRating]));
-        return {
-          ...prev,
-          rows: prev.rows.map((row, i) => {
-            const v = map.get(prev.ids[i]);
-            if (v === undefined) return row;
-            const next = [...row];
-            if (PN_IDX !== -1) next[PN_IDX] = v ?? "";
-            return next;
-          }),
-        };
+      const map = new Map((res.data ?? []).map((d) => [d.id, d.pnRating]));
+      queueRowPatch((row, rowId) => {
+        const v = map.get(rowId);
+        if (v === undefined) return null;
+        const next = [...row];
+        if (PN_IDX !== -1) next[PN_IDX] = v ?? "";
+        return next;
       });
     });
-  }, [data, headers]);
+  }, [data, headers, queueRowPatch]);
+
+  // Everything the sidebar, flow diagram and table need for the current
+  // filters comes from one computeView pass - in the browser (legacy) or on the
+  // server (serverMode), through the same code.
+  const legacyResult = useMemo(() => {
+    if (serverMode || !data) return null;
+    return computeView(
+      {
+        headers: data.headers,
+        rows: data.rows,
+        bomCategoryByRow,
+        trees,
+        batchPresenceFilters,
+      },
+      viewQuery,
+      { wantVisible: true },
+    );
+  }, [serverMode, data, bomCategoryByRow, trees, batchPresenceFilters, viewQuery]);
+
+  const view: ContractReviewView = serverMode
+    ? (serverView ?? EMPTY_VIEW)
+    : (legacyResult?.view ?? EMPTY_VIEW);
+  const {
+    statusCounts,
+    statusOptions,
+    clearanceCounts,
+    clearanceOptions,
+    mcCounts,
+    mcOptions,
+    inspectionCounts,
+    inspectionOptions,
+    itemOptions,
+    sizeOptions,
+    pnOptions,
+    rateMcCont,
+    rateOrderQty,
+    rateBalBillCont,
+    rateBalDiQty,
+    rateBalMspQty,
+    balBillAgContTotal,
+    totalCostExcGst,
+    totalCostIncGst,
+    totalVaPct,
+    tileRowsCount,
+    contractCount,
+    tileAllCounts,
+    graphCounts,
+    graphValues,
+    contractNoMeta,
+  } = view;
 
   const categoryOptions = useMemo<Record<string, string[]>>(() => {
-    if (!data) return {};
-    const items = [
-      ...new Set([
-        ...data.rows
-          .map((r) => String(r[ITEM_IDX] ?? "").trim())
-          .filter(Boolean),
-        EXTRA_ITEM_OPTION,
-      ]),
-    ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    const result: Record<string, string[]> = {};
-    if (items.length) result.Item = items;
-    // Pure row-value distinct for CLEARANCE STATUS (plus (Blank) handled by MultiSelect)
-    result["CLEARANCE STATUS"] = [
-      ...new Set(
-        data.rows
-          .map((r) => String(r[clearanceIdx] ?? "").trim())
-          .filter(Boolean),
-      ),
-    ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    result["PN RATING"] = [
-      ...new Set(
-        data.rows.map((r) => String(r[PN_IDX] ?? "").trim()).filter(Boolean),
-      ),
-    ].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-    return result;
-  }, [data, clearanceIdx]);
-
-  const allRows = data?.rows ?? [];
-
-  // Binds the per-row BOM ID category map into matchesTableFilters so the sidebar,
-  // graph and option-metadata call sites below stay call-compatible.
-  const matchesRowFilters = useCallback(
-    (
-      row: unknown[],
-      headers: string[],
-      columnFilters: Record<string, string>,
-      multiFilters: Record<string, string[]>,
-      globalSearch: string,
-      dateRanges?: Record<string, { from: string; to: string; blank?: boolean }>,
-      excludeHeader?: string,
-      ignoreColumns?: Set<string>,
-    ) => {
-      if (
-        !matchesTableFilters(
-          row,
-          headers,
-          columnFilters,
-          multiFilters,
-          globalSearch,
-          dateRanges,
-          excludeHeader,
-          ignoreColumns,
-          bomCategoryByRow,
-        )
-      )
-        return false;
-      // Batch presence filters (C / N) cascade through every sidebar, graph and
-      // option-metadata call site because they all route through this mirror.
-      for (const bf of batchPresenceFilters) {
-        if (!batchFilters[bf.key]) continue;
-        const idx = headers.indexOf(bf.column);
-        if (idx === -1 || String(row[idx] ?? "").trim() !== bf.value)
-          return false;
-      }
-      return true;
-    },
-    [bomCategoryByRow, batchFilters],
-  );
-
-  const sidebarBaseRows = useMemo(
-    () =>
-      allRows.filter(
-        (row) =>
-          matchesRowFilters(
-            row,
-            headers,
-            columnFilters,
-            multiFilters,
-            globalSearch,
-            dateRanges,
-          ) && matchesRateTile(row, activeRateTile),
-      ),
-    [
-      allRows,
-      headers,
-      columnFilters,
-      multiFilters,
-      globalSearch,
-      dateRanges,
-      activeRateTile,
-      matchesRowFilters,
-    ],
-  );
-
-  const balBillCounts = useMemo(() => {
-    if (balBillIdx === -1) return { all: 0, yes: 0, no: 0 };
-    let all = 0;
-    let yes = 0;
-    for (const row of sidebarBaseRows) {
-      if (
-        !matchesSidebar(
-          row,
-          "all",
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          "balBill",
-        )
-      )
-        continue;
-      all++;
-      if (isZeroBal(row[balBillIdx])) yes++;
-    }
-    return { all, yes, no: all - yes };
-  }, [
-    sidebarBaseRows,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-  ]);
-
-  const statusCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: 0 };
-    for (const row of sidebarBaseRows) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          "all",
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          "status",
-        )
-      )
-        continue;
-      counts.all++;
-      const cell = String(row[STATUS_IDX] ?? "").trim();
-      const key = cell === "" ? "Blanks" : statusTitle(cell);
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-    return counts;
-  }, [
-    sidebarBaseRows,
-    balBillFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-    STATUS_IDX,
-  ]);
-
-  const statusOptions = useMemo(() => {
-    return Object.keys(statusCounts)
-      .filter((k) => k !== "all")
-      .sort((a, b) =>
-        a === "Blanks"
-          ? -1
-          : b === "Blanks"
-            ? 1
-            : a.localeCompare(b, undefined, { numeric: true }),
-      );
-  }, [statusCounts]);
-
-  // Cascading multi-select clearance filter: counts exclude own selection (exclude-self)
-  // like item/size/pn/balBill/status. "(Blank)" represents empty string.
-  // Bidirectional: also exclude column's CLEARANCE STATUS filter (same logical filter synced)
-  const clearanceCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: 0 };
-    const baseForClearance = allRows.filter(
-      (row) =>
-        matchesRowFilters(
-          row,
-          headers,
-          columnFilters,
-          multiFilters,
-          globalSearch,
-          dateRanges,
-          "CLEARANCE STATUS",
-        ) && matchesRateTile(row, activeRateTile),
-    );
-    for (const row of baseForClearance) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          [],
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          "clearance",
-        )
-      )
-        continue;
-      counts.all++;
-      const cell = String(row[clearanceIdx] ?? "").trim();
-      const key = cell === "" ? "(Blank)" : cell;
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-    return counts;
-  }, [
-    allRows,
-    headers,
-    columnFilters,
-    multiFilters,
-    globalSearch,
-    dateRanges,
-    activeRateTile,
-    balBillFilter,
-    statusFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-    matchesRowFilters,
-  ]);
-
-  const clearanceOptions = useMemo(() => {
-    const keys = Object.keys(clearanceCounts).filter((k) => k !== "all");
-    // Always include (Blank) like table column filter does, even if count 0 (cascading still shows 0)
-    if (!keys.includes("(Blank)")) keys.push("(Blank)");
-    // Keep selected values visible even if count 0 (bidirectional cascading keep-selected)
-    for (const s of clearanceFilter) {
-      if (s !== "(Blank)" && !keys.includes(s)) keys.push(s);
-    }
-    return keys.sort((a, b) => {
-      if (a === "(Blank)") return 1;
-      if (b === "(Blank)") return -1;
-      return a.localeCompare(b, undefined, { numeric: true });
-    });
-  }, [clearanceCounts, clearanceFilter]);
-
-  const mcCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: 0 };
-    const base = allRows.filter(
-      (row) =>
-        matchesRowFilters(
-          row,
-          headers,
-          columnFilters,
-          multiFilters,
-          globalSearch,
-          dateRanges,
-          "MC Received/Pending",
-        ) && matchesRateTile(row, activeRateTile),
-    );
-    for (const row of base) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          [],
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          "mc",
-        )
-      )
-        continue;
-      counts.all++;
-      const cell = String(row[MC_IDX] ?? "").trim();
-      const key = cell === "" ? "(Blank)" : cell;
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-    return counts;
-  }, [
-    allRows,
-    headers,
-    columnFilters,
-    multiFilters,
-    globalSearch,
-    dateRanges,
-    activeRateTile,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-    matchesRowFilters,
-  ]);
-
-  const mcOptions = useMemo(() => {
-    const keys = Object.keys(mcCounts).filter((k) => k !== "all");
-    if (!keys.includes("(Blank)")) keys.push("(Blank)");
-    for (const s of mcFilter) {
-      if (s !== "(Blank)" && !keys.includes(s)) keys.push(s);
-    }
-    return keys.sort((a, b) => {
-      if (a === "(Blank)") return 1;
-      if (b === "(Blank)") return -1;
-      return a.localeCompare(b, undefined, { numeric: true });
-    });
-  }, [mcCounts, mcFilter]);
-
-  const inspectionCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: 0 };
-    const base = allRows.filter(
-      (row) =>
-        matchesRowFilters(
-          row,
-          headers,
-          columnFilters,
-          multiFilters,
-          globalSearch,
-          dateRanges,
-          "Inspection",
-        ) && matchesRateTile(row, activeRateTile),
-    );
-    for (const row of base) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          [],
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          "inspection",
-        )
-      )
-        continue;
-      counts.all++;
-      const cell = String(row[INSPECTION_IDX] ?? "").trim();
-      const key = cell === "" ? "(Blank)" : cell;
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-    return counts;
-  }, [
-    allRows,
-    headers,
-    columnFilters,
-    multiFilters,
-    globalSearch,
-    dateRanges,
-    activeRateTile,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    balBillIdx,
-    clearanceIdx,
-    matchesRowFilters,
-  ]);
-
-  const inspectionOptions = useMemo(() => {
-    const keys = Object.keys(inspectionCounts).filter((k) => k !== "all");
-    if (!keys.includes("(Blank)")) keys.push("(Blank)");
-    for (const s of inspectionFilter) {
-      if (s !== "(Blank)" && !keys.includes(s)) keys.push(s);
-    }
-    return keys.sort((a, b) => {
-      if (a === "(Blank)") return 1;
-      if (b === "(Blank)") return -1;
-      return a.localeCompare(b, undefined, { numeric: true });
-    });
-  }, [inspectionCounts, inspectionFilter]);
-
-  const itemOptions = useMemo(() => {
-    // Exclude the Item column filter from the base (clearance-style cascading):
-    // options never collapse under their own/column selection.
-    const base = allRows.filter(
-      (row) =>
-        matchesRowFilters(
-          row,
-          headers,
-          columnFilters,
-          multiFilters,
-          globalSearch,
-          dateRanges,
-          "Item",
-        ) && matchesRateTile(row, activeRateTile),
-    );
-    const opts = groupItemBalBill(
-      base,
-      ITEM_IDX,
-      effectiveBalBillIdx,
-      (row) =>
-        matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          [],
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          "item",
-        ),
-    );
-    // Keep selected items visible even if count 0 (bidirectional cascading keep-selected)
-    for (const s of tileItems) {
-      if (!opts.some((o) => o.value === s))
-        opts.push({ value: s, count: 0, sum: 0 });
-    }
-    // Always show the fixed extra item option
-    if (!opts.some((o) => o.value === EXTRA_ITEM_OPTION))
-      opts.push({ value: EXTRA_ITEM_OPTION, count: 0, sum: 0 });
-    return opts.sort((a, b) =>
-      a.value.localeCompare(b.value, undefined, { numeric: true }),
-    );
-  }, [
-    allRows,
-    headers,
-    columnFilters,
-    multiFilters,
-    globalSearch,
-    dateRanges,
-    activeRateTile,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-    effectiveBalBillIdx,
-    matchesRowFilters,
-  ]);
-
-  const sizeOptions = useMemo(
-    () =>
-      groupCount(sidebarBaseRows, SIZE_IDX, (row) =>
-        matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          "",
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          "size",
-        ),
-      ),
-    [
-      sidebarBaseRows,
-      balBillFilter,
-      statusFilter,
-      clearanceFilter,
-tileItems,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-    ],
-  );
-
-  const pnOptions = useMemo(() => {
-    // Exclude the PN RATING column filter from the base (clearance-style cascading):
-    // options never collapse under their own/column selection.
-    const base = allRows.filter(
-      (row) =>
-        matchesRowFilters(
-          row,
-          headers,
-          columnFilters,
-          multiFilters,
-          globalSearch,
-          dateRanges,
-          "PN RATING",
-        ) && matchesRateTile(row, activeRateTile),
-    );
-    const counts: Record<string, number> = {};
-    for (const row of base) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          [],
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          "pn",
-        )
-      )
-        continue;
-      const cell = String(row[PN_IDX] ?? "").trim();
-      const key = cell === "" ? "(Blank)" : cell;
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-    const opts = Object.entries(counts).map(([value, count]) => ({
-      value,
-      count,
-    }));
-    // Always surface (Blank), mirroring CLEARANCE STATUS / MC / Inspection.
-    if (!opts.some((o) => o.value === "(Blank)")) {
-      opts.push({ value: "(Blank)", count: 0 });
-    }
-    // Keep selected PN values visible even if count 0 (bidirectional cascading keep-selected)
-    for (const s of tilePns) {
-      if (s !== "(Blank)" && !opts.some((o) => o.value === s)) {
-        opts.push({ value: s, count: 0 });
-      }
-    }
-    return opts.sort((a, b) => {
-      if (a.value === "(Blank)") return 1;
-      if (b.value === "(Blank)") return -1;
-      return a.value.localeCompare(b.value, undefined, { numeric: true });
-    });
-  }, [
-    allRows,
-    headers,
-    columnFilters,
-    multiFilters,
-    globalSearch,
-    dateRanges,
-    activeRateTile,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-    matchesRowFilters,
-  ]);
-
-  const rateMcCont = useMemo(() => {
-    let sum = 0;
-    let count = 0;
-    for (const row of sidebarBaseRows) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          undefined,
-        )
-      )
-        continue;
-      const rate = parseFloat(String(row[RATE_IDX] ?? "").replace(/,/g, ""));
-      const qty = parseFloat(String(row[MC_QTY_IDX] ?? "").replace(/,/g, ""));
-      if (isNaN(rate) || isNaN(qty)) continue;
-      sum += rate * qty;
-      count++;
-    }
-    return { sum, count };
-  }, [
-    sidebarBaseRows,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-  ]);
-
-  const rateTile = useCallback(
-    (rateIdx: number, qtyIdx: number, subIdx?: number) => {
-      let sum = 0;
-      let count = 0;
-      for (const row of sidebarBaseRows) {
-        if (
-          !matchesSidebar(
-            row,
-            balBillFilter,
-            statusFilter,
-            clearanceFilter,
-            tileItems,
-            tileSize,
-            tilePns,
-            mcFilter,
-            inspectionFilter,
-            balBillIdx,
-            clearanceIdx,
-            MC_IDX,
-            INSPECTION_IDX,
-            undefined,
-          )
-        )
-          continue;
-        const rate = parseNum(row[rateIdx]);
-        const qty = parseNum(row[qtyIdx]);
-        if (subIdx !== undefined) {
-          const sub = parseNum(row[subIdx]);
-          if (isNaN(rate) || isNaN(qty) || isNaN(sub)) continue;
-          sum += rate * (qty - sub);
-        } else {
-          if (isNaN(rate) || isNaN(qty)) continue;
-          sum += rate * qty;
-        }
-        count++;
-      }
-      return { sum, count };
-    },
-    [
-      sidebarBaseRows,
-      balBillFilter,
-      statusFilter,
-      clearanceFilter,
-      tileItems,
-tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-    ],
-  );
-
-  const rateBalBillCont = useMemo(
-    () => rateTile(RATE_IDX, BAL_BILL_AG_CONT_IDX),
-    [rateTile],
-  );
-
-  const balBillAgContTotal = useMemo(() => {
-    let sum = 0;
-    let count = 0;
-    for (const row of sidebarBaseRows) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          undefined,
-        )
-      )
-        continue;
-      const v = parseNum(row[BAL_BILL_AG_CONT_IDX]);
-      if (isNaN(v)) continue;
-      sum += v;
-      count++;
-    }
-    return { sum, count };
-  }, [
-    sidebarBaseRows,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-  ]);
-
-  const totalCostExcGst = useMemo(() => {
-    let sum = 0;
-    let count = 0;
-    for (const row of sidebarBaseRows) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          undefined,
-        )
-      )
-        continue;
-      const c = parseNum(row[COST_FROM_QUOTATION_IDX]);
-      if (isNaN(c)) continue;
-      sum += c;
-      count++;
-    }
-    return { sum, count };
-  }, [
-    sidebarBaseRows,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-  ]);
-
-  const totalCostIncGst = useMemo(() => {
-    let sum = 0;
-    let count = 0;
-    for (const row of sidebarBaseRows) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          undefined,
-        )
-      )
-        continue;
-      const c = parseNum(row[COST_FROM_QUOTATION_IDX]);
-      if (isNaN(c)) continue;
-      sum += c * 1.18;
-      count++;
-    }
-    return { sum, count };
-  }, [
-    sidebarBaseRows,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-  ]);
-
-  const totalVaPct = useMemo(() => {
-    let sum = 0;
-    let count = 0;
-    for (const row of sidebarBaseRows) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          undefined,
-        )
-      )
-        continue;
-      const v = parseNum(row[VA_PCT_FROM_COST_IDX]);
-      if (isNaN(v)) continue;
-      sum += v;
-      count++;
-    }
-    return { sum, count };
-  }, [
-    sidebarBaseRows,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-  ]);
-
-  const rateOrderQty = useMemo(
-    () => rateTile(RATE_IDX, ORDER_QTY_IDX),
-    [rateTile],
-  );
-
-  const rateBalDiQty = useMemo(
-    () => rateTile(RATE_IDX, DI_QTY_IDX, BILLED_QTY_IDX),
-    [rateTile],
-  );
-
-  const rateBalMspQty = useMemo(
-    () => rateTile(RATE_IDX, MC_QTY_IDX, DI_QTY_IDX),
-    [rateTile],
-  );
-
-  const tileRowsCount = useMemo(
-    () =>
-      sidebarBaseRows.reduce(
-        (n, row) =>
-          n +
-          (matchesSidebar(
-            row,
-            balBillFilter,
-            statusFilter,
-            clearanceFilter,
-            tileItems,
-            tileSize,
-            tilePns,
-            mcFilter,
-            inspectionFilter,
-            balBillIdx,
-            clearanceIdx,
-            MC_IDX,
-            INSPECTION_IDX,
-            undefined,
-          )
-            ? 1
-            : 0),
-        0,
-      ),
-    [
-      sidebarBaseRows,
-      balBillFilter,
-      statusFilter,
-      clearanceFilter,
-      tileItems,
-tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-    ],
-  );
-
-  const contractCount = useMemo(() => {
-    const seen = new Set<string>();
-    for (const row of sidebarBaseRows) {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          undefined,
-        )
-      )
-        continue;
-      const cn = String(row[CONTRACT_NO_IDX] ?? "").trim();
-      if (cn) seen.add(cn);
-    }
-    return seen.size;
-  }, [
-    sidebarBaseRows,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    tileItems,
-    tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-  ]);
+    if (serverMode) return serverCategoryOptions;
+    return data ? buildCategoryOptions(data.rows, clearanceIdx) : {};
+  }, [serverMode, serverCategoryOptions, data, clearanceIdx]);
 
   const hasTileFilter =
     tileItems.length > 0 ||
@@ -2461,117 +1472,19 @@ tileSize,
     mcFilter.length > 0 ||
     inspectionFilter.length > 0;
 
-  const filteredData = useMemo(() => {
-    if (
-      !data ||
-      (!hasTileFilter &&
-        balBillFilter === "all" &&
-        statusFilter === "all" &&
-        clearanceFilter.length === 0)
-    ) {
-      return data;
-    }
-    const rows: unknown[][] = [];
-    const filteredIds: string[] = [];
-    data.rows.forEach((row, i) => {
-      if (
-        !matchesSidebar(
-          row,
-          balBillFilter,
-          statusFilter,
-          clearanceFilter,
-          tileItems,
-          tileSize,
-          tilePns,
-          mcFilter,
-          inspectionFilter,
-          balBillIdx,
-          clearanceIdx,
-          MC_IDX,
-          INSPECTION_IDX,
-          undefined,
-        )
-      )
-        return;
-      rows.push(row);
-      filteredIds.push(data.ids[i]);
-    });
-    return { ...data, rows, ids: filteredIds, totalRows: rows.length };
-  }, [
-    data,
-    hasTileFilter,
-    balBillFilter,
-    statusFilter,
-    clearanceFilter,
-    balBillIdx,
-    clearanceIdx,
-    tileItems,
-    tileSize,
-    tilePns,
-  ]);
-
+  // Rows handed to the table. Server mode: the page is already filtered and
+  // sorted. Legacy: the sidebar + rate-tile survivors; the table filters on.
   const visibleData = useMemo(() => {
-    const base = filteredData ?? data;
-    if (!base || !activeRateTile) return base;
-    const rows: unknown[][] = [];
-    const ids: string[] = [];
-    base.rows.forEach((row, i) => {
-      if (!matchesRateTile(row, activeRateTile)) return;
-      rows.push(row);
-      ids.push(base.ids[i]);
-    });
-    return { ...base, rows, ids, totalRows: rows.length };
-  }, [filteredData, data, activeRateTile]);
-
-  // Per-node row counts for the flow diagram. Respects every active filter
-  // except the graph's own columns (STATUS / CLEARANCE STATUS), so selecting
-  // one branch never collapses the sibling counts (exclude-self cascading,
-  // same convention as the sidebar aggregates).
-  const graphPathColumns = useMemo(
-    () => new Set(["STATUS", "CLEARANCE STATUS"]),
-    [],
-  );
-
-  const graphCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const { tree, scope } of trees) {
-      for (const node of flatten(tree)) {
-        const path = pathTo(tree, node.id);
-        let n = 0;
-        for (const row of allRows) {
-          if (
-            !matchesRowFilters(
-              row,
-              headers,
-              columnFilters,
-              multiFilters,
-              globalSearch,
-              dateRanges,
-              undefined,
-              graphPathColumns,
-            ) ||
-            !matchesRateTile(row, activeRateTile)
-          )
-            continue;
-          if (!matchesScope(row, scope)) continue;
-          if (!path.every((p) => matchesGraphFilter(row, p.filter))) continue;
-          n++;
-        }
-        counts[node.id] = n;
-      }
-    }
-    return counts;
-  }, [
-    allRows,
-    headers,
-    columnFilters,
-    multiFilters,
-    globalSearch,
-    dateRanges,
-    activeRateTile,
-    graphPathColumns,
-    matchesRowFilters,
-  ]);
+    if (!data || serverMode || !legacyResult) return data;
+    const idx = legacyResult.visibleIdx;
+    if (idx.length === data.rows.length) return data;
+    return {
+      ...data,
+      rows: idx.map((i) => data.rows[i]),
+      ids: idx.map((i) => data.ids[i]),
+      totalRows: idx.length,
+    };
+  }, [data, serverMode, legacyResult]);
 
   const handleGraphToggle = useCallback(
     (id: string) => {
@@ -2609,104 +1522,7 @@ tileSize,
     [activePath, filterActions],
   );
 
-  const fmt = (n: number) =>
-    n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
-
-  // Display metrics for nodes flagged with a metric (e.g. Balance DI).
-  // Summed over the same rows the node counts: whatever rate × (DI QTY − BILLED QTY)
-  // yields, formatted with the en-IN convention used by the sidebar tiles.
-  const graphValues = useMemo(() => {
-    const values: Record<string, string> = {};
-    for (const { tree, scope } of trees) {
-      for (const node of flatten(tree)) {
-        if (node.metric !== "diBalance") continue;
-        const path = pathTo(tree, node.id);
-        let sum = 0;
-        for (const row of allRows) {
-          if (
-            !matchesRowFilters(
-              row,
-              headers,
-              columnFilters,
-              multiFilters,
-              globalSearch,
-              dateRanges,
-              undefined,
-              graphPathColumns,
-            ) ||
-            !matchesRateTile(row, activeRateTile)
-          )
-            continue;
-          if (!matchesScope(row, scope)) continue;
-          if (!path.every((p) => matchesGraphFilter(row, p.filter))) continue;
-          const rate = parseNum(row[RATE_IDX]);
-          const di = parseNum(row[DI_QTY_IDX]);
-          const billed = parseNum(row[BILLED_QTY_IDX]);
-          if (isNaN(rate) || isNaN(di) || isNaN(billed)) continue;
-          sum += rate * (di - billed);
-        }
-        values[node.id] = fmt(sum);
-      }
-    }
-    return values;
-  }, [
-    allRows,
-    headers,
-    columnFilters,
-    multiFilters,
-    globalSearch,
-    dateRanges,
-    activeRateTile,
-    graphPathColumns,
-    matchesRowFilters,
-  ]);
-
   const fmtLakhs = (n: number) => `${(n / 100000).toFixed(1)} lakhs`;
-
-  // Per-contract meta for the CONTRACT NO column filter dropdown
-  // (party name, row count, and RATE × BAL BILL AG CONT sum). Excludes the
-  // CONTRACT NO filter itself (exclude-self cascading), respects all other filters.
-  const PARTY_NAME_IDX = headers.indexOf("PARTY NAME");
-
-  const contractNoMeta = useMemo(() => {
-    const meta: Record<
-      string,
-      { count: number; sum: number; partyName: string }
-    > = {};
-    for (const row of filteredData?.rows ?? []) {
-      if (
-        !matchesRowFilters(
-          row,
-          headers,
-          columnFilters,
-          multiFilters,
-          globalSearch,
-          dateRanges,
-          "CONTRACT NO",
-        ) ||
-        !matchesRateTile(row, activeRateTile)
-      )
-        continue;
-      const cn = String(row[CONTRACT_NO_IDX] ?? "").trim();
-      if (!cn) continue;
-      const e = meta[cn] ?? (meta[cn] = { count: 0, sum: 0, partyName: "" });
-      e.count++;
-      const rate = parseNum(row[RATE_IDX]);
-      const bal = parseNum(row[BAL_BILL_AG_CONT_IDX]);
-      if (!isNaN(rate) && !isNaN(bal)) e.sum += rate * bal;
-      if (!e.partyName) e.partyName = String(row[PARTY_NAME_IDX] ?? "").trim();
-    }
-    return meta;
-  }, [
-    filteredData,
-    headers,
-    columnFilters,
-    multiFilters,
-    globalSearch,
-    dateRanges,
-    activeRateTile,
-    matchesRowFilters,
-  ]);
 
   const columnOptionMeta = useMemo(
     () => ({
@@ -2724,115 +1540,48 @@ tileSize,
     setActiveRateTile((prev) => (prev === key ? null : key));
   }, []);
 
-  const tileAllCounts = useMemo(
+  // Props handed to GMDUpdateTable are kept referentially stable so its
+  // filter/option memos only recompute when their real inputs change.
+  const tableEditableColumns = useMemo(
+    () =>
+      EDITABLE_COLUMN_CANDIDATES.filter(
+        (c) =>
+          isEditable(c) &&
+          (c !== "BOM ID" || !!selectContractReviewBomIdAction) &&
+          (c !== "Actuator" || !!saveActuatorWithRmCodeAction),
+      ),
+    [isEditable, selectContractReviewBomIdAction, saveActuatorWithRmCodeAction],
+  );
+  const tableBlankOnlyEditableColumns = useMemo(
+    () => ["DATE OF CONTRACT"].filter(isEditable),
+    [isEditable],
+  );
+  const tableFilterOptionsOverride = useMemo(
     () => ({
-      item: sidebarBaseRows.reduce(
-        (n, r) =>
-          n +
-          (matchesSidebar(
-            r,
-            balBillFilter,
-            statusFilter,
-            clearanceFilter,
-            [],
-            tileSize,
-            tilePns,
-            mcFilter,
-            inspectionFilter,
-            balBillIdx,
-            clearanceIdx,
-            MC_IDX,
-            INSPECTION_IDX,
-            "item",
-          )
-            ? 1
-            : 0),
-        0,
-      ),
-      itemBalBill: sidebarBaseRows.reduce((n, r) => {
-        if (
-          !matchesSidebar(
-            r,
-            balBillFilter,
-            statusFilter,
-            clearanceFilter,
-            [],
-            tileSize,
-            tilePns,
-            mcFilter,
-            inspectionFilter,
-            balBillIdx,
-            clearanceIdx,
-            MC_IDX,
-            INSPECTION_IDX,
-            "item",
-          )
-        )
-          return n;
-        const v = parseNum(r[effectiveBalBillIdx]);
-        return n + (isNaN(v) ? 0 : v);
-      }, 0),
-      size: sidebarBaseRows.reduce(
-        (n, r) =>
-          n +
-          (matchesSidebar(
-            r,
-            balBillFilter,
-            statusFilter,
-            clearanceFilter,
-            tileItems,
-            "",
-            tilePns,
-            mcFilter,
-            inspectionFilter,
-            balBillIdx,
-            clearanceIdx,
-            MC_IDX,
-            INSPECTION_IDX,
-            "size",
-          )
-            ? 1
-            : 0),
-        0,
-      ),
-      pn: sidebarBaseRows.reduce(
-        (n, r) =>
-          n +
-          (matchesSidebar(
-            r,
-            balBillFilter,
-            statusFilter,
-            clearanceFilter,
-            tileItems,
-            tileSize,
-            [],
-            mcFilter,
-            inspectionFilter,
-            balBillIdx,
-            clearanceIdx,
-            MC_IDX,
-            INSPECTION_IDX,
-            "pn",
-          )
-            ? 1
-            : 0),
-        0,
-      ),
+      "CLEARANCE STATUS": clearanceOptions.filter((o) => o !== "(Blank)"),
+      "PN RATING": pnOptions
+        .map((o) => o.value)
+        .filter((v) => v !== "(Blank)"),
+      Item: itemOptions.map((o) => o.value),
+      "MC Received/Pending": mcOptions.filter((o) => o !== "(Blank)"),
+      Inspection: inspectionOptions.filter((o) => o !== "(Blank)"),
     }),
-    [
-      sidebarBaseRows,
-      balBillFilter,
-      statusFilter,
-      clearanceFilter,
-      tileItems,
-tileSize,
-    tilePns,
-    mcFilter,
-    inspectionFilter,
-    balBillIdx,
-    clearanceIdx,
-      effectiveBalBillIdx,
+    [clearanceOptions, pnOptions, itemOptions, mcOptions, inspectionOptions],
+  );
+  const tableFixedDropdownOptions = useMemo(
+    () => ({ ...FIXED_DROPDOWN_OPTIONS, Actuator: actuatorOptions }),
+    [actuatorOptions],
+  );
+  const tableCellBadges = useMemo(
+    () => [
+      ...(isEnabled("C BATCH") ? cBatchBadges("ITEM_CODE") : []),
+      ...(isEnabled("N BATCH") ? nBatchBadges("ITEM_CODE") : []),
     ],
+    [isEnabled],
+  );
+  const tableHiddenColumns = useMemo(
+    () => [...flags.disabledColumns, ...HIDDEN_COLUMNS],
+    [flags.disabledColumns],
   );
 
   if (loading) {
@@ -3659,91 +2408,21 @@ tileSize,
                 title="Contract Review"
                 editable
                 fullHeight
-                editableColumns={[
-                  "bom formula trial",
-                  "Item",
-                  "BOM ID",
-                  "CLEARANCE STATUS",
-                  "Actuator",
-                  "MC Received/Pending",
-                  "Inspection",
-                  "OFFER PENDING/DONE",
-                  "Remarks",
-                  "PN RATING",
-                  "LC/RTGS REF NO",
-                  "LC DATE/RTGS DATE",
-                  "LAST DATE OF SHIPMENT/DATE OF LC",
-                  "Issuing bank name",
-                  "PAYMENT TERMS",
-                  "PROD ORDER NO",
-                  "VA % FROM COST",
-                ].filter(
-                  (c) =>
-                    isEditable(c) &&
-                    (c !== "BOM ID" || !!selectContractReviewBomIdAction) &&
-                    (c !== "Actuator" || !!saveActuatorWithRmCodeAction),
-                )}
-                blankOnlyEditableColumns={["DATE OF CONTRACT"].filter(isEditable)}
+                editableColumns={tableEditableColumns}
+                blankOnlyEditableColumns={tableBlankOnlyEditableColumns}
                 dropdownRowCondition={(header, row) =>
                   header !== "Actuator" || isActuatorItemRow(row)
                 }
                 extraFilterOptions={actuatorExtraFilterOptions}
                 categoryOptions={categoryOptions}
-                filterOptionsOverride={{
-                  "CLEARANCE STATUS": clearanceOptions.filter(
-                    (o) => o !== "(Blank)",
-                  ),
-                  "PN RATING": pnOptions
-                    .map((o) => o.value)
-                    .filter((v) => v !== "(Blank)"),
-                  Item: itemOptions.map((o) => o.value),
-                  "MC Received/Pending": mcOptions.filter(
-                    (o) => o !== "(Blank)",
-                  ),
-                  Inspection: inspectionOptions.filter(
-                    (o) => o !== "(Blank)",
-                  ),
-                }}
-                fixedDropdownOptions={{
-                  "MC Received/Pending": ["Received", "Pending"],
-                  Inspection: ["DONE", "PENDING"],
-                  "OFFER PENDING/DONE": ["DONE", "PENDING"],
-                  Actuator: actuatorOptions,
-                  "PAYMENT TERMS": [
-                    "CREDIT 45",
-                    "CREDIT 30",
-                    "CREDIT 90",
-                    "CREDIT LC-30",
-                    "100% ADVANCE",
-                    "CREDIT LC-60",
-                    "CREDIT LC-90",
-                    "CREDIT 15",
-                    "CREDIT LC-45",
-                    "Credit 21",
-                    "PDC 45",
-                    "Credit 7",
-                    "CREDIT 60",
-                    "10 ADV, BAL DELIVERY",
-                    "20 ADV, BAL DELIVERY",
-                    "20 ADV, BAL BEFORE DELIVERY",
-                    "15 ADV, BAL BEFORE DELIVERY",
-                    "25 ADV, BAL BEFORE DELIVERY",
-                    "NA",
-                    "20 ADV, BAL 30 DAYS DELIVERY",
-                    "CREDIT LC-150",
-                    "AFTER GRN",
-                    "5 ADV, BAL LC 30",
-                  ],
-                }}
+                filterOptionsOverride={tableFilterOptionsOverride}
+                fixedDropdownOptions={tableFixedDropdownOptions}
                 onCellUpdate={handleCellUpdate}
                 columnGroups={CONTRACT_REVIEW_COLUMN_GROUPS}
                 sortByType
                 multilineEditableColumns={["Remarks"]}
                 defaultColumnWidths={CONTRACT_REVIEW_COLUMN_WIDTHS}
-                cellBadges={[
-                  ...(isEnabled("C BATCH") ? cBatchBadges("ITEM_CODE") : []),
-                  ...(isEnabled("N BATCH") ? nBatchBadges("ITEM_CODE") : []),
-                ]}
+                cellBadges={tableCellBadges}
                 batchFilterHeader={batchPresenceFilters.length ? "ITEM_CODE" : undefined}
                 batchPresenceFilters={batchPresenceFilters.length ? batchPresenceFilters : undefined}
                 allowExport={flags.excelExport}
@@ -3764,6 +2443,7 @@ tileSize,
                 }
                 filterState={filterState}
                 filterActions={filterActions}
+                serverMode={tableServerMode}
                 columnOptionMeta={columnOptionMeta}
                 imageButtonColumn={CONTRACT_REVIEW_HEADERS[ITEM_CODE_IDX]}
                 itemImagesByCode={itemImagesByCode}
@@ -3808,42 +2488,7 @@ tileSize,
                   }
                   filterActions.onMultiFilter("PN RATING", []);
                 }}
-                hiddenColumns={[
-                  ...flags.disabledColumns,
-                  "VA %",
-                  "CV",
-                  "C BATCH",
-                  "N BATCH",
-                  "COST FROM QUOTATION",
-                  "FREE STOCK",
-                  "FINAL REQ",
-                  // "MC QTY",
-                  "Balance mc",
-                  "PROD ORD QTY",
-                  "BALANCE TO PROD ORD",
-                  "BALANCE TO PROD ENT",
-                  // "DI QTY",
-                  "BAL DI QTY",
-                  "BAL MC VAL",
-                  "BAL PROD ORD VAL",
-                  "BAL TO PROD ORD ENT VAL",
-                  "BAL BILL AG CONT VAL",
-                  "BAL BILL AG MC VAL",
-                  "BAL DI VAL",
-                  "DI VAL",
-                  "ERP PARTY NAME FROM GMD SUPPLY HISTORY",
-                  "JOB Code",
-                  "BAL BILL AG MC",
-                  "ic qty",
-                  "bom formula trial",
-                  "BILLED QTY",
-                  "DI QTY",
-                  "MC QTY",
-                  "OFFER NUMBER",
-                  "INSPECTION NUMBER",
-                  "DI DATE",
-                  "STATUS"
-                ]}
+                hiddenColumns={tableHiddenColumns}
               />
             </ResizablePanel>
           </ResizablePanelGroup>

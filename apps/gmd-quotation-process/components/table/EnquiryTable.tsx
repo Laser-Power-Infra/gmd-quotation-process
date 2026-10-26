@@ -417,7 +417,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const [crRateStatus, setCrRateStatus] = useState<"idle" | "running">("idle");
   const [pdCostValStatus, setPdCostValStatus] = useState<"idle" | "running">("idle");
   const [syncStockStatus, setSyncStockStatus] = useState<"idle" | "running">("idle");
-  // Docket No header filter: show only pending dockets (auto-created, no items yet).
+  // Docket No header filter: show only auto-created dockets (pending), whether
+  // the item parser has added rows or not.
   const pendingOnly = pageState.pendingOnly;
   const setPendingOnly = (value: boolean | ((prev: boolean) => boolean)) => {
     dispatch(
@@ -2058,7 +2059,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                     ? "bg-amber-500 text-white border-amber-500"
                     : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/25 dark:hover:bg-amber-500/20"
                 }`}
-                title="Show only pending dockets (auto-created, no items yet)"
+                title="Show only pending dockets (auto-created, with or without items)"
               >
                 {pendingOnly ? "Pending only ✓" : "Pending only"}
               </button>

@@ -20,7 +20,16 @@ import {
   deleteGMDUpdateTransferredItem,
   type GMDUpdateRow,
 } from "@/lib/gmdUpdateSlice";
-import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
+import {
+  CASTING_KEYS,
+  applyCastingCost,
+  computeCardStats,
+  computeDuplicateDerivedIds,
+  itemToRow,
+  matchesNewItemsTableFilters,
+  matchesSidebarItem,
+  type CastingKey,
+} from "@/lib/gmd_lib/rawMaterialView";
 import {
   FIXED_DROPDOWN_OPTIONS,
   CANONICAL_COLUMNS,
@@ -28,7 +37,7 @@ import {
   resolveGMDUpdateField,
   withHardcodedL7Options,
 } from "@/lib/gmd_lib/sheet-columns";
-import { C_BATCH_HEADER, C_BATCH_VALUE, cBatchBadges, cBatchFilter } from "@/lib/gmd_lib/verify-bom-columns";
+import { C_BATCH_HEADER, cBatchBadges, cBatchFilter } from "@/lib/gmd_lib/verify-bom-columns";
 import {
   getUsdInrRateAction,
   getGMDCastingRatesAction,
@@ -71,12 +80,7 @@ const CASCADE_LEVEL_HEADERS = [
   "L7-DIMENSION",
 ];
 
-/** NEW ITEM STATUS values the catalogue treats as gone; never flagged as duplicates. */
-const DEDUP_SKIPPED_STATUSES = new Set([
-  "CLOSED",
-  "TO BE CLOSED",
-  "TO BE LOCKED",
-]);
+const EMPTY_HEADERS: string[] = [];
 
 interface SheetData {
   headers: string[];
@@ -99,61 +103,37 @@ function isMoveToNewItemsStatus(value: string | null): boolean {
 // Stable descriptor list so GMDUpdateTable's row predicate keeps a stable dep.
 const RAW_MATERIAL_BATCH_FILTERS = [cBatchFilter()];
 
-type CastingKey = "DI" | "CS" | "CI" | "SS" | "Bronze" | "MS" | "GI";
-
-const CASTING_KEYS: CastingKey[] = [
-  "DI",
-  "CS",
-  "CI",
-  "SS",
-  "Bronze",
-  "MS",
-  "GI",
+// Static table props, hoisted so every render hands GMDUpdateTable the same
+// references and its filter/option memos aren't invalidated by parent renders.
+const ERP_CODE_BADGES = cBatchBadges("ERP ITEM CODE");
+const UNIQUE_KEY_COLUMNS = ["ERP ITEM CODE"];
+const NEW_ITEMS_EDITABLE_COLUMNS = [
+  "CONV",
+  "AUM",
+  "1 pcs wgt",
+  "cost",
+  "Available Stock",
+  "INDIAN/IMPORTED",
+  "USD cost",
+  "HSN CODE",
+  "HSN Code Validation",
+  "MAJOR MARKING",
+  "RM TYPE",
+  "NEW ITEM STATUS",
+  "Order Qty",
 ];
-
-const CASTING_RATE_MATCHERS: {
-  key: CastingKey;
-  l8: string[];
-  l5: string[];
-}[] = [
-  { key: "DI", l8: ["CASTING"], l5: ["DUCTILE IRON"] },
-  {
-    key: "CS",
-    l8: ["CASTING"],
-    l5: ["CARBON STEEL/CAST STEEL", "CARBIDE STEEL"],
-  },
-  { key: "CI", l8: ["CASTING"], l5: ["CAST IRON"] },
-  { key: "SS", l8: ["SS SPARES"], l5: ["STAINLESS STEEL"] },
-  { key: "Bronze", l8: ["BRONZE ITEMS"], l5: ["BRONZE/BRASS/GUN METAL"] },
+const NEW_ITEMS_HIDDEN_COLUMNS = [
+  "BOM ID",
+  "Vendor Reference",
+  "Attachment",
+  C_BATCH_HEADER,
 ];
-
-function getCastingKey(l8: string, l5: string): CastingKey | null {
-  const a = l8.trim().toUpperCase();
-  const b = l5.trim().toUpperCase();
-  for (const m of CASTING_RATE_MATCHERS) {
-    if (m.l8.includes(a) && m.l5.includes(b)) return m.key;
-  }
-  return null;
-}
-
-function applyCastingCost(
-  items: GMDUpdateRow[],
-  rates: Record<CastingKey, string>,
-): { items: GMDUpdateRow[]; lockedIds: Set<string> } {
-  const lockedIds = new Set<string>();
-  const out = items.map((item) => {
-    const key = getCastingKey(item.l8ItemCategory ?? "", item.l5Material ?? "");
-    if (!key) return item;
-    const rateStr = (rates[key] ?? "").trim();
-    if (!rateStr) return item;
-    const rate = parseFloat(rateStr.replace(/,/g, ""));
-    const wgt = parseFloat(String(item.pcsWgt ?? "").replace(/,/g, ""));
-    if (isNaN(rate) || isNaN(wgt)) return item;
-    lockedIds.add(item.id);
-    return { ...item, cost: Number((rate * wgt).toFixed(2)) };
-  });
-  return { items: out, lockedIds };
-}
+const PROCESSED_ITEMS_HIDDEN_COLUMNS = [
+  "Vendor Reference",
+  "Attachment",
+  C_BATCH_HEADER,
+];
+const TRANSFERRED_ITEMS_HIDDEN_COLUMNS = ["BOM ID", C_BATCH_HEADER];
 
 function rowToGMDUpdateItem(
   id: string,
@@ -414,6 +394,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
+      void loadTradingValveOptions(); // runs alongside the data request
       const res = await fetch("/raw_material/api/gmd-update");
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -423,7 +404,6 @@ export default function Home() {
       setData(json);
       setTransferredIds(json.transferredIds ?? []);
       if (json.bomIdOptions) setBomIdOptionsById(json.bomIdOptions);
-      await loadTradingValveOptions();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -486,7 +466,7 @@ export default function Home() {
     }
   }, [data, dispatch]);
 
-  const headers = data?.headers ?? [];
+  const headers = data?.headers ?? EMPTY_HEADERS;
   const syncedAt = data?.syncedAt ?? null;
 
   const transferredSet = useMemo(
@@ -527,40 +507,18 @@ export default function Home() {
 
   const totalRows = allItems.length;
 
-  // Ids of rows whose derived item name is shared by more than one raw material
-  // row (catalogue-wide). Blank names are ignored, and rows the catalogue treats
-  // as gone (CLOSED / TO BE CLOSED / TO BE LOCKED) never count or get flagged.
-  const duplicateDerivedIds = useMemo(() => {
-    const live = allItems.filter(
-      (item) =>
-        !DEDUP_SKIPPED_STATUSES.has(
-          String(item.newItemStatus ?? "").trim().toUpperCase(),
-        ),
-    );
-    const counts = new Map<string, number>();
-    for (const item of live) {
-      const key = (item.itemNameDerived ?? "").trim().toUpperCase();
-      if (!key) continue;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    const ids = new Set<string>();
-    for (const item of live) {
-      const key = (item.itemNameDerived ?? "").trim().toUpperCase();
-      if (key && (counts.get(key) ?? 0) > 1) ids.add(item.id);
-    }
-    return ids;
-  }, [allItems]);
+  // Ids of rows sharing a derived item name catalogue-wide (see rawMaterialView).
+  const duplicateDerivedIds = useMemo(
+    () => computeDuplicateDerivedIds(allItems),
+    [allItems],
+  );
 
   const processedCost = useMemo(
     () => applyCastingCost(processedItems, castingRates),
     [processedItems, castingRates],
   );
   const processedItemRows = useMemo(
-    () =>
-      processedCost.items.map((i) => {
-        const r = dbItemToRow(i);
-        return [...r.slice(0, 2), i.itemNameDerived, ...r.slice(2), i.cBatch];
-      }),
+    () => processedCost.items.map(itemToRow),
     [processedCost],
   );
   const processedItemIds = useMemo(
@@ -569,11 +527,7 @@ export default function Home() {
   );
 
   const transferredItemRows = useMemo(
-    () =>
-      transferredItems.map((i) => {
-        const r = dbItemToRow(i);
-        return [...r.slice(0, 2), i.itemNameDerived, ...r.slice(2), i.cBatch];
-      }),
+    () => transferredItems.map(itemToRow),
     [transferredItems],
   );
   const transferredItemIds = useMemo(
@@ -954,7 +908,6 @@ export default function Home() {
     fetchData();
   }, [fetchData]);
 
-  const [firstFilteredRows, setFirstFilteredRows] = useState<unknown[][]>([]);
   // Table filter lift (controlled like contract_review) for true cascading
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
     {},
@@ -1027,48 +980,6 @@ export default function Home() {
     [],
   );
 
-  function matchesTableFilters(
-    row: unknown[],
-    hdrs: string[],
-    colFilters: Record<string, string>,
-    mFilters: Record<string, string[]>,
-    gSearch: string,
-    bFilters: Record<string, boolean> = {},
-  ): boolean {
-    if (gSearch.trim()) {
-      const q = gSearch.toLowerCase();
-      const hay = hdrs
-        .map((_, i) => String(row[i] ?? "").toLowerCase())
-        .join(" ");
-      if (!hay.includes(q)) return false;
-    }
-    for (const [colName, filterVal] of Object.entries(colFilters)) {
-      if (!filterVal || filterVal === "All") continue;
-      const colIdx = hdrs.indexOf(colName);
-      if (colIdx === -1) continue;
-      const cellVal = String(row[colIdx] ?? "");
-      if (filterVal === "(Blank)") {
-        if (cellVal !== "") return false;
-      } else if (!cellVal.toLowerCase().includes(filterVal.toLowerCase())) {
-        return false;
-      }
-    }
-    for (const [colName, selected] of Object.entries(mFilters)) {
-      if (!selected.length) continue;
-      const colIdx = hdrs.indexOf(colName);
-      if (colIdx === -1) continue;
-      const cellVal = String(row[colIdx] ?? "").trim();
-      const matchesBlank = selected.includes("(Blank)") && cellVal === "";
-      if (!(matchesBlank || selected.includes(cellVal))) return false;
-    }
-    if (bFilters.cBatch) {
-      const idx = hdrs.indexOf(C_BATCH_HEADER);
-      if (idx === -1 || String(row[idx] ?? "").trim() !== C_BATCH_VALUE)
-        return false;
-    }
-    return true;
-  }
-
   // Dual cascading sidebar filters (Indian/Imported + Major/Minor)
   const [indianImported, setIndianImported] = useState<
     "all" | "indian" | "imported"
@@ -1077,66 +988,20 @@ export default function Home() {
     "all",
   );
 
-  function matchesSidebarNew(
-    row: unknown[],
-    indianImp: "all" | "indian" | "imported",
-    major: "all" | "major" | "minor",
-    hdrs: string[],
-    exclude?: "indian" | "major",
-  ): boolean {
-    if (exclude !== "indian" && indianImp !== "all") {
-      const imp = String(row[hdrs.indexOf("INDIAN/IMPORTED")] ?? "")
-        .trim()
-        .toLowerCase();
-      if (imp !== indianImp) return false;
-    }
-    if (exclude !== "major" && major !== "all") {
-      const m = String(row[hdrs.indexOf("MAJOR MARKING")] ?? "")
-        .trim()
-        .toLowerCase();
-      const isMajor = m === "true";
-      const isMinor = m === "false";
-      if (major === "major" && !isMajor) return false;
-      if (major === "minor" && !isMinor) return false;
-    }
-    return true;
-  }
-
-  const scopedNewItems = useMemo(() => {
-    return newItems.filter((item) => {
-      if (
-        indianImported !== "all" &&
-        (item.indianImported ?? "").trim().toLowerCase() !== indianImported
-      )
-        return false;
-      if (
-        majorFilter === "major" &&
-        String(item.majorMarking ?? "")
-          .trim()
-          .toLowerCase() !== "true"
-      )
-        return false;
-      if (
-        majorFilter === "minor" &&
-        String(item.majorMarking ?? "")
-          .trim()
-          .toLowerCase() !== "false"
-      )
-        return false;
-      return true;
-    });
-  }, [newItems, indianImported, majorFilter]);
+  const scopedNewItems = useMemo(
+    () =>
+      newItems.filter((item) =>
+        matchesSidebarItem(item, indianImported, majorFilter),
+      ),
+    [newItems, indianImported, majorFilter],
+  );
 
   const scopedNewCost = useMemo(
     () => applyCastingCost(scopedNewItems, castingRates),
     [scopedNewItems, castingRates],
   );
   const scopedNewItemRows = useMemo(
-    () =>
-      scopedNewCost.items.map((i) => {
-        const r = dbItemToRow(i);
-        return [...r.slice(0, 2), i.itemNameDerived, ...r.slice(2), i.cBatch];
-      }),
+    () => scopedNewCost.items.map(itemToRow),
     [scopedNewCost],
   );
   const scopedNewItemIds = useMemo(
@@ -1151,13 +1016,10 @@ export default function Home() {
 
   // Base rows for sidebar = table-filtered newItems (respects column/multi/global filters)
   const sidebarBaseRows = useMemo(() => {
-    const allRows = newItems.map((i) => {
-      const r = dbItemToRow(i);
-      return [...r.slice(0, 2), i.itemNameDerived, ...r.slice(2), i.cBatch];
-    });
+    const allRows = newItems.map(itemToRow);
     if (!headers.length) return allRows;
     return allRows.filter((row) =>
-      matchesTableFilters(
+      matchesNewItemsTableFilters(
         row,
         headers,
         columnFilters,
@@ -1168,74 +1030,23 @@ export default function Home() {
     );
   }, [newItems, headers, columnFilters, multiFilters, globalSearch, batchFilters]);
 
-  const cardStats = useMemo(() => {
-    const empty = { count: 0, sum: 0 };
-    const stats = {
-      indian: { ...empty },
-      imported: { ...empty },
-      major: { ...empty },
-      minor: { ...empty },
-    };
-
-    // Cascading: Indian/Imported counts exclude indian filter (respect major + table)
-    const baseForIndian = sidebarBaseRows.filter((row) =>
-      matchesSidebarNew(row, "all", majorFilter, headers, "indian"),
-    );
-    for (const row of baseForIndian) {
-      const stockStr = String(row[12] ?? "").trim();
-      const costStr = String(row[16] ?? "").trim();
-      if (stockStr === "" || costStr === "") continue;
-      const stock = parseFloat(stockStr.replace(/,/g, ""));
-      const cost = parseFloat(costStr.replace(/,/g, ""));
-      if (isNaN(stock) || isNaN(cost)) continue;
-      const value = stock * cost;
-      const imp = String(
-        row[headers.indexOf("INDIAN/IMPORTED")] ?? row[24] ?? "",
-      )
-        .trim()
-        .toLowerCase();
-      if (imp === "indian") {
-        stats.indian.count++;
-        stats.indian.sum += value;
-      }
-      if (imp === "imported") {
-        stats.imported.count++;
-        stats.imported.sum += value;
-      }
-    }
-
-    // Cascading: Major/Minor counts exclude major filter (respect indian + table)
-    const baseForMajor = sidebarBaseRows.filter((row) =>
-      matchesSidebarNew(row, indianImported, "all", headers, "major"),
-    );
-    for (const row of baseForMajor) {
-      const stockStr = String(row[12] ?? "").trim();
-      const costStr = String(row[16] ?? "").trim();
-      if (stockStr === "" || costStr === "") continue;
-      const stock = parseFloat(stockStr.replace(/,/g, ""));
-      const cost = parseFloat(costStr.replace(/,/g, ""));
-      if (isNaN(stock) || isNaN(cost)) continue;
-      const value = stock * cost;
-      const m = String(row[headers.indexOf("MAJOR MARKING")] ?? row[20] ?? "")
-        .trim()
-        .toLowerCase();
-      const isMajor = m === "true";
-      const isMinor = m === "false";
-      if (isMajor) {
-        stats.major.count++;
-        stats.major.sum += value;
-      }
-      if (isMinor) {
-        stats.minor.count++;
-        stats.minor.sum += value;
-      }
-    }
-
-    return stats;
-  }, [sidebarBaseRows, headers, indianImported, majorFilter]);
+  const cardStats = useMemo(
+    () => computeCardStats(sidebarBaseRows, headers, indianImported, majorFilter),
+    [sidebarBaseRows, headers, indianImported, majorFilter],
+  );
 
   const fmt = (n: number) =>
     n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+
+  const handleUsdCostUpdate = useCallback(
+    (id: string, usdCost: string) =>
+      dispatch(updateGMDUsdCost({ id, usdCost })).unwrap(),
+    [dispatch],
+  );
+  const handleNewItemsReset = useCallback(() => {
+    setIndianImported("all");
+    setMajorFilter("all");
+  }, []);
 
   if (loading) {
     return (
@@ -1415,30 +1226,12 @@ export default function Home() {
                     categoryOptions={enhancedCategoryOptions}
                     editable
                     fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
-                    editableColumns={[
-                      "CONV",
-                      "AUM",
-                      "1 pcs wgt",
-                      "cost",
-                      "Available Stock",
-                      "INDIAN/IMPORTED",
-                      "USD cost",
-                      "HSN CODE",
-                      "HSN Code Validation",
-                      "MAJOR MARKING",
-                      "RM TYPE",
-                      "NEW ITEM STATUS",
-                      "Order Qty",
-                    ]}
-                    uniqueKeyColumns={["ERP ITEM CODE"]}
-                    onFilteredRowsChange={setFirstFilteredRows}
+                    editableColumns={NEW_ITEMS_EDITABLE_COLUMNS}
+                    uniqueKeyColumns={UNIQUE_KEY_COLUMNS}
                     onCellUpdate={handleCellUpdate}
                     filterState={filterState}
                     filterActions={filterActions}
-                    onReset={() => {
-                      setIndianImported("all");
-                      setMajorFilter("all");
-                    }}
+                    onReset={handleNewItemsReset}
                     externalFiltersActive={
                       indianImported !== "all" || majorFilter !== "all"
                     }
@@ -1447,15 +1240,10 @@ export default function Home() {
                     bomIdOptionsById={bomIdOptionsById}
                     onSelectBomId={handleSelectBomId}
                     usdInrRate={usdInrRate}
-                    onUsdCostUpdate={(id, usdCost) => dispatch(updateGMDUsdCost({ id, usdCost })).unwrap()}
+                    onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
-                    hiddenColumns={[
-                      "BOM ID",
-                      "Vendor Reference",
-                      "Attachment",
-                      C_BATCH_HEADER,
-                    ]}
-                    cellBadges={cBatchBadges("ERP ITEM CODE")}
+                    hiddenColumns={NEW_ITEMS_HIDDEN_COLUMNS}
+                    cellBadges={ERP_CODE_BADGES}
                     batchFilterHeader="ERP ITEM CODE"
                     batchPresenceFilters={RAW_MATERIAL_BATCH_FILTERS}
                     warningRowIds={duplicateDerivedIds}
@@ -1480,20 +1268,16 @@ export default function Home() {
                     title="Filtered Items"
                     editable
                     categoryOptions={enhancedCategoryOptions}
-                    uniqueKeyColumns={["ERP ITEM CODE"]}
+                    uniqueKeyColumns={UNIQUE_KEY_COLUMNS}
                     onCellUpdate={handleCellUpdate}
                     lockedCostIds={lockedCostIds}
                     bomIdOptionsById={bomIdOptionsById}
                     onSelectBomId={handleSelectBomId}
                     usdInrRate={usdInrRate}
-                    onUsdCostUpdate={(id, usdCost) => dispatch(updateGMDUsdCost({ id, usdCost })).unwrap()}
+                    onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
-                    hiddenColumns={[
-                      "Vendor Reference",
-                      "Attachment",
-                      C_BATCH_HEADER,
-                    ]}
-                    cellBadges={cBatchBadges("ERP ITEM CODE")}
+                    hiddenColumns={PROCESSED_ITEMS_HIDDEN_COLUMNS}
+                    cellBadges={ERP_CODE_BADGES}
                     batchFilterHeader="ERP ITEM CODE"
                     batchPresenceFilters={RAW_MATERIAL_BATCH_FILTERS}
                     warningRowIds={duplicateDerivedIds}
@@ -1520,15 +1304,15 @@ export default function Home() {
                     categoryOptions={transferredCategoryOptions}
                     fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
                     filterOptionsOverride={transferredFilterOptions}
-                    uniqueKeyColumns={["ERP ITEM CODE"]}
+                    uniqueKeyColumns={UNIQUE_KEY_COLUMNS}
                     lockedCostIds={lockedCostIds}
                     bomIdOptionsById={bomIdOptionsById}
                     onSelectBomId={handleSelectBomId}
                     usdInrRate={usdInrRate}
-                    onUsdCostUpdate={(id, usdCost) => dispatch(updateGMDUsdCost({ id, usdCost })).unwrap()}
+                    onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
-                    hiddenColumns={["BOM ID", C_BATCH_HEADER]}
-                    cellBadges={cBatchBadges("ERP ITEM CODE")}
+                    hiddenColumns={TRANSFERRED_ITEMS_HIDDEN_COLUMNS}
+                    cellBadges={ERP_CODE_BADGES}
                     batchFilterHeader="ERP ITEM CODE"
                     batchPresenceFilters={RAW_MATERIAL_BATCH_FILTERS}
                     warningRowIds={duplicateDerivedIds}

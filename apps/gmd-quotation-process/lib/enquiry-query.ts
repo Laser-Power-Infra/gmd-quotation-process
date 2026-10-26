@@ -1,4 +1,5 @@
 import { Prisma } from "@gmd/db-quotation";
+import { hasActiveItemFilters } from "./enquiryFilterScope";
 import type { EnquiryQuery } from "./enquiryQuery";
 
 /**
@@ -140,7 +141,8 @@ export function pdCostValidationSql(alias: Prisma.Sql): Prisma.Sql {
 
 /**
  * The client's `hasActiveFilters`: any filter except the header search box.
- * Drives whether dockets with no items stay visible.
+ * Drives the item-match rule for the normal (non-pending) view, where any
+ * active filter requires at least one item.
  */
 export function hasActiveFilters(q: EnquiryQuery): boolean {
   return Object.entries(q.filters).some(([key, val]) => {
@@ -288,6 +290,20 @@ function globalSearchSql(q: EnquiryQuery): Prisma.Sql | null {
   )`;
 }
 
+/**
+ * Dockets created from a Gmail thread. `sourceThreadId` is the durable marker
+ * the scheduler and `automatic_create` set; the snapshot attachment covers
+ * dockets created before that column existed. Manual dockets have neither.
+ */
+const AUTO_CREATED_SQL = sql`(
+  e."sourceThreadId" IS NOT NULL
+  OR EXISTS (
+    SELECT 1 FROM "Attachment" a
+    WHERE a."enquiryId" = e.id
+      AND a."name" ILIKE '%mail_snapshot%'
+  )
+)`;
+
 /** Predicates on the `e` alias (Enquiry), including the item-match rule. */
 export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): Prisma.Sql {
   const f = q.filters;
@@ -335,10 +351,17 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
     parts.push(sql`e.id = ANY(${[...q.selectedEnquiryIds]}::text[])`);
   }
 
-  // Item-match rule: mirrored from EnquiryTable's pending/empty-docket handling.
+  // Pending means auto-created, not empty: item extraction may already have
+  // added rows. Only an item-level filter requires a matching item; an
+  // enquiry-level filter (docket number, party, date, …) must not hide a
+  // zero-item docket.
   if (q.pendingOnly) {
-    parts.push(sql`NOT EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id)`);
-    if (q.closedBomOnly) parts.push(sql`FALSE`);
+    parts.push(AUTO_CREATED_SQL);
+    if (hasActiveItemFilters(f, q.closedBomOnly)) {
+      parts.push(
+        sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,
+      );
+    }
   } else {
     const needsItem = hasActiveFilters(q) || q.closedBomOnly;
     if (needsItem) {

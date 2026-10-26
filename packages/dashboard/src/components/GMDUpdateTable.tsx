@@ -25,6 +25,7 @@ import {
 } from "../lib/bomCategory";
 import { parseGmdDate, CANONICAL_DATE } from "@gmd/ui/lib/dateParse";
 import { format } from "date-fns";
+import { cellCompare, compareDates } from "../lib/tableSort";
 import DebouncedSearchInput from "./DebouncedSearchInput";
 import Pagination from "./Pagination";
 import { toast } from "sonner";
@@ -621,73 +622,6 @@ const DUPLICATE_KEY_HEADERS = [
   "L8 -ITEM CATEGORY",
 ];
 
-function compareDates(aVal: unknown, bVal: unknown, dir: number): number {
-  const aStr = String(aVal ?? "").trim();
-  const bStr = String(bVal ?? "").trim();
-  const aD = aStr ? parseDate(aStr) : null;
-  const bD = bStr ? parseDate(bStr) : null;
-  const aT = aD ? aD.getTime() : null;
-  const bT = bD ? bD.getTime() : null;
-  const aNull = aT === null || isNaN(aT as number);
-  const bNull = bT === null || isNaN(bT as number);
-  if (aNull && bNull) return 0;
-  if (aNull) return 1;
-  if (bNull) return -1;
-  if (aT === bT) return 0;
-  return (aT! < bT! ? -1 : 1) * dir;
-}
-
-function cellCompare(
-  aVal: unknown,
-  bVal: unknown,
-  dir: number,
-  numericStrings = false,
-): number {
-  if (numericStrings) {
-    const aNumeric = parseSortNumber(aVal);
-    const bNumeric = parseSortNumber(bVal);
-    if (aNumeric !== null && bNumeric !== null) {
-      if (aNumeric === bNumeric) return 0;
-      return (aNumeric < bNumeric ? -1 : 1) * dir;
-    }
-  }
-  const aNum = typeof aVal === "number" ? aVal : NaN;
-  const bNum = typeof bVal === "number" ? bVal : NaN;
-  if (!isNaN(aNum) && !isNaN(bNum)) return (aNum - bNum) * dir;
-  const aKey = isNaN(aNum) ? String(aVal ?? "").toLowerCase() : "";
-  const bKey = isNaN(bNum) ? String(bVal ?? "").toLowerCase() : "";
-  const aNull = aKey === "" && isNaN(aNum);
-  const bNull = bKey === "" && isNaN(bNum);
-  if (aNull && bNull) return 0;
-  if (aNull) return dir;
-  if (bNull) return -dir;
-  return aKey.localeCompare(bKey, undefined, { numeric: true }) * dir;
-}
-
-/**
- * Strict numeric parse used by the typed (Contract Review) sort. Handles sheet
- * number strings with thousands separators, a trailing percent, currency
- * symbols, and the literal "Infinity". Returns null for anything that is not a
- * pure number, so text columns (e.g. "PN-10/16") keep their natural ordering.
- */
-function parseSortNumber(value: unknown): number | null {
-  if (typeof value === "number")
-    return Number.isFinite(value) ? value : Number.isNaN(value) ? null : value;
-  const s = String(value ?? "").trim();
-  if (!s) return null;
-  const low = s.toLowerCase();
-  if (low === "infinity" || low === "+infinity") return Infinity;
-  if (low === "-infinity") return -Infinity;
-  const normalised = s
-    .replace(/,/g, "")
-    .replace(/%/g, "")
-    .replace(/[$₹€£]/g, "")
-    .trim();
-  if (!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(normalised)) return null;
-  const n = Number(normalised);
-  return Number.isNaN(n) ? null : n;
-}
-
 function cellEq(rowA: unknown[], rowB: unknown[], colIdx: number): boolean {
   return String(rowA[colIdx] ?? "") === String(rowB[colIdx] ?? "");
 }
@@ -1192,6 +1126,14 @@ export interface ServerTableMode {
   requestFacet: (header: string) => void;
   /** Every row matching the current filters, for the Excel export. */
   getAllRows: () => Promise<unknown[][]>;
+  /**
+   * The "Drawing present" / "Image present" checkboxes are table-local, so in
+   * server mode they are reported here for the server query to apply.
+   */
+  onPresenceFiltersChange?: (presence: {
+    drawing: boolean;
+    image: boolean;
+  }) => void;
 }
 
 type CellBadge = NonNullable<GMDUpdateTableProps["cellBadges"]>[number];
@@ -1338,6 +1280,10 @@ castingRateInputs,
     drawing: boolean;
     image: boolean;
   }>({ drawing: false, image: false });
+  const reportPresence = serverMode?.onPresenceFiltersChange;
+  useEffect(() => {
+    reportPresence?.(presenceFilters);
+  }, [reportPresence, presenceFilters]);
   const [localBatchFilters, setLocalBatchFilters] = useState<
     Record<string, boolean>
   >({});

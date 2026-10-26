@@ -6,7 +6,9 @@ import { C_BATCH_HEADER } from "@/lib/gmd_lib/verify-bom-columns";
 
 export async function GET() {
   try {
-    const items = await prisma.rawMaterial.findMany({
+    // The three reads are independent, so run them together.
+    const [items, bomLinks, allBoms] = await Promise.all([
+    prisma.rawMaterial.findMany({
       orderBy: { createdAt: "asc" },
       select: {
         id: true,
@@ -44,16 +46,20 @@ export async function GET() {
         costMerged: true,
         syncedAt: true,
       },
-    });
-
+    }),
     // RM → BOM links now live in BomItem (RawMaterial no longer carries bomId).
-    const bomLinks = await prisma.bomItem.findMany({
-      where: { rawMaterialId: { in: items.map((item) => item.id) } },
+    prisma.bomItem.findMany({
+      where: { rawMaterialId: { not: null } },
       select: {
         rawMaterialId: true,
         bom: { select: { bomId: true } },
       },
-    });
+    }),
+    // Available BOM IDs per item code come from the FullItem → Bom relation.
+    prisma.bom.findMany({
+      select: { bomId: true, fullItem: { select: { itemCode: true } } },
+    }),
+    ]);
     const bomIdsByRmId = new Map<string, string[]>();
     for (const link of bomLinks) {
       const bId = link.bom?.bomId?.trim();
@@ -63,10 +69,6 @@ export async function GET() {
       bomIdsByRmId.set(link.rawMaterialId, arr);
     }
 
-    // Available BOM IDs per item code come from the FullItem → Bom relation.
-    const allBoms = await prisma.bom.findMany({
-      select: { bomId: true, fullItem: { select: { itemCode: true } } },
-    });
     const bomIdsByCode = new Map<string, string[]>();
     for (const bom of allBoms) {
       const code = bom.fullItem?.itemCode?.trim();

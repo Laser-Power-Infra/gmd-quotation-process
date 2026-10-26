@@ -1,5 +1,5 @@
 import { prisma as tenderPrisma } from "@gmd/db-tender";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import {
   loadContractReviewItems,
   toContractReviewData,
@@ -33,27 +33,33 @@ export async function GET() {
           data: { noUse: availMap.get(i.id) ?? null },
         }),
       );
+    // The displayed value is already corrected in memory below, so persisting
+    // the changed rows doesn't need to block the response.
     if (noUseUpdates.length > 0) {
-      await tenderPrisma.$transaction(noUseUpdates, { timeout: 30_000 });
+      after(async () => {
+        try {
+          await tenderPrisma.$transaction(noUseUpdates, { timeout: 30_000 });
+        } catch (error) {
+          console.error("contract-review noUse persist failed", error);
+        }
+      });
     }
     for (const item of items) {
       if (item.bomId) item.noUse = availMap.get(item.id) ?? null;
     }
 
-    const codes = [
-      ...new Set(items.map((i) => i.itemCode).filter(Boolean)),
-    ];
-    const bomMap = await getBatchDistinctBomIds(codes);
+    const codes = [...new Set(items.map((i) => i.itemCode).filter(Boolean))];
+    // Images are keyed by itemType/operationType/rmType, not by item code, so
+    // they resolve through EnquiryItem.erpItemCode. Keyed here by the raw
+    // itemCode so the client can look up with the cell value as-is.
+    const [bomMap, imagesByNormalizedCode] = await Promise.all([
+      getBatchDistinctBomIds(codes),
+      getContractReviewImagesByItemCode(codes),
+    ]);
     const bomIdOptions: Record<string, string[]> = {};
     for (const item of items) {
       bomIdOptions[item.id] = bomMap.get(item.itemCode) ?? [];
     }
-
-    // Images are keyed by itemType/operationType/rmType, not by item code, so
-    // they resolve through EnquiryItem.erpItemCode. Keyed here by the raw
-    // itemCode so the client can look up with the cell value as-is.
-    const imagesByNormalizedCode =
-      await getContractReviewImagesByItemCode(codes);
     const itemImages: Record<
       string,
       {

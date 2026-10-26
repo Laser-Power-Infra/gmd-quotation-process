@@ -7,6 +7,8 @@
     "./server": "./src/server/index.ts",
     "./server/s3": "./src/server/s3.ts",
     "./types": "./src/types.ts",
+    "./view": "./src/lib/view.ts",
+    "./tree": "./src/ui/graph_flow/tree.ts",
     "./columns": "./src/lib/columns.ts",
     "./validation": "./src/lib/contractValidation.ts",
     "./pn-rating": "./src/lib/pnRatingMatcher.ts",

@@ -543,12 +543,13 @@ Two limits, both deliberate:
 
 `runPendingDocketDedupe()` (`docket-dedupe.ts`) runs every hour immediately after
 creation, even when the creation step has nothing to create. It reads every
-zero-item docket — the dashboard's "pending dockets" — and every thread, resolves
-each docket back to its source mail by `Enquiry.sourceThreadId`,
-`thread.docketNo` or a unique attachment URL, and folds threads whose normalised
-snapshot fingerprint matches (subject + sender + exact mail date + body preview +
-attachment names). That last rule catches the mail ingestion importing the same
-mail under a second Gmail thread id, which `sourceThreadId` alone cannot.
+zero-item docket — the blank subset of the dashboard's auto-created pending set —
+and every thread, resolves each docket back to its source mail by
+`Enquiry.sourceThreadId`, `thread.docketNo` or a unique attachment URL, and folds
+threads whose normalised snapshot fingerprint matches (subject + sender + exact
+mail date + body preview + attachment names). That last rule catches the mail
+ingestion importing the same mail under a second Gmail thread id, which
+`sourceThreadId` alone cannot.
 
 Only zero-item dockets are deleted, and only when a keeper exists. The keeper is
 the docket with items, else the one already linked to the thread, else the

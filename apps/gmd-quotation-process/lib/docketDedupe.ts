@@ -1,9 +1,9 @@
 /**
  * Pure planning for the scheduled pending-docket dedupe.
  *
- * A "pending docket" is an `Enquiry` with zero items — the same set the
- * quotation dashboard's pending filter shows. A duplicate is proven from the
- * source `DocketQuotationThread`, never from a fuzzy guess:
+ * The dedupe target is a zero-item docket — the blank subset of the quotation
+ * dashboard's auto-created pending set. A duplicate is proven from the source
+ * `DocketQuotationThread`, never from a fuzzy guess:
  *
  *   1. the same thread (sourceThreadId / thread.docketNo / attachment URL), or
  *   2. threads whose normalised mail snapshot fingerprint matches (the mail
