@@ -1,0 +1,127 @@
+import { drive, type drive_v3 } from "@googleapis/drive";
+import { Readable } from "stream";
+import { getOAuthClient } from "./googleAuth";
+
+// Singleton instance for Drive client
+let driveInstance: drive_v3.Drive | null = null;
+
+const DRIVE_FOLDER_ID = "1Zj4-Uwg_YC-p-NtyU7xWTEWfedGsEvMz";
+
+/** Google Drive folder for manually uploaded Bank Guarantee documents. */
+export const BANK_GUARANTEE_DRIVE_FOLDER_ID =
+  "17qL2XsVHE7V1THHJzX0a1KCc76Uq3-PU";
+
+/**
+ * Initializes and returns the singleton Drive client.
+ */
+function getDriveClient() {
+  if (driveInstance) {
+    return driveInstance;
+  }
+
+  const oauth2Client = getOAuthClient();
+  const driveApi = drive({ version: "v3", auth: oauth2Client });
+
+  driveInstance = driveApi;
+
+  return driveApi;
+}
+
+/**
+ * Uploads a base64 encoded file directly to the configured Google Drive folder.
+ */
+export async function uploadFileToDrive(
+  fileName: string,
+  mimeType: string,
+  base64Data: string,
+  folderId: string = DRIVE_FOLDER_ID,
+) {
+  try {
+    const driveApi = getDriveClient();
+    const buffer = Buffer.from(base64Data, "base64");
+    const fileMetadata = {
+      name: fileName,
+      parents: [folderId],
+    };
+    const media = {
+      mimeType,
+      body: Readable.from(buffer),
+    };
+
+    const response = await driveApi.files.create({
+      requestBody: fileMetadata,
+      media: media,
+      fields: "id, webViewLink",
+    });
+
+    const fileId = response.data.id;
+
+    if (!fileId) {
+      throw new Error("Failed to retrieve file ID from Google Drive upload response.");
+    }
+
+    // Set permission so that anyone with the link can view it (shares public access for spreadsheet linking)
+    await driveApi.permissions.create({
+      fileId: fileId,
+      requestBody: {
+        role: "reader",
+        type: "anyone",
+      },
+    });
+
+    return {
+      success: true,
+      fileId,
+      url: response.data.webViewLink || `https://drive.google.com/file/d/${fileId}/view`,
+    };
+  } catch (error: unknown) {
+    console.error("Error uploading file to Google Drive via OAuth2:", error);
+    throw error;
+  }
+}
+
+/** Extracts the Drive file id from a `webViewLink` / `file/d/<id>` URL. */
+export function driveFileIdFromUrl(url: string): string | null {
+  if (!url) return null;
+  const m =
+    url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+    url.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
+    url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : null;
+}
+
+/**
+ * Downloads a Drive file's bytes. Used by the docket-creation job to read
+ * attachment contents (PDF / spreadsheet / text).
+ */
+export async function downloadFileFromDrive(fileId: string): Promise<Buffer> {
+  const driveApi = getDriveClient();
+  const response = await driveApi.files.get(
+    { fileId, alt: "media" },
+    { responseType: "arraybuffer" },
+  );
+  return Buffer.from(response.data as ArrayBuffer);
+}
+
+/**
+ * Fetches a Drive file's metadata and bytes in one call. Used by the
+ * attachment-preview route to stream files through our own origin instead of
+ * embedding Google Drive's UI (which needs third-party cookies).
+ */
+export async function fetchDriveFile(fileId: string): Promise<{
+  buffer: Buffer;
+  mimeType: string;
+  name: string;
+}> {
+  const driveApi = getDriveClient();
+  const meta = await driveApi.files.get({
+    fileId,
+    fields: "name, mimeType",
+  });
+  const buffer = await downloadFileFromDrive(fileId);
+  return {
+    buffer,
+    mimeType: meta.data.mimeType || "application/octet-stream",
+    name: meta.data.name || "attachment",
+  };
+}
