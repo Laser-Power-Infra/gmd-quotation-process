@@ -95,7 +95,7 @@ jobs:
 
       - name: Pull and Restart Container
         shell: powershell
-        working-directory: D:/stock-physical
+        working-directory: D:/gmd-quotation-process
         env:
           APP_VERSION: ${{ needs.build-and-push.outputs.short_sha }}
         run: |
@@ -107,7 +107,7 @@ jobs:
           docker compose up -d --no-deps gmd-quotation-process gmd-tender-dashboard
 
          
-          $repo = "ghcr.io/laser-power-infra/stock-physical"
+          $repo = "ghcr.io/laser-power-infra/gmd-quotation-process"
           $allImages = docker images --filter "reference=$repo" --format "{{.ID}}" | Select-Object -Unique
           $oldImages = $allImages | Select-Object -Skip 2
 
