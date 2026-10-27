@@ -1059,7 +1059,7 @@ model Debtor {
   createdAt     DateTime  @default(now()) 
   updatedAt     DateTime  @updatedAt 
 
-  @@unique([accCode, tCode, vrNo])
+  // @@unique([accCode, tCode, vrNo])
   @@index([dueDate])
   @@index([accCode])
   

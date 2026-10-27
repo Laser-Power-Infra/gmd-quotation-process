@@ -87,7 +87,9 @@
     "exec:headers": "tsx scripts/sync-execution-tracking.ts --dump-headers",
     "contractno:sync": "tsx scripts/sync-erp-contract-no.ts",
     "contractno:sync:apply": "tsx scripts/sync-erp-contract-no.ts --apply",
-    "contractno:headers": "tsx scripts/sync-erp-contract-no.ts --dump-headers"
+    "contractno:headers": "tsx scripts/sync-erp-contract-no.ts --dump-headers",
+    "debtors:sync": "tsx scripts/sync-debtors.ts",
+    "debtors:sync:apply": "tsx scripts/sync-debtors.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",
