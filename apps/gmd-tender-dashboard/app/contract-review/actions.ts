@@ -20,7 +20,7 @@ import type { ActionResult, DiagramFileMeta, RowPatch } from "@gmd/contract-revi
 import { columnAccess } from "@gmd/contract-review/flags";
 import { requireUser, withLog } from "@/lib/activity-logger";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
-import type { Prisma } from "@gmd/db-tender";
+import { prisma as tenderPrisma, type Prisma } from "@gmd/db-tender";
 
 const TABLE = "ContractReview";
 const DRAWING = "Upload Drawing";
@@ -141,4 +141,65 @@ export const backfillContractReviewPnRatingBatchAction = withLog(
     return backfillPnRating(await idsInScope(ids, SCOPE));
   },
   logBackfill("PN RATING"),
+);
+
+const ACTUATOR = "Actuator";
+
+// Same normalization the quotation app's save action applies, so both apps
+// store byte-identical values in ContractReview.actuator.
+const normalizeActuatorPart = (value: string) =>
+  value.trim().toUpperCase().replace(/\s+/g, " ");
+
+// Options come from the tender DB pick-list seeded by the quotation app
+// (`scripts/seed-actuator-options.ts`); this app never reads the quotation DB.
+export async function getActuatorOptionsAction(): Promise<ActionResult> {
+  await requireUser();
+  if (!(await access()).isEditable(ACTUATOR)) return NOT_ALLOWED;
+  const rows = await tenderPrisma.actuatorOption.findMany({
+    select: { value: true },
+    orderBy: { value: "asc" },
+  });
+  return { success: true, data: rows.map((r) => r.value) };
+}
+
+export const saveActuatorWithRmCodeAction = withLog(
+  async (id: string, actuator: string | null) => {
+    await requireUser();
+    if (!(await access()).isEditable(ACTUATOR) || !(await inScope(id))) return NOT_ALLOWED;
+
+    const value = actuator?.trim() ? normalizeActuatorPart(actuator) : null;
+    if (!value) {
+      await tenderPrisma.contractReview.update({
+        where: { id },
+        data: { actuator: null, rmCodeForActuator: null },
+      });
+      return { success: true, data: { id, actuator: null, rmCodeForActuator: null } };
+    }
+
+    const [aRaw, bRaw] = value.split("@");
+    const a = normalizeActuatorPart(aRaw ?? "");
+    const b = normalizeActuatorPart(bRaw ?? "");
+    if (!a || !b) {
+      return { success: false, error: "Invalid actuator format. Expected L7@L6." };
+    }
+
+    const option = await tenderPrisma.actuatorOption.findUnique({
+      where: { value: `${a}@${b}` },
+      select: { rmCodeForActuator: true },
+    });
+    if (!option) {
+      return { success: false, error: `Actuator "${value}" is not in the synced option list.` };
+    }
+
+    const rmCodeForActuator = option.rmCodeForActuator;
+    await tenderPrisma.contractReview.update({
+      where: { id },
+      data: { actuator: `${a}@${b}`, rmCodeForActuator },
+    });
+    return { success: true, data: { id, actuator: `${a}@${b}`, rmCodeForActuator } };
+  },
+  (res, id) =>
+    res.success
+      ? { action: "UPDATE", tableName: TABLE, recordId: id, details: `Updated Actuator on contract review #${id}` }
+      : null,
 );
