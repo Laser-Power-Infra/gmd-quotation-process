@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getDebtors } from "@/lib/debtors";
+import { getDebtors } from "@/lib/debtors-server";
 
 export async function GET() {
   try {
