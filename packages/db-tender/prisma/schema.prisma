@@ -1254,8 +1254,9 @@ model ContractReview {
   status                           String?
   mcReceivedPending                String?
   inspection                       String?
-  offerPendingDone       String?
+  offerPendingDone                 String?
   remarks                          String?
+  costCodeRef                      String?
   offerNumber                      String[] @default([])
   inspectionNumber                 String[] @default([])
   diDate                           String[] @default([])
@@ -1264,19 +1265,32 @@ model ContractReview {
   productionOrderNumber            String?
   diagramUrl                       String?
   diagramVerdict                   String?
+  rmPhysicalStock                  String?
 
   poNo      String? //sync from sheetid = 1sf-uCfCSAUovNAWJSiSyojTPFvUSzmp23keF0ymkjIE
   orderList String[] @default([]) //sync from sheetid = 1sf-uCfCSAUovNAWJSiSyojTPFvUSzmp23keF0ymkjIE
 
+  // Hidden data carrier. Drives the "C" chip beside the item code in the UI;
+  // never rendered as its own column.
+  cBatch String?
+  nBatch String?
+
   syncedAt  DateTime @default(now())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
 
-  // Columns carried over from the quotation app ContractReview model.
-  costCodeRef     String?
-  rmPhysicalStock String?
-  // Hidden data carrier. Drives the "C" chip beside the item code in the UI;
-  // never rendered as its own column.
-  cBatch          String?
-  nBatch          String?
+/// Actuator pick-list for Contract Review, seeded from the quotation app's
+/// RawMaterial table (`l8ItemCategory = ACTUATORS`). This app reads the table
+/// only; it never connects to the quotation DB.
+model ActuatorOption {
+  id                Int      @id @default(autoincrement())
+  /// Normalized "L7@L6" pair — the exact value the Actuator dropdown stores.
+  value             String   @unique
+  /// Comma-joined RawMaterial.erpItemCode values for the pair.
+  rmCodeForActuator String?
+  syncedAt          DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("actuator_options")
 }
