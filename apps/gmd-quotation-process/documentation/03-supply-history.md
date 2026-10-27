@@ -30,10 +30,10 @@ Defined `SUPPLY_HISTORY_HEADERS[45]` `lib/gmd_lib/supply-history-columns.ts`:
 |-------------|--------------------|-----------------------------------------------|------------------------|-------|
 | 0 | `item name` | `itemName` `:153` | 0 | **Required** + with `INVOICE NO` forms `@@unique([invoiceNo,itemName])` `:197` |
 | 1 | `INVOICE NO` | `invoiceNo` `:154` | 1 | Required |
-| 2 | `FINANCIAL YEAR` | `financialYear` `:150` | 2 | e.g., `2024-25` |
+| 2 | `FINANCIAL YEAR` | `financialYear` `:150` | 2 | e.g., `2024-25`. Blank cells are gap-filled from SALE BILL's `ACC_YEAR` (as `2026-27`) by `execution-tracking` on rows it reaches; every other blank is filled once by `supply:fy:apply` (`lib/supplyFiscalYearBackfill.ts`). A stored value is never rewritten |
 | 3 | `party name` | `partyName` `:151` | 3 | |
 | 4 | `ERP PARTY NAME` | `erpPartyName` `:152` | 4 | not shown in display (see §3.2) |
-| 5 | `Date` | `date` `:155` | 5 | stored as string `DD-Mmm-YY` e.g., `12-Jan-24` — **used for latest cost** `lib/gmdBomCostLookup.ts:14` |
+| 5 | `Date` | `date` `:155` | 5 | stored as string `DD-Mmm-YY` e.g., `12-Jan-24` — **used for latest cost** `lib/gmdBomCostLookup.ts:14`. Blank rows are gap-filled from SALE BILL's `VRDATE` as `dd-MMM-yyyy` by `execution-tracking` (`lib/executionTrackingSync.ts`) on rows it reaches; a stored date is never overwritten |
 | 6 | `PARTY Order No.` | `partyOrderNo` `:156` | 6 | used to match `ORDER LIST` link `lib/gmd_lib/contract-order-links.ts:matchOrderLink()` |
 | 7 | `PARTY Date` | `partyDate` `:157` | 7 | |
 | 8 | `Quantity` | `quantity` `:158` | 8 | string numeric, commas stripped `lib/gmdBomCostLookup.ts:32` |
@@ -148,6 +148,7 @@ PBG CLAIM TILL, PBG AMOUNT, Warranty Exp Date as Per Inv, Party Mail Address
   - `uniqueKeyColumns=["INVOICE NO","item name"]` `@@unique` `:197`
   - `categoryOptions` built from distinct values of 13 dropdown cols from DB for filter dropdowns.
   - `filterState`/`filterActions` from `supplyHistoryFiltersSlice` (`columnFilter, multiFilter, dateFrom/To, globalSearch, pagination`).
+- **Date sidebar:** `components/supply/SupplyFilterSidebar.tsx` (left of the table). Financial Year (Apr–Mar), or Year → Month → Day. Each choice resolves to `dateFrom`/`dateTo` on the `Date` column via `lib/supplyDatePreset.ts`; no server change. Manual edits in the table's date inputs clear the sidebar selection.
 - **Inline edit:** Click `Party Mail Address` or derived `Item Type/MOC/Size` → calls `updateSupplyHistoryFieldAction(id, SUPPLY_HEADER_TO_DB_FIELD[header], value)` `app/actions/*.ts:1065` → `prisma.supplyHistoryItem.update({[dbField]:value})` with `toast.promise` then Redux refresh.
 
 ## 6. Why This Matters for Product Cost

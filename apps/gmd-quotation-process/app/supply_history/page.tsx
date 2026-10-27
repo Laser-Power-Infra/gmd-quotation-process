@@ -24,10 +24,12 @@ import {
 import { SUPPLY_DISPLAY_HEADERS } from "@/lib/supplyDisplay";
 import { INDIAN_STATES } from "@/lib/supplyStateResolver";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import SupplyFilterSidebar from "@/components/supply/SupplyFilterSidebar";
 import {
   setColumnFilter,
   setMultiFilter,
   setBatchFilter,
+  setDatePreset,
   setDateFrom,
   setDateTo,
   setGlobalSearch,
@@ -304,30 +306,36 @@ export default function SupplyHistoryPage() {
             {error}
           </div>
         )}
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden mt-4">
-          <GMDUpdateTable
-            headers={headers}
-            rows={rows}
-            ids={ids}
-            selectedIndex={selectedIndex}
-            onSelect={setSelectedIndex}
-            title="Supply History"
-            editable
-            editableColumns={["Party Mail Address", "State", "UTILITY", "BOM COST"]}
-            onCellUpdate={handleCellUpdate}
-            categoryOptions={categoryOptions}
-            uniqueKeyColumns={["INVOICE NO", "item name"]}
-            hiddenColumns={[C_BATCH_HEADER]}
-            cellBadges={cBatchBadges("ERP ITEM CODE")}
-            batchFilterHeader="ERP ITEM CODE"
-            batchPresenceFilters={SUPPLY_HISTORY_BATCH_FILTERS}
-            bomIdOptionsById={bomIdOptionsById}
-            onSelectBomId={handleSelectBomId}
-            filterState={filterState}
-            filterActions={filterActions}
-            serverMode={serverMode}
-            fullHeight
+        <div className="flex-1 min-h-0 flex gap-4 overflow-hidden mt-4">
+          <SupplyFilterSidebar
+            value={filterState}
+            onChange={(preset) => dispatch(setDatePreset(preset))}
           />
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+            <GMDUpdateTable
+              headers={headers}
+              rows={rows}
+              ids={ids}
+              selectedIndex={selectedIndex}
+              onSelect={setSelectedIndex}
+              title="Supply History"
+              editable
+              editableColumns={["Party Mail Address", "State", "UTILITY", "BOM COST"]}
+              onCellUpdate={handleCellUpdate}
+              categoryOptions={categoryOptions}
+              uniqueKeyColumns={["INVOICE NO", "item name"]}
+              hiddenColumns={[C_BATCH_HEADER]}
+              cellBadges={cBatchBadges("ERP ITEM CODE")}
+              batchFilterHeader="ERP ITEM CODE"
+              batchPresenceFilters={SUPPLY_HISTORY_BATCH_FILTERS}
+              bomIdOptionsById={bomIdOptionsById}
+              onSelectBomId={handleSelectBomId}
+              filterState={filterState}
+              filterActions={filterActions}
+              serverMode={serverMode}
+              fullHeight
+            />
+          </div>
         </div>
       </div>
     </main>
