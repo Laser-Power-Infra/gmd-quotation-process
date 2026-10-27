@@ -1,4 +1,5 @@
 "use server";
+import { requireAccess } from "@/lib/access";
 
 import { prisma } from "@/lib/prisma";
 import { dbBisStatusToRow } from "@/lib/gmd_lib/bis-status-columns";
@@ -31,6 +32,7 @@ export interface BisPageResult {
 
 /** One filtered, sorted page of the BIS status table. */
 export async function fetchBisPage(query: BisQuery): Promise<BisPageResult> {
+  await requireAccess();
   const page = clampPage(query.filters.currentPage);
   const pageSize = clampPageSize(query.filters.pageSize);
   const where = buildBisWhere(query);
@@ -81,6 +83,7 @@ export async function fetchBisFacet(
   query: BisQuery,
   header: string,
 ): Promise<string[]> {
+  await requireAccess();
   const expr = bisFacetExpression(header);
   if (!expr) return [];
 
@@ -101,6 +104,7 @@ export async function fetchBisFacet(
 
 /** Every matching row, for the Excel export. */
 export async function fetchAllBisRows(query: BisQuery): Promise<unknown[][]> {
+  await requireAccess();
   const where = buildBisWhere(query);
   const orderBy = buildBisOrderBy(query);
   const ids = (

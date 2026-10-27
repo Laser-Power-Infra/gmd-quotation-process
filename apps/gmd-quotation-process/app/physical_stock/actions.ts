@@ -1,4 +1,5 @@
 "use server";
+import { requireAccess } from "@/lib/access";
 
 import {
   listPhysicalStock,
@@ -24,6 +25,7 @@ const code = (erp: string | null) => (erp ?? "").trim().toUpperCase();
 
 /** Rows plus per-row BOM ID options from the quotation DB BOM relations. */
 export async function load() {
+  await requireAccess();
   try {
     const items = await listPhysicalStock();
     const derivations = await derivePhysicalStockByCodes(items.map((i) => code(i.erp_code)));
@@ -37,12 +39,14 @@ export async function load() {
 
 /** Sheet sync, then derive Cost / BOM ID / major-minor from the quotation DB. */
 export async function sync() {
+  await requireAccess();
   const res = await syncPhysicalStockFromSheet(getOAuthClient());
   if (res.success) await applyPhysicalStockDerivations();
   return res;
 }
 
 export async function updateField(id: string, field: string, value: string | null) {
+  await requireAccess();
   return updatePhysicalStockField(id, field, value, editableFieldsFor(await getPhysicalStockFlags()));
 }
 
@@ -50,6 +54,7 @@ export async function updateBomId(
   id: string,
   bomId: string | null,
 ): Promise<ActionResult<Partial<PhysicalStockRow>>> {
+  await requireAccess();
   if (!(await getPhysicalStockFlags()).editableColumns.includes("BOM ID")) {
     return { success: false, error: "Not allowed in this app." };
   }

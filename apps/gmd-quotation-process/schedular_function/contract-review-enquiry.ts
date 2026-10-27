@@ -4,7 +4,7 @@
  * Backfills `ContractReview.state` / `.utility` / `.projectReference` from the
  * matching Enquiry by contract number. Port of the button at
  * `app/contract_review/page.tsx:3374-3387`, which calls
- * `syncContractReviewEnquiryFieldsAllAction` in `app/actions.ts:3766`.
+ * `syncContractReviewEnquiryFieldsAllAction` in `app/actions/*.ts:3766`.
  *
  * That action is a `"use server"` function in a `"use server"` module, so it
  * cannot be imported from a route handler. But it is already a thin wrapper —

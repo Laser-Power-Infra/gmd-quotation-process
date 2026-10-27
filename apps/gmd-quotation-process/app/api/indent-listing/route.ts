@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { getMergedIndentListing } from "@/lib/indentListingRead";
 import { prisma } from "@/lib/prisma";
@@ -27,6 +28,8 @@ export const INDENT_LISTING_HEADERS = [
 ] as const;
 
 export async function GET() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     const [data, rawMaterials] = await Promise.all([
       getMergedIndentListing(),

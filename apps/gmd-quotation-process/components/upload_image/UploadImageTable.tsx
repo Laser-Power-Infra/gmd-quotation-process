@@ -4,7 +4,7 @@ import { useState, useRef, useMemo } from "react";
 import { Upload, ExternalLink, ImageIcon, Loader2, Search, X } from "lucide-react";
 import { Button } from "@gmd/ui/components/button";
 import { toast } from "sonner";
-import { uploadImageForComboAction, createGeneratedImageAction } from "@/app/actions";
+import { uploadImageForComboAction, createGeneratedImageAction } from "@/app/actions/misc";
 import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import MultiSelectFilter, { BLANK } from "@/components/table/MultiSelectFilter";
 

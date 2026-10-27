@@ -18,7 +18,7 @@
 **Returns:** `{itemType,moc,size,pnRating,operationType,extension,bypass, itemTypeSource,mocSource}` `L144-146`.
 
 **Used in:**
-- `createNewEnquiryAction` `app/actions.ts:82 autoDetect per itemName+sheet`
+- `createNewEnquiryAction` `app/actions/*.ts:82 autoDetect per itemName+sheet`
 - `addItemsAction:208`
 - `updateEnquiryItemAction:407` re-resolve on `itemName` change (respects `sheet` source for size/pn `L707-725` — see 01)
 - `updateItemFieldAction:707` on `itemName` edit (`!sheetSource` only)
@@ -192,7 +192,7 @@ Same table powers `getDefaultVaPercent(itemType,size)` and max check `validateVa
 | 20-100%: `BUSH 100%, GEAR BOX 20%, O-RING 40%, PLUG 45%, RETAINER 20%, RING 20%, SEAL 20%, SHAFT 20%, SOLENOID 50%, SPINDLE 20%, WASHER 20%, ZERO VELOCITY 50%` | | `L76-176` |
 | Unknown type | Always valid, no max `L177`, default 65%? Actually `getDefault` returns 65% fallback? See file — unknown returns `null`? Check `L177` — returns `{valid:true}` and default `null` for unknown | |
 
-> When `autoFillBlanks` fills missing VA, it calls `getDefaultVaPercent(itemType,size)` `app/actions.ts:977`; when quotation VA is too high, n8n alert `app/actions.ts:752` fires.
+> When `autoFillBlanks` fills missing VA, it calls `getDefaultVaPercent(itemType,size)` `app/actions/*.ts:977`; when quotation VA is too high, n8n alert `app/actions/*.ts:752` fires.
 
 ---
 
@@ -212,4 +212,4 @@ Same table powers `getDefaultVaPercent(itemType,size)` and max check `validateVa
 - `lib/extensionMatcher.ts:1`, `lib/extensionPatterns.ts:1`
 - `lib/bypassDetector.ts:1`, `lib/bypassPatterns.ts:1`
 - `lib/operationTypePatterns.ts:1`, `lib/aiValidator.ts`, `lib/vaValidation.ts`, `lib/lookup.ts`
-- Callers: `app/actions.ts:82,208,407,707,937`, `components/table/EnquiryTable.tsx:581`
+- Callers: `app/actions/*.ts:82,208,407,707,937`, `components/table/EnquiryTable.tsx:581`

@@ -32,11 +32,11 @@
  * CASCADE FUNCTION BELOW IS A DELIBERATE COPY
  * ---------------------------------------------------------------------------
  * `localSyncAvailableBomIds` is a verbatim port of the private helper at
- * `app/actions.ts:1289-1306`. It is duplicated so this script can run without
+ * `app/actions/*.ts:1289-1306`. It is duplicated so this script can run without
  * touching the "use server" module. If that logic changes, this MUST be
- * re-synced. That is the trade-off of leaving app/actions.ts untouched.
+ * re-synced. That is the trade-off of leaving app/actions/*.ts untouched.
  *
- * The cost cascade (app/actions.ts:1313-1482, maybeUpdateProductCostFromNewCode)
+ * The cost cascade (app/actions/*.ts:1313-1482, maybeUpdateProductCostFromNewCode)
  * is deliberately NOT ported. It writes productCost / cost / vaPercent, which
  * this script is not allowed to touch.
  */
@@ -110,7 +110,7 @@ const sep = (n = 78) => "-".repeat(n);
 const dec = (v: unknown) => (v === null || v === undefined ? null : String(v));
 
 // ---------------------------------------------------------------------------
-// Verbatim port of app/actions.ts:1289-1306 (syncAvailableBomIds)
+// Verbatim port of app/actions/*.ts:1289-1306 (syncAvailableBomIds)
 // ---------------------------------------------------------------------------
 async function localSyncAvailableBomIds(
   itemId: string,

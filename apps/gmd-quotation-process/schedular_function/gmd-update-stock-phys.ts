@@ -19,7 +19,7 @@
  *      Both sides are trimmed before comparing.
  *
  * `"0"` is deliberately treated as a real counted stock and is written, which
- * matches `syncNullVerifyBomStockAction` in `app/actions.ts`.
+ * matches `syncNullVerifyBomStockAction` in `app/actions/*.ts`.
  *
  * Note that `SUM OF PHYSICAL STOCK` is a pre-aggregation maintained in the
  * Google Sheet (a pivot/QUERY result); nothing here sums anything itself.

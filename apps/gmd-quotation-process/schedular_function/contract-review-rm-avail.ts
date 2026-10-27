@@ -2,7 +2,7 @@
  * Scheduled job 3 of 3 — "Sync RM AVAIL".
  *
  * Port of the button at `app/contract_review/page.tsx:2682-2695`, which calls
- * `syncContractReviewRmAvailAction` in `app/actions.ts:5178-5303`. That action is
+ * `syncContractReviewRmAvailAction` in `app/actions/*.ts:5178-5303`. That action is
  * a `"use server"` function, so it cannot be imported from a route handler — but
  * all of its logic already lives in action-free libs (`lib/verifyBomLookup.ts`
  * imports only `@/lib/prisma`; `lib/contractPhysicalStock.ts` imports nothing).
@@ -16,7 +16,7 @@
  * Two deliberate changes from the button:
  *
  * 1. **Step 1 now overwrites instead of gap-filling.** The original only fills
- *    rows where `availableStock IS NULL OR ''` (`app/actions.ts:5198`), so stock
+ *    rows where `availableStock IS NULL OR ''` (`app/actions/*.ts:5198`), so stock
  *    is correct on the first run and permanently stale afterwards — useless on
  *    an hourly schedule. This version mirrors the policy chosen for the
  *    Raw Material job: overwrite when the sheet value differs, skip blanks so a
@@ -26,7 +26,7 @@
  *    so it is the one that has to stay fresh for RM AVAIL to mean anything.
  *
  * 2. **Step 2's transaction is chunked.** The original wraps every differing row
- *    in one unbounded `$transaction` (`app/actions.ts:5260`), which is a `P2028`
+ *    in one unbounded `$transaction` (`app/actions/*.ts:5260`), which is a `P2028`
  *    waiting to happen. Here it is chunked at 200 with an explicit timeout.
  *
  * The stock-phys sheet is fetched exactly once and reused for steps 1 and 4,

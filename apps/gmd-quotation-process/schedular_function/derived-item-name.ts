@@ -3,7 +3,7 @@
  * schedule.
  *
  * The algorithm lives in `lib/gmd_lib/derived-item-name.ts` and is shared with
- * `app/actions.ts` and `scripts/populate-derived-item-name.ts`. It is
+ * `app/actions/*.ts` and `scripts/populate-derived-item-name.ts`. It is
  * re-exported here so scheduled runs keep a single import point.
  */
 

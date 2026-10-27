@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -5,7 +6,7 @@ import {
   fetchStockPhysicalSheet,
 } from "@/lib/gmd_lib/google-sheets";
 import { sheetRowToDbItem } from "@/lib/gmd_lib/mapSheetRow";
-import { updateDerivedItemName } from "@/app/actions";
+import { updateDerivedItemName } from "@/app/actions/gmdUpdate";
 import { runActiveBomRules } from "@/lib/autoBomRun";
 
 const ERP_CODE_IDX = 0;
@@ -67,6 +68,8 @@ const EXISTING_SELECT = {
 } as const;
 
 export async function POST() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     const data = await fetchGMDUpdateSheet();
     const stockMap = await fetchStockPhysicalSheet();

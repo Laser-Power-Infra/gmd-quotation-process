@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import bcrypt from "bcrypt"
 import { z } from "zod"
+import { isRestricted } from "@/lib/access"
 
 const schema = z.object({
   name: z.string().optional(),
@@ -10,6 +11,7 @@ const schema = z.object({
 })
 
 export async function POST(req: Request) {
+  if (isRestricted()) return NextResponse.json({ error: "Registration is disabled" }, { status: 403 })
   try {
     const body = await req.json()
     const parsed = schema.safeParse(body)
@@ -22,7 +24,8 @@ export async function POST(req: Request) {
     const hash = await bcrypt.hash(password, 10)
     const user = await prisma.user.create({ data: { name: name || null, email, password: hash, role: "user" } })
     return NextResponse.json({ success: true, id: user.id })
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Registration failed" }, { status: 500 })
+  } catch (e) {
+    console.error("[register]", e)
+    return NextResponse.json({ error: "Registration failed" }, { status: 500 })
   }
 }

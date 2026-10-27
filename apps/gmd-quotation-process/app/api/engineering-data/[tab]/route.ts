@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { ENGINEERING_TABS, findTab } from "@/lib/technical/tableConfig";
 import { getEngineeringTab } from "@/lib/technical/engineeringData";
@@ -18,6 +19,8 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ tab: string }> },
 ) {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   const { tab: tabKey } = await params;
 
   const tab = findTab(tabKey);

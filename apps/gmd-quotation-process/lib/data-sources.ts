@@ -552,7 +552,7 @@ const RAW_MATERIAL_SYNC: SyncOperation[] = [
     id: "rm-derived-item-name",
     name: "Derived item name",
     kind: "derived",
-    file: "app/actions.ts:updateDerivedItemName",
+    file: "app/actions/gmdUpdate.ts:updateDerivedItemName",
     line: "3064-3115",
     purpose:
       "Builds ITEM NAME (derived) from the L-level columns so the page has a readable name the sheet does not carry.",
@@ -587,7 +587,7 @@ const RAW_MATERIAL_SYNC: SyncOperation[] = [
     id: "rm-cell-edits",
     name: "Inline cell edits",
     kind: "edit",
-    file: "app/actions.ts (Redux thunks in lib/gmdUpdateSlice.ts)",
+    file: "app/actions/*.ts (Redux thunks in lib/gmdUpdateSlice.ts)",
     line: "2253-3193",
     purpose:
       "Every manual edit on the Raw Material grid: cell blur, dropdown change, Yes-No toggle, Paste-ERP, Excel import, and the Match & Update Costs dialog.",
@@ -624,7 +624,7 @@ const RAW_MATERIAL_SYNC: SyncOperation[] = [
     id: "rm-casting-rates",
     name: "GMD casting rates",
     kind: "edit",
-    file: "app/actions.ts:saveGMDCastingRateAction",
+    file: "app/actions/misc.ts:saveGMDCastingRateAction",
     line: "5290-5330",
     purpose:
       "Stores the per-material casting rate (DI / CS / CI / SS / Bronze) that the grid uses to compute casting costs locally.",
@@ -640,7 +640,7 @@ const RAW_MATERIAL_SYNC: SyncOperation[] = [
     id: "rm-usd-rate",
     name: "USD/INR rate lookup",
     kind: "lookup",
-    file: "app/actions.ts:getUsdInrRateAction + lib/gmd_lib/exchangeRate.ts",
+    file: "app/actions/gmdUpdate.ts:getUsdInrRateAction + lib/gmd_lib/exchangeRate.ts",
     line: "3117-3126 / 10-35",
     purpose:
       "Fetches the live USD/INR rate used to convert USD cost into the local cost column.",
@@ -656,7 +656,7 @@ const RAW_MATERIAL_SYNC: SyncOperation[] = [
     id: "rm-trading-valve-cascade",
     name: "Trading valve cascade options",
     kind: "lookup",
-    file: "app/actions.ts:getTradingValveOptionsAction",
+    file: "app/actions/gmdUpdate.ts:getTradingValveOptionsAction",
     line: "2891-2907",
     purpose:
       "Collects the L1-L8 combinations already used by TRADING VALVE items so the dependent dropdowns cascade.",
@@ -755,7 +755,7 @@ const RAW_MATERIAL_SYNC: SyncOperation[] = [
     id: "rm-cbatch",
     name: "Batch C mark",
     kind: "sync",
-    file: "app/actions.ts:syncCBatchAction",
+    file: "app/actions/contractReview.ts:syncCBatchAction",
     line: "4942-5121",
     purpose:
       "Marks cBatch = 'C' on every Raw Material row whose ERP code has ITEM_STATUS = 'C', surfaced as a chip inside the ERP ITEM CODE cell.",
@@ -892,7 +892,7 @@ const SUPPLY_HISTORY_SYNC: SyncOperation[] = [
     id: "sh-cell-edits",
     name: "Inline cell edits",
     kind: "edit",
-    file: "app/actions.ts:updateSupplyHistoryFieldAction",
+    file: "app/actions/misc.ts:updateSupplyHistoryFieldAction",
     line: "5249-5260",
     purpose:
       "Saves the six fields the page allows editing. Any other header is silently ignored.",
@@ -938,7 +938,7 @@ const SUPPLY_HISTORY_SYNC: SyncOperation[] = [
     id: "sh-order-list-publish",
     name: "ORDER LIST -> Contract Review",
     kind: "backfill",
-    file: "app/actions.ts:backfillContractReviewOrderListBatchAction",
+    file: "app/actions/contractReview.ts:backfillContractReviewOrderListBatchAction",
     line: "3506-3560",
     purpose:
       "Copies the ORDER LIST links from Supply History onto Contract Review rows, matched by erpItemCode.",
@@ -1023,7 +1023,7 @@ const SUPPLY_HISTORY_SYNC: SyncOperation[] = [
     id: "sh-cbatch",
     name: "Batch C mark",
     kind: "sync",
-    file: "app/actions.ts:syncCBatchAction",
+    file: "app/actions/contractReview.ts:syncCBatchAction",
     line: "5036-5066",
     purpose:
       "Marks cBatch = 'C' on every Supply History row whose ERP ITEM CODE has ITEM_STATUS = 'C'.",
@@ -1142,7 +1142,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     id: "cr-pageload-bomid",
     name: "Page-load BOM ID auto-assign",
     kind: "derived",
-    file: "app/actions.ts:selectContractReviewBomIdAction + autoAssignContractReviewBomIdFromActuator",
+    file: "app/actions/contractReview.ts:selectContractReviewBomIdAction + autoAssignContractReviewBomIdFromActuator",
     line: "3195-3291",
     purpose:
       "Fills BOM ID without user input: whenever exactly one candidate BOM exists for the item code, or when the Actuator cell carries an L7@L6 pair.",
@@ -1163,7 +1163,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     id: "cr-pageload-nouse",
     name: "Page-load RM AVAIL refresh",
     kind: "derived",
-    file: "app/actions.ts:backfillContractReviewNoUseBatchAction",
+    file: "app/actions/contractReview.ts:backfillContractReviewNoUseBatchAction",
     line: "3293-3337",
     purpose: "Recomputes RM AVAIL for every row that has a BOM ID.",
     direction: "db-to-db",
@@ -1178,7 +1178,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     id: "cr-pageload-cost",
     name: "Page-load cost from quotation",
     kind: "derived",
-    file: "app/actions.ts:backfillContractReviewCostFromQuotationAction",
+    file: "app/actions/contractReview.ts:backfillContractReviewCostFromQuotationAction",
     line: "3739-3790",
     purpose:
       "Pulls cost and VA% from the winning quotation for rows that have a contract number.",
@@ -1197,7 +1197,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     id: "cr-pageload-enquiry",
     name: "Page-load Enquiry field sync",
     kind: "backfill",
-    file: "app/actions.ts:syncContractReviewEnquiryFieldsBatchAction",
+    file: "app/actions/contractReview.ts:syncContractReviewEnquiryFieldsBatchAction",
     line: "3588-3587",
     purpose:
       "Runs the same state / utility / project-reference backfill as the post-sync side effect, on every page visit.",
@@ -1218,7 +1218,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     id: "cr-pageload-flags",
     name: "Page-load offer / inspection / PN flags",
     kind: "derived",
-    file: "app/actions.ts:backfillContractReviewOfferPendingDoneBatchAction, backfillContractReviewInspectionBatchAction, backfillContractReviewPnRatingBatchAction",
+    file: "app/actions/*.ts:backfillContractReviewOfferPendingDoneBatchAction, backfillContractReviewInspectionBatchAction, backfillContractReviewPnRatingBatchAction",
     line: "3339-3504",
     purpose:
       "Derives the three dropdown flags and the PN rating without user input.",
@@ -1239,7 +1239,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     id: "cr-rm-avail-button",
     name: "Sync RM AVAIL button",
     kind: "backfill",
-    file: "app/actions.ts:syncContractReviewRmAvailAction",
+    file: "app/actions/contractReview.ts:syncContractReviewRmAvailAction",
     line: "5122-5231",
     purpose:
       "Sidebar action that refreshes raw-material stock and republishes RM AVAIL and PHYSICAL STOCK on Contract Review.",
@@ -1262,7 +1262,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     id: "cr-cell-edits",
     name: "Inline cell edits and drawings",
     kind: "edit",
-    file: "app/actions.ts",
+    file: "app/actions/*.ts",
     line: "2462-2545, 3873-3906",
     purpose:
       "Every manual edit on the grid plus the Upload Drawing / Clear / CORRECT-WRONG verdict controls.",
@@ -1298,7 +1298,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     id: "cr-cost-code-ref",
     name: "COST CODE REF publish",
     kind: "derived",
-    file: "app/actions.ts:recomputeIndentListingVersionsAction",
+    file: "app/actions/contractReview.ts:recomputeIndentListingVersionsAction",
     line: "4070-4188",
     purpose:
       "Resolves which RM codes the indent versions use and publishes the winning reference back onto the contract row.",
@@ -1502,7 +1502,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     id: "cr-cbatch",
     name: "Batch C mark",
     kind: "sync",
-    file: "app/actions.ts:syncCBatchAction",
+    file: "app/actions/contractReview.ts:syncCBatchAction",
     line: "5003-5033",
     purpose:
       "Marks cBatch = 'C' on every Contract Review row whose ITEM_CODE has ITEM_STATUS = 'C'.",
@@ -1582,7 +1582,7 @@ const BOM_SYNC: SyncOperation[] = [
     id: "bom-missing-stock",
     name: "Missing stock gap-fill",
     kind: "backfill",
-    file: "app/actions.ts:syncNullVerifyBomStockAction",
+    file: "app/actions/contractReview.ts:syncNullVerifyBomStockAction",
     line: "4435-4531",
     purpose:
       "Fills AVAILABLE STOCK on BOM rows that have none, using the physical stock count.",
@@ -1602,7 +1602,7 @@ const BOM_SYNC: SyncOperation[] = [
     id: "bom-mast-to-date",
     name: "BOM MAST TO_DATE flow",
     kind: "sync",
-    file: "app/actions.ts:buildBomMastSyncPlan + syncBomMastItemNamesAction",
+    file: "app/actions/contractReview.ts:buildBomMastSyncPlan + syncBomMastItemNamesAction",
     line: "4536-4913",
     purpose:
       "Marks a BOM line NO USE and batch C as soon as its TO_DATE is set in BOM MAST ERP, and upserts missing lines so they can be marked.",
@@ -1623,7 +1623,7 @@ const BOM_SYNC: SyncOperation[] = [
     id: "bom-item-master-names",
     name: "ITEM MASTER item names",
     kind: "sync",
-    file: "app/actions.ts:syncBomMastItemNamesAction (phase 2)",
+    file: "app/actions/contractReview.ts:syncBomMastItemNamesAction (phase 2)",
     line: "4840-4886",
     purpose:
       "Fills ITEM NAME and RM ITEM NAME on BOM rows from the ERP item master, as part of the same ItemName (C) run.",
@@ -1644,7 +1644,7 @@ const BOM_SYNC: SyncOperation[] = [
     id: "bom-cell-edits",
     name: "Inline cell edits",
     kind: "edit",
-    file: "app/actions.ts:updateVerifyBomFieldBatchAction",
+    file: "app/actions/contractReview.ts:updateVerifyBomFieldBatchAction",
     line: "4247-4296",
     purpose:
       "Saves /bom edits: BOM ID TYPE -> Bom, BOM ITEM QTY (whole number) -> BomItem.quantity, the other columns -> FullItem.",
@@ -1765,7 +1765,7 @@ const BOM_SYNC: SyncOperation[] = [
     npmCommand: "npx tsx scripts/backfill-available-bom-ids.ts",
     dryRunDefault: true,
     sharedWith:
-      "Quotation Dashboard — in the app the same list is rebuilt per row by syncAvailableBomIds (app/actions.ts:1320)",
+      "Quotation Dashboard — in the app the same list is rebuilt per row by syncAvailableBomIds (app/actions/*.ts:1320)",
   },
   {
     id: "bom-script-m2m-stock",
@@ -1933,7 +1933,7 @@ const QUOTATION_LINKAGE_SYNC: SyncOperation[] = [
     id: "q-fetch-item-codes",
     name: "Fetch / refresh item codes",
     kind: "sync",
-    file: "app/actions.ts:fetchErpItemCodesAction",
+    file: "app/actions/item.ts:fetchErpItemCodesAction",
     line: "1598-1696",
     purpose:
       "Re-derives the item code for the selected rows from a freshly synced master, then repairs the BOM linkage and cost that belonged to the old code.",
@@ -1988,7 +1988,7 @@ const QUOTATION_LINKAGE_SYNC: SyncOperation[] = [
     id: "q-select-bom",
     name: "BOM ID selection",
     kind: "edit",
-    file: "app/actions.ts:selectBomIdAction",
+    file: "app/actions/item.ts:selectBomIdAction",
     line: "1516-1577",
     purpose:
       "Attaches a BOM to an item and pulls across the raw-material code, type, stock and — when blank — the cost.",
@@ -2012,7 +2012,7 @@ const QUOTATION_LINKAGE_SYNC: SyncOperation[] = [
     id: "q-available-bom-ids",
     name: "Available BOM ID list",
     kind: "derived",
-    file: "app/actions.ts:syncAvailableBomIds",
+    file: "app/actions/*.ts:syncAvailableBomIds",
     line: "1320-1337",
     purpose:
       "Populates the BOM dropdown options for an item from Bom (via FullItem.itemCode), minus the retired ones.",
@@ -2032,7 +2032,7 @@ const QUOTATION_LINKAGE_SYNC: SyncOperation[] = [
     id: "q-product-cost-fallback",
     name: "Cost fill after a code change",
     kind: "derived",
-    file: "app/actions.ts:maybeUpdateProductCostFromNewCode",
+    file: "app/actions/*.ts:maybeUpdateProductCostFromNewCode",
     line: "1344-1482",
     purpose:
       "Fills the cost, stock and BOM type that a freshly derived code makes derivable, without disturbing anything already filled in.",
@@ -2055,7 +2055,7 @@ const QUOTATION_LINKAGE_SYNC: SyncOperation[] = [
     id: "q-item-field-cascade",
     name: "Item cell-edit cascade",
     kind: "edit",
-    file: "app/actions.ts:updateItemFieldAction",
+    file: "app/actions/item.ts:updateItemFieldAction",
     line: "1069-1315",
     purpose:
       "The central write path for the grid. One cell edit fans out into re-derivation, cost recalculation, BOM refresh and delivery scheduling.",
@@ -2110,7 +2110,7 @@ const QUOTATION_COST_SYNC: SyncOperation[] = [
     id: "q-update-product-cost",
     name: "DIRECT M2M product cost",
     kind: "backfill",
-    file: "app/actions.ts:updateProductCostFromBomAction",
+    file: "app/actions/item.ts:updateProductCostFromBomAction",
     line: "1700-1945",
     purpose:
       "Prices DIRECT M2M items from the raw-material cost of their consumption code, including a no-BOM path via the indent listing.",
@@ -2131,7 +2131,7 @@ const QUOTATION_COST_SYNC: SyncOperation[] = [
     id: "q-update-2to1-cost",
     name: "2:1 BOM cost",
     kind: "backfill",
-    file: "app/actions.ts:update2to1CostAction -> lib/gmd2to1CostLookup.ts:update2to1CostForItems",
+    file: "app/actions/item.ts:update2to1CostAction -> lib/gmd2to1CostLookup.ts:update2to1CostForItems",
     line: "1946-1978 / 172-253",
     purpose:
       "Prices 2:1 items by summing the raw-material cost of every consumption code in the recipe.",
@@ -2152,7 +2152,7 @@ const QUOTATION_COST_SYNC: SyncOperation[] = [
     id: "q-update-all-bom-costs",
     name: "Update all BOM costs",
     kind: "backfill",
-    file: "app/actions.ts:updateAllBomCostsAction",
+    file: "app/actions/item.ts:updateAllBomCostsAction",
     line: "1981-2043",
     purpose: "One button that runs DIRECT M2M pricing, 2:1 pricing and the stock refresh in order.",
     direction: "sheet-to-db",
@@ -2194,7 +2194,7 @@ const QUOTATION_COST_SYNC: SyncOperation[] = [
     id: "q-auto-fill-blanks",
     name: "Auto-fill blank descriptors",
     kind: "derived",
-    file: "app/actions.ts:autoFillBlanksAction",
+    file: "app/actions/item.ts:autoFillBlanksAction",
     line: "2113-2191",
     purpose:
       "Fills the descriptive columns that are still blank by reading the item name, then seeds a default VA% where one is missing.",
@@ -2214,7 +2214,7 @@ const QUOTATION_COST_SYNC: SyncOperation[] = [
     id: "q-update-va-percent",
     name: "Default VA% fill",
     kind: "backfill",
-    file: "app/actions.ts:updateVaPercentAction",
+    file: "app/actions/item.ts:updateVaPercentAction",
     line: "2194-2246",
     purpose:
       "Fills blank VA% values from the default table, keyed on item type and size.",
@@ -2235,7 +2235,7 @@ const QUOTATION_COST_SYNC: SyncOperation[] = [
     id: "q-contract-review-rates",
     name: "Contract Review rates + cost ref",
     kind: "backfill",
-    file: "app/actions.ts:fetchContractReviewRatesAction",
+    file: "app/actions/misc.ts:fetchContractReviewRatesAction",
     line: "5352-5535",
     purpose:
       "Pulls the winning contract rate for each item code from Contract Review, and backfills the cost code reference from the same source.",
@@ -2255,7 +2255,7 @@ const QUOTATION_COST_SYNC: SyncOperation[] = [
     id: "q-pd-cost-validation",
     name: "PD cost validation %",
     kind: "derived",
-    file: "app/actions.ts:populatePdCostValidationAction",
+    file: "app/actions/misc.ts:populatePdCostValidationAction",
     line: "5536-5577",
     purpose:
       "Computes the variance between the contract rate and the product cost, as a formatted percentage.",
@@ -2276,7 +2276,7 @@ const QUOTATION_COST_SYNC: SyncOperation[] = [
     id: "q-clear-quoted-rates",
     name: "Clear quoted rates",
     kind: "edit",
-    file: "app/actions.ts:clearQuotedRatesAction",
+    file: "app/actions/misc.ts:clearQuotedRatesAction",
     line: "5580-5685",
     purpose:
       "Wipes the quoted rate and everything derived from it across the selected rows, keeping VA% as the surviving anchor.",
@@ -2303,7 +2303,7 @@ const QUOTATION_CRUD_SYNC: SyncOperation[] = [
     id: "q-enquiry-crud",
     name: "Enquiry & item CRUD",
     kind: "edit",
-    file: "app/actions.ts",
+    file: "app/actions/*.ts",
     line: "33-1068, 795, 179-234",
     purpose:
       "Create, edit and delete enquiries and their line items, plus the per-row bulk toggles. Grouped because none of it reads a spreadsheet.",
@@ -2325,7 +2325,7 @@ const QUOTATION_CRUD_SYNC: SyncOperation[] = [
     id: "q-import-excel",
     name: "Excel import",
     kind: "edit",
-    file: "app/actions.ts:importExcelDataAction",
+    file: "app/actions/item.ts:importExcelDataAction",
     line: "2063-2112",
     purpose: "Bulk-fills cost and quoted rate on existing rows from an uploaded spreadsheet.",
     direction: "db-to-db",
@@ -2346,7 +2346,7 @@ const QUOTATION_CRUD_SYNC: SyncOperation[] = [
     id: "q-sync-m2m-stock",
     name: "RM stock & type refresh",
     kind: "backfill",
-    file: "app/actions.ts:syncDirectM2MAvailableStockAction -> lib/directM2MStockLookup.ts",
+    file: "app/actions/item.ts:syncDirectM2MAvailableStockAction -> lib/directM2MStockLookup.ts",
     line: "2047-2061 / 65-116",
     purpose:
       "Copies raw-material stock, RM type and the resulting delivery schedule onto every item that has an RM code.",
@@ -2367,7 +2367,7 @@ const QUOTATION_CRUD_SYNC: SyncOperation[] = [
     id: "q-delivery-schedule",
     name: "Delivery schedule recompute",
     kind: "derived",
-    file: "app/actions.ts:syncDeliveryScheduleForItem",
+    file: "app/actions/*.ts:syncDeliveryScheduleForItem",
     line: "1299-1303",
     purpose:
       "Recomputes the promised delivery schedule whenever any of its six inputs change.",
@@ -2408,7 +2408,7 @@ const QUOTATION_CRUD_SYNC: SyncOperation[] = [
     id: "q-email-addresses",
     name: "Party email address sync",
     kind: "sync",
-    file: "app/actions.ts:syncEnquiryEmailAddressesAction -> lib/enquiryEmailSync.ts",
+    file: "app/actions/enquiry.ts:syncEnquiryEmailAddressesAction -> lib/enquiryEmailSync.ts",
     line: "933-1067",
     purpose:
       "Fills each enquiry's senderEmail (the thread sender, future email To) and emailAddress (the cc/rest list, future Cc). Falls back to the most recent docket of the same party (resolved from its source thread) when the thread has no usable external email; internal addresses are never stored.",
@@ -2450,7 +2450,7 @@ const QUOTATION_CRUD_SYNC: SyncOperation[] = [
     id: "q-cbatch",
     name: "Batch C mark",
     kind: "sync",
-    file: "app/actions.ts:syncCBatchAction",
+    file: "app/actions/contractReview.ts:syncCBatchAction",
     line: "5069-5104",
     purpose:
       "Marks cBatch = 'C' on every enquiry item whose ERP code OR RM code has ITEM_STATUS = 'C', surfaced as a chip in the item-code cell.",
@@ -3168,7 +3168,7 @@ export const DATA_SOURCES: DataSource[] = [
         range: "A1:ZZZ",
         resolvedBy: "gid",
         note: "separate TO_DATE -> NO USE + batch C flow; drives the /bom page only",
-        file: "app/actions.ts:syncBomMastItemNamesAction",
+        file: "app/actions/contractReview.ts:syncBomMastItemNamesAction",
       },
     ],
   },
@@ -3230,7 +3230,7 @@ export const DATA_SOURCES: DataSource[] = [
         range: "A:ZZZ",
         resolvedBy: "title",
         note: "available stock gap-fill",
-        file: "syncNullVerifyBomStockAction (app/actions.ts:4435)",
+        file: "syncNullVerifyBomStockAction (app/actions/*.ts:4435)",
       },
     ],
     sync: BOM_SYNC,

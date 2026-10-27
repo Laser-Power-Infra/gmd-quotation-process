@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -20,6 +21,8 @@ function toNum(v: unknown): number | null {
 // BomItem.id; parent-only rows (no BOM, or a BOM with no components) use
 // `bom:<id>` / `item:<id>` so every row still has a unique key.
 export async function GET() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     // Anchor on FullItem so an item with no BOM (or a BOM with no components)
     // still appears as a parent-only row instead of vanishing.

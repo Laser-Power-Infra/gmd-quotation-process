@@ -25,7 +25,7 @@ Defined `VERIFY_BOM_HEADERS` `lib/gmd_lib/verify-bom-columns.ts`:
 | # | Exact Sheet Header (normalized match) | DB field `VerifyBom` `schema.prisma:288` | UI Label | Type | Notes |
 |---|---------------------------------------|------------------------------------------|----------|------|-------|
 | 0 | `BOM ID` | `bomId :290` | BOM ID | String | Part of `@@unique([bomId,itemCode,rmItemCode])` `:299` |
-| 1 | `ITEM CODE` | `itemCode :291` | ITEM CODE | String | **Join to `EnquiryItem.erpItemCode`** `lib/gmdBomCostLookup.ts:78 codeIdx` & `app/actions.ts:830` |
+| 1 | `ITEM CODE` | `itemCode :291` | ITEM CODE | String | **Join to `EnquiryItem.erpItemCode`** `lib/gmdBomCostLookup.ts:78 codeIdx` & `app/actions/*.ts:830` |
 | 2 | `RM ITEM CODE` | `rmItemCode :292` | RM ITEM CODE | String | The `CONSUMPTION-1` raw code → lookup in `SupplyHistoryItem.erpItemCode` `:167` `lib/gmdBomCostLookup.ts:81` |
 | 3 | `BOM ID TYPE` | `bomIdType :293` | BOM ID TYPE | String? | Display only |
 | 4 | `BOM ITEM QTY` | `bomItemQty :294` | BOM ITEM QTY | String? | Display only |
@@ -85,4 +85,4 @@ If you need to trace why a productCost filled with a certain RM, check **both** 
 
 - `app/bom/page.tsx`, `app/api/bom/route.ts`, `app/api/bom/sync/route.ts`
 - `lib/gmd_lib/verify-bom-columns.ts: VERIFY_BOM_HEADERS, buildVerifyBomColumnMap, mapVerifyBomRow, dbVerifyBomToRow`
-- `prisma/schema.prisma:288 VerifyBom`, `lib/gmdBomCostLookup.ts:48` (other BOM source), `app/actions.ts:807` (usage)
+- `prisma/schema.prisma:288 VerifyBom`, `lib/gmdBomCostLookup.ts:48` (other BOM source), `app/actions/*.ts:807` (usage)

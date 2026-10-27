@@ -8,12 +8,7 @@ import GMDUpdateTable from "@gmd/dashboard/components/GMDUpdateTable";
 import ErrorState from "@gmd/dashboard/components/ErrorState";
 import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
-import {
-  updateVerifyBomFieldBatchAction,
-  syncNullVerifyBomStockAction,
-  syncBomMastItemNamesAction,
-  checkBomMastSyncAction,
-} from "@/app/actions";
+import { updateVerifyBomFieldBatchAction, syncNullVerifyBomStockAction, syncBomMastItemNamesAction, checkBomMastSyncAction } from "@/app/actions/contractReview";
 import { VERIFY_BOM_HEADER_TO_DB_FIELD, cBatchBadges } from "@/lib/gmd_lib/verify-bom-columns";
 import { Button } from "@gmd/ui/components/button";
 import {

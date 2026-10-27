@@ -8,11 +8,7 @@ import GMDUpdateTable, {
 import ErrorState from "@gmd/dashboard/components/ErrorState";
 import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
-import {
-  updateSupplyHistoryFieldAction,
-  updateSupplyHistorySelectedBomAction,
-  updateSupplyHistoryBomCostAction,
-} from "@/app/actions";
+import { updateSupplyHistoryFieldAction, updateSupplyHistorySelectedBomAction, updateSupplyHistoryBomCostAction } from "@/app/actions/misc";
 import {
   fetchAllSupplyRows,
   fetchSupplyFacet,

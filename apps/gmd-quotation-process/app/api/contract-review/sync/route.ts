@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -84,6 +85,8 @@ const SKIP_FIELDS = new Set([
 ]);
 
 export async function POST() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     if (!SPREADSHEET_ID) {
       throw new Error(

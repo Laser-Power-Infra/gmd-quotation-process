@@ -1,4 +1,5 @@
 "use server";
+import { requireAccess } from "@/lib/access";
 
 import { prisma } from "@/lib/prisma";
 import {
@@ -67,6 +68,7 @@ async function hydrateSupplyItems(ids: string[]) {
 export async function fetchSupplyPage(
   query: SupplyQuery,
 ): Promise<SupplyPageResult> {
+  await requireAccess();
   const page = clampPage(query.filters.currentPage);
   const pageSize = clampPageSize(query.filters.pageSize);
   const where = buildSupplyWhere(query);
@@ -125,6 +127,7 @@ export async function fetchSupplyFacet(
   query: SupplyQuery,
   header: string,
 ): Promise<string[]> {
+  await requireAccess();
   const expr = supplyFacetExpression(header);
   if (!expr) return [];
 
@@ -148,6 +151,7 @@ export async function fetchSupplyFacet(
 export async function fetchAllSupplyRows(
   query: SupplyQuery,
 ): Promise<unknown[][]> {
+  await requireAccess();
   const where = buildSupplyWhere(query);
   const orderBy = buildSupplyOrderBy(query);
   const ids = (

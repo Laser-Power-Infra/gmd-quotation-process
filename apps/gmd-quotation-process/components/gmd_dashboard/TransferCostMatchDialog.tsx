@@ -10,7 +10,7 @@ import {
   DialogDescription,
 } from "@gmd/ui/components/dialog";
 import { Button } from "@gmd/ui/components/button";
-import type { TransferCostMatchProposal } from "@/app/actions";
+import type { TransferCostMatchProposal } from "@/app/actions/gmdUpdate";
 
 const TUPLE_FIELDS: { key: keyof TransferCostMatchProposal["tuple"]; label: string }[] = [
   { key: "l1", label: "L1" },

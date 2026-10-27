@@ -48,11 +48,11 @@ CONTRACT NO, ITEM_CODE, MC NO, ITEM_NAME, PARTY ITEM NAME, RATE, ORDER QTY, FREE
 | Display Header (exact) | DB field `ContractReview` | Source Tab + Column | Type | Notes |
 |------------------------|---------------------------|---------------------|------|-------|
 | `CONTRACT NO` | `contractNo :234` | CONTRACTS col 0 | String | Part of `@@unique([itemCode,contractNo])` `:285` |
-| `ITEM_CODE` | `itemCode :235` | CONTRACTS col 1 (`ITEM_CODE`) but mapper does `field(2)` ↔ swap — see code note `lib/gmd_lib/contract-review-columns.ts:141` `itemCode: field(2)` (because display order swap) | String | **Join key to `EnquiryItem.erpItemCode`** `app/actions.ts:1089` |
+| `ITEM_CODE` | `itemCode :235` | CONTRACTS col 1 (`ITEM_CODE`) but mapper does `field(2)` ↔ swap — see code note `lib/gmd_lib/contract-review-columns.ts:141` `itemCode: field(2)` (because display order swap) | String | **Join key to `EnquiryItem.erpItemCode`** `app/actions/*.ts:1089` |
 | `MC NO` | `mcNo :236` | CONTRACTS col 2 → `field(1)` swapped | String | |
 | `ITEM_NAME` | `itemName :237` | CONTRACTS col 3 | String | |
 | `PARTY ITEM NAME` | `partyItemName :238` | col 4 | String | |
-| `RATE` | `rate :239` | col 5 | String | **Used as contractReviewRate** `app/actions.ts:1143` |
+| `RATE` | `rate :239` | col 5 | String | **Used as contractReviewRate** `app/actions/*.ts:1143` |
 | `CV` | `cv :240` | col 6 | String | Stored but **not displayed** in `CONTRACT_REVIEW_HEADERS` |
 | `VA %` | `vaPercent :241` | col 7 | String | stored not displayed |
 | `ORDER QTY` | `orderQty :242` | col 8 | String | |
@@ -71,7 +71,7 @@ CONTRACT NO, ITEM_CODE, MC NO, ITEM_NAME, PARTY ITEM NAME, RATE, ORDER QTY, FREE
 | `VALUE` | `value :255` | col 21 | String | |
 | `SIZE` | `size :256` | col 22 | String | |
 | `PN RATING` | `pnRating :257` | col 23 | String | |
-| `DATE OF CONTRACT` | `dateOfContract :258` | col 24 | String | `DD-Mmm-YY` — **used to pick most recent** `app/actions.ts:1096` fallback `createdAt` |
+| `DATE OF CONTRACT` | `dateOfContract :258` | col 24 | String | `DD-Mmm-YY` — **used to pick most recent** `app/actions/*.ts:1096` fallback `createdAt` |
 | `CLEARANCE STATUS` | `clearanceStatus :259` | col 25 | String | |
 | `Actuator` | `actuator :260` | col 26 | String | |
 | `RM CODE FOR ACTUATOR` | `rmCodeForActuator :261` | col 27 | String | |
@@ -142,7 +142,7 @@ CONTRACT NO, ITEM_CODE, MC NO, ITEM_NAME, PARTY ITEM NAME, RATE, ORDER QTY, FREE
 
 ## 6. Logic: Contract Rate → Quotation PD Validation
 
-**File:** `app/actions.ts:1080 fetchContractReviewRatesAction(itemIds)`:
+**File:** `app/actions/*.ts:1080 fetchContractReviewRatesAction(itemIds)`:
 
 - For each quotation item with `erpItemCode`, find all `ContractReview where itemCode == erpItemCode` `L1089`
 - Pick **most recent** by `dateOfContract` parsed `DD-Mmm-YY` else `createdAt` `L1096-1123`: `dateOfContract` string → `parseDate` `new Date(year,mon,day)`; compare descending; fallback `createdAt` if dates equal/missing
@@ -161,4 +161,4 @@ CONTRACT NO, ITEM_CODE, MC NO, ITEM_NAME, PARTY ITEM NAME, RATE, ORDER QTY, FREE
 
 - `app/contract_review/page.tsx`, `app/api/contract-review/route.ts`, `app/api/contract-review/sync/route.ts`
 - `lib/gmd_lib/contract-review-columns.ts: CONTRACT_REVIEW_HEADERS / CONTRACTS_SHEET_COLUMNS / DUMP_SHEET_COLUMNS / mapContractReviewRow / dbContractReviewToRow / CONTRACT_REVIEW_HEADER_TO_DB_FIELD`
-- `prisma/schema.prisma:232 ContractReview`, `app/actions.ts:1080 fetchContractReviewRatesAction`, `components/table/EnquiryTable.tsx:92,1307`
+- `prisma/schema.prisma:232 ContractReview`, `app/actions/*.ts:1080 fetchContractReviewRatesAction`, `components/table/EnquiryTable.tsx:92,1307`

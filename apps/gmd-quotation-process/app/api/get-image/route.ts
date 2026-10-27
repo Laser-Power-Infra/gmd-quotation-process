@@ -1,7 +1,10 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { getOrGenerateImage } from "@/lib/getOrGenerateImage";
 
 export async function POST(req: Request) {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   let body: unknown;
   try {
     body = await req.json();

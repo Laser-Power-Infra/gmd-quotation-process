@@ -8,12 +8,12 @@ import ActionsDropdown from "./ActionsDropdown";
 import DocketAttachmentsCell from "@/components/attachment/DocketAttachmentsCell";
 import Pagination from "./Pagination";
 import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
-import CellSelect from "./CellSelect";
+import CellSelect, { optionsWithCurrent } from "./CellSelect";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";
 import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly } from "@/lib/enquiriesSlice";
 import { enquiryFilterKey } from "@/lib/enquiryQuery";
-import { fetchFilteredEnquiryExport } from "@/app/actions/enquiryQuery";
+import { fetchDocketNumbers, fetchFilteredEnquiryExport } from "@/app/actions/enquiryQuery";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { itemDeletedStatus, DELETED_STATUS_OPTIONS } from "@/lib/filterUtils";
 import { setPage, setPageSize } from "@/lib/paginationSlice";
@@ -344,6 +344,15 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const canEditApm = role === "admin" || role === "developer";
   const dispatch = useAppDispatch();
   const enquiries = useAppSelector(selectAllEnquiries);
+  // Not the loaded page: the original docket can be on any page, under any filter.
+  // shortcut: refreshed on mount and after a duplicate delete, not on other users' creates.
+  const [docketNumbers, setDocketNumbers] = useState<string[]>([]);
+  const [docketListVersion, setDocketListVersion] = useState(0);
+  useEffect(() => {
+    fetchDocketNumbers().then(setDocketNumbers).catch(() => {});
+  }, [docketListVersion]);
+  // Rows just marked Duplicate = Yes: their original picker opens by itself once.
+  const [openOriginalIds, setOpenOriginalIds] = useState<Set<string>>(new Set());
   const autoSentSet = useMemo(() => new Set(autoSentDockets ?? []), [autoSentDockets]);
   const autoPendingSet = useMemo(() => new Set(autoPendingDockets ?? []), [autoPendingDockets]);
   const allItems = useAppSelector(selectAllItems);
@@ -1045,6 +1054,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     try {
       await dispatch(deleteEnquiry(enquiry.id)).unwrap();
       toast.success(`Deleted ${enquiry.docketNumber}.`, { id: toastId });
+      setDocketListVersion((v) => v + 1);
     } catch (err: unknown) {
       toast.error(
         err instanceof Error ? err.message : typeof err === "string" ? err : "Failed to delete docket",
@@ -3898,7 +3908,15 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           placeholder="-"
                           value={enquiry.duplicate || ""}
                           options={["Yes", "No"]}
-                          onChange={(v) => handleEnquiryFieldChange(enquiry.id, "duplicate", v)}
+                          onChange={(v) => {
+                            setOpenOriginalIds((prev) => {
+                              const next = new Set(prev);
+                              if (v === "Yes") next.add(enquiry.id);
+                              else next.delete(enquiry.id);
+                              return next;
+                            });
+                            handleEnquiryFieldChange(enquiry.id, "duplicate", v);
+                          }}
                           title="Mark this docket as a duplicate"
                         />
                         {enquiry.duplicate === "Yes" && (
@@ -3906,7 +3924,19 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             <CellSelect
                               placeholder="- original -"
                               value={enquiry.duplicateOfDocket || ""}
-                              options={enquiries.filter((e) => e.id !== enquiry.id).map((e) => e.docketNumber)}
+                              defaultOpen={openOriginalIds.has(enquiry.id)}
+                              onClose={() =>
+                                setOpenOriginalIds((prev) => {
+                                  if (!prev.has(enquiry.id)) return prev;
+                                  const next = new Set(prev);
+                                  next.delete(enquiry.id);
+                                  return next;
+                                })
+                              }
+                              options={optionsWithCurrent(
+                                docketNumbers.filter((d) => d !== enquiry.docketNumber),
+                                enquiry.duplicateOfDocket,
+                              )}
                               searchPlaceholder="Search docket no..."
                               onChange={(v) => handleEnquiryFieldChange(enquiry.id, "duplicateOfDocket", v)}
                               title="Select the original docket this duplicates"

@@ -1,8 +1,11 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SUPPLY_DISPLAY_HEADERS, buildSupplyRow } from "@/lib/supplyRows";
 
 export async function GET() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     const [items, utilityRows] = await Promise.all([
       prisma.supplyHistoryItem.findMany({

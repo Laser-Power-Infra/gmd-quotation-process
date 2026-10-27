@@ -1,9 +1,12 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { makeImageKey } from "@/lib/imageKey";
 import { getActiveItemTypeValues, normalizeItemType } from "@/lib/lookup";
 
 export async function GET() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     // 0) Allowed item types: the ITEM_TYPE Lookup Options are the single source
     //    of truth. Anything else is hidden here (and cleaned by the one-time

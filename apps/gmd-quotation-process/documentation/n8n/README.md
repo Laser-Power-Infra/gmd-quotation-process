@@ -82,8 +82,26 @@ curl -X POST "https://<your-host>/webhook/send-docket-email" \
 A `200` with `{"success":true,...}` means the app's `sendDocketEmailAction` will
 persist `emailSentBy` and lock the row (Reset unlocks it).
 
-## 5. Notes
+## 5. Technical Evaluation Follow-up
 
+A second workflow, **GMD Quotation - Technical Evaluation Follow-up**
+(`workflow:2QWG8tG8Lpkjmgi5`), handles the 24-hour follow-up.
+
+- **Trigger:** the dashboard POSTs JSON to `/webhook/tech-eval-followup`
+  whenever a docket's *Technical Evaluation* is marked **Yes**. The app queues
+  nothing unless the offer was already sent (`emailSentBy` set) and the docket
+  has a client email.
+- **Flow:** Webhook (acknowledges immediately) → **Wait 24 hours** → Gmail
+  **Send a message** from `info@gmd`.
+- **Payload** (`lib/services/n8nTechEvalFollowup.ts`): `docketNumber`, `to`,
+  `cc`, `subject`, `html`, `markedAt`. Fields arrive as `$json.body.*`.
+- **Cc:** the docket's email addresses plus `puja.agarwal@laserpowerinfra.com`
+  (built by `lib/techEvaluationFollowup.ts`).
+- **Env:** `N8N_TECH_EVAL_FOLLOWUP_WEBHOOK_URL`.
+- Each Yes transition queues one follow-up; clearing Yes and marking it again
+  queues another. Nothing is cancelled once queued.
+
+## 6. Notes
 - **Binary property:** the Gmail node attaches `$binary.attachment`. If your n8n
   version renames multipart files, open the Webhook node, enable the binary
   option, and set the property name to `attachment` (or update the Gmail node's

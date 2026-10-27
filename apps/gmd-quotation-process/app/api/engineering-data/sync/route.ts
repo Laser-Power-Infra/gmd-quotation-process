@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { findTab } from "@/lib/technical/tableConfig";
 import {
@@ -25,6 +26,8 @@ export const dynamic = "force-dynamic";
 const COOLDOWN_MS = 60_000;
 
 export async function POST(request: Request) {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   const params = new URL(request.url).searchParams;
   const force = params.get("force") === "1";
   const tabParam = params.get("tab");

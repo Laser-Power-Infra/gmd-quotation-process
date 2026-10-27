@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { CANONICAL_COLUMNS } from "@/lib/gmd_lib/sheet-columns";
@@ -5,6 +6,8 @@ import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
 import { C_BATCH_HEADER } from "@/lib/gmd_lib/verify-bom-columns";
 
 export async function GET() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     // The three reads are independent, so run them together.
     const [items, bomLinks, allBoms] = await Promise.all([

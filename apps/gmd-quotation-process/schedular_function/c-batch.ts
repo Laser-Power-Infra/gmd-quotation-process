@@ -2,7 +2,7 @@
  * Scheduled job — ITEM MASTER ERP -> `cBatch` marks on four tables.
  *
  * Port of the "Sync C Batch" button, whose handler is
- * `syncCBatchAction` in `app/actions.ts:5039-5218` — left untouched. Unlike the
+ * `syncCBatchAction` in `app/actions/*.ts:5039-5218` — left untouched. Unlike the
  * other buttons ported here, that action's logic is entirely inline in a
  * `"use server"` module, so this is a real port rather than a delegation. Only
  * the sheet read is reused, via the already-exported primitives in

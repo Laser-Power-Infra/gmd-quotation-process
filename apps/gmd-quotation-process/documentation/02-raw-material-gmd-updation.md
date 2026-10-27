@@ -15,7 +15,7 @@
 
 | Sheet Name (tab) | Spreadsheet | GID / Range | Render | Auth | File |
 |------------------|-------------|-------------|--------|------|------|
-| **`GMD UPDATION`** (main) | Env `GOOGLE_SPREADSHEET_ID` (not hard-coded) | Tab title exact → `"'GMD UPDATION'!A:ZZZ"` | `UNFORMATTED_VALUE` | `getOAuthClient()` `lib/googleAuth.ts:11` reads `credentials.json` + `token.json` | `lib/gmd_lib/google-sheets.ts:fetchGMDUpdateSheet()` |
+| **`GMD UPDATION`** (main) | Env `GOOGLE_SPREADSHEET_ID` (not hard-coded) | Tab title exact → `"'GMD UPDATION'!A:ZZZ"` | `UNFORMATTED_VALUE` | `getOAuthClient()` `lib/googleAuth.ts` (`GOOGLE_*` env vars) | `lib/gmd_lib/google-sheets.ts:fetchGMDUpdateSheet()` |
 | **`GMD Category`** (helper) | Same spreadsheet `GOOGLE_SPREADSHEET_ID` | `"'GMD Category'!A:ZZZ"` | `UNFORMATTED_VALUE` | same | `lib/gmd_lib/google-sheets.ts:fetchGMDCategorySheet()` |
 | **`stock-phys`** (stock overlay) | Same spreadsheet | `"'stock-phys'!A:ZZZ"` — **note headers are row 2** (`allRows[1]`), data from `slice(2)` | `UNFORMATTED_VALUE` | same | `lib/gmd_lib/google-sheets.ts:fetchStockPhysicalSheet()` |
 
@@ -115,7 +115,7 @@ Defined in `lib/gmd_lib/sheet-columns.ts:3` — **order matters, names are case/
   - `processedItems.filter(newItemStatus && != "-")` — `title="Filtered Items"`
 - Both tables: `GMDUpdateTable` with `uniqueKeyColumns=["ERP ITEM CODE"]`, `categoryOptions` merged, `filterState` from `gmdUpdateSlice`, pagination.
 
-**Inline Edit:** Click cell in editable column → `thunk updateGMDUpdateFieldAction(id,field,value)` → `app/actions.ts:1048 updateGMDUpdateFieldAction` generic `prisma.rawMaterial.update({[field]: value})` `L1055`, then Redux `gmdUpdateSlice` updates entity, shows toast.
+**Inline Edit:** Click cell in editable column → `thunk updateGMDUpdateFieldAction(id,field,value)` → `app/actions/*.ts:1048 updateGMDUpdateFieldAction` generic `prisma.rawMaterial.update({[field]: value})` `L1055`, then Redux `gmdUpdateSlice` updates entity, shows toast.
 
 ## 6. Business Logic Tips
 
@@ -134,4 +134,4 @@ Defined in `lib/gmd_lib/sheet-columns.ts:3` — **order matters, names are case/
 
 - `app/raw_material/page.tsx`, `app/raw_material/api/gmd-update/route.ts`, `app/raw_material/api/gmd-update/sync/route.ts`, `app/raw_material/api/gmd-category/route.ts`
 - `lib/gmd_lib/google-sheets.ts:fetchGMDUpdateSheet/fetchStockPhysicalSheet/fetchGMDCategorySheet`, `lib/gmd_lib/sheet-columns.ts:3 CANONICAL_COLUMNS + COL_INDEX_TO_DB_FIELD`, `lib/gmd_lib/mapSheetRow.ts:sheetRowToDbItem/dbItemToRow`
-- `lib/gmdUpdateSlice.ts`, `lib/googleAuth.ts`, `prisma/schema.prisma:200 GMDUpdateItem`, `app/actions.ts:1048`
+- `lib/gmdUpdateSlice.ts`, `lib/googleAuth.ts`, `prisma/schema.prisma:200 GMDUpdateItem`, `app/actions/*.ts:1048`

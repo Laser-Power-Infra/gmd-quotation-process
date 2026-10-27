@@ -1,4 +1,5 @@
 "use server";
+import { requireAccess } from "@/lib/access";
 
 import { Prisma } from "@gmd/db-quotation";
 import { prisma } from "@/lib/prisma";
@@ -49,6 +50,7 @@ export async function fetchEnquiryPage(
   query: EnquiryQuery,
   includeSummary = true,
 ): Promise<EnquiryPageResult> {
+  await requireAccess();
   const page = clampPage(query.page);
   const pageSize = clampPageSize(query.pageSize);
   const offset = (page - 1) * pageSize;
@@ -216,11 +218,24 @@ export async function fetchEnquiryPage(
   return { enquiries, total, summary };
 }
 
+/**
+ * Every docket number, unfiltered - for the "original docket" picker, which
+ * must reach dockets outside the table's current page and filters.
+ */
+export async function fetchDocketNumbers(): Promise<string[]> {
+  await requireAccess();
+  const rows = await prisma.$queryRaw<{ docketNumber: string }[]>`
+    SELECT "docketNumber" FROM "Enquiry" ORDER BY "createdAt" DESC
+  `;
+  return rows.map((r) => r.docketNumber);
+}
+
 /** Distinct values for one cascading dropdown, excluding its own filter. */
 export async function fetchEnquiryFacet(
   query: EnquiryQuery,
   field: string,
 ): Promise<EnquiryFacetResult> {
+  await requireAccess();
   const facet = facetExpression(field);
   if (!facet) return { field, options: [] };
 
@@ -259,6 +274,7 @@ export async function fetchEnquiryFacet(
 
 /** Every enquiry (and item) id matching the filters - for select-all / bulk actions. */
 export async function fetchFilteredEnquiryIds(query: EnquiryQuery): Promise<FilteredIds> {
+  await requireAccess();
   const tableQuery = { ...query, selectedEnquiryIds: [] };
   const where = buildEnquiryWhereSql(tableQuery);
   const itemWhere = buildItemWhereSql(tableQuery);
@@ -282,6 +298,7 @@ export async function fetchFilteredEnquiryIds(query: EnquiryQuery): Promise<Filt
 export async function fetchFilteredEnquiryExport(
   query: EnquiryQuery,
 ): Promise<EnquiryPageResult["enquiries"]> {
+  await requireAccess();
   const tableQuery = { ...query, selectedEnquiryIds: [] };
   const where = buildEnquiryWhereSql(tableQuery);
   const { orderBy, needsFirstItem } = buildEnquiryOrderBySql(tableQuery);

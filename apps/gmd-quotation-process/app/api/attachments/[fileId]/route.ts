@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { fetchDriveFile } from "@/lib/gdrive";
 
 /**
@@ -15,6 +16,8 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ fileId: string }> },
 ) {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   const { fileId } = await params;
 
   if (!fileId || !/^[a-zA-Z0-9_-]+$/.test(fileId)) {

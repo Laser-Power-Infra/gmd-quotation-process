@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -31,6 +32,8 @@ function closeMatches(input: string, values: string[]): string[] {
 }
 
 export async function POST(req: Request) {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     let body: unknown;
     try {

@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sheets as googleSheets } from "@googleapis/sheets";
@@ -33,6 +34,8 @@ function clean(v: string | null): string | null {
 // component of a BOM. Existing rows are matched by (bom, component) and their
 // quantity refreshed; nothing else is clobbered.
 export async function POST() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     if (!SPREADSHEET_ID) {
       throw new Error(

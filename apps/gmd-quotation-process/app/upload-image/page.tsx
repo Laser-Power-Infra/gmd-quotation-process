@@ -18,7 +18,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@gmd/ui/components/dialog";
 import { Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { createGeneratedImageAction } from "@/app/actions";
+import { createGeneratedImageAction } from "@/app/actions/misc";
 
 export default function UploadImagePage() {
   const [items, setItems] = useState<UploadImageComboRow[]>([]);

@@ -1,7 +1,7 @@
 /**
  * Scheduled job step — pending docket materializer.
  *
- * Ported from `createPendingDocketsAction` in `app/actions.ts`, which is a
+ * Ported from `createPendingDocketsAction` in `app/actions/*.ts`, which is a
  * top-level `"use server"` module. A route handler must not reach into a server
  * action, so the algorithm was copied here rather than imported. The action is
  * kept (commented out) as legacy reference; this file is the scheduled source of
@@ -41,7 +41,7 @@ import { buildPartyEmailMap } from "@/lib/enquiryEmailSync";
 import { parseThreadAttachments } from "@/lib/docketSnapshot";
 import { buildSnapshotAttachment } from "@/lib/docketSnapshotPdf";
 import { extractEmailsFromValue, mergeMandatoryCc } from "@/lib/enquiryEmailParty";
-import { istDayWindow } from "@/lib/docketPending";
+import { buildPartyMatcher, buildPartySearchText, istDayWindow } from "@/lib/docketPending";
 import { extractDocketItems } from "./docket-item-extraction";
 import type { ParsedDocketItem } from "./docket-item-parser";
 import pLimit from "p-limit";
@@ -211,8 +211,20 @@ export async function runPendingDocketCreation(
     new Date(),
   );
 
+  // shortcut: buildPartyMatcher ignores names under 4 chars (e.g. "Goa"), upgrade if those matter.
+  const [matchState, matchUtility] = await Promise.all(
+    (["STATE", "UTILITY"] as const).map(async (type) => {
+      const rows = await prisma.lookupOption.findMany({
+        where: { type, isActive: true },
+        select: { value: true },
+      });
+      return buildPartyMatcher(rows.map((r) => r.value));
+    }),
+  );
+
   const plan = pending.map((thread, index) => {
     const resolved = resolvePartyForThread(thread, emailPartyMap);
+    const searchText = buildPartySearchText(thread);
     // Single sender (future "To"); the rest go to cc. When the thread has only
     // internal mailboxes, fall back to the party's most recent docket emails.
     const partyExternal = partyEmailMap.byPartyKey.get(partyKey(resolved.partyName));
@@ -223,6 +235,8 @@ export async function runPendingDocketCreation(
       date: thread.date,
       docketNumber: docketNumbers[index],
       partyName: resolved.partyName,
+      state: matchState(searchText),
+      utility: matchUtility(searchText),
       source: resolved.source,
       senderEmail: split.senderEmail,
       emailAddress: mergeMandatoryCc(resolved.partyName, split.ccEmails).join(", ") || null,
@@ -339,6 +353,8 @@ export async function runPendingDocketCreation(
           data: {
             docketNumber: p.docketNumber,
             partyName: p.partyName,
+            state: p.state,
+            utility: p.utility,
             enquiryDate: p.date ?? new Date(),
             emailAddress: p.emailAddress,
             senderEmail: p.senderEmail,

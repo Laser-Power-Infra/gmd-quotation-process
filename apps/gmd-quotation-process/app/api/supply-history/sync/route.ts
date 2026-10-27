@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sheets as googleSheets } from "@googleapis/sheets";
@@ -55,6 +56,8 @@ function makeRowKey(invoiceNo: string, itemName: string): string {
 }
 
 export async function POST() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   const syncStart = Date.now();
   try {
     // Refresh the BOM graph first so the manual Sync button does not have to wait

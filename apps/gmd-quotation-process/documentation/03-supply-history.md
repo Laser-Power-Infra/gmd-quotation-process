@@ -148,7 +148,7 @@ PBG CLAIM TILL, PBG AMOUNT, Warranty Exp Date as Per Inv, Party Mail Address
   - `uniqueKeyColumns=["INVOICE NO","item name"]` `@@unique` `:197`
   - `categoryOptions` built from distinct values of 13 dropdown cols from DB for filter dropdowns.
   - `filterState`/`filterActions` from `supplyHistoryFiltersSlice` (`columnFilter, multiFilter, dateFrom/To, globalSearch, pagination`).
-- **Inline edit:** Click `Party Mail Address` or derived `Item Type/MOC/Size` → calls `updateSupplyHistoryFieldAction(id, SUPPLY_HEADER_TO_DB_FIELD[header], value)` `app/actions.ts:1065` → `prisma.supplyHistoryItem.update({[dbField]:value})` with `toast.promise` then Redux refresh.
+- **Inline edit:** Click `Party Mail Address` or derived `Item Type/MOC/Size` → calls `updateSupplyHistoryFieldAction(id, SUPPLY_HEADER_TO_DB_FIELD[header], value)` `app/actions/*.ts:1065` → `prisma.supplyHistoryItem.update({[dbField]:value})` with `toast.promise` then Redux refresh.
 
 ## 6. Why This Matters for Product Cost
 
@@ -168,4 +168,4 @@ PBG CLAIM TILL, PBG AMOUNT, Warranty Exp Date as Per Inv, Party Mail Address
 - `lib/gmd_lib/supply-history-columns.ts: SUPPLY_HISTORY_HEADERS[45], SUPPLY_HEADER_TO_DB_FIELD, mapSheetRowToDb/dbItemToRow`, `lib/gmd_lib/contract-order-links.ts:1367392830, normalizePo/matchOrderLink`
 - `lib/supplyRateBackfill.ts` (RATE + `value = quantity x rate` gap-fill), `schedular_function/run-supply-history.ts`
 - `lib/gmdBomCostLookup.ts:14 parseDate, 122 buildRmCostMap`
-- `lib/supplyHistoryResolver.ts`, `lib/supplyHistoryFiltersSlice.ts`, `prisma/schema.prisma:148 SupplyHistoryItem`, `app/actions.ts:1065`
+- `lib/supplyHistoryResolver.ts`, `lib/supplyHistoryFiltersSlice.ts`, `prisma/schema.prisma:148 SupplyHistoryItem`, `app/actions/*.ts:1065`

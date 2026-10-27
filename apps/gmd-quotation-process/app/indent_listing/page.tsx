@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
 import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkeleton";
 import IndentListingTable from "@/components/indent_listing/IndentListingTable";
-import { recomputeIndentListingVersionsAction } from "@/app/actions";
+import { recomputeIndentListingVersionsAction } from "@/app/actions/contractReview";
 import type { VariantMetrics } from "@/lib/indentListingMetrics";
 
 interface IndentListingData {

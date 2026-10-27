@@ -9,7 +9,7 @@ import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkel
 import ErrorState from "@gmd/dashboard/components/ErrorState";
 import DensityInline from "./DensityInline";
 import SyncButton from "./SyncButton";
-import { updateFlangeBoltWeightAction } from "@/app/actions";
+import { updateFlangeBoltWeightAction } from "@/app/actions/misc";
 import type {
   DensityPair,
   EngineeringDataState,

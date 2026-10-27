@@ -14,7 +14,7 @@
 
 | Sheet | Spreadsheet ID | GID | Tab Title (looked up via `sheets.spreadsheets.get`) | Range | Render | Auth | File |
 |-------|---------------|-----|------------------------------------------------------|-------|--------|------|------|
-| **GMD Item Creation Form** (both features) | **Hard-coded `1LIC8GGgs7K7XWf8kUJFwvfOWpAkElYp6SJ83jk9wWGM`** | **Hard-coded `2142407502`** | Resolved at runtime by matching `sheetId==2142407502` → title, then `"'<title>'!A:ZZZ"` | `A:ZZZ` | `FORMATTED_VALUE` (keeps display values) | `getOAuthClient()` `lib/googleAuth.ts:11` (`credentials.json`/`token.json`, `spreadsheets.readonly`) | `lib/gmdItemCodeLookup.ts:5`, `lib/gmdBomCostLookup.ts:5` |
+| **GMD Item Creation Form** (both features) | **Hard-coded `1LIC8GGgs7K7XWf8kUJFwvfOWpAkElYp6SJ83jk9wWGM`** | **Hard-coded `2142407502`** | Resolved at runtime by matching `sheetId==2142407502` → title, then `"'<title>'!A:ZZZ"` | `A:ZZZ` | `FORMATTED_VALUE` (keeps display values) | `getOAuthClient()` `lib/googleAuth.ts` (`GOOGLE_*` env vars) | `lib/gmdItemCodeLookup.ts:5`, `lib/gmdBomCostLookup.ts:5` |
 
 > **No env var** — ID/GID are in code. If sheet moves, update both files.
 
@@ -56,7 +56,7 @@ Sheet tab `GID 2142407502` has many columns; only **6 required** are used (norma
 
 **Button:** `handleFetchItemCodes` `components/table/EnquiryTable.tsx:1194` collects `filtered+sorted paginated` items, filters `!erpItemCode` `L1211`, confirm, `dispatch(fetchItemCodes(ids))` `L1222`.
 
-**Thunk:** `fetchItemCodes` `lib/enquiriesSlice.ts:71` → `fetchErpItemCodesAction(itemIds)` `app/actions.ts:778` now pre-warms BOM cache `getCachedBomRows()` then loops `lookupAndSetItemCode(itemId, {bomGate:true})` `L785`.
+**Thunk:** `fetchItemCodes` `lib/enquiriesSlice.ts:71` → `fetchErpItemCodesAction(itemIds)` `app/actions/*.ts:778` now pre-warms BOM cache `getCachedBomRows()` then loops `lookupAndSetItemCode(itemId, {bomGate:true})` `L785`.
 
 **Per item:** `lookupAndSetItemCode(itemId, opts)` `lib/gmdItemCodeLookup.ts:205`:
 - `bomGate=true` by default, `force=false` for button (idempotent).
@@ -67,7 +67,7 @@ Sheet tab `GID 2142407502` has many columns; only **6 required** are used (norma
 - If gated code exists → **persist** `prisma.enquiryItem.update({erpItemCode:code})` `L242`; if `force && gate miss` → clear stale `erpItemCode` to `null` `L247`.
 - After successful fetch, if `productCost == null` and new code exists, auto-cascade product cost via `maybeUpdateProductCostFromNewCode()` → `getBomEntry(code)` `lib/gmdBomCostLookup.ts:getBomEntry` → `buildRmCostMap([rmCode])` → `recalculateItem({productCost})` + `bomId/bomType/rmItemCode` persist. **Only when productCost was null — never clears existing** per requirement.
 
-**On create/edit:** `createNewEnquiryAction`/`addItemsAction` still set `erpItemCode: null` `app/actions.ts:94,217`. But now `updateEnquiryItemAction` **auto-recomputes** `erpItemCode` with gate if any derived field changed (see §3.3b), and `updateItemFieldAction` does same inline.
+**On create/edit:** `createNewEnquiryAction`/`addItemsAction` still set `erpItemCode: null` `app/actions/*.ts:94,217`. But now `updateEnquiryItemAction` **auto-recomputes** `erpItemCode` with gate if any derived field changed (see §3.3b), and `updateItemFieldAction` does same inline.
 
 **Backfill:** `backfillExistingItems()` `lib/gmdItemCodeLookup.ts:77` now uses `lookupItemCodeGated` `L101` so empty-DB bootstrap respects BOM gate.
 
@@ -75,9 +75,9 @@ Sheet tab `GID 2142407502` has many columns; only **6 required** are used (norma
 
 #### 3.3b Auto-Cascade When Derived Fields Change
 
-**Inline edit** `updateItemFieldAction` `app/actions.ts:672`: after normal field write, if `field ∈ {itemType,moc,size,pnRating,operationType,itemName}` `CODE_DERIVED_FIELDS`, it re-reads fresh 5 fields → `recomputeItemCodeForValues(itemId, values, oldCode)` `lib/gmdItemCodeLookup.ts:265` (gated). If `changed`, it persists new `erpItemCode` (null if no BOM/match) and, if `productCost == null && newCode != null`, calls `maybeUpdateProductCostFromNewCode()` (BOM → RM → `recalculateItem`). Existing `productCost` is **never cleared**.
+**Inline edit** `updateItemFieldAction` `app/actions/*.ts:672`: after normal field write, if `field ∈ {itemType,moc,size,pnRating,operationType,itemName}` `CODE_DERIVED_FIELDS`, it re-reads fresh 5 fields → `recomputeItemCodeForValues(itemId, values, oldCode)` `lib/gmdItemCodeLookup.ts:265` (gated). If `changed`, it persists new `erpItemCode` (null if no BOM/match) and, if `productCost == null && newCode != null`, calls `maybeUpdateProductCostFromNewCode()` (BOM → RM → `recalculateItem`). Existing `productCost` is **never cleared**.
 
-**Dialog edit** `updateEnquiryItemAction` `app/actions.ts:293`: after `resolveItemCategory(itemName,...)` `L407` computes `derivedChanged` vs old `item.*`. If changed, does gated `lookupItemCodeGated` and sets `erpItemCode` variable before `prisma.enquiryItem.update` `L443`. After that, if `codeChanged && productCost == null` → same `maybeUpdateProductCostFromNewCode` cascade.
+**Dialog edit** `updateEnquiryItemAction` `app/actions/*.ts:293`: after `resolveItemCategory(itemName,...)` `L407` computes `derivedChanged` vs old `item.*`. If changed, does gated `lookupItemCodeGated` and sets `erpItemCode` variable before `prisma.enquiryItem.update` `L443`. After that, if `codeChanged && productCost == null` → same `maybeUpdateProductCostFromNewCode` cascade.
 
 **In short:** Change any of the 5 derivation fields → code re-derived with BOM existence check → if code flips and cost was empty → cost auto-filled from BOM. No clearing of cost.
 
@@ -130,7 +130,7 @@ Queried from **`SupplyHistoryItem`** (see `03`), not from the same sheet:
 
 **Button:** `handleUpdateProductCost` `components/table/EnquiryTable.tsx:1232` → collects `filtered+sorted paginated` items filtered `item.erpItemCode && !productCost` `L1249` → confirm → `dispatch(updateProductCost(ids))` `L1260`.
 
-**Thunk:** `updateProductCost` `lib/enquiriesSlice.ts:85` → `updateProductCostFromBomAction(itemIds)` `app/actions.ts:807`:
+**Thunk:** `updateProductCost` `lib/enquiriesSlice.ts:85` → `updateProductCostFromBomAction(itemIds)` `app/actions/*.ts:807`:
 
 1. `bomRows=fetchBomRows()` `L809`
 2. `bomMap = Map(bomRows.map(b=>[b.itemCode,{bomId,rmItemCode}]))` `L810-813` keyed by `erpItemCode` (Item Code)
@@ -170,6 +170,6 @@ The action returns `indentRefFilled` so the UI toast can report how many cost re
 - `lib/gmdItemCodeLookup.ts:5 SHEET_SPREADSHEET_ID=1LIC8...,6 SHEET_GID=2142407502,7 STALENESS_HOURS=24,17 syncGmdItemCodes,77 backfillExistingItems,120 ensureFreshData,144 lookupItemCodeDirect,177 lookupAndSetItemCode`
 - `lib/gmdBomCostLookup.ts:5 SHEET_SPREADSHEET_ID=1LIC8...,8 DIRECT_M2M,14 parseDate,48 fetchBomRows,122 buildRmCostMap`
 - `prisma/schema.prisma:62 erpItemCode,73 bomId/74 bomType/75 rmItemCode,89 GmdItemCode @@unique 5-field,148 SupplyHistoryItem`
-- `app/actions.ts:778 fetchErpItemCodesAction,807 updateProductCostFromBomAction,1080 fetchContractReviewRatesAction`
+- `app/actions/*.ts:778 fetchErpItemCodesAction,807 updateProductCostFromBomAction,1080 fetchContractReviewRatesAction`
 - `components/table/EnquiryTable.tsx:1194 handleFetchItemCodes,1232 handleUpdateProductCost`
 - `lib/enquiriesSlice.ts:71 fetchItemCodes,85 updateProductCost`, `app/api/gmd-item-codes/sync/route.ts:4`, `scripts/update-product-cost-from-bom.ts`

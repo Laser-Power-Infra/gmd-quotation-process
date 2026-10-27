@@ -3,7 +3,7 @@
  * columns.
  *
  * Single source of truth shared by the inline-edit server action
- * (`app/actions.ts`), the backfill script (`scripts/populate-derived-item-name.ts`)
+ * (`app/actions/*.ts`), the backfill script (`scripts/populate-derived-item-name.ts`)
  * and the scheduled sync (`schedular_function/derived-item-name.ts`).
  *
  * Note: `l1` is intentionally not part of the derivation.

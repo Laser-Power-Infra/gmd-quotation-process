@@ -186,7 +186,7 @@ Both are needed and neither feeds the other.
 
 Step 3's `noUse` transaction is chunked at 200 with a 20 s timeout. The manual
 version wraps every differing row in one unbounded `$transaction`
-(`app/actions.ts:5260`) — a `P2028` waiting to happen.
+(`app/actions/*.ts:5260`) — a `P2028` waiting to happen.
 
 ### Cost of RM AVAIL's physical-stock sub-step
 
@@ -674,10 +674,10 @@ A failure of the `$transaction` itself is counted in `failed`, which is what
 
 ### Relationship to the old manual action
 
-The manual `createPendingDocketsAction` in `app/actions.ts` and the two "Create
+The manual `createPendingDocketsAction` in `app/actions/*.ts` and the two "Create
 Pending Dockets" buttons (`EnquiryTable.tsx`, `app/docket_follow_up/page.tsx`)
 were **removed**. The action is retained as a commented-out `LEGACY` block in
-`app/actions.ts`, with its now-unused imports commented alongside it. This folder
+`app/actions/*.ts`, with its now-unused imports commented alongside it. This folder
 is the source of truth for scheduled docket creation.
 
 ## `acc-master`
@@ -1220,12 +1220,12 @@ still work:
 | Existing path | Status |
 |---|---|
 | `app/raw_material/api/gmd-update/sync/route.ts` | untouched — Sync button, same behaviour |
-| `app/actions.ts` `updateDerivedItemName` | untouched |
+| `app/actions/*.ts` `updateDerivedItemName` | untouched |
 | `scripts/sync-available-stock-from-stock-phys.ts` | untouched — `npm run stock:sync` |
 | `scripts/populate-derived-item-name.ts` | untouched |
 | `app/api/contract-review/sync/route.ts` | untouched — Contract Review SYNC button |
-| `app/actions.ts` `syncContractReviewEnquiryFieldsAllAction` | untouched — Sync Enquiry Fields button |
-| `app/actions.ts` `syncContractReviewRmAvailAction` | untouched — Sync RM AVAIL button |
+| `app/actions/*.ts` `syncContractReviewEnquiryFieldsAllAction` | untouched — Sync Enquiry Fields button |
+| `app/actions/*.ts` `syncContractReviewRmAvailAction` | untouched — Sync RM AVAIL button |
 | `scripts/sync-ic-dump.ts` | untouched — `npm run ic:sync` (see *Step 4 — IC dump* for the duplication this implies) |
 
 **Contract review steps 2 and 3 duplicate no logic.** Both server-action wrappers

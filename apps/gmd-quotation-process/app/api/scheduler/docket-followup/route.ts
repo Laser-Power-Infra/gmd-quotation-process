@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { denyIfNoAccess } from "@/lib/access";
 import {
   requireSyncApiKey,
   runDocketFollowupSync,
@@ -8,9 +9,9 @@ export const runtime = "nodejs";
 export const maxDuration = 1800;
 
 export async function POST(request: Request) {
-  // Allow authenticated API key or allow internal app triggers
+  // API key (scheduler) or a signed-in/allowed app user. The old x-app-source header was spoofable.
   const auth = requireSyncApiKey(request);
-  const isInternalAppCall = request.headers.get("x-app-source") === "gmd-dashboard";
+  const isInternalAppCall = !auth.ok && !(await denyIfNoAccess());
 
   if (!auth.ok && !isInternalAppCall) {
     return NextResponse.json(

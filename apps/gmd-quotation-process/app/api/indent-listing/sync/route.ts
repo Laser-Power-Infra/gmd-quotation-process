@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -9,6 +10,8 @@ import {
 } from "@/lib/indentListingLiveFilter";
 
 export async function POST() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     const source = await tenderPrisma.contractReview.findMany({
       select: {

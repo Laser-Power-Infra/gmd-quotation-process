@@ -11,7 +11,7 @@
  * Deliberately thin: all logic lives in `@/schedular_function`.
  */
 
-// Must be Node: `lib/googleAuth.ts` reads credentials.json / token.json.
+// Must be Node: `lib/googleAuth.ts` uses the Node-only Google OAuth client.
 export const runtime = "nodejs";
 
 // Matches `wget -T 600` in the ofelia script. One tab read plus the writes.

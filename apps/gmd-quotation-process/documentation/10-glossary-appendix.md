@@ -6,7 +6,7 @@
 
 | Purpose | Spreadsheet ID | How provided | Tab / GID | Range | Header Row | Render | Auth file |
 |---------|---------------|--------------|-----------|-------|------------|--------|-----------|
-| **GMD Item Code + BOM Cost (shared)`1LIC8...`** | `1LIC8GGgs7K7XWf8kUJFwvfOWpAkElYp6SJ83jk9wWGM` | **Hard-coded** `lib/gmdItemCodeLookup.ts:5`, `lib/gmdBomCostLookup.ts:5` | `GID 2142407502` "GMD Item Creation Form" looked up via `sheets.spreadsheets.get` → title | `'TITLE'!A:ZZZ` | `FORMATTED_VALUE` | `credentials.json`/`token.json` `lib/googleAuth.ts:11` |
+| **GMD Item Code + BOM Cost (shared)`1LIC8...`** | `1LIC8GGgs7K7XWf8kUJFwvfOWpAkElYp6SJ83jk9wWGM` | **Hard-coded** `lib/gmdItemCodeLookup.ts:5`, `lib/gmdBomCostLookup.ts:5` | `GID 2142407502` "GMD Item Creation Form" looked up via `sheets.spreadsheets.get` → title | `'TITLE'!A:ZZZ` | `FORMATTED_VALUE` | `GOOGLE_*` env vars (`lib/googleAuth.ts`) |
 | **GMD UPDATION (Raw Material)** | `GOOGLE_SPREADSHEET_ID` | Env | Tab name `GMD UPDATION` | `"'GMD UPDATION'!A:ZZZ"` | Row 1 header, `UNFORMATTED_VALUE` | same | `lib/gmd_lib/google-sheets.ts:fetchGMDUpdateSheet` |
 | **GMD Category** (dropdown helper) | Same `GOOGLE_SPREADSHEET_ID` | Env | `GMD Category` | `"'GMD Category'!A:ZZZ"` | Row 1, `UNFORMATTED_VALUE` | same | same |
 | **stock-phys** (physical stock) | Same `GOOGLE_SPREADSHEET_ID` | Env | `stock-phys` | `"'stock-phys'!A:ZZZ"` but **headers = row 2** `allRows[1]` data `slice(2)` | `UNFORMATTED_VALUE` | same | `lib/gmd_lib/google-sheets.ts:fetchStockPhysicalSheet` |
@@ -134,9 +134,10 @@ ACC_MASTER_GID=566954129             # tab gid: ACC_CODE -> ACC_NAME (acc_master
 SALE_BILL_GID=604337671              # tab gid: the per-invoice execution rows
 MC_GID=1910912133                    # tab gid: ORDER_VRNO (VRNO) -> CONTRACT_VRNO (erpContractNo)
 
-# Google OAuth (files credentials.json + token.json must exist, or set these)
-# credentials.json installed/web client_id/client_secret/redirect_uris[0]
-# token.json access_token/refresh_token/expiry/scopes (spreadsheets.readonly, drive.file)
+# Google OAuth: all three required (client_id/client_secret from the OAuth client, refresh_token from the consented user)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_REFRESH_TOKEN=
 
 # AI / Drive
 OPENAI_API_KEY=
@@ -163,7 +164,7 @@ N8N_WEBHOOK_URL=
 - `prisma/schema.prisma` — schema + uniques
 - `lib/gmd_lib/sheet-columns.ts` (25 cols), `supply-history-columns.ts` (44), `verify-bom-columns.ts` (5), `contract-review-columns.ts` (37), `google-sheets.ts` (3 fetchers), `contract-order-links.ts` (1367392830), `mapSheetRow.ts` (GMD mapping)
 - `lib/gmdItemCodeLookup.ts`, `lib/gmdBomCostLookup.ts`, `lib/costCalculator.ts`, `lib/rounding.ts`, `lib/vaValidation.ts`, `lib/itemCategoryResolver.ts`, `lib/sizeExtractor.ts`, `lib/itemTypePatterns.ts`, `lib/pnRatingMatcher.ts`, `lib/extensionMatcher.ts`, `lib/bypassDetector.ts`, `lib/operationTypePatterns.ts`
-- `app/page.tsx`, `app/actions.ts`, `app/raw_material/page.tsx`, `app/supply_history/page.tsx`, `app/contract_review/page.tsx`, `app/bom/page.tsx`, `app/admin/lookup-options/page.tsx`
+- `app/page.tsx`, `app/actions/*.ts`, `app/raw_material/page.tsx`, `app/supply_history/page.tsx`, `app/contract_review/page.tsx`, `app/bom/page.tsx`, `app/admin/lookup-options/page.tsx`
 - `app/raw_material/api/gmd-update/...`, `app/api/supply-history/...`, `app/api/contract-review/...`, `app/api/bom/...`, `app/api/gmd-item-codes/sync/route.ts`, `lib/googleAuth.ts`
 - `components/table/EnquiryTable.tsx`, `lib/filtersSlice.ts`, `lib/enquiriesSlice.ts`, `types/offer-lettter.ts`, `lib/generate-offer-pdf.ts`, `lib/offer_letter.hbs`
 

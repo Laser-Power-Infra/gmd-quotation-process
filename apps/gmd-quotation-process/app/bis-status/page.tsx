@@ -8,7 +8,7 @@ import GMDUpdateTable, {
 import ErrorState from "@gmd/dashboard/components/ErrorState";
 import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
-import { updateBisStatusFieldAction } from "@/app/actions";
+import { updateBisStatusFieldAction } from "@/app/actions/misc";
 import {
   fetchAllBisRows,
   fetchBisFacet,

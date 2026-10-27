@@ -1,3 +1,4 @@
+import { denyIfNoAccess } from "@/lib/access";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { after, NextResponse } from "next/server";
 import {
@@ -13,6 +14,8 @@ import { getContractReviewImagesByItemCode } from "@/lib/gmd_lib/contract-review
 import { normalizeContractKey } from "@/lib/gmd_lib/contract-review-enquiry-backfill";
 
 export async function GET() {
+  const denied = await denyIfNoAccess();
+  if (denied) return denied;
   try {
     const items = await loadContractReviewItems();
 

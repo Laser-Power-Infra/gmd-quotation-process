@@ -1,4 +1,5 @@
 "use server";
+import { requireAccess } from "@/lib/access";
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -29,6 +30,7 @@ export type SyncResult =
   | { ok: false; error: string };
 
 export async function syncPbgDataAction(): Promise<SyncResult> {
+  await requireAccess();
   const startedAt = Date.now();
   try {
     const result = await syncPbgData();
@@ -53,6 +55,7 @@ export async function updatePbgCellAction(
   key: string,
   value: string,
 ): Promise<UpdateCellResult> {
+  await requireAccess();
   try {
     if (!/^\d+$/.test(id)) {
       throw new Error("Invalid row id");
@@ -84,6 +87,7 @@ export async function updateValidityForGroupAction(
   project: string | null,
   value: string | null,
 ): Promise<ValidityGroupResult> {
+  await requireAccess();
   try {
     const po = poNumber.trim();
     if (!po) return { ok: false, error: "Missing PO number" };
@@ -121,6 +125,7 @@ export async function uploadPbgBankGuaranteeAction(
   id: string,
   files: File[],
 ): Promise<BankGuaranteeResult> {
+  await requireAccess();
   try {
     const rowId = parsePbgRowId(id);
     if (rowId === null) return { ok: false, error: "Invalid row id" };
@@ -178,6 +183,7 @@ export async function removePbgBankGuaranteeFileAction(
   id: string,
   url: string,
 ): Promise<BankGuaranteeResult> {
+  await requireAccess();
   try {
     const rowId = parsePbgRowId(id);
     if (rowId === null) return { ok: false, error: "Invalid row id" };
@@ -232,6 +238,7 @@ export type SupplyHistoryResult =
 export async function getSupplyHistoryForPoAction(
   poNumber: string,
 ): Promise<SupplyHistoryResult> {
+  await requireAccess();
   try {
     const po = normalizePo(poNumber);
     if (!po) {

@@ -9,8 +9,8 @@
  * does the HTTP concerns — auth, status codes, and shaping the response.
  */
 
-// Must be Node: `lib/googleAuth.ts` reads credentials.json / token.json from
-// the filesystem to reach Google Sheets.
+// Must be Node: `lib/googleAuth.ts` uses the Node-only Google OAuth client from
+// the GOOGLE_* env vars to reach Google Sheets.
 export const runtime = "nodejs";
 
 // Heavier than the Raw Material job — it reads two full-column spreadsheet

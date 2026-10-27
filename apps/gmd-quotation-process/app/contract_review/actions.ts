@@ -1,4 +1,5 @@
 "use server";
+import { requireAccess } from "@/lib/access";
 
 import {
   applyColumnFlags,
@@ -41,6 +42,7 @@ async function fromRoute(res: Response): Promise<ActionResult> {
 
 /** Rows plus quotation-DB extras (RM AVAIL, BOM ID options, item images). */
 export async function load() {
+  await requireAccess();
   const res = await fromRoute(await GET());
   if (!res.success) return res;
   return {
@@ -51,6 +53,7 @@ export async function load() {
 
 /** Google Sheets CONTRACTS + DUMP sync and its quotation-side effects. */
 export async function sync() {
+  await requireAccess();
   const res = await fromRoute(await POST());
   invalidateContractReviewCache();
   return res;
@@ -61,17 +64,20 @@ export async function updateContractReviewFieldAction(
   field: string,
   value: string | null,
 ) {
+  await requireAccess();
   const res = await updateContractReviewField(id, field, value, editableFieldsFor(await getContractReviewFlags()));
   invalidateContractReviewCache();
   return res;
 }
 
 export async function createDiagramUploadAction(id: string, file: DiagramFileMeta) {
+  await requireAccess();
   if (!(await access()).isEditable(DRAWING)) return NOT_ALLOWED;
   return createDiagramUpload(id, file);
 }
 
 export async function confirmDiagramUploadAction(id: string, key: string) {
+  await requireAccess();
   if (!(await access()).isEditable(DRAWING)) return NOT_ALLOWED;
   const res = await confirmDiagramUpload(id, key);
   invalidateContractReviewCache();
@@ -79,6 +85,7 @@ export async function confirmDiagramUploadAction(id: string, key: string) {
 }
 
 export async function clearContractReviewDiagramAction(id: string) {
+  await requireAccess();
   if (!(await access()).isEditable(DRAWING)) return NOT_ALLOWED;
   const res = await clearDiagram(id);
   invalidateContractReviewCache();
@@ -86,6 +93,7 @@ export async function clearContractReviewDiagramAction(id: string) {
 }
 
 export async function setContractReviewDiagramVerdictAction(id: string, verdict: string | null) {
+  await requireAccess();
   if (!(await access()).isEditable(DRAWING)) return NOT_ALLOWED;
   const res = await setDiagramVerdict(id, verdict);
   invalidateContractReviewCache();
@@ -93,22 +101,26 @@ export async function setContractReviewDiagramVerdictAction(id: string, verdict:
 }
 
 export async function backfillContractReviewOfferPendingDoneBatchAction(ids: string[]) {
+  await requireAccess();
   if (!(await access()).isEnabled("OFFER PENDING/DONE")) return NOT_ALLOWED;
   return backfillOfferPendingDone(ids);
 }
 
 export async function backfillContractReviewInspectionBatchAction(ids: string[]) {
+  await requireAccess();
   if (!(await access()).isEnabled("Inspection")) return NOT_ALLOWED;
   return backfillInspection(ids);
 }
 
 export async function backfillContractReviewClearanceMcPendingBatchAction(ids: string[]) {
+  await requireAccess();
   const a = await access();
   if (!a.isEnabled("CLEARANCE STATUS") || !a.isEnabled("MC Received/Pending")) return NOT_ALLOWED;
   return backfillClearanceMcPending(ids);
 }
 
 export async function backfillContractReviewPnRatingBatchAction(ids: string[]) {
+  await requireAccess();
   if (!(await access()).isEnabled("PN RATING")) return NOT_ALLOWED;
   return backfillPnRating(ids);
 }

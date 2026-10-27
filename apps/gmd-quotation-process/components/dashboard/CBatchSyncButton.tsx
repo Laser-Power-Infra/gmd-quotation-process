@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Loader2, Tags } from "lucide-react";
 import { toast } from "sonner";
-import { syncCBatchAction } from "@/app/actions";
+import { syncCBatchAction } from "@/app/actions/contractReview";
 import { Button } from "@gmd/ui/components/button";
 import {
   Dialog,

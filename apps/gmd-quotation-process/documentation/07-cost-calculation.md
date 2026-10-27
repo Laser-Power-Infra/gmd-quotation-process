@@ -4,7 +4,7 @@
 
 ## 1. When Does Recalculation Run?
 
-**Single engine:** `lib/costCalculator.ts:46 recalculateItem(itemId, updates?)` called by `createNewEnquiryAction` `app/actions.ts:160`, `addItemsAction:273`, `updateItemFieldAction:695`, `updateEnquiryFieldAction:648` (via `recalculateEnquiryItems` loop `lib/costCalculator.ts:239`), `importExcelDataAction:913`, `updateProductCostFromBomAction:836`, scripts `recalculate-all-costs.ts:43`, `scripts/populate-va-percent.ts`.
+**Single engine:** `lib/costCalculator.ts:46 recalculateItem(itemId, updates?)` called by `createNewEnquiryAction` `app/actions/*.ts:160`, `addItemsAction:273`, `updateItemFieldAction:695`, `updateEnquiryFieldAction:648` (via `recalculateEnquiryItems` loop `lib/costCalculator.ts:239`), `importExcelDataAction:913`, `updateProductCostFromBomAction:836`, scripts `recalculate-all-costs.ts:43`, `scripts/populate-va-percent.ts`.
 
 **Should I recalc cost?** `shouldRecalcCost` `lib/costCalculator.ts:81` is true if:
 - `updates.productCost` or `extension` or `bypass` or `cost` was changed (`:81`), OR
@@ -13,7 +13,7 @@
 
 And only if `productCost != null && productCost>0` `L84` — otherwise `cost` stays as is (null).
 
-**Enquiry-level triggers:** If you change `Enquiry.state/paymentTerms/inspection/pbg` `app/actions.ts:648`, the app loops all items of that enquiry `recalculateEnquiryItems` `lib/costCalculator.ts:239` because transportation % / payment % / inspection % / pbg % all depend on enquiry header.
+**Enquiry-level triggers:** If you change `Enquiry.state/paymentTerms/inspection/pbg` `app/actions/*.ts:648`, the app loops all items of that enquiry `recalculateEnquiryItems` `lib/costCalculator.ts:239` because transportation % / payment % / inspection % / pbg % all depend on enquiry header.
 
 ## 2. The Formula — Step by Step (Column-wise)
 
@@ -86,9 +86,9 @@ Directly after cost, still inside `recalculateItem` `lib/costCalculator.ts:142-1
 
 **Example continuation above:** `cost=138,918`, `vaPercent=35%` → `quotedRate = round(138,918*1.35)=round(187,539.3)=187,539.3` → stored `"187539.30"`.
 
-**Defaults:** `getDefaultVaPercent(itemType,size)` `lib/vaValidation.ts:180` — e.g., `BUTTERFLY 0-450→50%, 451-1000→35%, else 65%` `L187-191`; `SLUICE-RESILIENT 0-200→25%,250-450→20%,500-1000→30%` `L38-44` — full table in `08` and `vaValidation.ts:14-243`. Used when creating items `app/actions.ts:118` and `autoFillBlanks:977`, `updateVaPercentAction:1024`.
+**Defaults:** `getDefaultVaPercent(itemType,size)` `lib/vaValidation.ts:180` — e.g., `BUTTERFLY 0-450→50%, 451-1000→35%, else 65%` `L187-191`; `SLUICE-RESILIENT 0-200→25%,250-450→20%,500-1000→30%` `L38-44` — full table in `08` and `vaValidation.ts:14-243`. Used when creating items `app/actions/*.ts:118` and `autoFillBlanks:977`, `updateVaPercentAction:1024`.
 
-**Validation:** `validateVaPercent(itemType,size,va)` same thresholds `lib/vaValidation.ts:14-178` — if `va > max`, `app/actions.ts:752-767` fires `sendVaAlert()` via `lib/services/n8nWebhook.ts` n8n webhook payload `docketNumber,itemName,itemType,size,vaPercent,maxVaPercent` `L754-761` and table flags `invalidVaItemIds` red `components/table/EnquiryTable.tsx:299`.
+**Validation:** `validateVaPercent(itemType,size,va)` same thresholds `lib/vaValidation.ts:14-178` — if `va > max`, `app/actions/*.ts:752-767` fires `sendVaAlert()` via `lib/services/n8nWebhook.ts` n8n webhook payload `docketNumber,itemName,itemType,size,vaPercent,maxVaPercent` `L754-761` and table flags `invalidVaItemIds` red `components/table/EnquiryTable.tsx:299`.
 
 ## 4. GST & Totals (Last Steps)
 
@@ -109,12 +109,12 @@ Plus `itemNameMerge = [itemType,moc,size,pnRating,operationType,extension,bypass
 
 DB write `prisma.enquiryItem.update where id data:{productCost,extension,bypass,quantity,cost,vaPercent:String(va), quotedRate:toFixed2, quotedRateGst, itemWiseTotalValue, totalValue, itemNameMerge}` `lib/costCalculator.ts:219-234` then `serializeItem()` normalizes `quantity/productCost/cost/discount → Number` `lib/costCalculator.ts:5-11`, dates `toISOString()`.
 
-**Helper:** `recalculateEnquiryItems(enquiryId)` `L239-249` loops `recalculateItem` for all items of an enquiry — called on `state/paymentTerms/inspection/pbg` header edit `app/actions.ts:648`.
+**Helper:** `recalculateEnquiryItems(enquiryId)` `L239-249` loops `recalculateItem` for all items of an enquiry — called on `state/paymentTerms/inspection/pbg` header edit `app/actions/*.ts:648`.
 
 ## 6. Where `productCost` Itself Comes From (Tie to Other Docs)
 
-- **Typed:** User inline edit `productCost` `components/table/EnquiryTable.tsx:2968` → `updateItemFieldAction(field="productCost")` `app/actions.ts:695` → `recalculateItem({productCost: value})`.
-- **BOM auto-fill:** `updateProductCostFromBomAction` `app/actions.ts:807` → `fetchBomRows()` `lib/gmdBomCostLookup.ts:48` filters `DIRECT M2M` + `buildRmCostMap()` latest `value/qty` from `SupplyHistoryItem` `L122` → `recalculateItem({productCost: cost})` `L836` — see `06`.
+- **Typed:** User inline edit `productCost` `components/table/EnquiryTable.tsx:2968` → `updateItemFieldAction(field="productCost")` `app/actions/*.ts:695` → `recalculateItem({productCost: value})`.
+- **BOM auto-fill:** `updateProductCostFromBomAction` `app/actions/*.ts:807` → `fetchBomRows()` `lib/gmdBomCostLookup.ts:48` filters `DIRECT M2M` + `buildRmCostMap()` latest `value/qty` from `SupplyHistoryItem` `L122` → `recalculateItem({productCost: cost})` `L836` — see `06`.
 
 ## 7. Quick Lookup FAQ
 
@@ -126,4 +126,4 @@ DB write `prisma.enquiryItem.update where id data:{productCost,extension,bypass,
 ## 8. Source Files
 
 - `lib/costCalculator.ts:46-257` (core), `lib/rounding.ts:1`, `lib/vaValidation.ts:14-243`, `prisma/schema.prisma:66-82 EnquiryItem,103-146 cost tables,301 LookupOption`, `scripts/seed-*-costs.ts` (extension, bypass, payment, inspection, pbg, transportation), `lib/prisma.ts`
-- Callers: `app/actions.ts:14,182,627,672,807,872,922,1002`, `app/page.tsx:61`, `components/table/EnquiryTable.tsx`, `lib/enquiriesSlice.ts:85`
+- Callers: `app/actions/*.ts:14,182,627,672,807,872,922,1002`, `app/page.tsx:61`, `components/table/EnquiryTable.tsx`, `lib/enquiriesSlice.ts:85`

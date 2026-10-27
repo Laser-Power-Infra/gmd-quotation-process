@@ -1,4 +1,5 @@
 "use server";
+import { requireAccess } from "@/lib/access";
 
 import type {
   ActionResult,
@@ -22,6 +23,7 @@ export async function loadView(
   query: ContractReviewViewQuery,
   opts?: { fresh?: boolean },
 ): Promise<ActionResult<ContractReviewViewResult>> {
+  await requireAccess();
   try {
     return { success: true, data: await buildContractReviewView(query, !!opts?.fresh) };
   } catch (error) {
@@ -34,6 +36,7 @@ export async function loadFacet(
   query: ContractReviewViewQuery,
   header: string,
 ): Promise<ActionResult<string[]>> {
+  await requireAccess();
   try {
     return { success: true, data: await buildContractReviewFacet(query, header) };
   } catch (error) {
@@ -45,6 +48,7 @@ export async function loadFacet(
 export async function loadAllRows(
   query: ContractReviewViewQuery,
 ): Promise<ActionResult<unknown[][]>> {
+  await requireAccess();
   try {
     return { success: true, data: await buildContractReviewAllRows(query) };
   } catch (error) {
@@ -54,5 +58,6 @@ export async function loadAllRows(
 
 /** Kept for callers that use the action; the page itself calls the route handler so it isn't queued behind view requests. */
 export async function runBackfillsAction(): Promise<ActionResult> {
+  await requireAccess();
   return runContractReviewBackfills();
 }

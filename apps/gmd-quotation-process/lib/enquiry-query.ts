@@ -351,12 +351,16 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
     parts.push(sql`e.id = ANY(${[...q.selectedEnquiryIds]}::text[])`);
   }
 
-  // Pending means auto-created, not empty: item extraction may already have
-  // added rows. Only an item-level filter requires a matching item; an
-  // enquiry-level filter (docket number, party, date, …) must not hide a
-  // zero-item docket.
+  // Pending = auto-created, still no items, closure status blank/Pending. Once
+  // items exist or closure moves (Sent, Rejected, …) the docket leaves the list.
+  // Only an item-level filter requires a matching item; an enquiry-level filter
+  // (docket number, party, date, …) must not hide a pending docket.
   if (q.pendingOnly) {
     parts.push(AUTO_CREATED_SQL);
+    parts.push(sql`NOT EXISTS (SELECT 1 FROM "EnquiryItem" i0 WHERE i0."enquiryId" = e.id)`);
+    parts.push(
+      sql`(e."closureStatus" IS NULL OR btrim(e."closureStatus") = '' OR lower(btrim(e."closureStatus")) = 'pending')`,
+    );
     if (hasActiveItemFilters(f, q.closedBomOnly)) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,

@@ -50,7 +50,7 @@ Enquiry (Docket) 1 ── * EnquiryItem (line item)
 - `lib/costCalculator.ts` — cost engine `recalculateItem()`
 - `lib/gmdItemCodeLookup.ts` + `lib/gmdBomCostLookup.ts` — hard-coded sheet `1LIC8GGgs7K7XWf8kUJFwvfOWpAkElYp6SJ83jk9wWGM` / `2142407502`
 - `lib/gmd_lib/sheet-columns.ts`, `supply-history-columns.ts`, `verify-bom-columns.ts`, `contract-review-columns.ts`, `google-sheets.ts`, `contract-order-links.ts`
-- `app/actions.ts` — all server actions (create/update/fetch codes/costs/rates)
+- `app/actions/*.ts` — all server actions (create/update/fetch codes/costs/rates)
 - `components/table/EnquiryTable.tsx` — main table UI, filters, sorting, bulk actions
 - `lib/itemCategoryResolver.ts`, `lib/sizeExtractor.ts`, `lib/vaValidation.ts`, `lib/rounding.ts`
 
@@ -58,7 +58,7 @@ Enquiry (Docket) 1 ── * EnquiryItem (line item)
 
 | Term | Means | Where stored |
 |------|-------|--------------|
-| **Docket Number** | Quotation number `GMD/2025-26/123` `#` stripped on save `app/actions.ts:45` | `Enquiry.docketNumber @unique` |
+| **Docket Number** | Quotation number `GMD/2025-26/123` `#` stripped on save `app/actions/*.ts:45` | `Enquiry.docketNumber @unique` |
 | **EnquiryItem** | One line/product inside a docket | `EnquiryItem` table, ordered by `position` |
 | **productCost** | Raw material/base cost (from BOM or typed) | `EnquiryItem.productCost Decimal?` |
 | **cost** | Final cost **before profit** = `productCost*1.08 + flats + % add-ons` `lib/costCalculator.ts:133` | `EnquiryItem.cost` |
