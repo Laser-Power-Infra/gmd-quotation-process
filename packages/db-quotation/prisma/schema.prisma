@@ -768,6 +768,9 @@ model DocketQuotationThread {
   codeword      String?   @db.VarChar(100)
   userLabels    Json?     @map("user_labels")
   pendingDocket Boolean?
+  /// AI verdict for the Pending Dockets tab: null = not verified yet,
+  /// true = genuine new docket request, false = rejected / already docketed.
+  aiIsNewDocket Boolean? @map("ai_is_new_docket")
   partyName     String?
   /// Frozen fold target: this mail is the same as the docket named here.
   /// The mail ingestion clears docketNo/pendingDocket but never this column,
@@ -1032,4 +1035,32 @@ model AccMaster {
 
   @@index([syncedAt])
   @@map("acc_master")
+}
+
+/// Debtors ledger rows. Read-only in the app; the data source is not wired yet,
+/// so the table starts empty and only the read path exists.
+model Debtor {
+  id            String    @id @default(cuid())
+  accSch        String?   
+  accCode       String    
+  tCode         String?   
+  vrNo          String?   
+  drAmt         Decimal?  
+  vrDate        DateTime? 
+  dueDate       DateTime? 
+  particular    String?
+  drAllocAmt    Decimal?  @db.Decimal(18, 2) 
+  unAllocDr     Decimal?  @db.Decimal(18, 2) 
+  unAllocCr     Decimal?  @db.Decimal(18, 2) 
+  partyBillNo   String?   
+  partyBillDate DateTime? 
+  accName       String?   
+  syncedAt      DateTime  @default(now()) 
+  createdAt     DateTime  @default(now()) 
+  updatedAt     DateTime  @updatedAt 
+
+  // @@unique([accCode, tCode, vrNo])
+  @@index([dueDate])
+  @@index([accCode])
+  
 }
