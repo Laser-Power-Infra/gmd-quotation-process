@@ -1033,3 +1033,31 @@ model AccMaster {
   @@index([syncedAt])
   @@map("acc_master")
 }
+
+/// Debtors ledger rows. Read-only in the app; the data source is not wired yet,
+/// so the table starts empty and only the read path exists.
+model Debtor {
+  id            String    @id @default(cuid())
+  accSch        String?   
+  accCode       String    
+  tCode         String?   
+  vrNo          String?   
+  drAmt         Decimal?  
+  vrDate        DateTime? 
+  dueDate       DateTime? 
+  particular    String?
+  drAllocAmt    Decimal?  @db.Decimal(18, 2) 
+  unAllocDr     Decimal?  @db.Decimal(18, 2) 
+  unAllocCr     Decimal?  @db.Decimal(18, 2) 
+  partyBillNo   String?   
+  partyBillDate DateTime? 
+  accName       String?   
+  syncedAt      DateTime  @default(now()) 
+  createdAt     DateTime  @default(now()) 
+  updatedAt     DateTime  @updatedAt 
+
+  @@unique([accCode, tCode, vrNo])
+  @@index([dueDate])
+  @@index([accCode])
+  
+}
