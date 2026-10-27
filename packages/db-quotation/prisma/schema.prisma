@@ -768,6 +768,9 @@ model DocketQuotationThread {
   codeword      String?   @db.VarChar(100)
   userLabels    Json?     @map("user_labels")
   pendingDocket Boolean?
+  /// AI verdict for the Pending Dockets tab: null = not verified yet,
+  /// true = genuine new docket request, false = rejected / already docketed.
+  aiIsNewDocket Boolean? @map("ai_is_new_docket")
   partyName     String?
   /// Frozen fold target: this mail is the same as the docket named here.
   /// The mail ingestion clears docketNo/pendingDocket but never this column,
