@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { User } from "lucide-react";
 import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import Pagination from "@/components/table/Pagination";
-import { formatIndianNumber } from "@/lib/formatCurrency";
 import { filterDebtors } from "@/lib/debtors";
 import type { DebtorRow, DebtorTotals } from "@/lib/debtors";
 
@@ -14,20 +13,12 @@ interface DebtorsTableProps {
 }
 
 const COLUMNS = [
-  { key: "accSch", label: "Acc Sch", numeric: false },
-  { key: "accCode", label: "Acc Code", numeric: false },
-  { key: "accName", label: "Acc Name", numeric: false },
-  { key: "tCode", label: "T Code", numeric: false },
   { key: "vrNo", label: "Vr No", numeric: false },
   { key: "vrDate", label: "Vr Date", numeric: false },
   { key: "dueDate", label: "Due Date", numeric: false },
-  { key: "particular", label: "Particular", numeric: false },
-  { key: "drAmt", label: "Dr Amt", numeric: true },
-  { key: "drAllocAmt", label: "Dr Alloc Amt", numeric: true },
-  { key: "unAllocDr", label: "Un Alloc Dr", numeric: true },
-  { key: "unAllocCr", label: "Un Alloc Cr", numeric: true },
   { key: "partyBillNo", label: "Party Bill No", numeric: false },
   { key: "partyBillDate", label: "Party Bill Date", numeric: false },
+  { key: "accCode", label: "Acc Code", numeric: false },
 ] as const;
 
 function formatDate(value: string | null): string {
@@ -41,10 +32,6 @@ function formatDate(value: string | null): string {
   });
 }
 
-function formatAmount(value: number | null): string {
-  return value === null ? "-" : formatIndianNumber(value, 2);
-}
-
 function cellValue(row: DebtorRow, key: (typeof COLUMNS)[number]["key"]) {
   switch (key) {
     case "vrDate":
@@ -53,20 +40,12 @@ function cellValue(row: DebtorRow, key: (typeof COLUMNS)[number]["key"]) {
       return formatDate(row.dueDate);
     case "partyBillDate":
       return formatDate(row.partyBillDate);
-    case "drAmt":
-      return formatAmount(row.drAmt);
-    case "drAllocAmt":
-      return formatAmount(row.drAllocAmt);
-    case "unAllocDr":
-      return formatAmount(row.unAllocDr);
-    case "unAllocCr":
-      return formatAmount(row.unAllocCr);
     default:
       return row[key] ?? "-";
   }
 }
 
-export default function DebtorsTable({ rows, totals }: DebtorsTableProps) {
+export default function DebtorsTable({ rows }: DebtorsTableProps) {
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -156,29 +135,6 @@ export default function DebtorsTable({ rows, totals }: DebtorsTableProps) {
             )}
           </tbody>
 
-          {rows.length > 0 && (
-            <tfoot className="sticky bottom-0 border-t border-border bg-muted/60 font-semibold">
-              <tr>
-                <td colSpan={8} className="px-3 py-2 text-[11px] uppercase tracking-wider text-muted-foreground">
-                  Totals (all rows)
-                </td>
-                <td className="border-r border-border px-3 py-2 text-right tabular-nums">
-                  {formatAmount(totals.drAmt)}
-                </td>
-                <td className="border-r border-border px-3 py-2 text-right tabular-nums">
-                  {formatAmount(totals.drAllocAmt)}
-                </td>
-                <td className="border-r border-border px-3 py-2 text-right tabular-nums">
-                  {formatAmount(totals.unAllocDr)}
-                </td>
-                <td className="border-r border-border px-3 py-2 text-right tabular-nums">
-                  {formatAmount(totals.unAllocCr)}
-                </td>
-                <td className="border-r border-border px-3 py-2" />
-                <td className="border-r border-border px-3 py-2" />
-              </tr>
-            </tfoot>
-          )}
         </table>
       </div>
 
