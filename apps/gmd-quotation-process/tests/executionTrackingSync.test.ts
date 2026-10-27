@@ -5,6 +5,7 @@ import {
   fiscalYearVariants,
   isBlankSheetValue,
   normalizeKey,
+  normalizeVrDate,
 } from "../lib/gmd_lib/execution-tracking-columns.js";
 import { canonicalizeState } from "../lib/supplyStateResolver.js";
 import {
@@ -31,6 +32,8 @@ function dbRow(over: Partial<DbRow> = {}): DbRow {
     consigneeAddress: "Ken Betwa Dam Project",
     erpItemCode: "FUM010036",
     consigneeName: "NCC LIMITED",
+    date: null,
+    financialYear: "2026-27",
     ...over,
   };
 }
@@ -210,7 +213,8 @@ test("an insert carries every non-blank value", () => {
   const { changes } = computeFieldChanges(record(), null);
   assert.deepEqual(
     changes.map((c) => c.field).sort(),
-    ["consigneeName", "erpItemCode", "quantity", "state"],
+    // financialYear included: an insert has no stored value, so ACC_YEAR fills it.
+    ["consigneeName", "erpItemCode", "financialYear", "quantity", "state"],
   );
 });
 
@@ -242,6 +246,52 @@ test("a differing state overwrites, in Title Case", () => {
 test("a differing consignee name is written", () => {
   const { changes } = computeFieldChanges(record({ consigneeName: "NCC LTD" }), dbRow());
   assert.deepEqual(changes, [{ field: "consigneeName", from: "NCC LIMITED", to: "NCC LTD" }]);
+});
+
+test("a blank Date is gap-filled from VRDATE", () => {
+  const { changes } = computeFieldChanges(
+    record({ values: { quantity: "180", erpItemCode: "FUM010036", date: "12-Apr-2025" } }),
+    dbRow(),
+  );
+  assert.deepEqual(changes, [{ field: "date", from: null, to: "12-Apr-2025" }]);
+});
+
+test("a Date MASTER already supplied is never overwritten by VRDATE", () => {
+  const { changes } = computeFieldChanges(
+    record({ values: { quantity: "180", erpItemCode: "FUM010036", date: "12-Apr-2025" } }),
+    dbRow({ date: "01-Apr-2025" }),
+  );
+  assert.deepEqual(changes, []);
+});
+
+test("a blank VRDATE never clears a stored Date", () => {
+  const { changes } = computeFieldChanges(record(), dbRow({ date: "01-Apr-2025" }));
+  assert.deepEqual(changes, []);
+});
+
+test("a blank FY is gap-filled from ACC_YEAR, and a stored one is never rewritten", () => {
+  const filled = computeFieldChanges(record(), dbRow({ financialYear: "" })).changes;
+  assert.deepEqual(filled, [{ field: "financialYear", from: null, to: "2026-27" }]);
+
+  // A differently-spelled FY is still a stored value: no churn to the canonical form.
+  assert.deepEqual(
+    computeFieldChanges(record(), dbRow({ financialYear: "26-27" })).changes,
+    [],
+  );
+});
+
+test("VRDATE is normalised to the dd-MMM-yyyy form the filters parse", () => {
+  assert.equal(normalizeVrDate("12-04-2025"), "12-Apr-2025");
+  assert.equal(normalizeVrDate("12/04/2025"), "12-Apr-2025");
+  assert.equal(normalizeVrDate("2025-04-12"), "12-Apr-2025");
+  assert.equal(normalizeVrDate("12-Apr-25"), "12-Apr-2025");
+  assert.equal(normalizeVrDate("  12-04-2025 "), "12-Apr-2025");
+  // Unrecognised text is refused, not guessed at: a blank Date is recoverable.
+  assert.equal(normalizeVrDate("N.A."), null);
+  assert.equal(normalizeVrDate("banana"), null);
+  assert.equal(normalizeVrDate("45789"), null);
+  assert.equal(normalizeVrDate(""), null);
+  assert.equal(normalizeVrDate(null), null);
 });
 
 test("normalizeKey is only for comparison, never for storage", () => {

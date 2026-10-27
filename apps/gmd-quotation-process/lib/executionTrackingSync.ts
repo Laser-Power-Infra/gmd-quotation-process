@@ -10,7 +10,8 @@
  * Source: the `SALE_BILL_GID` tab of `GMD_EXECUTION_TRACKING_SPREADSHEET_ID`.
  * `CONSIGNEE_ADD` and friends come straight off the row; `consigneeName` is
  * resolved through the local `acc_master` table (see `lib/accMasterLookup.ts`),
- * which the callers refresh first.
+ * which the callers refresh first. `VRDATE` fills `date` on rows MASTER left
+ * blank — see the write policy below.
  *
  * ── The sheet is a line ledger, the table is one row per (invoice, item) ──
  *
@@ -44,6 +45,14 @@
  *     form, so a row that already means the same thing (`Chattisgarh` vs
  *     `CHATTISGARH`) is never rewritten. An unrecognised value leaves the field
  *     alone and is counted in `stateSkipped`.
+ *   - `date` is **gap-fill only**, from `VRDATE`: written when the DB cell is
+ *     blank, never over a date the MASTER sheet supplied. It lands on inserts
+ *     too, so a row this sync creates straight from SALE BILL carries its
+ *     invoice date.
+ *   - `financialYear` is set from `ACC_YEAR` on insert, and **gap-filled** on an
+ *     existing row only when it is blank — a blank FY puts the row outside this
+ *     job's scope filter, so this is the one path that can repair it. A stored FY
+ *     is never rewritten, not even a differently-spelled one.
  *   - a pair the table does not hold is **inserted**. `itemName` comes from
  *     `resolveItemNames` (`lib/erpItemNameLookup.ts`) — the name the item was
  *     supplied under before, else the ERP master name. Only when no source knows
@@ -67,6 +76,7 @@ import {
   isBlankSheetValue,
   normalizeFiscalYear,
   normalizeKey,
+  normalizeVrDate,
   saleBillGid,
   type SaleBillField,
 } from "@/lib/gmd_lib/execution-tracking-columns";
@@ -163,6 +173,9 @@ export type DbRow = {
   consigneeAddress: string | null;
   erpItemCode: string | null;
   consigneeName: string | null;
+  /** Compared only to decide whether VRDATE/ACC_YEAR may fill it — never overwritten once set. */
+  date: string | null;
+  financialYear: string | null;
 };
 
 export type ExecutionTrackingReport = {
@@ -517,6 +530,20 @@ export function computeFieldChanges(
     changes.push({ field, from: current, to: next });
   };
 
+  // `date` (VRDATE) is gap-fill only: MASTER owns it wherever it has a value, and
+  // this sync must never move a date the MASTER sheet already supplied.
+  const sheetDate = record.values.date ?? null;
+  if (sheetDate && !trimmedOrNull(row?.date ?? null)) {
+    changes.push({ field: "date", from: null, to: sheetDate });
+  }
+
+  // Same for `financialYear` (ACC_YEAR): a blank FY is invisible to this job's
+  // own scope filter, so matching the row is the only chance to repair it. An
+  // existing value is never rewritten, even a differently-spelled one.
+  if (!trimmedOrNull(row?.financialYear ?? null) && record.financialYear) {
+    changes.push({ field: "financialYear", from: null, to: record.financialYear });
+  }
+
   for (const field of OWNED_FIELDS) {
     if (field === "state") {
       if (!record.stateRaw) continue;
@@ -636,6 +663,8 @@ function buildInsert(
     const value = record.values[field as SaleBillField];
     if (value) data[field] = value;
   }
+  // The invoice date MASTER never supplied for this row.
+  if (record.values.date) data.date = record.values.date;
   return data;
 }
 
@@ -687,6 +716,9 @@ export async function runExecutionTrackingSync(
     );
   }
 
+  // Date is optional and gap-fill only, so a missing header must not fail the run.
+  const dateIdx = findColumn(headers, SALE_BILL_KEY_HEADERS.date);
+
   const accMap = await getAccNameMap();
   if (accMap.size === 0) {
     console.warn(
@@ -719,6 +751,13 @@ export async function runExecutionTrackingSync(
       values[mapping.db] = raw;
     });
 
+    // Optional column: skipped when the tab does not carry it.
+    if (dateIdx >= 0) {
+      const raw = cell(row, dateIdx);
+      const date = isBlankSheetValue(raw) ? null : normalizeVrDate(raw);
+      if (date) values.date = date;
+    }
+
     sheetLines.push({ invoiceNo, accountCode: cell(row, accountCodeIdx), values });
   }
 
@@ -742,7 +781,15 @@ export async function runExecutionTrackingSync(
   // has a row for, so it folds into an update instead of inserting a second row
   // that would double-count the quantity.
   const dbRows = (await prisma.supplyHistoryItem.findMany({
-    where: { financialYear: { in: fiscalYearVariants(financialYear) } },
+    where: {
+      OR: [
+        { financialYear: { in: fiscalYearVariants(financialYear) } },
+        // A blank FY is outside the variants above, so without this the row can
+        // never be matched — and never repaired.
+        { financialYear: null },
+        { financialYear: "" },
+      ],
+    },
     select: {
       id: true,
       invoiceNo: true,
@@ -754,6 +801,8 @@ export async function runExecutionTrackingSync(
       consigneeAddress: true,
       erpItemCode: true,
       consigneeName: true,
+      date: true,
+      financialYear: true,
     },
   })) as DbRow[];
 

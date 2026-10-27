@@ -1,6 +1,11 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import {
+  EMPTY_DATE_PRESET,
+  presetRange,
+  type DatePreset,
+} from "@/lib/supplyDatePreset";
 
-export interface SupplyHistoryFiltersState {
+export interface SupplyHistoryFiltersState extends DatePreset {
   columnFilters: Record<string, string>;
   multiFilters: Record<string, string[]>;
   batchFilters: Record<string, boolean>;
@@ -15,6 +20,7 @@ const initialState: SupplyHistoryFiltersState = {
   columnFilters: {},
   multiFilters: {},
   batchFilters: {},
+  ...EMPTY_DATE_PRESET,
   dateFrom: "",
   dateTo: "",
   globalSearch: "",
@@ -41,11 +47,15 @@ const supplyHistoryFiltersSlice = createSlice({
       if (value) state.batchFilters[key] = true;
       else delete state.batchFilters[key];
     },
+    setDatePreset(state, action: PayloadAction<DatePreset>) {
+      Object.assign(state, action.payload, presetRange(action.payload), { currentPage: 1 });
+    },
+    // A manual date edit replaces any sidebar preset, so the two never disagree.
     setDateFrom(state, action: PayloadAction<string>) {
-      state.dateFrom = action.payload;
+      Object.assign(state, EMPTY_DATE_PRESET, { dateFrom: action.payload });
     },
     setDateTo(state, action: PayloadAction<string>) {
-      state.dateTo = action.payload;
+      Object.assign(state, EMPTY_DATE_PRESET, { dateTo: action.payload });
     },
     setGlobalSearch(state, action: PayloadAction<string>) {
       state.globalSearch = action.payload;
@@ -66,6 +76,7 @@ export const {
   setColumnFilter,
   setMultiFilter,
   setBatchFilter,
+  setDatePreset,
   setDateFrom,
   setDateTo,
   setGlobalSearch,

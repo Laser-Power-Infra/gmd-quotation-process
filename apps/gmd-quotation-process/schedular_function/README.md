@@ -869,6 +869,13 @@ preload is scoped to the same year. Because `financialYear` is free text that
 older rows may have written differently, the preload queries the variants in
 `fiscalYearVariants` and the comparison is on the normalised form.
 
+Rows whose `financialYear` is **blank** are outside every variant, so the preload
+also loads them (by invoice + item code) and fills the blank FY from `ACC_YEAR`.
+Without that a blank-FY row can never match — by this job or by
+`erp-contract-no` — and its quantity, state and date stay empty forever. Blanks
+this job never reaches are filled once by `supply:fy:apply`
+(`lib/supplyFiscalYearBackfill.ts`).
+
 ### Two writes the engine deliberately refuses
 
 - **A blank cell never clears a value**, including the dash sentinels `-` `--`
@@ -981,10 +988,11 @@ curl -X POST "$BASE/erp-contract-no?dryRun=1&fy=2025-26" -H "x-api-key: $GMD_SYN
 | `quantity` | the **sum** of the sheet's lines for that `(invoice, item code)`, **plus** any row folded in by the description merge; a non-numeric value is never summed — the first non-blank is kept |
 | `uom`, `lrNoDt`, `consigneeAddress`, `erpItemCode`, `consigneeName` | overwritten when the merged sheet value is non-blank and differs |
 | `state` | overwritten when the sheet value is a recognised Indian state and the canonical form differs; written in Title Case |
+| `date` | **gap-fill only**, from `VRDATE` normalised to `dd-MMM-yyyy`: written when the DB cell is blank, never over a date MASTER supplied; also set on insert. Skipped when the tab has no `VRDATE` column |
 | blank / `-` `--` `—` `–` cells | never overwrite, never clear |
 | `invoiceNo` | match key, never written |
 | `itemName` | resolved by `lib/erpItemNameLookup.ts` on insert; on an existing row it is written **only** by the stale-name refresh (`planNameRefresh`), which frees a name a colliding insert needs |
-| `financialYear` | set to the target year on insert; immutable on an existing row |
+| `financialYear` | set from `ACC_YEAR` (as `2026-27`) on insert; on an existing row it is **gap-filled only when blank** — a blank FY sits outside every job's scope filter, so this is the only path that can repair it. A stored value is never rewritten, not even a differently-spelled one (`26-27`) |
 | item codes sharing a description | folded into one row by `mergeByDescription` when every other field agrees |
 | new rows | inserted for a `(invoice, item code)` pair the year does not hold; refused and counted in `blockedInserts` only when no fold and no refresh can resolve the name |
 | `syncedAt` | stamped only on rows actually written |

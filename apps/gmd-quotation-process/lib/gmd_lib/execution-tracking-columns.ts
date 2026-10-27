@@ -55,6 +55,13 @@ export const SALE_BILL_KEY_HEADERS = {
    * filter; `FY`/`FINANCIAL YEAR` are the names the MASTER sheet uses.
    */
   financialYearAliases: ["ACC_YEAR", "FY", "FINANCIAL YEAR"],
+  /**
+   * Voucher date — the invoice date. Gap-fill only: MASTER owns `date` wherever
+   * it has one, so this only fills the rows MASTER never covered (the ones this
+   * sync inserts). Optional: a renamed/missing column must not stop the quantity
+   * sync, so it is resolved with `findColumn` and skipped when absent.
+   */
+  date: "VRDATE",
 } as const;
 
 /** Fields of `SupplyHistoryItem` this sync owns. */
@@ -64,7 +71,9 @@ export type SaleBillField =
   | "lrNoDt"
   | "state"
   | "consigneeAddress"
-  | "erpItemCode";
+  | "erpItemCode"
+  /** Not in `SALE_BILL_COLUMN_MAP`: optional column, gap-fill only. */
+  | "date";
 
 /**
  * SALE_BILL column -> SupplyHistoryItem field, in the order they appear on the
@@ -133,6 +142,55 @@ export function normalizeKey(value: unknown): string {
     .trim()
     .replace(/\s+/g, " ")
     .toUpperCase();
+}
+
+const MONTH_ABBR = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
+/**
+ * `VRDATE` -> `dd-MMM-yyyy`, the form `SupplyHistoryItem.date` is displayed and
+ * filtered in (`parseGmdDate`, the SQL `dateValue` case, the DatePicker).
+ *
+ * Day-first is the sheet's convention, which matters because a raw `04/12/2025`
+ * means 4 December here but April 12 to `new Date()`. Anything unrecognised — and
+ * any bare number, which V8 would read as a year — returns `null` so the cell is
+ * left blank: a blank Date is recoverable, a wrong or unparseable one is not
+ * (the cost lookup and every date filter silently skip it either way).
+ */
+export function normalizeVrDate(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+
+  const build = (day: number, month: number, year: number): string | null =>
+    day >= 1 && day <= 31 && month >= 1 && month <= 12
+      ? `${String(day).padStart(2, "0")}-${MONTH_ABBR[month - 1]}-${year < 100 ? 2000 + year : year}`
+      : null;
+
+  // 2025-04-12, 2025-04-12T00:00:00.000Z
+  const iso = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return build(Number(iso[3]), Number(iso[2]), Number(iso[1]));
+
+  // Already canonical: 12-Apr-2025 / 12-Apr-25
+  const named = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
+  if (named) {
+    const month = MONTH_ABBR.findIndex(
+      (m) => m.toLowerCase() === named[2].toLowerCase(),
+    );
+    if (month >= 0) {
+      return build(Number(named[1]), month + 1, Number(named[3]));
+    }
+    return null;
+  }
+
+  // Day-first numeric: 12-04-2025, 12/04/2025, 12.04.2025
+  const numeric = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+  if (numeric) {
+    return build(Number(numeric[1]), Number(numeric[2]), Number(numeric[3]));
+  }
+
+  return null;
 }
 
 /**
