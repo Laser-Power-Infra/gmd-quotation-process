@@ -345,13 +345,14 @@ export async function POST() {
       console.error("[supply-sync] BOM link rebuild failed:", err);
     }
 
-    // Gap-fill `rate` (from the sale-bill tab) and `value = quantity x rate`.
-    // Non-fatal, like the BOM links: the MASTER row sync is the contract, this
-    // is an enrichment, so a failure is reported and the run still succeeds.
+    // Recompute `rate` (from the sale-bill tab), `value = quantity x rate` and
+    // the gross total (`value x 1.18`). Non-fatal, like the BOM links: the
+    // MASTER row sync is the contract, this is an enrichment, so a failure is
+    // reported and the run still succeeds.
     let rateBackfill: Awaited<ReturnType<typeof runSupplyRateBackfill>> | null = null;
     let rateBackfillError: string | null = null;
     try {
-      rateBackfill = await runSupplyRateBackfill();
+      rateBackfill = await runSupplyRateBackfill({ overwrite: true });
     } catch (err) {
       rateBackfillError = err instanceof Error ? err.message : "Unknown error";
       console.error("[supply-sync] rate backfill failed:", err);

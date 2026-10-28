@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials"
 import { prisma } from "@/lib/prisma"
 import bcrypt from "bcrypt"
 import { z } from "zod"
+import { emailSchema } from "@/lib/email"
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET,
@@ -17,7 +18,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       authorize: async (credentials) => {
         const parsed = z
           .object({
-            email: z.string().email(),
+            email: emailSchema,
             password: z.string().min(1),
           })
           .safeParse(credentials)

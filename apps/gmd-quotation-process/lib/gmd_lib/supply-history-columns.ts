@@ -51,7 +51,7 @@ export const SUPPLY_HISTORY_HEADERS = [
   C_BATCH_HEADER,
   // Sale-bill rate. Appended last so every existing index stays put. Never
   // mapped by `mapSheetRowToDb` — the MASTER sync must not own it; it is
-  // gap-filled from the sale-bill tab by `lib/supplyRateBackfill.ts`.
+  // written from the sale-bill tab by `lib/supplyRateBackfill.ts`.
   "RATE",
 ] as const;
 
@@ -157,12 +157,20 @@ export const SUPPLY_HEADER_TO_DB_FIELD: Record<string, string> = {
 /**
  * Fields whose DB value is OWNED by a backfill, not the sheet, so a sync must
  * never overwrite them once set. The sheet value is still used on INSERT (the
- * backfill then corrects it). Currently just the computed warranty verdict:
- * `scripts/backfill-supply-service-period.ts` derives it from
- * `warrantyValidTillAsPerContract` vs today. The till-date itself keeps syncing
- * so the script always has fresh input.
+ * backfill then corrects it).
+ *
+ * - `warrantyValidNot`: `scripts/backfill-supply-service-period.ts` derives it
+ *   from `warrantyValidTillAsPerContract` vs today. The till-date itself keeps
+ *   syncing so the script always has fresh input.
+ * - `value` / `grossTotalInvoiceValue`: `lib/supplyRateBackfill.ts` derives them
+ *   from `quantity x rate` and `value x 1.18`. Without this they would ping-pong
+ *   with MASTER on every hourly run.
  */
-export const SYNC_EXCLUDED_FIELDS = new Set<string>(["warrantyValidNot"]);
+export const SYNC_EXCLUDED_FIELDS = new Set<string>([
+  "warrantyValidNot",
+  "value",
+  "grossTotalInvoiceValue",
+]);
 
 export function dbItemToRow(item: {
   financialYear: string | null;

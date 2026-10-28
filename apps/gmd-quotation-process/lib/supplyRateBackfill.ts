@@ -1,31 +1,31 @@
 /**
- * Scheduled step — sale-bill `RATE` -> `SupplyHistoryItem.rate`, then the
- * `value = quantity x rate` gap-fill.
+ * Sale-bill `RATE` -> `SupplyHistoryItem.rate`, then `value = quantity x rate`
+ * and `grossTotalInvoiceValue = value x 1.18`.
  *
- * Source: the `SALE_BILL_GID` tab of `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` —
+ * Source: the `SALE_BILL_GID` tab of `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` -
  * the same tab `lib/executionTrackingSync.ts` diffs, read here through the same
  * `readSheetTabByGid` helper. Read **without** a fiscal-year filter, so rows
  * from every year backfill in one pass, not just the current one.
  *
- * Keyed on the exact `(VRNO, ITEM_CODE)` pair — the pair that engine already
- * treats as the row identity — normalised on both sides. A sheet line with no
+ * Keyed on the exact `(VRNO, ITEM_CODE)` pair - the pair that engine already
+ * treats as the row identity - normalised on both sides. A sheet line with no
  * item code cannot be attributed to one row when its invoice owns several, so
  * it is skipped and counted (`skippedNoCode`) rather than guessed.
  *
- * Write policy — **gap-fill only, nothing is ever overwritten or cleared**:
- *   - `rate` is written only where the DB cell is blank;
- *   - `value` is written only where the DB cell is blank and both `quantity`
- *     and `rate` parse as numbers (a stored rate is used too, not just the
- *     sheet's);
- *   - a blank sheet cell therefore can never clear a value.
+ * Write policy:
+ *   - gap-fill (default): only blank cells are written, nothing is cleared;
+ *   - overwrite (`overwrite: true`, the scheduler and the backfill script): the
+ *     sale-bill rate replaces a stored rate, `value` is recomputed, and the
+ *     gross total is recomputed. A row with no sale-bill rate and no stored
+ *     rate keeps its existing `value`, and the gross total is derived from that
+ *     stored value.
  *
- * `value` also has a second writer — the MASTER sync, from MASTER's own `Value`
- * column, which runs first in the job. Because this step only fills blanks, the
- * two cannot ping-pong: MASTER's value always wins where it exists, and
- * `quantity x rate` fills the rest.
+ * `value` and `grossTotalInvoiceValue` are listed in `SYNC_EXCLUDED_FIELDS`, so
+ * the MASTER sync writes them on INSERT only and never fights this step on
+ * update. Before that, both sides rewrote each other every hour.
  *
  * Note `value / quantity` is the RM unit cost in `lib/gmdBomCostLookup.ts`, so
- * this step moves quotation product cost for the rows it fills.
+ * overwriting `value` moves quotation product cost for every touched row.
  */
 
 import pLimit from "p-limit";
@@ -40,10 +40,13 @@ import {
 
 /** The rate column on the SALE_BILL tab. Confirmed with the sheet owner. */
 const RATE_HEADER = "RATE";
-/** Invoice number (`VRNO`) — half 1 of the match key, as in the engine. */
+/** Invoice number (`VRNO`) - half 1 of the match key, as in the engine. */
 const INVOICE_HEADER = "VRNO";
-/** Item code — half 2 of the match key. */
+/** Item code - half 2 of the match key. */
 const ITEM_CODE_HEADER = "ITEM_CODE";
+
+/** Gross total = value + 18% GST. One flat rate: the sheet carries no per-row tax. */
+const GROSS_TOTAL_MULTIPLIER = 1.18;
 
 /** Rows per write chunk, and how many may be in flight at once. */
 const WRITE_CHUNK = 200;
@@ -61,12 +64,23 @@ export type SupplyRateBackfillResult = {
   groupsUnmatched: number;
   /** `SupplyHistoryItem` rows considered. */
   rowsScanned: number;
-  /** Rows whose blank `rate` was filled. */
+  /** Rows whose `rate` was filled or replaced. */
   rateFilled: number;
-  /** Rows whose blank `value` was filled with `quantity x rate`. */
+  /** Rows whose `value` was filled or recomputed. */
   valueFilled: number;
+  /** Rows whose gross total was filled or recomputed. */
+  grossFilled: number;
   failedWrites: number;
   elapsedMs: number;
+};
+
+export type SupplyRateBackfillOptions = {
+  /** Replace stored `rate` / `value` / gross total instead of filling blanks. */
+  overwrite?: boolean;
+  /** `false` computes the plan and writes nothing (script dry run). */
+  apply?: boolean;
+  /** Consider only the first n rows (smoke test). */
+  limit?: number;
 };
 
 /** `1234.5` -> `"1234.5"`, `1506` -> `"1506"`; no separators, no float noise. */
@@ -87,7 +101,7 @@ export function rateKey(invoiceNo: unknown, itemCode: unknown): string {
 
 /**
  * Reduces the tab to `(invoice, item code) -> rate`, first non-blank rate wins
- * — the same fold rule the execution-tracking engine applies per group.
+ * - the same fold rule the execution-tracking engine applies per group.
  *
  * Throws when a required column is gone: silently skipping a mapping is how a
  * sync stops updating without anyone noticing.
@@ -140,6 +154,7 @@ export type RateRow = {
   rate: string | null;
   quantity: string | null;
   value: string | null;
+  grossTotalInvoiceValue: string | null;
 };
 
 export type RatePlan = {
@@ -147,6 +162,7 @@ export type RatePlan = {
   rowsScanned: number;
   rateFilled: number;
   valueFilled: number;
+  grossFilled: number;
   groupsMatched: number;
   groupsUnmatched: number;
 };
@@ -158,17 +174,23 @@ function textOrNull(value: string | null): string | null {
 }
 
 /**
- * Decides, per row, which blank cells to fill. Pure so the policy can be tested
+ * Decides, per row, which cells to write. Pure so the policy can be tested
  * without a database or a sheet.
+ *
+ * Cascade: rate -> value -> gross total. Each step feeds the next, and a step
+ * with no usable input leaves the stored cell alone.
  */
 export function planRateBackfill(
   rows: readonly RateRow[],
   rates: ReadonlyMap<string, string>,
+  options: Pick<SupplyRateBackfillOptions, "overwrite"> = {},
 ): RatePlan {
+  const overwrite = options.overwrite ?? false;
   const updates: RatePlan["updates"] = [];
   const matchedKeys = new Set<string>();
   let rateFilled = 0;
   let valueFilled = 0;
+  let grossFilled = 0;
 
   for (const row of rows) {
     const key = rateKey(row.invoiceNo ?? "", row.erpItemCode ?? "");
@@ -177,19 +199,37 @@ export function planRateBackfill(
 
     const data: Record<string, string> = {};
 
+    // 1. rate: the sale-bill tab wins when it has one for this line.
     let rate = textOrNull(row.rate);
-    if (!rate && sheetRate !== undefined) {
-      rate = sheetRate;
-      data.rate = sheetRate;
+    const sheetRateValue = sheetRate !== undefined ? textOrNull(sheetRate) : null;
+    if (sheetRateValue && (overwrite || !rate) && rate !== sheetRateValue) {
+      data.rate = sheetRateValue;
       rateFilled++;
+      rate = sheetRateValue;
     }
 
-    if (!textOrNull(row.value) && rate) {
-      const quantity = toNumber(row.quantity);
-      const rateNumber = toNumber(rate);
-      if (quantity !== null && rateNumber !== null) {
-        data.value = formatValue(quantity * rateNumber);
+    // 2. value = quantity x rate, using whichever rate is now effective.
+    let value = textOrNull(row.value);
+    const quantity = toNumber(row.quantity);
+    const rateNumber = toNumber(rate);
+    if (quantity !== null && rateNumber !== null) {
+      const computed = formatValue(quantity * rateNumber);
+      if ((overwrite || !value) && value !== computed) {
+        data.value = computed;
         valueFilled++;
+        value = computed;
+      }
+    }
+
+    // 3. gross total = value x 1.18, from the effective value (a row with no
+    // rate keeps its stored value, and the gross total follows it).
+    const storedGross = textOrNull(row.grossTotalInvoiceValue);
+    const valueNumber = toNumber(value);
+    if (valueNumber !== null) {
+      const gross = formatValue(valueNumber * GROSS_TOTAL_MULTIPLIER);
+      if ((overwrite || !storedGross) && storedGross !== gross) {
+        data.grossTotalInvoiceValue = gross;
+        grossFilled++;
       }
     }
 
@@ -201,17 +241,23 @@ export function planRateBackfill(
     rowsScanned: rows.length,
     rateFilled,
     valueFilled,
+    grossFilled,
     groupsMatched: matchedKeys.size,
     groupsUnmatched: rates.size - matchedKeys.size,
   };
 }
 
 /**
- * Reads the sale-bill tab, gap-fills `rate` and `value`. Throws on a fatal
- * error (sheet unreachable, required column gone, OAuth failure); individual
- * write failures are counted instead of aborting the run.
+ * Reads the sale-bill tab, then fills or recomputes `rate`, `value` and the
+ * gross total. Throws on a fatal error (sheet unreachable, required column
+ * gone, OAuth failure); individual write failures are counted instead of
+ * aborting the run.
  */
-export async function runSupplyRateBackfill(): Promise<SupplyRateBackfillResult> {
+export async function runSupplyRateBackfill(
+  options: SupplyRateBackfillOptions = {},
+): Promise<SupplyRateBackfillResult> {
+  const overwrite = options.overwrite ?? false;
+  const apply = options.apply ?? true;
   const startedAt = Date.now();
 
   const spreadsheetId = executionTrackingSpreadsheetId();
@@ -220,11 +266,12 @@ export async function runSupplyRateBackfill(): Promise<SupplyRateBackfillResult>
 
   const { rates, sheetRows, skippedNoCode, skippedBlankRate } = buildRateMap(headers, rows);
 
-  // Only rows that actually have a blank to fill are worth loading.
+  // Gap-fill only needs rows that actually have a blank to fill; overwrite mode
+  // owns the columns and must see every row.
   const dbRows = (await prisma.supplyHistoryItem.findMany({
-    where: {
-      OR: [{ rate: null }, { rate: "" }, { value: null }, { value: "" }],
-    },
+    where: overwrite
+      ? undefined
+      : { OR: [{ rate: null }, { rate: "" }, { value: null }, { value: "" }] },
     select: {
       id: true,
       invoiceNo: true,
@@ -232,39 +279,48 @@ export async function runSupplyRateBackfill(): Promise<SupplyRateBackfillResult>
       rate: true,
       quantity: true,
       value: true,
+      grossTotalInvoiceValue: true,
     },
+    take: options.limit,
   })) as RateRow[];
 
-  const plan = planRateBackfill(dbRows, rates);
+  const plan = planRateBackfill(dbRows, rates, { overwrite });
 
   const limit = pLimit(WRITE_CONCURRENCY);
   let failedWrites = 0;
 
-  for (let i = 0; i < plan.updates.length; i += WRITE_CHUNK) {
-    const chunk = plan.updates.slice(i, i + WRITE_CHUNK);
-    const settled = await Promise.allSettled(
-      chunk.map((u) =>
-        limit(() =>
-          prisma.supplyHistoryItem.update({
-            where: { id: u.id },
-            data: u.data,
-          }),
+  if (apply) {
+    for (let i = 0; i < plan.updates.length; i += WRITE_CHUNK) {
+      const chunk = plan.updates.slice(i, i + WRITE_CHUNK);
+      const settled = await Promise.allSettled(
+        chunk.map((u) =>
+          limit(() =>
+            prisma.supplyHistoryItem.update({
+              where: { id: u.id },
+              data: u.data,
+            }),
+          ),
         ),
-      ),
-    );
-    settled.forEach((r, idx) => {
-      if (r.status === "rejected") {
-        failedWrites++;
-        console.error(
-          `[supply-rate-backfill] update failed id=${chunk[idx].id} err=${(r.reason as Error)?.message}`,
-        );
-      }
-    });
+      );
+      settled.forEach((r, idx) => {
+        if (r.status === "rejected") {
+          failedWrites++;
+          console.error(
+            `[supply-rate-backfill] update failed id=${chunk[idx].id} err=${(r.reason as Error)?.message}`,
+          );
+        }
+      });
+    }
   }
 
   const elapsedMs = Date.now() - startedAt;
 
   console.log("\n===== [SCHEDULER] SUPPLY RATE BACKFILL =====");
+  console.log(
+    `[scheduler] mode             : ${overwrite ? "overwrite" : "gap-fill"}${
+      apply ? "" : " (dry run, no writes)"
+    }`,
+  );
   console.log(`[scheduler] tab              : ${tabTitle} (gid ${gid})`);
   console.log(
     `[scheduler] sheet rows       : ${sheetRows} (no code/invoice: ${skippedNoCode}, blank rate: ${skippedBlankRate})`,
@@ -273,6 +329,7 @@ export async function runSupplyRateBackfill(): Promise<SupplyRateBackfillResult>
   console.log(`[scheduler] db rows scanned  : ${plan.rowsScanned}`);
   console.log(`[scheduler] rate filled      : ${plan.rateFilled}`);
   console.log(`[scheduler] value filled     : ${plan.valueFilled}`);
+  console.log(`[scheduler] gross filled     : ${plan.grossFilled}`);
   console.log(
     `[scheduler] groups matched   : ${plan.groupsMatched} unmatched=${plan.groupsUnmatched}`,
   );
@@ -289,6 +346,7 @@ export async function runSupplyRateBackfill(): Promise<SupplyRateBackfillResult>
     rowsScanned: plan.rowsScanned,
     rateFilled: plan.rateFilled,
     valueFilled: plan.valueFilled,
+    grossFilled: plan.grossFilled,
     failedWrites,
     elapsedMs,
   };

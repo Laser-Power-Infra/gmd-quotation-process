@@ -277,11 +277,13 @@ Two steps, in order:
    ORDER LIST links — **4 Google calls per run**. Writes only
    `SupplyHistoryItem`, joined on
    `normalizeKey(invoiceNo) + "||" + normalizeKey(itemName)`.
-2. `runSupplyRateBackfill()` in `lib/supplyRateBackfill.ts`. Reads the
-   `SALE_BILL_GID` tab of `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` — **1 more
-   Google call** — and gap-fills `rate`, then `value = quantity x rate`. It runs
-   second on purpose: MASTER's own `Value` column lands first, and the backfill
-   only touches what is still blank, so the two writers cannot fight.
+2. `runSupplyRateBackfill({ overwrite: true })` in `lib/supplyRateBackfill.ts`.
+   Reads the `SALE_BILL_GID` tab of `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` — **1
+   more Google call** — and writes `rate`, `value = quantity x rate` and
+   `grossTotalInvoiceValue = value x 1.18`. It runs second on purpose: MASTER
+   still seeds `value` / gross total on INSERT, and both fields are in
+   `SYNC_EXCLUDED_FIELDS`, so the backfill owns them afterwards and the two
+   writers cannot fight.
 
 This is the heaviest of the four: it full-table-reads `SupplyHistoryItem` and
 stamps `syncedAt` on nearly every row, every hour.
@@ -294,12 +296,16 @@ a fiscal-year filter, so rows from every year backfill in one pass. A line with
 no item code cannot be attributed to one row when its invoice owns several, so
 it is skipped and counted (`skippedNoCode`) rather than guessed.
 
-Gap-fill only: `rate` is written only where the DB cell is blank, and `value`
-only where the DB cell is blank and both numbers parse (a rate already stored is
-used too). Nothing is overwritten or cleared.
+Overwrite, not gap-fill: the matched sale-bill rate replaces a stored `rate`,
+`value` is recomputed as `quantity x rate`, and the gross total is recomputed as
+`value x 1.18`. A row with no matched rate keeps its stored rate, so `value` still
+recomputes from it; a row with no rate at all keeps its stored `value`, and the
+gross total follows that value. Nothing is ever cleared.
 
-`value / quantity` is the RM unit cost in `lib/gmdBomCostLookup.ts`, so the rows
-this fills move quotation product cost.
+`value / quantity` is the RM unit cost in `lib/gmdBomCostLookup.ts`, so this step
+moves quotation product cost — the unit cost becomes the sale-bill rate for every
+matched row. The one-off overwrite of the existing table is
+`scripts/backfill-supply-rate-value.ts` (`supply:rate-value`, dry run by default).
 
 A failure here is caught and reported (`rateBackfillError`) rather than thrown —
 the MASTER row sync is the job's contract, the backfill is enrichment.

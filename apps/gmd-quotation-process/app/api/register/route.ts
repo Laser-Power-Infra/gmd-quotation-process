@@ -3,10 +3,11 @@ import { prisma } from "@/lib/prisma"
 import bcrypt from "bcrypt"
 import { z } from "zod"
 import { isRestricted } from "@/lib/access"
+import { emailSchema } from "@/lib/email"
 
 const schema = z.object({
   name: z.string().optional(),
-  email: z.string().email(),
+  email: emailSchema,
   password: z.string().min(6),
 })
 
@@ -25,6 +26,8 @@ export async function POST(req: Request) {
     const user = await prisma.user.create({ data: { name: name || null, email, password: hash, role: "user" } })
     return NextResponse.json({ success: true, id: user.id })
   } catch (e) {
+    // Two concurrent requests can both pass the findUnique check; the unique index rejects the second.
+    if ((e as { code?: string })?.code === "P2002") return NextResponse.json({ error: "Email already registered" }, { status: 409 })
     console.error("[register]", e)
     return NextResponse.json({ error: "Registration failed" }, { status: 500 })
   }
