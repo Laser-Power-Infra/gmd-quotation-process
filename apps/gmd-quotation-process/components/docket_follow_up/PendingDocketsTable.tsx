@@ -45,6 +45,10 @@ export interface PendingDocketRow {
   hasLaserReply: boolean;
   laserReplySnippet: string | null;
   pendingStatus: "PENDING_DOCKET" | "DOCKET_STAMPED_NO_REPLY" | "RESOLVED";
+  aiVerification: "verified" | "unverified";
+  aiAttempts: number;
+  aiExhausted: boolean;
+  aiLastError: string | null;
   requestSnippet: string;
   attachNames: string[];
   attachLinks: Record<string, string>;
@@ -106,6 +110,7 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [filterHasAttach, setFilterHasAttach] = useState<"ALL" | "YES" | "NO">("ALL");
   const [filterMailType, setFilterMailType] = useState<string>("ALL");
+  const [filterUnverifiedOnly, setFilterUnverifiedOnly] = useState(false);
 
   // Sorting
   const [sortField, setSortField] = useState<string>("date");
@@ -155,6 +160,7 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
   const totalCount = rows.length;
   const noDocketCount = rows.filter((r) => r.pendingStatus === "PENDING_DOCKET").length;
   const withAttachCount = rows.filter((r) => r.attachNames.length > 0).length;
+  const unverifiedCount = rows.filter((r) => r.aiVerification === "unverified").length;
 
   // Filtered Rows
   const filteredRows = useMemo(() => {
@@ -192,9 +198,12 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
         if (r.mailType !== filterMailType) return false;
       }
 
+      // 6. AI verification filter
+      if (filterUnverifiedOnly && r.aiVerification !== "unverified") return false;
+
       return true;
     });
-  }, [rows, searchQuery, selectedRequesters, selectedStatuses, filterHasAttach, filterMailType]);
+  }, [rows, searchQuery, selectedRequesters, selectedStatuses, filterHasAttach, filterMailType, filterUnverifiedOnly]);
 
   // Sorted Rows
   const sortedRows = useMemo(() => {
@@ -246,6 +255,7 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
     setSelectedStatuses([]);
     setFilterHasAttach("ALL");
     setFilterMailType("ALL");
+    setFilterUnverifiedOnly(false);
     setCurrentPage(1);
   }
 
@@ -254,7 +264,8 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
     selectedRequesters.length > 0 ||
     selectedStatuses.length > 0 ||
     filterHasAttach !== "ALL" ||
-    filterMailType !== "ALL";
+    filterMailType !== "ALL" ||
+    filterUnverifiedOnly;
 
   function handleExportCsv() {
     if (sortedRows.length === 0) return;
@@ -370,6 +381,21 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
             >
               <Paperclip className="w-3 h-3 inline mr-1" />
               Has Files ({withAttachCount})
+            </button>
+
+            <button
+              onClick={() => {
+                setFilterUnverifiedOnly((v) => !v);
+                setCurrentPage(1);
+              }}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors cursor-pointer border ${
+                filterUnverifiedOnly
+                  ? "bg-amber-600 dark:bg-amber-500/25 text-white dark:text-amber-100 border-amber-600 dark:border-amber-500/40"
+                  : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 dark:hover:bg-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/20"
+              }`}
+            >
+              <AlertCircle className="w-3 h-3 inline mr-1" />
+              Not Verified ({unverifiedCount})
             </button>
 
             {hasActiveFilters && (
@@ -672,6 +698,22 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
                               </span>
                             )}
                           </div>
+                        )}
+                        {r.aiVerification === "unverified" && (
+                          r.aiExhausted ? (
+                            <span
+                              title={r.aiLastError || "AI verification failed after 3 attempts"}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300 border border-rose-300/60 dark:border-rose-500/25"
+                            >
+                              <AlertCircle className="w-3 h-3 text-rose-600 dark:text-rose-300 shrink-0" />
+                              Not verified
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300 border border-amber-300/60 dark:border-amber-500/25">
+                              <Clock className="w-3 h-3 text-amber-600 dark:text-amber-300 shrink-0 animate-pulse" />
+                              Verifying… ({r.aiAttempts}/3)
+                            </span>
+                          )
                         )}
                       </div>
                     </td>

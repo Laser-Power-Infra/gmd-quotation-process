@@ -125,6 +125,8 @@ export async function POST(req: Request) {
         pendingDocket: created,
         partyName: canonicalParty,
         docketNo: nextDocketNo,
+        // A docket now exists, so it must leave the Pending Dockets tab.
+        ...(created ? { aiIsNewDocket: false } : {}),
       },
       select: {
         id: true,
