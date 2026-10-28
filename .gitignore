@@ -1,7 +1,7 @@
 node_modules
 .turbo
 .next
-.env
+.env 
 .env*.local
 .vercel
 *.tsbuildinfo
