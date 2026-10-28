@@ -1053,7 +1053,7 @@ model Debtor {
   accCode       String    
   tCode         String?   
   vrNo          String?   
-  drAmt         Decimal?  
+  drAmt         Decimal?    
   vrDate        DateTime? 
   dueDate       DateTime? 
   particular    String?
