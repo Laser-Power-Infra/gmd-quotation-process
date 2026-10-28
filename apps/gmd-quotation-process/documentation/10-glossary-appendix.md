@@ -146,10 +146,10 @@ GDRIVE_...
 # AI toggles: AI_VALIDATION_ENABLED=false disables the item auto-detection pass.
 # AI_FALLBACK_ENABLED=true enables the model fallback for docket item extraction
 # (used only when the deterministic parser finds nothing); AI_EXTRACTION_MODEL
-# overrides the model (default gpt-4o-mini).
+# overrides the model (default gpt-6-luna).
 AI_VALIDATION_ENABLED=true
 AI_FALLBACK_ENABLED=false
-AI_EXTRACTION_MODEL=gpt-4o-mini
+AI_EXTRACTION_MODEL=gpt-6-luna
 
 # VA Alert
 N8N_WEBHOOK_URL=

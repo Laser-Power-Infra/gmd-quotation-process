@@ -4,7 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getPdfDataUrl } from "@/lib/services/pdf-parser";
 
-const model = openai("gpt-4o-mini");
+const model = openai("gpt-6-luna");
 
 const extractionSchema = z.object({
   itemCategory: z

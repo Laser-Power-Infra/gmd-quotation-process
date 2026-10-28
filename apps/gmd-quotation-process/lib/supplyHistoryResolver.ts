@@ -387,7 +387,7 @@ async function aiValidateSupplyItem(
     const kwSize = (keywordSize || "unknown").trim();
 
     const result = await generateText({
-      model: openai("gpt-4o-mini"),
+      model: openai("gpt-6-luna"),
       output: Output.object({ schema: supplyAiSchema }),
       system: `You are an expert industrial valve, pipe, and fitting classifier.
 

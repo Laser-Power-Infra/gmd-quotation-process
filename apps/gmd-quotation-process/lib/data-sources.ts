@@ -970,7 +970,7 @@ const SUPPLY_HISTORY_SYNC: SyncOperation[] = [
       ["SIZE OF VALVE", "derivedSize", "sheet value wins"],
     ),
     writePolicy:
-      "UNCONDITIONAL overwrite of derivedItemType / derivedMoc / derivedSize, unlike the sync's gap-fill rule. Writes only when all three resolve. AI phase runs at concurrency 20 on gpt-4o-mini.",
+      "UNCONDITIONAL overwrite of derivedItemType / derivedMoc / derivedSize, unlike the sync's gap-fill rule. Writes only when all three resolve. AI phase runs at concurrency 20 on gpt-6-luna.",
     cadence: "manual",
     npmCommand: "npx tsx scripts/derive-supply-fields.ts",
   },
@@ -993,7 +993,7 @@ const SUPPLY_HISTORY_SYNC: SyncOperation[] = [
       ["DELIVERY DESTINATION", "(context)"],
     ),
     writePolicy:
-      "Only state, only on rows that are blank. Regex first, then gpt-4o-mini against a 36-state allow-list. Skipped when OPENAI_API_KEY is missing or AI_VALIDATION_ENABLED=false.",
+      "Only state, only on rows that are blank. Regex first, then gpt-6-luna against a 36-state allow-list. Skipped when OPENAI_API_KEY is missing or AI_VALIDATION_ENABLED=false.",
     cadence: "manual",
     npmCommand: "npx tsx scripts/backfill-supply-states.ts",
     dryRunDefault: true,

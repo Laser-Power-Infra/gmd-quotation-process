@@ -67,7 +67,7 @@ export async function validateItem(
     const kwSize = (keywordSize || 'unknown').trim()
 
     const result = await generateText({
-      model: openai('gpt-4o-mini'),
+      model: openai('gpt-6-luna'),
       output: Output.object({ schema: validationSchema }),
       system: `
 You are an expert quotation and tender item classifier for industrial valves, pipes, and fittings.

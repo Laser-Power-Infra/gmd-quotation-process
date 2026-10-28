@@ -69,7 +69,7 @@ async function aiExtract(text: string): Promise<ParsedDocketItem[]> {
   if (!text.trim()) return [];
 
   const result = await generateText({
-    model: openai(process.env.AI_EXTRACTION_MODEL || "gpt-4o-mini"),
+    model: openai(process.env.AI_EXTRACTION_MODEL || "gpt-6-luna"),
     output: Output.object({ schema: aiItemSchema }),
     system: `You extract line items from industrial quotation enquiry emails (valves, pipes, fittings) for GMD.
 

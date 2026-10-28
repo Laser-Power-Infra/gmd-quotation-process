@@ -136,7 +136,7 @@ async function aiExtractState(
 
   try {
     const result = await generateText({
-      model: openai("gpt-4o-mini"),
+      model: openai("gpt-6-luna"),
       output: Output.object({ schema: stateAiSchema }),
       system: `You are an expert Indian geocoding assistant for industrial supply invoices.
 

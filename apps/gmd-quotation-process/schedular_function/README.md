@@ -640,7 +640,7 @@ message body (`body` + `bodyPreview`), `ocrText`, and every attachment file.
   on `itemName`+`quantity`.
 - **Stage 2 — AI fallback** runs only when the parser finds **zero** items. It is
   off unless `AI_FALLBACK_ENABLED=true` and `OPENAI_API_KEY` is set. Model is
-  `AI_EXTRACTION_MODEL` (default `gpt-4o-mini`), `temperature: 0`, strict zod
+  `AI_EXTRACTION_MODEL` (default `gpt-6-luna`), `temperature: 0`, strict zod
   schema via `Output.object`, and it also drops items without a quantity.
 
 Attachments are read by `docket-attachments.ts`: Drive links are downloaded via
