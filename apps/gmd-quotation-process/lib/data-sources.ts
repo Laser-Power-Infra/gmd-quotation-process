@@ -154,8 +154,8 @@ const SUPPLY_MASTER_COLUMNS = cols(
   ["PARTY Date", "partyDate"],
   ["Quantity", "quantity"],
   ["UOM", "uom"],
-  ["Value", "value"],
-  ["Gross Total- INVOICE VALUE", "grossTotalInvoiceValue"],
+  ["Value", "value", "insert-only; then rate backfill owns it"],
+  ["Gross Total- INVOICE VALUE", "grossTotalInvoiceValue", "insert-only; then rate backfill owns it"],
   ["LR NO & DT", "lrNoDt"],
   ["DELIVERY DESTINATION", "deliveryDestination"],
   ["CONSIGNEE ADDRESS", "consigneeAddress"],
@@ -818,13 +818,13 @@ const SUPPLY_HISTORY_SYNC: SyncOperation[] = [
     name: "Rate backfill (sale bill)",
     kind: "backfill",
     file: "lib/supplyRateBackfill.ts",
-    line: "214-300",
+    line: "256-352",
     purpose:
-      "Gap-fills SupplyHistoryItem.rate from the SALE_BILL tab's RATE column, then value = quantity x rate. Second step of the supply-history job, after the MASTER sync.",
+      "Writes SupplyHistoryItem.rate from the SALE_BILL tab's RATE column, then value = quantity x rate and the gross total = value x 1.18. Second step of the supply-history job, after the MASTER sync.",
     direction: "sheet-to-db",
     trigger: "api-only",
     triggerLabel:
-      "POST /api/scheduler/supply-history (step 2), and app/api/supply-history/sync/route.ts (the Sync button)",
+      "POST /api/scheduler/supply-history (step 2), app/api/supply-history/sync/route.ts (the Sync button), and scripts/backfill-supply-rate-value.ts",
     sheetTab: "SALE_BILL",
     sheetGid: "env SALE_BILL_GID",
     sheetRange: "'<tab>'!A1:ZZZ",
@@ -832,11 +832,11 @@ const SUPPLY_HISTORY_SYNC: SyncOperation[] = [
     columns: cols(
       ["VRNO", "(join key)", "half 1 — trimmed, upper-cased"],
       ["ITEM_CODE", "(join key)", "half 2 — trimmed, upper-cased"],
-      ["RATE", "rate", "gap-fill only — written where the DB cell is blank"],
+      ["RATE", "rate", "replaces the stored rate when the sheet has one"],
     ),
     dbModels: ["SupplyHistoryItem"],
     writePolicy:
-      "Gap-fill only, no deletes. rate is written only where blank; value = quantity x rate only where value is blank and both numbers parse (a rate already stored is used too). Nothing is overwritten or cleared. Sheet lines with no item code are skipped — an invoice with several rows cannot split them.",
+      "Overwrite, no deletes. rate comes from the sheet when the line matches; value = quantity x rate is recomputed; grossTotalInvoiceValue = value x 1.18. A row with no sheet rate keeps its stored rate and value (the gross total follows that value). Nothing is ever cleared. Sheet lines with no item code are skipped — an invoice with several rows cannot split them. value and grossTotalInvoiceValue are in SYNC_EXCLUDED_FIELDS, so MASTER writes them on INSERT only.",
     cadence: "every-sync",
   },
   {

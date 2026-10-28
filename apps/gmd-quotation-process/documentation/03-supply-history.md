@@ -1,6 +1,6 @@
 # 03 — Supply History — `/supply_history` (MASTER)
 
-> **What you see:** One big table of every past supply invoice (warranty/supply ledger). Headers like `INVOICE NO`, `ERP ITEM CODE`, `Quantity`, `RATE`, `Value`, `Party Mail Address`, plus derived `Item Type/MOC/Size`. Sync pulls from `MASTER` tab, enriches `ORDER LIST` link from a separate contract sheet, gap-fills `RATE` (and any blank `Value` as `Quantity x RATE`) from the `SALE_BILL` tab, lets you edit `Party Mail Address` + three derived fields, and powers BOM cost (latest `Value/Quantity` per `ERP ITEM CODE`).
+> **What you see:** One big table of every past supply invoice (warranty/supply ledger). Headers like `INVOICE NO`, `ERP ITEM CODE`, `Quantity`, `RATE`, `Value`, `Party Mail Address`, plus derived `Item Type/MOC/Size`. Sync pulls from `MASTER` tab, enriches `ORDER LIST` link from a separate contract sheet, then owns three computed columns: `RATE` from the `SALE_BILL` tab, `Value = Quantity x RATE`, and `Gross Total- INVOICE VALUE = Value x 1.18`. It also lets you edit `Party Mail Address` + three derived fields, and powers BOM cost (latest `Value/Quantity` per `ERP ITEM CODE`).
 
 ## 1. What it does (Layman)
 
@@ -71,7 +71,8 @@ Defined `SUPPLY_HISTORY_HEADERS[45]` `lib/gmd_lib/supply-history-columns.ts`:
 | 40 | `MOC` (second — derived) | `derivedMoc` `:191` | 40 | Editable, merged `MOC = moc || derivedMoc` |
 | 41 | `Size` | `derivedSize` `:192` | 41 | Editable, merged `Size = sizeOfValve || derivedSize` |
 | 42 | `ORDER LIST` | `orderList` `:189` | 42 (sheet) but **enriched from contract sheet helper, not master** | Populated via `matchOrderLink(partyOrderNo, contractLinkMap)` `app/api/supply-history/sync/route.ts` |
-| 44 (`C` batch carrier is 43) | `RATE` | `rate` `:263` | — | **Not in `mapSheetRowToDb`** — the MASTER sync never writes it. Gap-filled from the `SALE_BILL` tab by `lib/supplyRateBackfill.ts`. Appended last so every index above stays put. |
+| 44 (`C` batch carrier is 43) | `RATE` | `rate` `:263` | — | **Not in `mapSheetRowToDb`** — the MASTER sync never writes it. Written from the `SALE_BILL` tab by `lib/supplyRateBackfill.ts`, replacing a stored rate. Appended last so every index above stays put. |
+| — | `Value` / `Gross Total- INVOICE VALUE` | `value` / `grossTotalInvoiceValue` | — | Listed in `SYNC_EXCLUDED_FIELDS`: MASTER writes them on INSERT only. The rate backfill then owns them (`Value = Quantity x RATE`, gross = `Value x 1.18`). |
 | — | syncedAt | `syncedAt` `:193` | — | set `new Date()` on sync |
 | — | `headers[4]` `ERP PARTY NAME` filtered out of display | — | — | `DISPLAY_HEADERS` excludes it |
 
@@ -129,11 +130,13 @@ PBG CLAIM TILL, PBG AMOUNT, Warranty Exp Date as Per Inv, Party Mail Address
    - If `existing`: **Strict preserve** `route.ts:82` — `isNullOrEmpty(v)=v==null||String(v).trim()==""` `route.ts:22`. Build `filtered={syncedAt}` and only add `field` where `isNullOrEmpty(existing[field]) && !isNullOrEmpty(mapped[field])`. Keys `invoiceNo/itemName/syncedAt` and `derived*` skipped. All 40 MASTER fields incl. `orderList/state/utility` only fill gaps — existing non-null values never overwritten.
    - If `hasDataChange`: `update(filtered)` else `update({syncedAt})` to bump timestamp `route.ts:95`.
 
-4. **Rate backfill + `value` gap-fill** `lib/supplyRateBackfill.ts` (runs after step 3):
+4. **Rate backfill + `value` / gross total recompute** `lib/supplyRateBackfill.ts` (runs after step 3):
    - Reads the `SALE_BILL_GID` tab of `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` (all fiscal years, `A1:ZZZ`, `FORMATTED_VALUE`) and reduces it to `(VRNO, ITEM_CODE)` → `RATE`, first non-blank wins. A line with no item code is skipped and counted — an invoice with several rows cannot be split.
-   - Loads only rows that have a blank to fill: `where OR [rate null/"", value null/""]`.
-   - Per row: fill `rate` only where blank; fill `value = quantity x rate` only where `value` is blank and both parse (a stored rate is used too). Nothing is overwritten or cleared.
-   - Same function runs as step 2 of the `supply-history` scheduler job (`schedular_function/run-supply-history.ts`), where a failure is reported as `rateBackfillError` and does not fail the MASTER sync.
+   - Loads every row in overwrite mode (the scheduler and the backfill script); gap-fill mode still loads only rows with a blank `rate`/`value`.
+   - Per row, in cascade: `rate` ← sale-bill rate when the line matches (replacing a stored rate); `value` ← `quantity x rate` when both parse; gross total ← `value x 1.18`. A row with no matched rate keeps its stored rate, so `value` still recomputes from it; a row with no rate at all keeps its stored `value`, and the gross total follows that value. Nothing is ever cleared.
+   - `value` / `grossTotalInvoiceValue` are in `SYNC_EXCLUDED_FIELDS`, so the MASTER step above cannot overwrite them on update — MASTER only seeds them on INSERT.
+   - Same function runs as step 2 of the `supply-history` scheduler job (`schedular_function/run-supply-history.ts`, `overwrite: true`), where a failure is reported as `rateBackfillError` and does not fail the MASTER sync.
+   - One-off overwrite of the existing table: `pnpm --filter=gmd-quotation-process supply:rate-value` (dry run) then `supply:rate-value:apply`.
 
 5. **Return:** `{count:upserted, patched, totalInSheet, syncedAt, rateBackfill, rateBackfillError}`.
 
@@ -155,7 +158,8 @@ PBG CLAIM TILL, PBG AMOUNT, Warranty Exp Date as Per Inv, Party Mail Address
 
 - **BOM cost lookup** `lib/gmdBomCostLookup.ts:122 buildRmCostMap(rmCodes)` queries **this table**: `where erpItemCode in rmCodes` `:130`, selects `erpItemCode,quantity,value,date` `:131`.
 - **Unit cost logic:** `toNumber(value)/toNumber(quantity)` comma-stripped `:32`, `parseDate` `DD-Mmm-YY(YY)` `:14` (e.g., `05-Jan-23 → 2023-01-05`, two-digit → +2000), picks **latest Date** (`:156`), tie-break **higher unitCost** if same date `:158`, stores `Map<code→unitCost>` `:164`.
-- So a wrong `Date` format or `Value/Quantity` blank → that RM code gets skipped (no cost).
+- Because `value = quantity x rate`, this unit cost is now exactly the sale-bill `RATE` for every row the sale-bill tab matches. Overwriting the table therefore moves quotation `productCost` for those RM codes.
+- So a wrong `Date` format, a missing sale-bill rate, or a blank `Value/Quantity` → that RM code gets skipped (no cost).
 
 ## 7. Quick Lookup FAQ
 
@@ -167,6 +171,6 @@ PBG CLAIM TILL, PBG AMOUNT, Warranty Exp Date as Per Inv, Party Mail Address
 
 - `app/supply_history/page.tsx`, `app/api/supply-history/route.ts`, `app/api/supply-history/sync/route.ts`
 - `lib/gmd_lib/supply-history-columns.ts: SUPPLY_HISTORY_HEADERS[45], SUPPLY_HEADER_TO_DB_FIELD, mapSheetRowToDb/dbItemToRow`, `lib/gmd_lib/contract-order-links.ts:1367392830, normalizePo/matchOrderLink`
-- `lib/supplyRateBackfill.ts` (RATE + `value = quantity x rate` gap-fill), `schedular_function/run-supply-history.ts`
+- `lib/supplyRateBackfill.ts` (RATE + `value = quantity x rate` + gross total, overwrite), `scripts/backfill-supply-rate-value.ts`, `schedular_function/run-supply-history.ts`
 - `lib/gmdBomCostLookup.ts:14 parseDate, 122 buildRmCostMap`
 - `lib/supplyHistoryResolver.ts`, `lib/supplyHistoryFiltersSlice.ts`, `prisma/schema.prisma:148 SupplyHistoryItem`, `app/actions/*.ts:1065`

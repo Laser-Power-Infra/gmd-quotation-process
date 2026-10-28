@@ -19,6 +19,7 @@ function rateRow(over: Partial<RateRow> = {}): RateRow {
     rate: null,
     quantity: "180",
     value: null,
+    grossTotalInvoiceValue: null,
     ...over,
   };
 }
@@ -79,15 +80,87 @@ test("planRateBackfill fills only blank cells and never overwrites", () => {
   );
 
   assert.deepEqual(plan.updates, [
-    { id: "a", data: { rate: "1250", value: "225000" } },
-    { id: "b", data: { value: "9000" } },
-    { id: "e", data: { value: "1875" } },
+    { id: "a", data: { rate: "1250", value: "225000", grossTotalInvoiceValue: "265500" } },
+    { id: "b", data: { value: "9000", grossTotalInvoiceValue: "10620" } },
+    { id: "c", data: { grossTotalInvoiceValue: "5900" } },
+    { id: "e", data: { value: "1875", grossTotalInvoiceValue: "2212.5" } },
   ]);
   assert.equal(plan.rowsScanned, 6);
   assert.equal(plan.rateFilled, 1);
   assert.equal(plan.valueFilled, 3);
+  assert.equal(plan.grossFilled, 4);
   assert.equal(plan.groupsMatched, 1);
   assert.equal(plan.groupsUnmatched, 0);
+});
+
+test("planRateBackfill overwrite mode replaces rate, value and gross total", () => {
+  const rates = new Map([[rateKey("GD26Y-00001", "FUM010036"), "1250"]]);
+
+  const plan = planRateBackfill(
+    [
+      rateRow({
+        id: "a",
+        rate: "900",
+        quantity: "10",
+        value: "100",
+        grossTotalInvoiceValue: "118",
+      }),
+    ],
+    rates,
+    { overwrite: true },
+  );
+
+  assert.deepEqual(plan.updates, [
+    { id: "a", data: { rate: "1250", value: "12500", grossTotalInvoiceValue: "14750" } },
+  ]);
+  assert.equal(plan.rateFilled, 1);
+  assert.equal(plan.valueFilled, 1);
+  assert.equal(plan.grossFilled, 1);
+});
+
+test("planRateBackfill overwrite mode recomputes from the stored rate when the sheet has none", () => {
+  const plan = planRateBackfill(
+    [
+      rateRow({
+        id: "a",
+        rate: "900",
+        quantity: "10",
+        value: "5",
+        grossTotalInvoiceValue: "5.9",
+      }),
+    ],
+    new Map(),
+    { overwrite: true },
+  );
+
+  assert.deepEqual(plan.updates, [
+    { id: "a", data: { value: "9000", grossTotalInvoiceValue: "10620" } },
+  ]);
+  assert.equal(plan.rateFilled, 0);
+  assert.equal(plan.valueFilled, 1);
+});
+
+test("planRateBackfill overwrite mode writes nothing when every cell already agrees", () => {
+  const rates = new Map([[rateKey("GD26Y-00001", "FUM010036"), "1250"]]);
+
+  const plan = planRateBackfill(
+    [
+      rateRow({
+        id: "a",
+        rate: "1250",
+        quantity: "10",
+        value: "12500",
+        grossTotalInvoiceValue: "14750",
+      }),
+    ],
+    rates,
+    { overwrite: true },
+  );
+
+  assert.deepEqual(plan.updates, []);
+  assert.equal(plan.rateFilled, 0);
+  assert.equal(plan.valueFilled, 0);
+  assert.equal(plan.grossFilled, 0);
 });
 
 test("planRateBackfill counts sheet groups no DB row matched", () => {

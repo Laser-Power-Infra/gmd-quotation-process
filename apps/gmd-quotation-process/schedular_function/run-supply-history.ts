@@ -2,8 +2,10 @@
  * Scheduled job — Supply History MASTER sync, then the sale-bill rate backfill.
  *
  * Two steps, in order: `runSupplyHistorySync()`, then `runSupplyRateBackfill()`
- * (gap-fill of `rate` and `value = quantity x rate`, which must run second so
- * MASTER's own `Value` column lands first).
+ * (overwrite of `rate`, `value = quantity x rate`, and gross total =
+ * `value x 1.18`). It must run second: MASTER still writes both fields on
+ * INSERT, and `value` / `grossTotalInvoiceValue` sit in `SYNC_EXCLUDED_FIELDS`
+ * so an update never fights this step.
  *
  * It still owns an in-flight latch: ofelia's `no-overlap = true` cannot see a
  * user clicking the manual Sync button, and the two would interleave writes over
@@ -29,9 +31,8 @@ export type ScheduledSupplyHistoryResult = {
   steps: {
     masterSync?: SupplyHistorySyncResult;
     /**
-     * Gap-fill of `rate` (from the sale-bill tab) and `value = quantity x rate`.
-     * Runs after `masterSync` so MASTER's own `Value` lands first and this only
-     * fills what is still blank.
+     * Overwrite of `rate` (from the sale-bill tab), `value = quantity x rate`
+     * and the gross total (`value x 1.18`).
      */
     rateBackfill?: SupplyRateBackfillResult;
   };
@@ -65,10 +66,11 @@ export async function runScheduledSupplyHistory(): Promise<ScheduledSupplyHistor
 
     steps.masterSync = await runSupplyHistorySync();
 
-    // Gap-fills `rate` / `value`. A failure here must not undo the row sync, so
-    // it is reported rather than thrown — the summary log makes it visible.
+    // Recomputes `rate` / `value` / gross total. A failure here must not undo
+    // the row sync, so it is reported rather than thrown — the summary log
+    // makes it visible.
     try {
-      steps.rateBackfill = await runSupplyRateBackfill();
+      steps.rateBackfill = await runSupplyRateBackfill({ overwrite: true });
     } catch (err) {
       rateBackfillError = err instanceof Error ? err.message : "Unknown error";
       console.error("[scheduler] supply-history rate backfill failed:", err);
@@ -87,6 +89,7 @@ export async function runScheduledSupplyHistory(): Promise<ScheduledSupplyHistor
       console.log(
         `[scheduler] ${job} rate backfill — rateFilled=${steps.rateBackfill.rateFilled} ` +
           `valueFilled=${steps.rateBackfill.valueFilled} ` +
+          `grossFilled=${steps.rateBackfill.grossFilled} ` +
           `unmatchedGroups=${steps.rateBackfill.groupsUnmatched} ` +
           `failedWrites=${steps.rateBackfill.failedWrites}`,
       );

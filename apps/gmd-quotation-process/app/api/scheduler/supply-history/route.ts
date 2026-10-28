@@ -64,6 +64,7 @@ export async function GET(request: Request) {
     job: "supply-history",
     auth: "ok",
     runs: ["masterSync", "rateBackfill"],
-    note: "POST to run the job.",
+    note:
+      "POST to run the job. rateBackfill overwrites rate, value = quantity x rate and gross total = value x 1.18.",
   });
 }
