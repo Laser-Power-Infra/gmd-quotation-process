@@ -366,7 +366,11 @@ export async function runPendingDocketCreation(
         }),
         prisma.docketQuotationThread.update({
           where: { id: p.threadRowId },
-          data: { docketNo: p.docketNumber, pendingDocket: false },
+          data: {
+            docketNo: p.docketNumber,
+            pendingDocket: false,
+            aiIsNewDocket: false,
+          },
         }),
       ]);
       created.push({

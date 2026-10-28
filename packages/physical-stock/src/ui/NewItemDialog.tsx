@@ -86,7 +86,11 @@ function NewItemForm({ rows, create, onCreated }: Omit<NewItemDialogProps, "open
       toast.error(res.error || "Failed to create item.");
       return;
     }
-    toast.success(`New item created — ERP ${res.data.erp_code}`);
+    toast.success(
+      res.data.merged
+        ? `Quantity added to existing item — ERP ${res.data.erp_code}`
+        : `New item created — ERP ${res.data.erp_code}`,
+    );
     onCreated();
   };
 

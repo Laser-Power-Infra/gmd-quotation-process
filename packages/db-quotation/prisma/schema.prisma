@@ -771,6 +771,11 @@ model DocketQuotationThread {
   /// AI verdict for the Pending Dockets tab: null = not verified yet,
   /// true = genuine new docket request, false = rejected / already docketed.
   aiIsNewDocket Boolean? @map("ai_is_new_docket")
+  /// How many times the model has been called for this thread. Capped at 3;
+  /// a true/false verdict is final and is never re-validated.
+  aiValidationAttempts  Int     @default(0) @map("ai_validation_attempts")
+  /// Last model/database error, shown in the UI once attempts are exhausted.
+  aiValidationLastError String? @map("ai_validation_last_error")
   partyName     String?
   /// Frozen fold target: this mail is the same as the docket named here.
   /// The mail ingestion clears docketNo/pendingDocket but never this column,
@@ -788,6 +793,9 @@ model DocketQuotationThread {
   @@index([mailType], map: "idx_dqt_mail_type")
   @@index([date(sort: Desc)], map: "idx_dqt_date")
   @@index([company], map: "idx_dqt_company")
+  @@index([updatedAt(sort: Desc)], map: "idx_dqt_updated_at")
+  @@index([pendingDocket], map: "idx_dqt_pending_docket")
+  @@index([aiValidationAttempts], map: "idx_dqt_ai_validation_attempts")
   @@map("docket_quotation_threads")
 }
 
