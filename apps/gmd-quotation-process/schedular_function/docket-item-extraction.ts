@@ -32,6 +32,10 @@ export interface DocketItemExtractionResult {
   /** Items the deterministic parser found before any fallback. */
   parserItems: number;
   aiUsed: boolean;
+  /** True when the AI reviewed the parser's items. */
+  aiValidated: boolean;
+  /** Parser items the AI dropped as junk. */
+  aiDropped: number;
   attachmentFailures: number;
   attachmentSkipped: number;
 }
@@ -47,6 +51,16 @@ const aiItemSchema = z.object({
       }),
     )
     .describe("Only the line items explicitly requested with an explicit quantity. Exclude headers, totals, rates, signatures and quoted history."),
+});
+
+const aiValidationSchema = z.object({
+  verdicts: z.array(
+    z.object({
+      index: z.number().int().describe("Index of the candidate item, as numbered in the prompt."),
+      keep: z.boolean().describe("false if the row is not a real requested line item (header, spec, price, serial no., quoted history)."),
+      quantity: z.number().optional().describe("Corrected quantity, only if the candidate quantity is wrong per the mail."),
+    }),
+  ),
 });
 
 function aiFallbackEnabled(): boolean {
@@ -92,30 +106,96 @@ RULES:
     .slice(0, 500);
 }
 
+/** Applies AI verdicts: drop or re-quantify only; bad indices and all-drop answers are ignored. */
+export function applyVerdicts(
+  items: ParsedDocketItem[],
+  rawVerdicts: { index: number; keep: boolean; quantity?: number }[],
+): { items: ParsedDocketItem[]; dropped: number } {
+  const verdicts = new Map<number, { keep: boolean; quantity?: number }>();
+  for (const v of rawVerdicts) {
+    if (Number.isInteger(v.index) && v.index >= 0 && v.index < items.length) verdicts.set(v.index, v);
+  }
+  const kept: ParsedDocketItem[] = [];
+  items.forEach((item, n) => {
+    const v = verdicts.get(n);
+    if (v && !v.keep) return;
+    const q = v?.quantity;
+    kept.push(q !== undefined && Number.isFinite(q) && q > 0 && q <= 1_000_000 ? { ...item, quantity: q } : item);
+  });
+  // An all-drop answer is more likely a bad AI reply than an all-junk parse.
+  if (kept.length === 0) return { items, dropped: 0 };
+  return { items: kept, dropped: items.length - kept.length };
+}
+
+/**
+ * Asks the AI to review parser items against the mail. It may only drop a row or
+ * correct a quantity; names are never taken from the AI, so nothing is invented.
+ * Throws on AI failure (caller keeps the parser items).
+ */
+async function aiValidate(
+  text: string,
+  items: ParsedDocketItem[],
+): Promise<{ items: ParsedDocketItem[]; dropped: number }> {
+  const candidates = items.map((i, n) => `${n}. ${i.itemName} | qty ${i.quantity}`).join("\n");
+  const result = await generateText({
+    model: openai(process.env.AI_EXTRACTION_MODEL || "gpt-4o-mini"),
+    output: Output.object({ schema: aiValidationSchema }),
+    system: `You review line items that a regex parser extracted from an industrial quotation enquiry email (valves, pipes, fittings).
+For each numbered candidate return keep=false if it is not a real requested item with a quantity (table header, spec, pressure, serial number, price, total, quoted history). If the quantity is wrong according to the mail, return the corrected quantity. Do not add items and do not rename anything. Return one verdict per candidate.`,
+    prompt: `${text}
+
+=== CANDIDATES ===
+${candidates}`,
+    temperature: 0,
+  });
+
+  return applyVerdicts(items, result.output?.verdicts ?? []);
+}
+
 /**
  * Extracts `{ itemName, quantity }` candidates for one thread.
  *
- * Never throws for attachment problems; only a parser/AI internal error is
- * swallowed and reported as an empty result.
+ * Never throws: attachment, parser and AI errors are all swallowed. A parse
+ * failure yields an empty result; an AI failure keeps the parser items.
  */
 export async function extractDocketItems(
   input: DocketItemExtractionInput,
 ): Promise<DocketItemExtractionResult> {
   const bodies = [input.body, input.bodyPreview].filter((b): b is string => !!b);
-  const attachments = await collectAttachmentTexts(input.attachNames, input.attachLinks);
-
-  const parserItems = parseDocketItems({
-    bodies,
-    ocrText: input.ocrText,
-    attachmentTexts: attachments.texts,
-  });
+  let attachments: Awaited<ReturnType<typeof collectAttachmentTexts>> = { texts: [], failures: 0, skipped: 0 };
+  let parserItems: ParsedDocketItem[] = [];
+  try {
+    attachments = await collectAttachmentTexts(input.attachNames, input.attachLinks);
+    parserItems = parseDocketItems({
+      bodies,
+      ocrText: input.ocrText,
+      attachmentTexts: attachments.texts,
+    });
+  } catch (e) {
+    console.warn("[docket-item-extraction] parse failed:", e instanceof Error ? e.message : e);
+  }
 
   if (parserItems.length > 0) {
+    let items = parserItems;
+    let aiValidated = false;
+    let aiDropped = 0;
+    if (aiFallbackEnabled()) {
+      try {
+        const v = await aiValidate(buildAiInput(input, attachments.texts), parserItems);
+        items = v.items;
+        aiDropped = v.dropped;
+        aiValidated = true;
+      } catch (e) {
+        console.warn("[docket-item-extraction] AI validation failed:", e instanceof Error ? e.message : e);
+      }
+    }
     return {
-      items: parserItems,
+      items,
       source: "parser",
       parserItems: parserItems.length,
       aiUsed: false,
+      aiValidated,
+      aiDropped,
       attachmentFailures: attachments.failures,
       attachmentSkipped: attachments.skipped,
     };
@@ -130,6 +210,8 @@ export async function extractDocketItems(
           source: "ai",
           parserItems: 0,
           aiUsed: true,
+          aiValidated: false,
+          aiDropped: 0,
           attachmentFailures: attachments.failures,
           attachmentSkipped: attachments.skipped,
         };
@@ -144,6 +226,8 @@ export async function extractDocketItems(
     source: "none",
     parserItems: 0,
     aiUsed: false,
+    aiValidated: false,
+    aiDropped: 0,
     attachmentFailures: attachments.failures,
     attachmentSkipped: attachments.skipped,
   };

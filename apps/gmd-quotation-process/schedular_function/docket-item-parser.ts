@@ -57,7 +57,9 @@ const QTY_LABEL_RE = new RegExp(
 // accepted, so a size followed by a quantity ("DN100 - 4 Nos") is not mistaken
 // for a range.
 const RANGE_UNIT_RE = new RegExp(`(\\d[\\d,]*)[-\\u2013](\\d[\\d,]*)\\s*(?:${UNIT_ALT})\\b\\.?`, "i");
-const TRAILING_UNIT_RE = new RegExp(`(\\d[\\d,]*(?:\\.\\d+)?)\\s*(?:${UNIT_ALT})\\b\\.?`, "i");
+const TRAILING_UNIT_RE = new RegExp(`(\\d[\\d,]*(?:\\.\\d+)?)\\s*(?:${UNIT_ALT})\\b\\.?`, "gi");
+// "Rs 500 each" / "INR 1,200 per pc" is a price, not a quantity.
+const PRICE_TOKEN_RE = /(?:rs\.?|inr|₹)\s*[\d,]+(?:\.\d+)?(?:\/-)?(?:\s*(?:each|ea|per\s*\w+))?/gi;
 const LEADING_QTY_RE = new RegExp(`^\\s*(\\d[\\d,]*(?:\\.\\d+)?)\\s*(?:x\\b|${UNIT_ALT})\\b\\.?`, "i");
 
 const ENUMERATOR_RE = /^\s*(?:\d+[.)]|[-*•–])\s+/;
@@ -149,7 +151,8 @@ function parsePositiveNumber(raw: string | undefined | null): number | null {
  * Extracts a quantity from a line and returns the line with the quantity token
  * removed. Returns `null` when the line carries no explicit quantity.
  */
-function extractQuantity(line: string): { quantity: number; cleaned: string } | null {
+function extractQuantity(rawLine: string): { quantity: number; cleaned: string } | null {
+  const line = rawLine.replace(PRICE_TOKEN_RE, " ");
   let m = QTY_LABEL_RE.exec(line);
   if (m) {
     const quantity = parsePositiveNumber(m[1]);
@@ -168,7 +171,8 @@ function extractQuantity(line: string): { quantity: number; cleaned: string } | 
     if (quantity !== null) return { quantity, cleaned: line.replace(m[0], " ") };
   }
 
-  m = TRAILING_UNIT_RE.exec(line);
+  // Last match wins: "Valve 2 Nos DN100 4 Nos" -> 4.
+  m = [...line.matchAll(TRAILING_UNIT_RE)].pop() ?? null;
   if (m) {
     const quantity = parsePositiveNumber(m[1]);
     if (quantity !== null) return { quantity, cleaned: line.replace(m[0], " ") };
@@ -205,7 +209,7 @@ function parseDelimitedTables(lines: string[], out: ParsedDocketItem[]): void {
   let header: { desc: number; qty: number; size: number; fields: number } | null = null;
 
   for (const raw of lines) {
-    const line = raw.trim();
+    const line = stripQuoteMarkers(raw).trim();
     const delimiter = line.includes("\t") ? "\t" : line.includes("|") ? "|" : null;
     if (!delimiter) {
       header = null;

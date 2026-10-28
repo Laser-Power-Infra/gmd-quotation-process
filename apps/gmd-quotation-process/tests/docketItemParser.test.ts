@@ -123,3 +123,22 @@ test("pressure and serial fragments are not parsed as quantities", () => {
   });
   assert.deepEqual(items, []);
 });
+
+test("price with 'each' is not a quantity", () => {
+  const items = parseDocketItems({ bodies: ["Gate Valve DN150 Rs 500 each - 2 Nos"] });
+  assert.deepEqual(items, [{ itemName: "Gate Valve DN150", quantity: 2 }]);
+});
+
+test("last quantity on a line wins", () => {
+  const items = parseDocketItems({ bodies: ["Valve 2 Nos DN100 4 Nos"] });
+  assert.deepEqual(items, [{ itemName: "Valve 2 Nos DN100", quantity: 4 }]);
+});
+
+test("quoted table with description in first column", () => {
+  const items = parseDelimited("> Description | Size | Qty\n> Gate Valve | DN80 | 4");
+  assert.deepEqual(items, [{ itemName: "Gate Valve DN80", quantity: 4 }]);
+});
+
+function parseDelimited(body: string) {
+  return parseDocketItems({ bodies: [body] });
+}
