@@ -39,6 +39,17 @@ test("editableFieldsFor removes read-only and disabled columns", () => {
   assert.equal(fields.has("clearanceStatus"), true);
 });
 
+test("editableFieldsFor allows PO NO and DATE OF CONTRACT only when not read-only", () => {
+  const open = editableFieldsFor(resolveContractReviewFlags({}));
+  assert.equal(open.has("poNo"), true);
+  assert.equal(open.has("dateOfContract"), true);
+  const locked = editableFieldsFor(
+    resolveContractReviewFlags({ readOnlyColumns: ["PO NO", "DATE OF CONTRACT"] }),
+  );
+  assert.equal(locked.has("poNo"), false);
+  assert.equal(locked.has("dateOfContract"), false);
+});
+
 test("updateContractReviewField rejects a field outside the given allow-list", async () => {
   const res = await updateContractReviewField("id", "remarks", "x", new Set(["item"]));
   assert.equal(res.success, false);

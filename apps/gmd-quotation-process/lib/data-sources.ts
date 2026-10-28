@@ -1271,7 +1271,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     triggerLabel: "Cell edit / dialog",
     dbModels: ["ContractReview"],
     columns: cols(
-      ["DATE OF CONTRACT", "dateOfContract", "write-once — a non-blank cell cannot be changed"],
+      ["DATE OF CONTRACT", "dateOfContract", "admin role only; cannot be cleared"],
       ["Actuator", "actuator", "also derives RM CODE FOR ACTUATOR"],
       ["PROD ORDER NO", "productionOrderNumber", "must be exactly 11 characters"],
       ["Upload Drawing", "diagramUrl", "PDF only, stored in S3"],

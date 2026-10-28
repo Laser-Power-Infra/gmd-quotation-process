@@ -28,10 +28,11 @@ const LEGACY_VERDICTS: Record<string, string> = { YES: "CORRECT", NO: "WRONG" };
 
 /**
  * Fields a client may write through updateContractReviewField. Mirrors the
- * page's editableColumns + blankOnlyEditableColumns; everything else (diagram,
- * BOM ID, actuator, synced sheet columns) has its own operation or is read-only.
+ * page's editableColumns; everything else (diagram, BOM ID, actuator, synced
+ * sheet columns) has its own operation or is read-only.
  */
 export const CONTRACT_REVIEW_EDITABLE_FIELDS = new Set([
+  "poNo",
   "bomFormulaTrial",
   "item",
   "clearanceStatus",
@@ -134,23 +135,8 @@ export async function updateContractReviewField(
     if (!allowed.has(field)) {
       return { success: false, error: `Field "${field}" cannot be edited.` };
     }
-    if (field === "dateOfContract") {
-      const existing = await tenderPrisma.contractReview.findUnique({
-        where: { id },
-        select: { dateOfContract: true },
-      });
-      if (!existing) {
-        return { success: false, error: "Contract review row not found." };
-      }
-      if (String(existing.dateOfContract ?? "").trim() !== "") {
-        return {
-          success: false,
-          error: "DATE OF CONTRACT can only be set when blank and cannot be changed or cleared.",
-        };
-      }
-      if (!value || String(value).trim() === "") {
-        return { success: false, error: "DATE OF CONTRACT cannot be empty." };
-      }
+    if (field === "dateOfContract" && (!value || String(value).trim() === "")) {
+      return { success: false, error: "DATE OF CONTRACT cannot be empty." };
     }
     if (field === "productionOrderNumber") {
       const validated = parseAndValidateProdOrderNumber(value ?? "");

@@ -114,6 +114,8 @@ const EMPTY_VIEW: ContractReviewView = {
 };
 
 const EDITABLE_COLUMN_CANDIDATES = [
+  "DATE OF CONTRACT",
+  "PO NO",
   "bom formula trial",
   "Item",
   "BOM ID",
@@ -1552,10 +1554,6 @@ export function ContractReviewPage({
       ),
     [isEditable, selectContractReviewBomIdAction, saveActuatorWithRmCodeAction],
   );
-  const tableBlankOnlyEditableColumns = useMemo(
-    () => ["DATE OF CONTRACT"].filter(isEditable),
-    [isEditable],
-  );
   const tableFilterOptionsOverride = useMemo(
     () => ({
       "CLEARANCE STATUS": clearanceOptions.filter((o) => o !== "(Blank)"),
@@ -2409,7 +2407,6 @@ export function ContractReviewPage({
                 editable
                 fullHeight
                 editableColumns={tableEditableColumns}
-                blankOnlyEditableColumns={tableBlankOnlyEditableColumns}
                 dropdownRowCondition={(header, row) =>
                   header !== "Actuator" || isActuatorItemRow(row)
                 }
