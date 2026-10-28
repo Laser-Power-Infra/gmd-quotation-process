@@ -5,6 +5,9 @@ import {
   BLANK_ONLY_HEADERS,
   EDITABLE_CANDIDATES,
   FIELDS,
+  addQty,
+  isGeneratedErpCode,
+  itemKey,
   computeAvailableQty,
   computeItemWiseValue,
   computeMajorMinorMarking,
@@ -92,18 +95,45 @@ async function generateUniqueErpCode(): Promise<string> {
   throw new Error("Could not generate a unique ERP code.");
 }
 
-/** New row with an auto-generated unique ERP code; values saved in capitals. */
-export async function createPhysicalStock(input: NewItemInput): Promise<ActionResult<{ erp_code: string }>> {
+/**
+ * New row with an auto-generated unique ERP code; values saved in capitals.
+ * If a generated-code row already has the same location + L columns, its
+ * received/dispatch qty is added to instead and no new code is minted.
+ */
+export async function createPhysicalStock(
+  input: NewItemInput,
+): Promise<ActionResult<{ erp_code: string; merged: boolean }>> {
   return run(async () => {
-    const erp_code = await generateUniqueErpCode();
-    const data: Record<string, string | boolean | null> = { erp_code };
+    const data: Record<string, string | boolean | null> = {};
     for (const f of NEW_ITEM_FIELDS) data[f] = input[f]?.trim().toUpperCase() || null;
+
+    const key = itemKey(data);
+    const generated = await stockPrisma.physicalStock.findMany({
+      where: { erp_code: { not: null } },
+      orderBy: { created_at: "asc" },
+    });
+    const match = generated.find((r) => isGeneratedErpCode(r.erp_code) && itemKey(r) === key);
+    if (match) {
+      const received_qty = addQty(match.received_qty, data.received_qty);
+      const dispatch_qty = addQty(match.dispatch_qty, data.dispatch_qty);
+      const changes: Record<string, string | null> = { received_qty, dispatch_qty };
+      const available = computeAvailableQty(received_qty, dispatch_qty);
+      if (available !== null) {
+        changes.available_qty = available;
+        changes.item_wise_value = computeItemWiseValue(match.rate_unit, available);
+      }
+      await stockPrisma.physicalStock.update({ where: { id: match.id }, data: changes });
+      return { erp_code: match.erp_code!, merged: true };
+    }
+
+    const erp_code = await generateUniqueErpCode();
+    data.erp_code = erp_code;
     const available = computeAvailableQty(data.received_qty, data.dispatch_qty);
     if (available !== null) data.available_qty = available;
     const marking = computeMajorMinorMarking(data.l8_item_category as string | null);
     if (marking !== null) data.majorminor_marking = marking;
     await stockPrisma.physicalStock.create({ data });
-    return { erp_code };
+    return { erp_code, merged: false };
   });
 }
 

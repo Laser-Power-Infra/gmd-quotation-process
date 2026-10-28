@@ -398,6 +398,26 @@ export function computeItemWiseValue(rateUnit: unknown, availableQty: unknown): 
   return ((parseNum(rateUnit) ?? 0) * (parseNum(availableQty) ?? 0)).toFixed(2);
 }
 
+/** Codes minted by createPhysicalStock: 3 letters + 6 digits. */
+export const isGeneratedErpCode = (code: string | null | undefined): boolean =>
+  /^[A-Z]{3}\d{6}$/.test((code ?? "").trim());
+
+/** Identity of a new item: location + the L columns, case/space-insensitive. */
+export function itemKey(r: Partial<Record<PhysicalStockField, unknown>>): string {
+  return (
+    ["location", "l2_valve_type", "dimension", "l7_dimension", "l4_component", "l5_material", "l6_std", "l8_item_category"] as const
+  )
+    .map((f) => String(r[f] ?? "").trim().replace(/\s+/g, " ").toUpperCase())
+    .join("|");
+}
+
+/** a + b as a string; null only when both are blank. */
+export function addQty(a: unknown, b: unknown): string | null {
+  const x = parseNum(a);
+  const y = parseNum(b);
+  return x === null && y === null ? null : String((x ?? 0) + (y ?? 0));
+}
+
 /** received - dispatch, or null when either is blank (leave available_qty alone). */
 export function computeAvailableQty(received: unknown, dispatch: unknown): string | null {
   const r = parseNum(received);

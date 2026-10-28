@@ -615,7 +615,9 @@ const MAJOR_MINOR_FILTER_LABELS: Record<string, string> = { true: "MAJOR", false
 const DUPLICATE_KEY_HEADERS = [
   "location",
   "L2-VALVE TYPE",
+  "Dia",
   "L7-DIMENSION",
+  "L7-PN",
   "L4-COMPONENT",
   "L5- MATERIAL",
   "L6-STD",

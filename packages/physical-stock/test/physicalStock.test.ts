@@ -6,15 +6,28 @@ import {
   DROPDOWN_OPTIONS,
   EDITABLE_CANDIDATES,
   FIELDS,
+  addQty,
   computeAvailableQty,
   computeItemWiseValue,
   fieldOf,
+  isGeneratedErpCode,
+  itemKey,
 } from "../src/columns";
 import { editableFieldsFor, resolvePhysicalStockFlags } from "../src/flags";
 import { contentKey, updatePhysicalStockField } from "../src/server/index";
 
 test("every column has a DB field", () => {
   assert.equal(COLUMNS.length, FIELDS.length);
+});
+
+test("new-item identity and qty merge", () => {
+  assert.ok(isGeneratedErpCode("ABC000123"));
+  assert.ok(!isGeneratedErpCode("1234567"));
+  assert.equal(itemKey({ location: " kgp ", l4_component: "BODY" }), itemKey({ location: "KGP", l4_component: "body" }));
+  assert.notEqual(itemKey({ location: "KGP" }), itemKey({ location: "HWH" }));
+  assert.equal(addQty("1,000", "5"), "1005");
+  assert.equal(addQty(null, "5"), "5");
+  assert.equal(addQty(null, ""), null);
 });
 
 test("qty and value math", () => {

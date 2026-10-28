@@ -79,7 +79,7 @@ export interface PhysicalStockActions {
     field: string,
     value: string | null,
   ) => Promise<ActionResult<Partial<PhysicalStockRow>>>;
-  create?: (input: NewItemInput) => Promise<ActionResult<{ erp_code: string }>>;
+  create?: (input: NewItemInput) => Promise<ActionResult<{ erp_code: string; merged: boolean }>>;
   updateBomId?: (
     id: string,
     bomId: string | null,
