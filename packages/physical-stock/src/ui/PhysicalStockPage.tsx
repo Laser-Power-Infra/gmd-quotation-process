@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, RefreshCw } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import GMDUpdateTable from "@gmd/dashboard/components/GMDUpdateTable";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
@@ -44,15 +44,13 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
   const [bomIdOptions, setBomIdOptions] = useState<Record<string, string[]>>({});
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [statsRows, setStatsRows] = useState<unknown[][]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [cardFilter, setCardFilter] = useState<StockCardKind | null>(null);
   const [majorMinorFilter, setMajorMinorFilter] = useState<Set<MajorMinorKind>>(new Set());
 
-  const { load, sync, updateField, create, updateBomId } = actions;
+  const { load, updateField, create, updateBomId } = actions;
 
   const { editableColumns, blankOnlyColumns, dropdownOptions, showSection } = useMemo(() => {
     const hiddenSidebar = new Set<string>(flags.hiddenSidebar);
@@ -173,14 +171,21 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
       const header = COLUMNS[colIndex];
       const toastId = toast.loading(`Updating ${header}...`);
       const res = await updateField(id, FIELDS[colIndex], value);
-      if (res.success) {
+      if (res.success && res.data.merged) {
+        const m = res.data.merged;
+        toast.success(
+          `Merged into ERP ${m.erp_code}: location and L columns matched. Received ${m.received_qty ?? 0}, dispatch ${m.dispatch_qty ?? 0}, available ${m.available_qty ?? 0}.`,
+          { id: toastId, duration: 8000 },
+        );
+        await loadData();
+      } else if (res.success) {
         mergeRow(id, res.data);
         toast.success(`${header} updated`, { id: toastId });
       } else {
         toast.error(res.error || `Failed to update ${header}`, { id: toastId });
       }
     },
-    [updateField, mergeRow],
+    [updateField, mergeRow, loadData],
   );
 
   const handleSelectBomId = useCallback(
@@ -198,25 +203,6 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
     [updateBomId, mergeRow],
   );
 
-  const handleSync = useCallback(async () => {
-    setSyncing(true);
-    try {
-      const res = await sync();
-      if (res.success) {
-        const d = res.data;
-        toast.success(`Synced ${d.totalRows} rows from the sheet (${d.created} new, ${d.skipped} unchanged).`);
-        setSyncedAt(d.syncedAt);
-        await loadData();
-      } else {
-        toast.error(res.error || "Sync failed.");
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Sync failed.");
-    } finally {
-      setSyncing(false);
-    }
-  }, [sync, loadData]);
-
   const showNew = showHeader && flags.newItem && create;
 
   return (
@@ -225,9 +211,6 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
         {showHeader && (
           <GMDUpdateHeader
             totalRows={items.length}
-            syncedAt={syncedAt}
-            onSync={flags.sync ? handleSync : undefined}
-            syncing={syncing}
             title="Physical Stock"
             actions={
               showNew && (
@@ -282,6 +265,7 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
                 editable
                 editableColumns={editableColumns}
                 blankOnlyEditableColumns={blankOnlyColumns}
+                blankOnlyUnlockedBy="ERP CODE"
                 fixedDropdownOptions={dropdownOptions}
                 hiddenColumns={flags.hiddenColumns}
                 numericColumns={NUMERIC_COLUMNS}
@@ -294,12 +278,6 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
                 fullHeight
               />
             </div>
-          </div>
-        )}
-        {syncing && (
-          <div className="fixed bottom-4 right-4 flex items-center gap-1.5 rounded-lg bg-[#0a2540] text-white px-3 py-2 text-xs font-semibold shadow-lg">
-            <RefreshCw size={12} className="animate-spin" />
-            Syncing sheet...
           </div>
         )}
       </div>

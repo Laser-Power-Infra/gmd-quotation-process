@@ -8,18 +8,16 @@ import {
   physicalStockHiddenColumns,
   physicalStockHiddenSidebar,
   physicalStockNewItem,
-  physicalStockSync,
 } from "@/flags";
 
 /** Evaluates this app's Physical Stock flags for the current request. */
 export async function getPhysicalStockFlags(): Promise<PhysicalStockFlags> {
-  const [hiddenColumns, editableColumns, hiddenSidebar, newItem, duplicateErpHighlight, sync, user] = await Promise.all([
+  const [hiddenColumns, editableColumns, hiddenSidebar, newItem, duplicateErpHighlight, user] = await Promise.all([
     physicalStockHiddenColumns(),
     physicalStockEditableColumns(),
     physicalStockHiddenSidebar(),
     physicalStockNewItem(),
     physicalStockDuplicateErpHighlight(),
-    physicalStockSync(),
     getCurrentUser(),
   ]);
   // Blank ERP CODE + L/Dia dropdowns: admin/developer only.
@@ -30,6 +28,5 @@ export async function getPhysicalStockFlags(): Promise<PhysicalStockFlags> {
     hiddenSidebar,
     newItem,
     duplicateErpHighlight,
-    sync,
   });
 }

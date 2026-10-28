@@ -12,9 +12,10 @@ import {
   fieldOf,
   isGeneratedErpCode,
   itemKey,
+  mergeRows,
 } from "../src/columns";
 import { editableFieldsFor, resolvePhysicalStockFlags } from "../src/flags";
-import { contentKey, updatePhysicalStockField } from "../src/server/index";
+import { updatePhysicalStockField } from "../src/server/index";
 
 test("every column has a DB field", () => {
   assert.equal(COLUMNS.length, FIELDS.length);
@@ -28,6 +29,19 @@ test("new-item identity and qty merge", () => {
   assert.equal(addQty("1,000", "5"), "1005");
   assert.equal(addQty(null, "5"), "5");
   assert.equal(addQty(null, ""), null);
+});
+
+test("mergeRows adds qty and joins text fields", () => {
+  const target = { received_qty: "5", dispatch_qty: "1", rate_unit: "10", remarks: "a", item_type: "X", cost: null };
+  const source = { received_qty: "2", dispatch_qty: null, remarks: "b", item_type: "X", cost: "7" };
+  assert.deepEqual(mergeRows(target, source), {
+    received_qty: "7",
+    dispatch_qty: "1",
+    available_qty: "6",
+    item_wise_value: "60.00",
+    remarks: "a, b",
+    cost: "7",
+  });
 });
 
 test("qty and value math", () => {
@@ -45,7 +59,10 @@ test("editableFieldsFor maps headers and keeps BOM ID out", () => {
 
 test("blank-only dropdown columns map to editable DB fields", () => {
   assert.ok(EDITABLE_CANDIDATES.includes("ERP CODE"));
-  assert.deepEqual([...BLANK_ONLY_HEADERS].slice(1).sort(), Object.keys(DROPDOWN_OPTIONS).sort());
+  assert.deepEqual(
+    BLANK_ONLY_HEADERS.filter((h) => h in DROPDOWN_OPTIONS).sort(),
+    Object.keys(DROPDOWN_OPTIONS).sort(),
+  );
   for (const header of BLANK_ONLY_HEADERS) {
     assert.ok(EDITABLE_CANDIDATES.includes(header), `${header} missing from EDITABLE_CANDIDATES`);
   }
@@ -53,14 +70,6 @@ test("blank-only dropdown columns map to editable DB fields", () => {
     resolvePhysicalStockFlags({ editableColumns: [...BLANK_ONLY_HEADERS] }),
   );
   assert.deepEqual([...fields].sort(), BLANK_ONLY_HEADERS.map((h) => fieldOf(h)!).sort());
-});
-
-test("sync key ignores edited and derived fields", () => {
-  const base = { erp_code: "ABC1", location: "KGP", dispatch_qty: "1", available_qty: "9", cost: null };
-  const edited = { ...base, dispatch_qty: "5", available_qty: "5", cost: "12", remarks: "x", majorminor_marking: true };
-  assert.equal(contentKey(base), contentKey(edited));
-  assert.notEqual(contentKey(base), contentKey({ ...base, location: "BLR" }));
-  assert.notEqual(contentKey(base), contentKey({ ...base, erp_code: "ABC2" }));
 });
 
 // Allow-list is checked before any DB access, so no database is needed.

@@ -3,12 +3,10 @@
 import {
   createPhysicalStock,
   listPhysicalStock,
-  syncPhysicalStockFromSheet,
   updatePhysicalStockField,
 } from "@gmd/physical-stock/server";
 import { editableFieldsFor } from "@gmd/physical-stock/flags";
 import type { NewItemInput } from "@gmd/physical-stock/types";
-import { getOAuthClient } from "@/lib/googleAuth";
 import { getPhysicalStockFlags } from "@/lib/physical-stock-flags";
 import { getCurrentUser } from "@/lib/auth-helpers";
 
@@ -29,12 +27,6 @@ export async function load() {
   } catch (err) {
     return { success: false as const, error: err instanceof Error ? err.message : String(err) };
   }
-}
-
-export async function sync() {
-  const denied = await unauthorized();
-  if (denied) return denied;
-  return syncPhysicalStockFromSheet(getOAuthClient());
 }
 
 export async function updateField(id: string, field: string, value: string | null) {

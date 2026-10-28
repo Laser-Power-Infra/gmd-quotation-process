@@ -23,8 +23,6 @@ export interface PhysicalStockFlags {
   newItem: boolean;
   /** Highlight rows that share an ERP code. */
   duplicateErpHighlight: boolean;
-  /** Enable synchronization functionality. */
-  sync: boolean;
 }
 
 export const DEFAULT_PHYSICAL_STOCK_FLAGS: PhysicalStockFlags = {
@@ -33,7 +31,6 @@ export const DEFAULT_PHYSICAL_STOCK_FLAGS: PhysicalStockFlags = {
   hiddenSidebar: [],
   newItem: false,
   duplicateErpHighlight: false,
-  sync: true,
 };
 
 export function resolvePhysicalStockFlags(

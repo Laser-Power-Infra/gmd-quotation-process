@@ -106,9 +106,8 @@ export const NUMERIC_COLUMNS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Every column an app may make editable. Sheet sync ignores these fields when
- * matching rows, so the set is fixed (not per app): both apps write the same
- * table and must agree on what makes a sheet row "new".
+ * Every column an app may make editable. The set is fixed (not per app): both
+ * apps write the same table.
  * "ERP CODE" is only writable while blank; "BOM ID" goes through updateBomId.
  */
 export const EDITABLE_CANDIDATES = [
@@ -122,11 +121,13 @@ export const EDITABLE_CANDIDATES = [
   "DRAWING/ TECHNICAL DATA",
   "COST",
   "BOM ID",
+  "location",
   "L2-VALVE TYPE",
   "Dia",
   "L4-COMPONENT",
   "L5- MATERIAL",
   "L6-STD",
+  "L7-PN",
   "L8 -ITEM CATEGORY",
 ] as const satisfies readonly PhysicalStockHeader[];
 
@@ -371,14 +372,20 @@ export const DROPDOWN_OPTIONS: Partial<Record<PhysicalStockHeader, readonly stri
   ],
 };
 
-/** Editable only while the cell is blank; overwriting a filled cell is rejected. */
+/**
+ * Editable only while the cell is blank; overwriting a filled cell is rejected,
+ * except on a row whose ERP CODE is blank: there everything but ERP CODE can be
+ * changed (and a match with an existing item merges the row, see mergeRows).
+ */
 export const BLANK_ONLY_HEADERS = [
   "ERP CODE",
+  "location",
   "L2-VALVE TYPE",
   "Dia",
   "L4-COMPONENT",
   "L5- MATERIAL",
   "L6-STD",
+  "L7-PN",
   "L8 -ITEM CATEGORY",
 ] as const satisfies readonly EditableHeader[];
 
@@ -416,6 +423,70 @@ export function addQty(a: unknown, b: unknown): string | null {
   const x = parseNum(a);
   const y = parseNum(b);
   return x === null && y === null ? null : String((x ?? 0) + (y ?? 0));
+}
+
+// Text fields whose values are kept side by side (comma separated) on a merge.
+const JOINED_FIELDS = [
+  "remarks",
+  "moving_within_3_months",
+  "order_ag_approval_recvd",
+  "item_type",
+  "price",
+  "moq",
+  "if_less_than_moq_extra_charges",
+  "drawing_technical_data",
+] as const;
+// Numeric/derived fields: the target keeps its value, a blank one takes the source's.
+const FILLED_FIELDS = [
+  "sum_of_physical_stock",
+  "stock_as_per_erp",
+  "rate_unit",
+  "rate_per_pc_qty_weight",
+  "weight_per_pc",
+  "purchase_in_26_27",
+  "dispatched_in_26_27",
+  "order_in_hand_qty",
+  "shortage_qty",
+  "unnamed_aa",
+  "cost",
+  "bom_id",
+] as const;
+
+/**
+ * Changes to write on `target` when `source` (same item, blank ERP code) is
+ * folded into it: received/dispatch added, available + item value recomputed,
+ * text fields joined with ", " (distinct values only), the rest filled if blank.
+ */
+export function mergeRows(
+  target: Partial<Record<PhysicalStockField, unknown>>,
+  source: Partial<Record<PhysicalStockField, unknown>>,
+): Record<string, string | null> {
+  const blank = (v: unknown) => String(v ?? "").trim() === "";
+  const changes: Record<string, string | null> = {
+    received_qty: addQty(target.received_qty, source.received_qty),
+    dispatch_qty: addQty(target.dispatch_qty, source.dispatch_qty),
+  };
+  const available = computeAvailableQty(changes.received_qty, changes.dispatch_qty);
+  if (available !== null) {
+    changes.available_qty = available;
+    changes.item_wise_value = computeItemWiseValue(
+      blank(target.rate_unit) ? source.rate_unit : target.rate_unit,
+      available,
+    );
+  }
+  for (const f of JOINED_FIELDS) {
+    const parts: string[] = [];
+    for (const v of [target[f], source[f]]) {
+      const s = String(v ?? "").trim();
+      if (s && !parts.includes(s)) parts.push(s);
+    }
+    const joined = parts.join(", ") || null;
+    if (joined !== (blank(target[f]) ? null : String(target[f]).trim())) changes[f] = joined;
+  }
+  for (const f of FILLED_FIELDS) {
+    if (blank(target[f]) && !blank(source[f])) changes[f] = String(source[f]).trim();
+  }
+  return changes;
 }
 
 /** received - dispatch, or null when either is blank (leave available_qty alone). */

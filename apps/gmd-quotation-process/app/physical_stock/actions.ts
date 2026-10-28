@@ -1,18 +1,12 @@
 "use server";
 import { requireAccess } from "@/lib/access";
 
-import {
-  listPhysicalStock,
-  syncPhysicalStockFromSheet,
-  updatePhysicalStockField,
-} from "@gmd/physical-stock/server";
+import { listPhysicalStock, updatePhysicalStockField } from "@gmd/physical-stock/server";
 import { editableFieldsFor } from "@gmd/physical-stock/flags";
 import type { ActionResult, PhysicalStockRow } from "@gmd/physical-stock/types";
 import { stockPrisma } from "@/lib/stockPrisma";
-import { getOAuthClient } from "@/lib/googleAuth";
 import { getPhysicalStockFlags } from "@/lib/physical-stock-flags";
 import {
-  applyPhysicalStockDerivations,
   costForPhysicalStockBom,
   derivePhysicalStockByCodes,
 } from "@/lib/gmd_lib/physical-stock-derive";
@@ -35,14 +29,6 @@ export async function load() {
   } catch (err) {
     return { success: false as const, error: err instanceof Error ? err.message : String(err) };
   }
-}
-
-/** Sheet sync, then derive Cost / BOM ID / major-minor from the quotation DB. */
-export async function sync() {
-  await requireAccess();
-  const res = await syncPhysicalStockFromSheet(getOAuthClient());
-  if (res.success) await applyPhysicalStockDerivations();
-  return res;
 }
 
 export async function updateField(id: string, field: string, value: string | null) {

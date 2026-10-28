@@ -48,13 +48,6 @@ export interface PhysicalStockData {
   bomIdOptions?: Record<string, string[]>;
 }
 
-export interface SyncSummary {
-  created: number;
-  skipped: number;
-  totalRows: number;
-  syncedAt: string;
-}
-
 export const NEW_ITEM_FIELDS = [
   "location",
   "l2_valve_type",
@@ -70,15 +63,24 @@ export const NEW_ITEM_FIELDS = [
 
 export type NewItemInput = Partial<Record<(typeof NEW_ITEM_FIELDS)[number], string>>;
 
+/** Set when editing a blank-ERP row folded it into an existing item (the edited row is deleted). */
+export interface MergeInfo {
+  erp_code: string;
+  received_qty: string | null;
+  dispatch_qty: string | null;
+  available_qty: string | null;
+}
+
+export type FieldUpdate = Partial<PhysicalStockRow> & { merged?: MergeInfo };
+
 /** Server Actions the host app passes in. Optional ones switch features on. */
 export interface PhysicalStockActions {
   load: () => Promise<ActionResult<PhysicalStockData>>;
-  sync: () => Promise<ActionResult<SyncSummary>>;
   updateField: (
     id: string,
     field: string,
     value: string | null,
-  ) => Promise<ActionResult<Partial<PhysicalStockRow>>>;
+  ) => Promise<ActionResult<FieldUpdate>>;
   create?: (input: NewItemInput) => Promise<ActionResult<{ erp_code: string; merged: boolean }>>;
   updateBomId?: (
     id: string,

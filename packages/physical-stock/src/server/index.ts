@@ -1,28 +1,25 @@
 import "server-only";
-import { createHash } from "crypto";
 import { stockPrisma } from "@gmd/db-stock";
 import {
   BLANK_ONLY_HEADERS,
-  EDITABLE_CANDIDATES,
-  FIELDS,
   addQty,
   isGeneratedErpCode,
   itemKey,
+  mergeRows,
   computeAvailableQty,
   computeItemWiseValue,
   computeMajorMinorMarking,
   fieldOf,
 } from "../columns";
 import { NEW_ITEM_FIELDS } from "../types";
-import type { ActionResult, NewItemInput, PhysicalStockRow, SyncSummary } from "../types";
-import { fetchPhysicalStockSheet, type SheetsAuth } from "./sheet";
+import type { ActionResult, FieldUpdate, NewItemInput, PhysicalStockRow } from "../types";
 
 // Pure operations on the PhysicalStock table (stock DB). No auth, no flags
 // lookup: the host app's Server Actions own those and pass the allow-list in.
 
-export { fetchPhysicalStockSheet, type SheetsAuth };
-
 const BLANK_ONLY_FIELDS = new Set<string>(BLANK_ONLY_HEADERS.map((h) => fieldOf(h)!));
+// location + L columns: what makes two rows the same item (see itemKey).
+const IDENTITY_FIELDS = new Set<string>([...BLANK_ONLY_FIELDS].filter((f) => f !== "erp_code"));
 
 async function run<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
   try {
@@ -55,19 +52,26 @@ export async function updatePhysicalStockField(
   field: string,
   value: string | null,
   allowed: ReadonlySet<string>,
-): Promise<ActionResult<Partial<PhysicalStockRow>>> {
+): Promise<ActionResult<FieldUpdate>> {
   if (!allowed.has(field)) return { success: false, error: `Field "${field}" is not editable.` };
   return run(async () => {
     const row = await stockPrisma.physicalStock.findUnique({ where: { id } });
     if (!row) throw new Error("Physical stock row not found.");
-    // Blank-only columns (ERP CODE + the L/Dia dropdowns) may be filled but
-    // never overwritten.
-    if (BLANK_ONLY_FIELDS.has(field) && String((row as Record<string, unknown>)[field] ?? "").trim()) {
+    // Blank-only columns (ERP CODE, location, the L/Dia dropdowns) may be
+    // filled but never overwritten, except on a row with a blank ERP CODE.
+    const erpBlank = !String(row.erp_code ?? "").trim();
+    const overwritable = erpBlank && field !== "erp_code";
+    if (
+      BLANK_ONLY_FIELDS.has(field) &&
+      !overwritable &&
+      String((row as Record<string, unknown>)[field] ?? "").trim()
+    ) {
       throw new Error(`"${field}" is already filled.`);
     }
 
-    const next = { ...row, [field]: value ?? null };
-    const changes: Record<string, string | null> = { [field]: value ?? null };
+    const stored = field === "location" ? value?.trim().toUpperCase() || null : value ?? null;
+    const next = { ...row, [field]: stored };
+    const changes: Record<string, string | null> = { [field]: stored };
 
     if (field === "received_qty" || field === "dispatch_qty") {
       const available = computeAvailableQty(next.received_qty, next.dispatch_qty);
@@ -78,7 +82,31 @@ export async function updatePhysicalStockField(
     }
 
     await stockPrisma.physicalStock.update({ where: { id }, data: changes });
-    return changes as Partial<PhysicalStockRow>;
+
+    // A blank-ERP row whose location + L columns now equal exactly one
+    // coded row is folded into it. Zero or several matches: leave it alone.
+    if (erpBlank && IDENTITY_FIELDS.has(field) && String(next.location ?? "").trim()) {
+      const key = itemKey(next);
+      const targets = (await stockPrisma.physicalStock.findMany({ where: { erp_code: { not: null } } })).filter(
+        (r) => String(r.erp_code).trim() && r.id !== id && itemKey(r) === key,
+      );
+      if (targets.length === 1) {
+        const [target] = targets;
+        const merge = mergeRows(target, next);
+        // No transaction (P2028 on this connection): update the target first so qty is never lost.
+        await stockPrisma.physicalStock.update({ where: { id: target.id }, data: merge });
+        await stockPrisma.physicalStock.delete({ where: { id } });
+        return {
+          merged: {
+            erp_code: target.erp_code!,
+            received_qty: merge.received_qty,
+            dispatch_qty: merge.dispatch_qty,
+            available_qty: merge.available_qty ?? target.available_qty,
+          },
+        } as FieldUpdate;
+      }
+    }
+    return changes as FieldUpdate;
   });
 }
 
@@ -134,54 +162,5 @@ export async function createPhysicalStock(
     if (marking !== null) data.majorminor_marking = marking;
     await stockPrisma.physicalStock.create({ data });
     return { erp_code, merged: false };
-  });
-}
-
-// Fields that never decide whether a sheet row is "new": DB-owned or derived
-// (form_date, cost, bom_id, item_wise_value, majorminor_marking), anything an app may edit, and
-// available_qty (recomputed when dispatch qty is edited). Including any of them
-// would make an edited row look new on the next sync and be created again.
-const SYNC_IGNORED = new Set<string>([
-  "form_date",
-  "cost",
-  "bom_id",
-  "item_wise_value",
-  "majorminor_marking",
-  "available_qty",
-  ...EDITABLE_CANDIDATES.filter((h) => h !== "ERP CODE").map((h) => fieldOf(h)!),
-]);
-const CONTENT_FIELDS = FIELDS.filter((f) => !SYNC_IGNORED.has(f));
-
-export function contentKey(record: Record<string, unknown>): string {
-  const o: Record<string, unknown> = {};
-  for (const f of CONTENT_FIELDS) o[f] = record[f] ?? null;
-  return createHash("sha256").update(JSON.stringify(o)).digest("hex");
-}
-
-/** Pulls the sheet and inserts rows whose content is not in the table yet. */
-export async function syncPhysicalStockFromSheet(auth: SheetsAuth): Promise<ActionResult<SyncSummary>> {
-  return run(async () => {
-    const rows = await fetchPhysicalStockSheet(auth);
-    const existing = await stockPrisma.physicalStock.findMany();
-    const seen = new Set(existing.map((r) => contentKey(r)));
-
-    const toCreate: Record<string, string | null>[] = [];
-    for (const sheetRow of rows) {
-      const key = contentKey(sheetRow);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      toCreate.push({
-        ...sheetRow,
-        item_wise_value: computeItemWiseValue(sheetRow.rate_unit, sheetRow.available_qty),
-      });
-    }
-    if (toCreate.length > 0) await stockPrisma.physicalStock.createMany({ data: toCreate });
-
-    return {
-      created: toCreate.length,
-      skipped: rows.length - toCreate.length,
-      totalRows: rows.length,
-      syncedAt: new Date().toISOString(),
-    };
   });
 }

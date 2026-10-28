@@ -1033,6 +1033,11 @@ interface GMDUpdateTableProps {
   onDeleteRow?: (id: string) => Promise<void>;
   onMatchCosts?: () => void;
   blankOnlyEditableColumns?: string[];
+  /**
+   * Header (e.g. "ERP CODE"): on a row where this cell is blank, the
+   * blank-only columns other than it can be overwritten, not just filled.
+   */
+  blankOnlyUnlockedBy?: string;
   dropdownRowCondition?: (header: string, row: unknown[]) => boolean;
   /**
    * Columns whose cell value is encoded as `<value><separator><code>` (default
@@ -1231,6 +1236,7 @@ castingRateInputs,
   onDeleteRow,
   onMatchCosts,
   blankOnlyEditableColumns,
+  blankOnlyUnlockedBy,
   dropdownRowCondition,
   encodedDropdownColumns,
   extraFilterOptions,
@@ -2112,6 +2118,12 @@ castingRateInputs,
    * Shared by the standalone <td> path and the collapsed-group <td> path so both
    * agree on editability and highlighting.
    */
+  const rowUnlocksBlankOnly = (header: string, row: unknown[]) => {
+    if (!blankOnlyUnlockedBy || header === blankOnlyUnlockedBy) return false;
+    const idx = headers.indexOf(blankOnlyUnlockedBy);
+    return idx !== -1 && String(row[idx] ?? "").trim() === "";
+  };
+
   const cellMeta = (header: string, cellIdx: number, row: unknown[]) => {
     const value = row[cellIdx];
     const display = value != null ? String(value) : "";
@@ -2124,7 +2136,7 @@ castingRateInputs,
     const isCellEditable =
       !!editable &&
       baseEditable &&
-      (!isBlankOnlyColumn || isBlankCell) &&
+      (!isBlankOnlyColumn || isBlankCell || rowUnlocksBlankOnly(header, row)) &&
       (!dropdownRowCondition || dropdownRowCondition(header, row));
     const isAttachmentColumn =
       !!attachmentColumn && header === attachmentColumn && !!onUploadAttachment;
