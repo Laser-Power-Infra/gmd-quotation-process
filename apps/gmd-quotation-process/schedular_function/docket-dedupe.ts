@@ -177,6 +177,7 @@ export async function runPendingDocketDedupe(
           data: {
             docketNo: group.keeper.docketNumber,
             pendingDocket: false,
+            aiIsNewDocket: false,
             duplicateOfDocket: group.keeper.docketNumber,
           },
         }),

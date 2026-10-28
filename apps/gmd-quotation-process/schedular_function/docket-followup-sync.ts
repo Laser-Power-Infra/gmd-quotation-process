@@ -5,6 +5,11 @@ import {
   buildPartySearchText,
   isPendingDocketCandidate,
 } from "@/lib/docketPending";
+import {
+  isDocketAiEligible,
+  runDocketAiValidation,
+  type DocketAiThreadInput,
+} from "@/lib/docketAiValidationRunner";
 
 export const DOCKET_PATTERNS = [
   /\bGMD\/\d{4}-\d{2}\/\d+\b/i,
@@ -84,6 +89,9 @@ export type DocketFollowupSyncResult = {
   updatedToPendingTrue: number;
   updatedToPendingFalse: number;
   partyNamesUpdated: number;
+  aiVerifiedTrue: number;
+  aiVerifiedFalse: number;
+  aiValidationErrors: number;
   isIncremental: boolean;
   elapsedMs: number;
 };
@@ -91,24 +99,43 @@ export type DocketFollowupSyncResult = {
 // In-memory record of the last successful sync run timestamp
 let lastSyncTimestamp: Date | null = null;
 
+// Single-flight latch: a page load, the hourly interval and the manual button
+// must never stack overlapping scans (each one is a multi-thousand-row query).
+let inFlightSync: Promise<DocketFollowupSyncResult> | null = null;
+
+/**
+ * Single-flight wrapper around the sync. Concurrent callers share the same
+ * run instead of starting another heavy scan.
+ */
+export function runDocketFollowupSync(
+  options: DocketFollowupSyncOptions = {}
+): Promise<DocketFollowupSyncResult> {
+  if (inFlightSync) return inFlightSync;
+  inFlightSync = runDocketFollowupSyncInternal(options).finally(() => {
+    inFlightSync = null;
+  });
+  return inFlightSync;
+}
+
 /**
  * Runs the docket detection and pending status synchronization incrementally.
  * - Only scans:
- *    1. Unassigned / pending threads (docketNo is null OR pendingDocket is true)
+ *    1. Pending threads (`pendingDocket = true`)
  *    2. Newly created / updated email threads since last sync
  * - Settled threads (with verified docketNo and pendingDocket = false) are skipped.
  */
-export async function runDocketFollowupSync(
+async function runDocketFollowupSyncInternal(
   options: DocketFollowupSyncOptions = {}
 ): Promise<DocketFollowupSyncResult> {
   const startTime = Date.now();
   const { fullScan = false } = options;
 
-  // Lookback threshold: either explicit since, or lastSyncTimestamp, or past 24 hours
+  // Lookback threshold: explicit since, last sync, or the past 6 hours. The job
+  // runs hourly, so a 24h fallback needlessly re-read large text columns.
   const lookbackSince =
     options.since ||
     lastSyncTimestamp ||
-    new Date(Date.now() - 24 * 60 * 60 * 1000);
+    new Date(Date.now() - 6 * 60 * 60 * 1000);
 
   // 1. Load active PARTY lookup options
   const partyRows = await prisma.lookupOption.findMany({
@@ -120,14 +147,13 @@ export async function runDocketFollowupSync(
   const matchParty = buildPartyMatcher(partyNames);
 
   // 2. Incremental Where Clause:
-  // Only query threads that are currently unassigned/pending OR updated since last run
+  // Only pending threads or threads touched since the last run. Do NOT scan
+  // every `docketNo = null` thread: that is ~7k rows / ~37s on this database.
   const whereClause = fullScan
     ? {}
     : {
         OR: [
           { pendingDocket: true },
-          { docketNo: null },
-          { docketNo: "" },
           { updatedAt: { gte: lookbackSince } },
           { date: { gte: lookbackSince } },
         ],
@@ -136,6 +162,8 @@ export async function runDocketFollowupSync(
   // 3. Fetch ONLY candidate/updated threads
   const threads = await prisma.docketQuotationThread.findMany({
     where: whereClause,
+    orderBy: { updatedAt: "desc" },
+    take: fullScan ? undefined : 1000,
     select: {
       id: true,
       threadId: true,
@@ -151,6 +179,8 @@ export async function runDocketFollowupSync(
       userLabels: true,
       docketNo: true,
       pendingDocket: true,
+      aiIsNewDocket: true,
+      aiValidationAttempts: true,
       duplicateOfDocket: true,
       partyName: true,
       attachNames: true,
@@ -171,7 +201,9 @@ export async function runDocketFollowupSync(
     pendingDocket: boolean;
     partyName?: string | null;
     docketStatus?: string | null;
+    aiIsNewDocket?: boolean | null;
   }> = [];
+  const aiCandidates: DocketAiThreadInput[] = [];
 
   for (const t of threads) {
     // Already folded onto an existing docket by the dedupe job. Re-flagging it
@@ -204,6 +236,7 @@ export async function runDocketFollowupSync(
           docketNo: t.docketNo || detectedDocket,
           pendingDocket: false,
           docketStatus: "RESOLVED",
+          aiIsNewDocket: false,
         });
         if (needsPendingFalse) updatedToPendingFalse++;
       }
@@ -211,6 +244,25 @@ export async function runDocketFollowupSync(
       // Docket NOT found -> Mark pending_docket = true & resolve party_name
       pendingDocketsCount++;
       const needsPendingTrue = t.pendingDocket !== true;
+
+      // One-time AI verification for undecided pending candidates.
+      const aiInput: DocketAiThreadInput = {
+        id: t.id,
+        subject: t.subject,
+        body: t.body,
+        bodyPreview: t.bodyPreview,
+        ocrText: t.ocrText,
+        docketNo: t.docketNo,
+        duplicateOfDocket: t.duplicateOfDocket,
+        aiIsNewDocket: t.aiIsNewDocket,
+        aiValidationAttempts: t.aiValidationAttempts,
+        userLabels: t.userLabels,
+        isGmdClient: t.isGmdClient,
+        company: t.company,
+        toDetails: t.toDetails,
+        ccDetails: t.ccDetails,
+      };
+      if (isDocketAiEligible(aiInput)) aiCandidates.push(aiInput);
 
       const attachText = extractAttachmentNamesText(t.attachNames);
       const partySearchText = `${buildPartySearchText(t)}\n${attachText}`;
@@ -230,6 +282,25 @@ export async function runDocketFollowupSync(
     }
   }
 
+  // One-time AI verification for candidates that have never been decided.
+  const rawAiLimit = Number(process.env.DOCKET_AI_MAX_PER_RUN);
+  const aiLimit =
+    Number.isFinite(rawAiLimit) && rawAiLimit > 0 ? Math.floor(rawAiLimit) : 25;
+  let aiVerifiedTrue = 0;
+  let aiVerifiedFalse = 0;
+  let aiValidationErrors = 0;
+  try {
+    const aiResult = await runDocketAiValidation(aiCandidates, {
+      limit: aiLimit,
+    });
+    aiVerifiedTrue = aiResult.verifiedTrue;
+    aiVerifiedFalse = aiResult.verifiedFalse;
+    aiValidationErrors = aiResult.errors;
+  } catch (err) {
+    // Fail open: leave undecided candidates as NULL ("Not verified").
+    console.warn("[docket-followup-sync] AI validation failed:", err);
+  }
+
   // 3. Batch apply updates in transactions
   const BATCH_SIZE = 50;
   for (let i = 0; i < updates.length; i += BATCH_SIZE) {
@@ -243,6 +314,9 @@ export async function runDocketFollowupSync(
             pendingDocket: item.pendingDocket,
             ...(item.partyName !== undefined ? { partyName: item.partyName } : {}),
             ...(item.docketStatus !== undefined ? { docketStatus: item.docketStatus } : {}),
+            ...(item.aiIsNewDocket !== undefined
+              ? { aiIsNewDocket: item.aiIsNewDocket }
+              : {}),
           },
         })
       )
@@ -260,6 +334,9 @@ export async function runDocketFollowupSync(
     updatedToPendingTrue,
     updatedToPendingFalse,
     partyNamesUpdated,
+    aiVerifiedTrue,
+    aiVerifiedFalse,
+    aiValidationErrors,
     isIncremental: !fullScan,
     elapsedMs,
   };

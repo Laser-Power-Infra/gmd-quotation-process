@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   RefreshCw,
   AlertCircle,
@@ -36,10 +36,16 @@ interface PendingSummaryData {
   unrepliedRequestsCount: number;
   noDocketAssignedCount: number;
   docketAssignedLaterCount: number;
+  aiValidationEnabled?: boolean;
+  aiVerifiedCount?: number;
+  aiUnverifiedCount?: number;
+  aiPendingCount?: number;
+  aiRejectedCount?: number;
+  aiMaxAttempts?: number;
 }
 
 export default function DocketFollowUpPage() {
-  const [activeTab, setActiveTab] = useState<"PORTAL_DOCKETS" | "PENDING_DOCKETS">("PORTAL_DOCKETS");
+  const [activeTab, setActiveTab] = useState<"PORTAL_DOCKETS" | "PENDING_DOCKETS">("PENDING_DOCKETS");
 
   // Portal Dockets State
   const [loading, setLoading] = useState(true);
@@ -54,12 +60,18 @@ export default function DocketFollowUpPage() {
   const [pendingRows, setPendingRows] = useState<PendingDocketRow[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
+  const pendingPollCount = useRef(0);
 
   const fetchPortalData = useCallback(async () => {
     setLoading(true);
     setError(null);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
-      const res = await fetch("/api/docket-follow-up", { cache: "no-store" });
+      const res = await fetch("/api/docket-follow-up", {
+        cache: "no-store",
+        signal: controller.signal,
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `HTTP error ${res.status}`);
@@ -68,9 +80,14 @@ export default function DocketFollowUpPage() {
       setSummary(data.summary);
       setRows(data.rows || []);
     } catch (err: any) {
-      console.error("Failed to load docket follow-up data:", err);
-      setError(err?.message || "Failed to load docket follow-up data");
+      if (err?.name === "AbortError") {
+        setError("Portal dockets request timed out. Please retry.");
+      } else {
+        console.error("Failed to load docket follow-up data:", err);
+        setError(err?.message || "Failed to load docket follow-up data");
+      }
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }, []);
@@ -78,8 +95,13 @@ export default function DocketFollowUpPage() {
   const fetchPendingData = useCallback(async () => {
     setPendingLoading(true);
     setPendingError(null);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
     try {
-      const res = await fetch("/api/docket-follow-up/pending-dockets", { cache: "no-store" });
+      const res = await fetch("/api/docket-follow-up/pending-dockets", {
+        cache: "no-store",
+        signal: controller.signal,
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `HTTP error ${res.status}`);
@@ -88,9 +110,14 @@ export default function DocketFollowUpPage() {
       setPendingSummary(data.summary);
       setPendingRows(data.rows || []);
     } catch (err: any) {
-      console.error("Failed to load pending dockets data:", err);
-      setPendingError(err?.message || "Failed to load pending dockets data");
+      if (err?.name === "AbortError") {
+        setPendingError("Pending dockets request timed out. Please retry.");
+      } else {
+        console.error("Failed to load pending dockets data:", err);
+        setPendingError(err?.message || "Failed to load pending dockets data");
+      }
     } finally {
+      clearTimeout(timeout);
       setPendingLoading(false);
     }
   }, []);
@@ -98,18 +125,26 @@ export default function DocketFollowUpPage() {
   const handleSyncAndDetect = useCallback(async (isSilent = false) => {
     if (!isSilent) setIsSyncing(true);
     setSyncStatus("Detecting dockets & syncing...");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5 * 60_000);
     try {
       const res = await fetch("/api/scheduler/docket-followup", {
         method: "POST",
         headers: { "x-app-source": "gmd-dashboard" },
+        signal: controller.signal,
       });
       if (res.ok) {
-        const result = await res.json();
+        await res.json();
         setSyncStatus("Sync completed");
       }
     } catch (err) {
-      console.error("Auto sync failed:", err);
+      if ((err as any)?.name === "AbortError") {
+        console.warn("Auto sync timed out");
+      } else {
+        console.error("Auto sync failed:", err);
+      }
     } finally {
+      clearTimeout(timeout);
       if (!isSilent) setIsSyncing(false);
       fetchPortalData();
       fetchPendingData();
@@ -118,7 +153,8 @@ export default function DocketFollowUpPage() {
   }, [fetchPortalData, fetchPendingData]);
 
   useEffect(() => {
-    fetchPortalData();
+    // Fast first paint: the Pending tab is the default and uses the narrow
+    // cached query. The heavy Portal query is loaded lazily when its tab opens.
     fetchPendingData();
 
     // 1-Hour Automatic Sync Interval (Runs in background every 60 minutes)
@@ -129,7 +165,45 @@ export default function DocketFollowUpPage() {
     }, ONE_HOUR_MS);
 
     return () => clearInterval(intervalId);
-  }, [fetchPortalData, fetchPendingData, handleSyncAndDetect]);
+  }, [fetchPendingData, handleSyncAndDetect]);
+
+  // Load the Portal Dockets data only when that tab is opened (it is a much
+  // heavier query over all enquiries/threads).
+  useEffect(() => {
+    if (activeTab === "PORTAL_DOCKETS") fetchPortalData();
+  }, [activeTab, fetchPortalData]);
+
+  // While the Pending Dockets tab is open and the background queue still has
+  // eligible threads, refresh quietly (never blanks the table) so verdicts
+  // appear without a manual refresh. Stops once all are decided/exhausted.
+  useEffect(() => {
+    if (activeTab !== "PENDING_DOCKETS") {
+      pendingPollCount.current = 0;
+      return;
+    }
+    if (pendingLoading) return;
+    if (!pendingSummary?.aiValidationEnabled) return;
+
+    const remaining = pendingSummary.aiPendingCount ?? 0;
+    if (remaining <= 0) {
+      pendingPollCount.current = 0;
+      return;
+    }
+    if (pendingPollCount.current >= 30) return;
+
+    const id = setTimeout(() => {
+      pendingPollCount.current += 1;
+      fetchPendingData();
+    }, 10000);
+
+    return () => clearTimeout(id);
+  }, [
+    activeTab,
+    pendingLoading,
+    pendingSummary?.aiValidationEnabled,
+    pendingSummary?.aiPendingCount,
+    fetchPendingData,
+  ]);
 
   const handleRefresh = () => {
     if (activeTab === "PORTAL_DOCKETS") {
@@ -403,13 +477,19 @@ export default function DocketFollowUpPage() {
             )}
 
             {/* Main Pending Dockets Table */}
-            {pendingLoading ? (
+            {pendingLoading && pendingRows.length === 0 ? (
               <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted-foreground space-y-2 bg-card rounded-md border border-border">
                 <RefreshCw className="w-7 h-7 animate-spin text-rose-600" />
                 <p className="text-xs font-medium">Fetching unreplied docket requests & conversation attachments...</p>
               </div>
             ) : (
               <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                {pendingLoading && pendingRows.length > 0 && (
+                  <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium text-muted-foreground border-b border-border bg-muted/20 shrink-0">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    Refreshing…
+                  </div>
+                )}
                 <PendingDocketsTable rows={pendingRows} />
               </div>
             )}

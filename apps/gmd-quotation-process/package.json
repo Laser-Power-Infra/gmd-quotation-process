@@ -60,6 +60,8 @@
     "docket:pending:backfill:apply": "tsx scripts/backfill-docket-pending-party.ts --apply",
     "docket:pending:state-utility": "tsx scripts/backfill-pending-docket-state-utility.ts",
     "docket:pending:state-utility:apply": "tsx scripts/backfill-pending-docket-state-utility.ts --apply",
+    "docket:ai-validate": "tsx scripts/backfill-docket-ai-validation.ts",
+    "docket:ai-validate:apply": "tsx scripts/backfill-docket-ai-validation.ts --apply",
     "email:backfill": "tsx scripts/backfill-enquiry-email-addresses.ts",
     "email:backfill:apply": "tsx scripts/backfill-enquiry-email-addresses.ts --apply",
     "email:backfill-sender": "tsx scripts/backfill-enquiry-sender-email.ts",
