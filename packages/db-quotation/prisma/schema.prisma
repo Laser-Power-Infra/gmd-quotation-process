@@ -818,10 +818,35 @@ model PbgData {
   status        String?
   bankGuarantee Json?     @map("bank_guarantee")
   validityOn    String?   @map("validity_on")
+  /// Reminder gate: CONTINUE allows the scheduled reminder job to mail this
+  /// row; HOLD (or null) never does. Editable from the PBG dashboard only.
+  mailTrigger   String?   @default("HOLD") @map("mail_trigger")
   syncedAt      DateTime  @default(now()) @map("synced_at") @db.Timestamptz
   updatedAt     DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
+  reminderLogs  PbgReminderLog[]
+
   @@map("pbg_data")
+}
+
+/// One row per reminder send attempt. Pre-expiry sends happen at most once per
+/// BG; post-expiry sends repeat every 7 days, so this table is append-only.
+model PbgReminderLog {
+  id        BigInt   @id @default(autoincrement())
+  pbgId     BigInt   @map("pbg_id")
+  stage     String   // BEFORE_30_DAYS | EXPIRED
+  emails    String
+  status    String   // SENT | FAILED
+  messageId String?  @map("message_id")
+  error     String?
+  sentAt    DateTime @default(now()) @map("sent_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  pbg PbgData @relation(fields: [pbgId], references: [id], onDelete: Cascade)
+
+  @@index([pbgId, stage, sentAt], map: "idx_pbg_reminder_pbg_stage_sent")
+  @@index([stage, status], map: "idx_pbg_reminder_stage_status")
+  @@map("pbg_reminder_log")
 }
 
 // ─────────────────────────────────────────────────────────────
