@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { updateIndentRmCodeAction } from "@/app/actions/contractReview";
+import { RM_CODE_MATCH_BY_ITEM } from "@/lib/indentRmCodeResolver";
 import MultiSelectFilter, { BLANK } from "@/components/table/MultiSelectFilter";
 import Pagination from "@/components/table/Pagination";
 import { useDebounce } from "@/lib/hooks/useDebounce";
@@ -112,6 +113,14 @@ const DEFAULT_COLUMN_WIDTHS: Record<number, number> = Object.fromEntries(
 
 function cellText(row: unknown[], idx: number): string {
   return String(row[idx] ?? "").trim();
+}
+
+// Only SLV / SLV METAL / TPAV+SLV / NRV have an RM-code resolver, so only those
+// rows may be hand-picked. Other items (BFV, air valve, ...) never resolve and
+// their raw materials are not in the option list, so a picker there offers the
+// wrong valve family.
+function canPickRmCode(row: unknown[]): boolean {
+  return cellText(row, 0).toUpperCase() in RM_CODE_MATCH_BY_ITEM;
 }
 
 // The value shown (and sorted) in a leaf column. Variant metrics come from the
@@ -439,7 +448,7 @@ export default function IndentListingTable({
               </span>
             )}
           </span>
-          {targets.length > 0 ? (
+          {targets.length > 0 && canPickRmCode(row) ? (
             // Stored rows exist behind this line, so the code is hand-pickable.
             <RmCodeCell
               label={`${col.slotLabel} RM code`}
