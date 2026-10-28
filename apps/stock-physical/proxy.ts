@@ -3,9 +3,11 @@ import { NextResponse } from "next/server"
 
 export const proxy = auth((req) => {
   if (req.auth) return
-  const url = new URL("/login", req.nextUrl)
-  url.searchParams.set("callbackUrl", req.nextUrl.pathname)
-  return NextResponse.redirect(url)
+  // Rewrite, not redirect: the URL stays on the requested route. Built from the
+  // Host header because auth() swaps req.nextUrl's origin for NEXTAUTH_URL, and a
+  // rewrite to another origin is proxied there (ETIMEDOUT in dev).
+  const host = req.headers.get("host") ?? req.nextUrl.host
+  return NextResponse.rewrite(new URL("/login", `${req.nextUrl.protocol}//${host}`))
 })
 
 export const config = {

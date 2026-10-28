@@ -25,7 +25,9 @@ export default function LoginPage() {
     toast.success("Logged in successfully")
     // Full navigation: the session cookie is already set, this also re-runs
     // proxy.ts so the protected page renders with the new session.
-    const callbackUrl = new URLSearchParams(window.location.search).get("callbackUrl") || "/"
+    const { pathname, search } = window.location
+    const callbackUrl =
+      new URLSearchParams(search).get("callbackUrl") || (pathname === "/login" ? "/" : pathname)
     window.location.assign(callbackUrl)
   }
 
