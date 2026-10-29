@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Columns3, Search, X, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Table as TanStackTable } from "@tanstack/react-table";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 interface ColumnPickerProps<TData> {
   table: TanStackTable<TData>;
@@ -85,9 +86,9 @@ export function ColumnPicker<TData>({
                     .filter((c) => c.getCanHide())
                     .filter((c) => {
                       if (!search.trim()) return true;
-                      const label = formatHeader(c.id).toLowerCase();
-                      const id = c.id.toLowerCase();
-                      const q = search.toLowerCase();
+                      const label = squish(formatHeader(c.id));
+                      const id = squish(c.id);
+                      const q = squish(search);
                       return label.includes(q) || id.includes(q);
                     });
                   const next: Record<string, boolean> = { ...table.getState().columnVisibility };
@@ -111,9 +112,9 @@ export function ColumnPicker<TData>({
                     .filter((c) => c.getCanHide())
                     .filter((c) => {
                       if (!search.trim()) return true;
-                      const label = formatHeader(c.id).toLowerCase();
-                      const id = c.id.toLowerCase();
-                      const q = search.toLowerCase();
+                      const label = squish(formatHeader(c.id));
+                      const id = squish(c.id);
+                      const q = squish(search);
                       return label.includes(q) || id.includes(q);
                     });
                   const next: Record<string, boolean> = { ...table.getState().columnVisibility };
@@ -144,9 +145,9 @@ export function ColumnPicker<TData>({
                   .filter((c) => c.getCanHide())
                   .filter((c) => {
                     if (!search.trim()) return true;
-                    const label = formatHeader(c.id).toLowerCase();
-                    const id = c.id.toLowerCase();
-                    const q = search.toLowerCase();
+                    const label = squish(formatHeader(c.id));
+                    const id = squish(c.id);
+                    const q = squish(search);
                     return label.includes(q) || id.includes(q);
                   });
                 if (filtered.length === 0) {

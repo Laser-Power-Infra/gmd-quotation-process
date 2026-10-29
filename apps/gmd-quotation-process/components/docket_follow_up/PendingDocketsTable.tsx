@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { Button } from "@gmd/ui/components/button";
 import { MultiFilterDropdown, FilterOption } from "./MultiFilterDropdown";
+import { squish } from "@/lib/squish";
 
 export interface PendingDocketRow {
   id: number;
@@ -167,13 +168,13 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
     return rows.filter((r) => {
       // 1. Text Search
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const sMatch = r.subject.toLowerCase().includes(q);
-        const reqMatch = `${r.requester.name} ${r.requester.email}`.toLowerCase().includes(q);
-        const snipMatch = r.requestSnippet.toLowerCase().includes(q);
-        const tenderMatch = r.tenderTag?.toLowerCase().includes(q);
-        const docMatch = r.docketNo?.toLowerCase().includes(q);
-        const attMatch = r.attachNames.some((n) => n.toLowerCase().includes(q));
+        const q = squish(searchQuery);
+        const sMatch = squish(r.subject).includes(q);
+        const reqMatch = squish(`${r.requester.name} ${r.requester.email}`).includes(q);
+        const snipMatch = squish(r.requestSnippet).includes(q);
+        const tenderMatch = squish(r.tenderTag).includes(q);
+        const docMatch = squish(r.docketNo).includes(q);
+        const attMatch = r.attachNames.some((n) => squish(n).includes(q));
         if (!sMatch && !reqMatch && !snipMatch && !tenderMatch && !docMatch && !attMatch) {
           return false;
         }

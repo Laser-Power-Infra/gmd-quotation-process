@@ -48,6 +48,7 @@ import {
   EmdStatus,
   EmdStats,
 } from "@/components/emd-cash/EmdCashSidebar";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 type Col = {
   header: string;
@@ -731,13 +732,13 @@ export default function EmdMergedPage() {
   const baseStageFiltered = useMemo(() => {
     let r: EmdMergedRecord[] = statusFiltered;
     if (deferredGlobalSearch.trim() !== "") {
-      const q = deferredGlobalSearch.toLowerCase().trim();
+      const q = squish(deferredGlobalSearch);
       r = r.filter((x) =>
         COLS.some((c) => {
           if (c.accessor === "action") return false;
           const v = (x as any)[c.accessor];
           if (v == null) return false;
-          return String(v).toLowerCase().includes(q);
+          return squish(String(v)).includes(q);
         }),
       );
     }

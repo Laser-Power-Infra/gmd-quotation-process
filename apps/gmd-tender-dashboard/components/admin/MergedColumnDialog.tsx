@@ -1,5 +1,6 @@
 "use client";
 
+import { looseIncludes } from "@gmd/dashboard/lib/squish";
 import { useState, useEffect } from "react";
 import { Search, X, Loader2, Check } from "lucide-react";
 
@@ -175,7 +176,7 @@ export default function MergedColumnDialog({
               >
               {(fieldSearch.trim()
                 ? dbFieldOptions.filter((f) =>
-                    f.toLowerCase().includes(fieldSearch.toLowerCase()),
+                    looseIncludes(f, fieldSearch),
                   )
                 : dbFieldOptions
               ).length === 0 ? (
@@ -185,7 +186,7 @@ export default function MergedColumnDialog({
               ) : (
                 (fieldSearch.trim()
                   ? dbFieldOptions.filter((f) =>
-                      f.toLowerCase().includes(fieldSearch.toLowerCase()),
+                      looseIncludes(f, fieldSearch),
                     )
                   : dbFieldOptions
                 ).map((field) => (

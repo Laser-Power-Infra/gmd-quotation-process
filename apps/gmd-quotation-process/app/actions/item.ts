@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { recalculateItem, serializeItem, autoDetectItemType, getItemNameMerge } from "@/lib/costCalculator";
 import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { correctItemType } from "@/lib/itemTypePatterns";
+import { DETAILS_FIELDS, pnFromName, type AutoFillChange, type DetailsField } from "@/lib/detailsCheck";
 import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
 import { recomputeItemCodeForValues, fetchBomIdSet, refreshItemCodeForItem, syncGmdItemCodes, clearBomIdCache } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows, clearBomCache } from "@/lib/gmdBomCostLookup";
@@ -1117,28 +1118,27 @@ export async function importExcelDataAction(rows: any[]) {
   }
 }
 
-export async function autoFillBlanksAction(itemIds: string[]) {
+const AUTOFILL_SIZE_BLANK = ["Not detectable", "Not mentioned/cant detect size"]
+
+/**
+ * Auto-Fill step 1: work out what Auto-Fill would change and return it without saving,
+ * so the user can Accept / Reject each row.
+ */
+export async function previewAutoFillAction(itemIds: string[]) {
   await requireAccess();
   try {
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
-      select: { id: true, itemName: true, itemType: true, moc: true, size: true, pnRating: true, operationType: true, extension: true, bypass: true, itemTypeSource: true, mocSource: true, vaPercent: true, cost: true },
+      select: { id: true, itemName: true, itemType: true, moc: true, size: true, pnRating: true, operationType: true, extension: true, bypass: true },
     })
 
-    console.log(`\n=== [Server] AUTO-FILL BLANKS START ===`)
-    console.log(`[Server] Total items to process: ${items.length}`)
-
-    let updated = 0
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      process.stdout.write(`\r[${i + 1}/${items.length}] ${item.itemName.substring(0, 60).padEnd(60)}`)
-
+    const changes: AutoFillChange[] = []
+    for (const item of items) {
       const hasBlank =
         !item.itemType ||
         !item.moc ||
         !item.size ||
-        item.size === "Not detectable" ||
-        item.size === "Not mentioned/cant detect size" ||
+        AUTOFILL_SIZE_BLANK.includes(item.size) ||
         !item.operationType ||
         !item.extension ||
         item.extension === "-" ||
@@ -1147,79 +1147,86 @@ export async function autoFillBlanksAction(itemIds: string[]) {
       // Keyword-only correction runs even when nothing is blank, so skip the
       // AI-backed resolveItemCategory for pure-correction rows to save tokens.
       const resolved = hasBlank ? await resolveItemCategory({ itemName: item.itemName }) : null
-      const updates: any = {}
-      if (!item.itemType) {
-        if (resolved?.itemType) {
-          updates.itemType = resolved.itemType
-          updates.itemTypeSource = resolved.itemTypeSource
+      const add = (field: AutoFillChange["field"], newValue: string | null | undefined, extra: Partial<AutoFillChange> = {}) => {
+        const oldValue = item[field] ?? ""
+        if (newValue && newValue !== oldValue) {
+          changes.push({ itemId: item.id, itemName: item.itemName, field, oldValue, newValue, ...extra })
         }
+      }
+
+      if (!item.itemType) {
+        add("itemType", resolved?.itemType, { source: resolved?.itemTypeSource })
       } else {
         // Fix a known-wrong item type, e.g. "Dual Plate Check Valve" stored as
         // CHECK VALVE should become DPCV.
-        const corrected = correctItemType(item.itemName, item.itemType)
-        if (corrected) {
-          updates.itemType = corrected
-          updates.itemTypeSource = "keyword"
-        }
+        add("itemType", correctItemType(item.itemName, item.itemType), { source: "keyword" })
       }
       if (resolved) {
-        if (!item.moc && resolved.moc) {
-          updates.moc = resolved.moc
-          updates.mocSource = resolved.mocSource
+        if (!item.moc) add("moc", resolved.moc, { source: resolved.mocSource })
+        if (!item.size || AUTOFILL_SIZE_BLANK.includes(item.size)) {
+          add("size", resolved.size !== "Not detectable" ? resolved.size : null)
         }
-        if ((!item.size || item.size === "Not detectable" || item.size === "Not mentioned/cant detect size") && resolved.size && resolved.size !== "Not detectable") {
-          updates.size = resolved.size
-        }
-        if (resolved.pnRating) {
-          updates.pnRating = resolved.pnRating
-        }
-        if (!item.operationType && resolved.operationType) {
-          updates.operationType = resolved.operationType
-        }
-        if ((!item.extension || item.extension === "-") && resolved.extension) {
-          updates.extension = resolved.extension
-        }
-        if ((!item.bypass || item.bypass === "-") && resolved.bypass && resolved.bypass !== "-") {
-          updates.bypass = resolved.bypass
-        }
+        // PN comes from the name ("PN 1.6", "16 kg/cm²"), so ask the user to verify it.
+        add("pnRating", resolved.pnRating ?? pnFromName(item.itemName), { verify: true })
+        if (!item.operationType) add("operationType", resolved.operationType)
+        if (!item.extension || item.extension === "-") add("extension", resolved.extension)
+        if (!item.bypass || item.bypass === "-") add("bypass", resolved.bypass !== "-" ? resolved.bypass : null)
       }
-      if (Object.keys(updates).length > 0) {
-        await prisma.enquiryItem.update({ where: { id: item.id }, data: updates })
-        updated++
-        console.log(`\n  âœ“ ${item.itemName.substring(0, 50)}`)
-        if (updates.itemType) console.log(`    itemType:  "${item.itemType || ""}" â†’ "${updates.itemType}" (${updates.itemTypeSource})`)
-        if (updates.moc) console.log(`    moc:       "${item.moc || ""}" â†’ "${updates.moc}" (${updates.mocSource})`)
-        if (updates.size) console.log(`    size:      "${item.size || ""}" â†’ "${updates.size}"`)
-        if (updates.pnRating) console.log(`    pnRating:  "${item.pnRating || ""}" â†’ "${updates.pnRating}"`)
-        if (updates.operationType) console.log(`    opType:    "${item.operationType || ""}" â†’ "${updates.operationType}"`)
-        if (updates.extension) console.log(`    extension: "${item.extension || ""}" â†’ "${updates.extension}"`)
-        if (updates.bypass) console.log(`    bypass:    "${item.bypass || ""}" â†’ "${updates.bypass}"`)
+    }
+    return { success: true, data: { changes } }
+  } catch (error: any) {
+    console.error("Error previewing auto-fill:", error)
+    return { success: false, error: error.message || "Failed to preview auto-fill." }
+  }
+}
+
+/** Auto-Fill step 2: save only the changes the user accepted. */
+export async function applyAutoFillAction(changes: AutoFillChange[]) {
+  await requireAccess();
+  try {
+    const FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass"]
+    const byItem = new Map<string, AutoFillChange[]>()
+    for (const c of changes) {
+      if (!FIELDS.includes(c.field)) continue // the payload comes from the client
+      byItem.set(c.itemId, [...(byItem.get(c.itemId) ?? []), c])
+    }
+
+    let updated = 0
+    for (const [itemId, list] of byItem) {
+      const data: Record<string, string | null> = {}
+      for (const c of list) {
+        data[c.field] = c.newValue
+        if (c.field === "itemType") data.itemTypeSource = c.source ?? "keyword"
+        if (c.field === "moc") data.mocSource = c.source ?? "keyword"
+      }
+      const row = await prisma.enquiryItem.update({
+        where: { id: itemId },
+        data,
+        select: { itemType: true, moc: true, size: true, pnRating: true, operationType: true, erpItemCode: true, vaPercent: true },
+      })
+      updated++
+
+      // The item code is derived from these five fields: re-resolve it so it never
+      // keeps the code of the old size/type. A changed code invalidates the BOM pick.
+      if (list.some((c) => DETAILS_FIELDS.includes(c.field as DetailsField))) {
+        const recomputed = await recomputeItemCodeForValues(itemId, row, row.erpItemCode)
+        if (recomputed.changed) {
+          await prisma.enquiryItem.update({ where: { id: itemId }, data: { bomId: null, rmItemCode: null } })
+          await syncAvailableBomIds(itemId, recomputed.newCode)
+        }
       }
 
-      const effectiveItemType = updates.itemType || item.itemType
-      const effectiveSize = updates.size || item.size
-      if (!item.vaPercent && effectiveItemType) {
-        const defaultVa = getDefaultVaPercent(effectiveItemType, effectiveSize)
-        if (defaultVa !== null) {
-          await recalculateItem(item.id, { vaPercent: defaultVa })
-          updated++
-          console.log(`\n  âœ“ ${item.itemName.substring(0, 50)}`)
-          console.log(`    vaPercent: "" â†’ "${defaultVa}" (auto from ${effectiveItemType} / ${effectiveSize || "any"})`)
-        }
+      if (!row.vaPercent && row.itemType) {
+        const defaultVa = getDefaultVaPercent(row.itemType, row.size)
+        if (defaultVa !== null) await recalculateItem(itemId, { vaPercent: defaultVa })
       }
     }
 
-    console.log(`\n\n=== [Server] AUTO-FILL BLANKS DONE ===`)
-    console.log(`[Server] Updated: ${updated} of ${items.length} items\n`)
-
-    const refreshedItems = await prisma.enquiryItem.findMany({
-      where: { id: { in: itemIds } },
-    });
-
+    const refreshedItems = await prisma.enquiryItem.findMany({ where: { id: { in: [...byItem.keys()] } } })
     return { success: true, updated, data: { items: refreshedItems.map(serializeItem) } }
   } catch (error: any) {
-    console.error("Error auto-filling blanks:", error)
-    return { success: false, error: error.message || "Failed to auto-fill blanks." }
+    console.error("Error applying auto-fill:", error)
+    return { success: false, error: error.message || "Failed to apply auto-fill." }
   }
 }
 

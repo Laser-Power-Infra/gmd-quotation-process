@@ -1,5 +1,6 @@
 import type { GMDUpdateRow } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
+import { looseIncludes, squish } from "@gmd/dashboard/lib/squish";
 import { C_BATCH_HEADER, C_BATCH_VALUE } from "@/lib/gmd_lib/verify-bom-columns";
 
 // Pure helpers behind the Raw Material page: row building, casting costs, the
@@ -116,8 +117,8 @@ function rowHay(row: unknown[], headerCount: number): string {
   if (hay === undefined) {
     const parts: string[] = new Array(headerCount);
     for (let i = 0; i < headerCount; i++)
-      parts[i] = String(row[i] ?? "").toLowerCase();
-    hay = parts.join(" ");
+      parts[i] = squish(row[i]);
+    hay = parts.join("");
     rowHayCache.set(row, hay);
   }
   return hay;
@@ -132,7 +133,7 @@ export function matchesNewItemsTableFilters(
   bFilters: Record<string, boolean> = {},
 ): boolean {
   if (gSearch.trim()) {
-    const q = gSearch.toLowerCase();
+    const q = squish(gSearch);
     if (!rowHay(row, hdrs.length).includes(q)) return false;
   }
   for (const [colName, filterVal] of Object.entries(colFilters)) {
@@ -142,7 +143,7 @@ export function matchesNewItemsTableFilters(
     const cellVal = String(row[colIdx] ?? "");
     if (filterVal === "(Blank)") {
       if (cellVal !== "") return false;
-    } else if (!cellVal.toLowerCase().includes(filterVal.toLowerCase())) {
+    } else if (!looseIncludes(cellVal, filterVal)) {
       return false;
     }
   }

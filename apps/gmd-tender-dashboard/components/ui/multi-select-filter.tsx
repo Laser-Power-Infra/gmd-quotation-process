@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 /** Sentinel used by the tables for rows with no value in this column. */
 export const BLANK_VALUE = "(Blank)";
@@ -54,8 +55,8 @@ export function MultiSelectFilter({
 
   const visible = React.useMemo(() => {
     if (!query.trim()) return allOptions;
-    const q = query.toLowerCase();
-    return allOptions.filter((o) => o.toLowerCase().includes(q));
+    const q = squish(query);
+    return allOptions.filter((o) => squish(o).includes(q));
   }, [allOptions, query]);
 
   const toggle = (value: string) => {

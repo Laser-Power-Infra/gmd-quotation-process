@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@gmd/ui/components/dialog";
 import { Input } from "@gmd/ui/components/input";
+import { looseIncludes } from "@/lib/squish";
 
 type ItemNamePlan = {
   phase1: {
@@ -453,7 +454,7 @@ export default function BomPage() {
     const cell = (row: unknown[], idx: number) =>
       idx >= 0 ? String(row[idx] ?? "").trim() : "";
     const has = (value: string, query: string) =>
-      value.toLowerCase().includes(query.trim().toLowerCase());
+      looseIncludes(value, query);
 
     type Group = {
       bomId: string;

@@ -46,7 +46,11 @@ export function extractSizeFromItemName(itemName: string | null | undefined): st
     return null;
   }
 
-  const lower = itemName.toLowerCase();
+  // Thickness ("100 mm thk") is not a diameter; drop it so it is never read as a size.
+  const lower = itemName
+    .toLowerCase()
+    .replace(/\d+(?:\.\d+)?\s*(?:mm|m\.m)\s*(?:thk|thick(?:ness)?)\b/g, " ")
+    .replace(/\b(?:thk|thick(?:ness)?)\.?\s*[:=]?\s*\d+(?:\.\d+)?\s*(?:mm|m\.m)/g, " ");
   let resolvedSize: string | null = null;
 
   // 1. Try MM check: digits followed by mm, mmm, m.m, millimeters

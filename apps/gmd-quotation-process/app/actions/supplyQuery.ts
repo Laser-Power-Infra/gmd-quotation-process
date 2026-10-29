@@ -74,7 +74,7 @@ export async function fetchSupplyPage(
   const where = buildSupplyWhere(query);
   const orderBy = buildSupplyOrderBy(query);
 
-  const [idRows, countRows, syncedRows, utilityRows] = await Promise.all([
+  const [idRows, countRows, lastRun, utilityRows] = await Promise.all([
     prisma.$queryRaw<{ id: string }[]>`
       SELECT s.id FROM "SupplyHistoryItem" s
       ${SUPPLY_LATERAL_SQL}
@@ -87,9 +87,13 @@ export async function fetchSupplyPage(
       ${SUPPLY_LATERAL_SQL}
       WHERE ${where}
     `,
-    prisma.$queryRaw<{ at: Date | null }[]>`
-      SELECT max(s."syncedAt") AS at FROM "SupplyHistoryItem" s
-    `,
+    // Last completed execution-tracking run (key written by
+    // EXECUTION_TRACKING_RUN_KEY in lib/executionTrackingSync.ts, not imported
+    // here to keep the Google client out of this server-action bundle).
+    prisma.engineeringSync.findUnique({
+      where: { tabKey: "execution-tracking" },
+      select: { syncedAt: true },
+    }),
     prisma.lookupOption.findMany({
       where: { type: "UTILITY", isActive: true },
       orderBy: [{ sortOrder: "asc" }],
@@ -116,7 +120,7 @@ export async function fetchSupplyPage(
     rows,
     ids,
     total: Number(countRows[0]?.count ?? 0),
-    syncedAt: syncedRows[0]?.at ? new Date(syncedRows[0].at).toISOString() : null,
+    syncedAt: lastRun?.syncedAt.toISOString() ?? null,
     bomIdOptions,
     utilityOptions,
   };

@@ -1,5 +1,6 @@
 import { PBG_COLUMN_DEFS, type ColumnKey } from "@/lib/pbg/pbg-columns";
 import type { PbgRecord } from "@/lib/pbg/pbg-data";
+import { looseIncludes, squish } from "@/lib/squish";
 
 export type ColumnFilter = {
   text?: string;
@@ -75,15 +76,14 @@ export function filterRecords(
   filters: FilterState,
   query: string,
 ): PbgRecord[] {
-  const q = query.trim().toLowerCase();
+  const q = squish(query);
 
   return records.filter((record) => {
     if (q) {
       const haystack = SEARCH_KEYS.map((key) => record[key])
         .filter((value) => value !== null && value !== undefined && value !== "")
-        .join(" ")
-        .toLowerCase();
-      if (!haystack.includes(q)) return false;
+        .join(" ");
+      if (!squish(haystack).includes(q)) return false;
     }
 
     for (const def of PBG_COLUMN_DEFS) {
@@ -115,7 +115,7 @@ export function filterRecords(
       } else {
         const raw = record[def.key];
         const value = raw === null || raw === undefined ? "" : String(raw);
-        if (filter.text && !value.toLowerCase().includes(filter.text.toLowerCase())) {
+        if (filter.text && !looseIncludes(value, filter.text)) {
           return false;
         }
         if (hasSelected && !matchesSelection(filter.selected!, raw)) return false;

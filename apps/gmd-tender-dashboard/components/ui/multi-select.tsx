@@ -8,6 +8,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 interface MultiSelectProps {
   value: string[];
@@ -92,12 +93,12 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   }, [options, includeBlank]);
 
   const visibleOptions = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = squish(search);
     if (!q) return allOptions;
     return allOptions.filter(
       (o) =>
-        o.label.toLowerCase().includes(q) ||
-        o.value.toLowerCase().includes(q),
+        squish(o.label).includes(q) ||
+        squish(o.value).includes(q),
     );
   }, [allOptions, search]);
 

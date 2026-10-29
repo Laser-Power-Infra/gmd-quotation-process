@@ -67,6 +67,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import "./TenderTable.css";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 const formatMoney = (v: unknown): string => {
   if (v == null || v === "") return "-";
@@ -2213,7 +2214,7 @@ export const TenderTable: React.FC<TenderTableProps> = ({
     let result: EpcTenderRecord[] = records;
 
     if (globalSearch.trim() !== "") {
-      const searchLower = globalSearch.toLowerCase().trim();
+      const searchLower = squish(globalSearch);
       result = result.filter((record) => {
         const docNo = record.docketNo || "";
         const client = record.nameOfTheClient || "";
@@ -2222,12 +2223,12 @@ export const TenderTable: React.FC<TenderTableProps> = ({
         const schedules = (record.itemSchedules ?? []).join(" ");
         const comps = record.competitors || "";
         return (
-          docNo.toLowerCase().includes(searchLower) ||
-          client.toLowerCase().includes(searchLower) ||
-          nit.toLowerCase().includes(searchLower) ||
-          category.toLowerCase().includes(searchLower) ||
-          schedules.toLowerCase().includes(searchLower) ||
-          comps.toLowerCase().includes(searchLower)
+          squish(docNo).includes(searchLower) ||
+          squish(client).includes(searchLower) ||
+          squish(nit).includes(searchLower) ||
+          squish(category).includes(searchLower) ||
+          squish(schedules).includes(searchLower) ||
+          squish(comps).includes(searchLower)
         );
       });
     }
@@ -2304,7 +2305,7 @@ export const TenderTable: React.FC<TenderTableProps> = ({
 
     for (const [accessor, searchVal] of Object.entries(columnSearchText)) {
       if (!searchVal.trim()) continue;
-      const searchLower = searchVal.toLowerCase().trim();
+      const searchLower = squish(searchVal);
       preds.push({
         key: accessor,
         test: (r) =>
@@ -2332,12 +2333,12 @@ export const TenderTable: React.FC<TenderTableProps> = ({
       });
     }
     if (proposedErpItemTextFilter.trim() !== "") {
-      const searchLower = proposedErpItemTextFilter.toLowerCase().trim();
+      const searchLower = squish(proposedErpItemTextFilter);
       preds.push({
         key: "proposedErpItemName",
         test: (r) =>
           !!r.proposedErpItemName &&
-          r.proposedErpItemName.toLowerCase().includes(searchLower),
+          squish(r.proposedErpItemName).includes(searchLower),
       });
     }
 
@@ -2510,24 +2511,24 @@ export const TenderTable: React.FC<TenderTableProps> = ({
 
     // Global Text Search
     if (globalSearch.trim() !== "") {
-      const searchLower = globalSearch.toLowerCase().trim();
+      const searchLower = squish(globalSearch);
       result = result.filter((record) => {
         return (
-          record.docketNo.toLowerCase().includes(searchLower) ||
-          record.nameOfTheClient.toLowerCase().includes(searchLower) ||
-          record.tenderNoNitNo.toLowerCase().includes(searchLower) ||
-          record.tenderFor.toLowerCase().includes(searchLower) ||
-          record.tenderPrepareBy.toLowerCase().includes(searchLower) ||
-          record.currentStatus.toLowerCase().includes(searchLower) ||
+          squish(record.docketNo).includes(searchLower) ||
+          squish(record.nameOfTheClient).includes(searchLower) ||
+          squish(record.tenderNoNitNo).includes(searchLower) ||
+          squish(record.tenderFor).includes(searchLower) ||
+          squish(record.tenderPrepareBy).includes(searchLower) ||
+          squish(record.currentStatus).includes(searchLower) ||
           (record.itemCategory &&
-            record.itemCategory.toLowerCase().includes(searchLower)) ||
-          ((record.itemSchedules ?? []).join(" ").toLowerCase().includes(searchLower)) ||
+            squish(record.itemCategory).includes(searchLower)) ||
+          (squish((record.itemSchedules ?? []).join(" ")).includes(searchLower)) ||
           (record.remarks &&
-            record.remarks.toLowerCase().includes(searchLower)) ||
+            squish(record.remarks).includes(searchLower)) ||
           (record.competitors &&
-            record.competitors.toLowerCase().includes(searchLower)) ||
+            squish(record.competitors).includes(searchLower)) ||
           (record.nameOfWorkDescription &&
-            record.nameOfWorkDescription.toLowerCase().includes(searchLower))
+            squish(record.nameOfWorkDescription).includes(searchLower))
         );
       });
     }
@@ -2593,7 +2594,7 @@ export const TenderTable: React.FC<TenderTableProps> = ({
     // Column Search Text Filters
     for (const [accessor, searchVal] of Object.entries(columnSearchText)) {
       if (!searchVal.trim()) continue;
-      const searchLower = searchVal.toLowerCase().trim();
+      const searchLower = squish(searchVal);
       result = result.filter((r) => {
         const cellVal = String(
           r[accessor as keyof EpcTenderRecord] ?? "",
@@ -2609,10 +2610,10 @@ export const TenderTable: React.FC<TenderTableProps> = ({
       );
     }
     if (remarksTextFilter.trim() !== "") {
-      const searchLower = remarksTextFilter.toLowerCase().trim();
+      const searchLower = squish(remarksTextFilter);
       result = result.filter(
         (record) =>
-          record.remarks && record.remarks.toLowerCase().includes(searchLower),
+          record.remarks && squish(record.remarks).includes(searchLower),
       );
     }
 
@@ -2626,11 +2627,11 @@ export const TenderTable: React.FC<TenderTableProps> = ({
       );
     }
     if (proposedErpItemTextFilter.trim() !== "") {
-      const searchLower = proposedErpItemTextFilter.toLowerCase().trim();
+      const searchLower = squish(proposedErpItemTextFilter);
       result = result.filter(
         (record) =>
           record.proposedErpItemName &&
-          record.proposedErpItemName.toLowerCase().includes(searchLower),
+          squish(record.proposedErpItemName).includes(searchLower),
       );
     }
 
@@ -3136,10 +3137,10 @@ export const TenderTable: React.FC<TenderTableProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const q = columnPickerSearch.trim().toLowerCase();
+                        const q = squish(columnPickerSearch);
                         const filtered = q
                           ? baseVisibleColumns.filter(
-                              (c) => c.header.toLowerCase().includes(q) || String(c.accessor).toLowerCase().includes(q),
+                              (c) => squish(c.header).includes(q) || squish(String(c.accessor)).includes(q),
                             )
                           : baseVisibleColumns;
                         const next = { ...columnVisibility };
@@ -3166,10 +3167,10 @@ export const TenderTable: React.FC<TenderTableProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const q = columnPickerSearch.trim().toLowerCase();
+                        const q = squish(columnPickerSearch);
                         const filtered = q
                           ? baseVisibleColumns.filter(
-                              (c) => c.header.toLowerCase().includes(q) || String(c.accessor).toLowerCase().includes(q),
+                              (c) => squish(c.header).includes(q) || squish(String(c.accessor)).includes(q),
                             )
                           : baseVisibleColumns;
                         const next: Record<string, boolean> = { ...columnVisibility };
@@ -3198,10 +3199,10 @@ export const TenderTable: React.FC<TenderTableProps> = ({
                   </div>
                   <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
                     {(() => {
-                      const q = columnPickerSearch.trim().toLowerCase();
+                      const q = squish(columnPickerSearch);
                       const filtered = q
                         ? baseVisibleColumns.filter(
-                            (c) => c.header.toLowerCase().includes(q) || String(c.accessor).toLowerCase().includes(q),
+                            (c) => squish(c.header).includes(q) || squish(String(c.accessor)).includes(q),
                           )
                         : baseVisibleColumns;
                       if (filtered.length === 0) return <p style={{ textAlign: "center", padding: 16, color: "#94a3b8", fontSize: 12 }}>No columns found</p>;

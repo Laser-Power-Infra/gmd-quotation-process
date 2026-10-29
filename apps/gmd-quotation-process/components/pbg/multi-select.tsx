@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { SearchIcon } from "@/components/pbg/icons";
+import { squish } from "@/lib/squish";
 
 type MultiSelectProps = {
   options: string[];
@@ -21,9 +22,9 @@ export function MultiSelect({
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = squish(query);
     if (!q) return options;
-    return options.filter((option) => option.toLowerCase().includes(q));
+    return options.filter((option) => squish(option).includes(q));
   }, [options, query]);
 
   const selectedSet = new Set(selected);

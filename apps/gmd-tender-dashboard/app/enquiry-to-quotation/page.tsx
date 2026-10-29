@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import "@/app/TenderDashboard.css";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 type SortField = keyof SmartsheetTender;
 type SortDir = "asc" | "desc";
@@ -313,7 +314,7 @@ export const TenderDashboardPage: React.FC = () => {
     }
 
     // 2. Global search
-    const q = search.trim().toLowerCase();
+    const q = squish(search);
     if (q) {
       rows = rows.filter(row =>
         COLUMNS.some(col => {
@@ -334,14 +335,14 @@ export const TenderDashboardPage: React.FC = () => {
             );
           }
           const v = row[col.key];
-          return v && String(v).toLowerCase().includes(q);
+          return v && squish(String(v)).includes(q);
         })
       );
     }
 
     // 3. Individual column searches
     Object.entries(colSearches).forEach(([key, val]) => {
-      const sVal = val.trim().toLowerCase();
+      const sVal = squish(val);
       if (sVal) {
         rows = rows.filter(row => {
           if (key === "rawMaterials") {
@@ -361,7 +362,7 @@ export const TenderDashboardPage: React.FC = () => {
             );
           }
           const v = row[key as keyof SmartsheetTender];
-          return v !== null && v !== undefined && String(v).toLowerCase().includes(sVal);
+          return v !== null && v !== undefined && squish(String(v)).includes(sVal);
         });
       }
     });

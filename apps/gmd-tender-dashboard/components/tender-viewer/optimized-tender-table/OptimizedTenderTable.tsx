@@ -70,6 +70,7 @@ import type {
   ColumnFilterState,
 } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 export type {
   ColumnFilterType,
@@ -364,13 +365,13 @@ function OptimizedTenderTableInner<T extends Record<string, unknown>>({
     // Server mode: rows are already the filtered page.
     if (server) return rows;
     if (debouncedGlobalSearch.trim() === "") return rows;
-    const searchLower = debouncedGlobalSearch.toLowerCase().trim();
+    const searchLower = squish(debouncedGlobalSearch);
     return rows.filter((row) => {
       return columns.some((col) => {
         if (col.filter?.type === "boolean") return false;
         const val = row[col.accessor as keyof T];
         if (val === null || val === undefined) return false;
-        return String(val).toLowerCase().includes(searchLower);
+        return squish(String(val)).includes(searchLower);
       });
     });
   }, [rows, columns, debouncedGlobalSearch, server]);
@@ -480,21 +481,21 @@ function OptimizedTenderTableInner<T extends Record<string, unknown>>({
             });
           }
           if (col.filter.searchable && filterState.text) {
-            const textLower = filterState.text.toLowerCase();
+            const textLower = squish(filterState.text);
             result = result.filter((row) => {
               const val = row[col.accessor as keyof T];
               if (val === null || val === undefined) return false;
-              return String(val).toLowerCase().includes(textLower);
+              return squish(String(val)).includes(textLower);
             });
           }
         }
 
         if (filterState.text) {
-          const textLower = filterState.text.toLowerCase();
+          const textLower = squish(filterState.text);
           result = result.filter((row) => {
             const val = row[col.accessor as keyof T];
             if (val === null || val === undefined) return false;
-            return String(val).toLowerCase().includes(textLower);
+            return squish(String(val)).includes(textLower);
           });
         }
 
