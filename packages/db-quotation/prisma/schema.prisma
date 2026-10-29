@@ -839,6 +839,8 @@ model PbgReminderLog {
   status    String   // SENT | FAILED
   messageId String?  @map("message_id")
   error     String?
+  poNumber     String? @map("po_number")
+  recipientKey String? @map("recipient_key")
   sentAt    DateTime @default(now()) @map("sent_at") @db.Timestamptz
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -846,6 +848,7 @@ model PbgReminderLog {
 
   @@index([pbgId, stage, sentAt], map: "idx_pbg_reminder_pbg_stage_sent")
   @@index([stage, status], map: "idx_pbg_reminder_stage_status")
+  @@index([poNumber, recipientKey, stage, sentAt], map: "idx_pbg_reminder_po_recipient_stage_sent")
   @@map("pbg_reminder_log")
 }
 
