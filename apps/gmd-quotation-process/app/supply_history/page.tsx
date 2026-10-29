@@ -216,8 +216,12 @@ export default function SupplyHistoryPage() {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Sync failed (${res.status})`);
       }
+      const body = await res.json().catch(() => ({}));
       await refresh();
       toast.success("Supply History synced");
+      if (body.executionTrackingError) {
+        toast.warning(`SALE BILL sync failed: ${body.executionTrackingError}`);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sync failed");
     } finally {
@@ -297,7 +301,7 @@ export default function SupplyHistoryPage() {
         <GMDUpdateHeader
           title="SUPPLY HISTORY"
           totalRows={total}
-          syncedAt={syncedAt ?? undefined}
+          syncedAt={syncedAt}
           onSync={handleSync}
           syncing={syncing}
         />

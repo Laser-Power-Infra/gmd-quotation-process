@@ -104,6 +104,9 @@ type SyncLogChange = {
 const WRITE_CHUNK = 200;
 const WRITE_CONCURRENCY = 10;
 
+/** `EngineeringSync.tabKey` holding the last completed run; read by `fetchSupplyPage`. */
+export const EXECUTION_TRACKING_RUN_KEY = "execution-tracking";
+
 /** Inline console samples; the full diff lives in `sync_log.details`. */
 const SAMPLE_SIZE = 5;
 
@@ -1145,6 +1148,25 @@ export async function runExecutionTrackingSync(
   } else {
     inserted = toCreate.length;
     updated = toUpdate.length + nameRefreshes.length;
+  }
+
+  // Heartbeat for the /supply_history "Last synced" label. A run that changes
+  // nothing leaves no trace in any row, so the time is stored here; EngineeringSync
+  // is reused (keyed lookups only) to avoid a table for one timestamp.
+  if (apply) {
+    try {
+      await prisma.engineeringSync.upsert({
+        where: { tabKey: EXECUTION_TRACKING_RUN_KEY },
+        create: { tabKey: EXECUTION_TRACKING_RUN_KEY, syncedAt: new Date(), totalRows: 0 },
+        update: { syncedAt: new Date() },
+      });
+    } catch (err) {
+      console.error(
+        `[execution-tracking] could not record the run time: ${
+          err instanceof Error ? err.message : "Unknown error"
+        }`,
+      );
+    }
   }
 
   // Record description-level folds in the log, after the writes, so the row that
