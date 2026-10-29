@@ -130,13 +130,38 @@ test('splitThreadEmails never returns internal addresses', () => {
   )
 })
 
-test('splitThreadEmails prefers the party when any source is internal', () => {
+test('splitThreadEmails keeps an external From over the party pool even when To is internal', () => {
   assert.deepEqual(
     splitThreadEmails(
       { sender: 'buyer@acme.com', toDetails: { value: 'tridip@gmdalui.co.in' }, ccDetails: { value: 'pm@acme.com' } },
       ['party@acme.com', 'accounts@acme.com'],
     ),
+    { senderEmail: 'buyer@acme.com', ccEmails: ['pm@acme.com'], source: 'thread' },
+  )
+})
+
+test('splitThreadEmails prefers the party when From is internal but another source is external', () => {
+  assert.deepEqual(
+    splitThreadEmails(
+      { sender: 'tridip@gmdalui.co.in', toDetails: null, ccDetails: { value: 'pm@acme.com' } },
+      ['party@acme.com', 'accounts@acme.com'],
+    ),
     { senderEmail: 'party@acme.com', ccEmails: ['accounts@acme.com'], source: 'party' },
+  )
+})
+
+test('splitThreadEmails uses the first mail From over the latest reply sender', () => {
+  assert.deepEqual(
+    splitThreadEmails(
+      {
+        sender: 'Tanmoy <laserentry.four@gmail.com>',
+        body: '--- Message 1 From: MAYANK SINHA <mayank@lnt.com> ---\n\nhi\n\n--- Message 2 From: Puja <puja@laserpowerinfra.com> ---\n\nok',
+        toDetails: { value: 'info@gmdalui.co.in' },
+        ccDetails: { value: 'arun@lnt.com, srimathi@lnt.com' },
+      },
+      ['srimathi@lnt.com'],
+    ),
+    { senderEmail: 'mayank@lnt.com', ccEmails: ['arun@lnt.com', 'srimathi@lnt.com'], source: 'thread' },
   )
 })
 

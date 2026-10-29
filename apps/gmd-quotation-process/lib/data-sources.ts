@@ -2194,7 +2194,7 @@ const QUOTATION_COST_SYNC: SyncOperation[] = [
     id: "q-auto-fill-blanks",
     name: "Auto-fill blank descriptors",
     kind: "derived",
-    file: "app/actions/item.ts:autoFillBlanksAction",
+    file: "app/actions/item.ts:applyAutoFillAction",
     line: "2113-2191",
     purpose:
       "Fills the descriptive columns that are still blank by reading the item name, then seeds a default VA% where one is missing.",

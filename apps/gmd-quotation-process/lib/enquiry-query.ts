@@ -160,6 +160,19 @@ const IMAGE_EXISTS_SQL = (alias: Prisma.Sql) => sql`EXISTS (
     AND (g."url" IS NOT NULL OR g."driveFileId" IS NOT NULL)
 )`;
 
+// Any of the five Details fields blank/UNKNOWN (size also counts SIZE_BLANK_VALUES).
+// Keep in step with isEmptyDetail in lib/detailsCheck.ts.
+const DETAILS_INCOMPLETE_SQL = (alias: Prisma.Sql) => sql`(
+  ${Prisma.join(
+    ["itemType", "moc", "size", "pnRating", "operationType"].map(
+      (f) =>
+        sql`(btrim(coalesce(${alias}.${Prisma.raw(`"${f}"`)}, '')) = '' OR upper(btrim(${alias}.${Prisma.raw(`"${f}"`)})) = 'UNKNOWN')`,
+    ),
+    " OR ",
+  )}
+  OR btrim(${alias}."size") IN (${Prisma.join(SIZE_BLANK_VALUES)})
+)`;
+
 const CLOSED_BOM_SQL = (alias: Prisma.Sql) => sql`${alias}."bomId" IS NOT NULL AND EXISTS (
   SELECT 1 FROM "Bom" b JOIN "BomItem" bi ON bi."bomId" = b.id
   WHERE b."bomId" = ${alias}."bomId" AND bi."cBatch" = ${C_BATCH_VALUE}
@@ -256,6 +269,7 @@ export function buildItemWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): Pri
   }
 
   if (q.closedBomOnly && "closedBomOnly" !== skip) parts.push(CLOSED_BOM_SQL(sql`i`));
+  if (q.incompleteOnly && "incompleteOnly" !== skip) parts.push(DETAILS_INCOMPLETE_SQL(sql`i`));
 
   if (parts.length === 0) return sql`TRUE`;
   return Prisma.join(parts, " AND ");
@@ -361,13 +375,13 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
     parts.push(
       sql`(e."closureStatus" IS NULL OR btrim(e."closureStatus") = '' OR lower(btrim(e."closureStatus")) = 'pending')`,
     );
-    if (hasActiveItemFilters(f, q.closedBomOnly)) {
+    if (hasActiveItemFilters(f, q.closedBomOnly || q.incompleteOnly)) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,
       );
     }
   } else {
-    const needsItem = hasActiveFilters(q) || q.closedBomOnly;
+    const needsItem = hasActiveFilters(q) || q.closedBomOnly || q.incompleteOnly;
     if (needsItem) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,
