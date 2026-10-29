@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import "@/app/SupplyHistory.css";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 type SortField = keyof SupplyHistoryRecord;
 type SortDir = "asc" | "desc";
@@ -100,9 +101,9 @@ const ColumnMultiselectDropdown: React.FC<ColumnMultiselectDropdownProps> = ({
 }) => {
   const [optSearch, setOptSearch] = useState("");
   const filteredOptions = useMemo(() => {
-    const q = optSearch.trim().toLowerCase();
+    const q = squish(optSearch);
     if (!q) return options;
-    return options.filter(o => o.toLowerCase().includes(q));
+    return options.filter(o => squish(o).includes(q));
   }, [options, optSearch]);
   useEffect(() => {
     if (!show) setOptSearch("");
@@ -611,25 +612,25 @@ const SupplyHistoryDashboard: React.FC = () => {
   const filtered = useMemo<SupplyHistoryRecord[]>(() => {
     let rows = displayData;
 
-    const q = search.trim().toLowerCase();
+    const q = squish(search);
     if (q) {
       rows = rows.filter(row =>
         COLUMNS.some(col => {
           const v = row[col.key];
-          return v !== null && v !== undefined && String(v).toLowerCase().includes(q);
+          return v !== null && v !== undefined && squish(String(v)).includes(q);
         })
       );
     }
 
     Object.entries(colSearches).forEach(([key, val]) => {
-      const sVal = val.trim().toLowerCase();
+      const sVal = squish(val);
       if (sVal) {
         rows = rows.filter(row => {
           const v = row[key as keyof SupplyHistoryRecord];
           if (v === null || v === undefined) return false;
           if (key === "hasDocuments") {
             const label = v ? "yes" : "no";
-            return label.includes(sVal) || String(v).toLowerCase().includes(sVal);
+            return label.includes(sVal) || squish(String(v)).includes(sVal);
           }
           if (typeof v === "number") {
             const numStr = String(v).toLowerCase();
@@ -638,9 +639,9 @@ const SupplyHistoryDashboard: React.FC = () => {
           }
           if ((key === "saleBillDate" || key === "partyRefDate" || key === "certificateSentDate") && typeof v === "string") {
             const fmt = formatDate(v);
-            return String(v).toLowerCase().includes(sVal) || Boolean(fmt && fmt.toLowerCase().includes(sVal));
+            return squish(String(v)).includes(sVal) || Boolean(fmt && squish(fmt).includes(sVal));
           }
-          return String(v).toLowerCase().includes(sVal);
+          return squish(String(v)).includes(sVal);
         });
       }
     });

@@ -19,6 +19,7 @@ import { useMemo, useState } from "react";
 import { Check, ChevronDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@gmd/ui/components/popover";
+import { squish } from "@/lib/squish";
 
 const TRIGGER_BASE = "cursor-pointer outline-none disabled:opacity-50 disabled:cursor-not-allowed";
 
@@ -87,10 +88,10 @@ export default function CellSelect({
   );
 
   const visibleOptions = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = squish(search);
     if (!q) return usableOptions;
     return usableOptions.filter(
-      (opt) => opt.toLowerCase().includes(q) || (optionLabels?.[opt]?.toLowerCase().includes(q) ?? false),
+      (opt) => squish(opt).includes(q) || squish(optionLabels?.[opt]).includes(q),
     );
   }, [usableOptions, search, optionLabels]);
 

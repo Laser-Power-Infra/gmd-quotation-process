@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { uploadImageForComboAction, createGeneratedImageAction } from "@/app/actions/misc";
 import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import MultiSelectFilter, { BLANK } from "@/components/table/MultiSelectFilter";
+import { squish } from "@/lib/squish";
 
 export type UploadImageComboRow = {
   itemType: string;
@@ -109,9 +110,9 @@ export default function UploadImageTable({
     r: UploadImageComboRow,
     exclude: "itemType" | "operationType" | "rmType" | "status" | null
   ): boolean => {
-    const q = search.trim().toLowerCase();
+    const q = squish(search);
     if (q) {
-      const hay = [r.itemType, r.operationType, r.rmType, r.status, r.imageKey, r.driveFileId].join(" ").toLowerCase();
+      const hay = squish([r.itemType, r.operationType, r.rmType, r.status, r.imageKey, r.driveFileId].join(" "));
       if (!hay.includes(q)) return false;
     }
     if (exclude !== "itemType" && itemTypeFilter.length > 0) {

@@ -21,6 +21,7 @@ import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { closeNewEnquiryDialog } from "@/lib/dialogsSlice";
 import { useSession } from "next-auth/react";
 import { clearDraft, isDraftEmpty, parseDraft, readDraftRaw, saveDraft, type NewEnquiryDraft } from "@/lib/newEnquiryDraft";
+import { looseIncludes } from "@/lib/squish";
 
 interface NewEnquiryDialogProps {
   nextDocketNumber: string;
@@ -349,7 +350,7 @@ export default function NewEnquiryDialog({
 
   // Filter party names dropdown
   const filteredParties = dropdownOptions.partyNames.filter((name) =>
-    name.toLowerCase().includes(debouncedPartySearch.toLowerCase())
+    looseIncludes(name, debouncedPartySearch)
   );
 
   const selectClass = "w-full h-9 rounded border border-input bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring";

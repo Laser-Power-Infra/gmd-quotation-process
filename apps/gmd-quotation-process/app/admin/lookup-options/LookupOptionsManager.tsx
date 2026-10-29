@@ -13,6 +13,7 @@ import {
   deleteLookupOptionAction,
   type LookupOptionData,
 } from "./actions";
+import { looseIncludes } from "@/lib/squish";
 
 const TYPE_LABELS: Record<string, string> = {
   PARTY: "Party Names",
@@ -53,7 +54,7 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
   const filtered = useMemo(() => {
     return options
       .filter((o) => o.type === selectedType)
-      .filter((o) => o.value.toLowerCase().includes(search.toLowerCase()))
+      .filter((o) => looseIncludes(o.value, search))
       .sort((a, b) => a.sortOrder - b.sortOrder);
   }, [options, selectedType, search]);
 

@@ -10,6 +10,7 @@ import { EmailDraftDialog } from "@/components/emd/EmailDraftDialog";
 import { formatDateTimeIST } from "@/lib/format-ist";
 import "@/app/SupplyHistory.css";
 import "@/components/TenderTable.css";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 function normalizeStatus(v: string | null | undefined): EmdStatus | null {
   if (!v) return null;
@@ -302,13 +303,13 @@ export default function EmdDetailsCashPage() {
   const baseStageFiltered = useMemo(() => {
     let result: EmdDetailsCashRecord[] = statusFiltered;
     if (globalSearch.trim() !== "") {
-      const q = globalSearch.toLowerCase().trim();
+      const q = squish(globalSearch);
       result = result.filter((r) =>
         CASH_COLUMNS.some((c) => {
           if (c.accessor === "action") return false;
           const v = (r as any)[c.accessor as keyof EmdDetailsCashRecord];
           if (v == null) return false;
-          return String(v).toLowerCase().includes(q);
+          return squish(String(v)).includes(q);
         })
       );
     }
@@ -331,13 +332,13 @@ export default function EmdDetailsCashPage() {
     }
     for (const [accessor, searchVal] of Object.entries(columnSearchText)) {
       if (!searchVal.trim()) continue;
-      const q = searchVal.toLowerCase().trim();
+      const q = squish(searchVal);
       preds.push({
         key: accessor,
         test: (r) => {
           const v = (r as any)[accessor as keyof EmdDetailsCashRecord];
           if (v == null) return false;
-          return String(v).toLowerCase().includes(q);
+          return squish(String(v)).includes(q);
         },
       });
     }

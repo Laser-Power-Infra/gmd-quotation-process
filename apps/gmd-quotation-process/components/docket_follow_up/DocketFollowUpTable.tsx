@@ -30,6 +30,7 @@ import { Button } from "@gmd/ui/components/button";
 import ThreadDetailModal from "./ThreadDetailModal";
 import * as XLSX from "xlsx";
 import { MultiFilterDropdown, FilterOption } from "./MultiFilterDropdown";
+import { squish } from "@/lib/squish";
 
 interface DocketFollowUpRow {
   enquiryId: string;
@@ -319,8 +320,8 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
 
       // 2. Docket No Filter
       if (filterDocketNo.trim()) {
-        const q = filterDocketNo.toLowerCase();
-        if (!r.docketNumber.toLowerCase().includes(q)) return false;
+        const q = squish(filterDocketNo);
+        if (!squish(r.docketNumber).includes(q)) return false;
       }
 
       // 3. Multi-Select Party Filter
@@ -386,10 +387,10 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
 
       // 11. Party Email & Recipients
       if (filterPartyEmail.trim()) {
-        const q = filterPartyEmail.toLowerCase();
-        const pEmail = (r.partyEmail || "").toLowerCase();
-        const toList = (r.allRecipients?.to || []).join(" ").toLowerCase();
-        const ccList = (r.allRecipients?.cc || []).join(" ").toLowerCase();
+        const q = squish(filterPartyEmail);
+        const pEmail = squish(r.partyEmail);
+        const toList = squish((r.allRecipients?.to || []).join(" "));
+        const ccList = squish((r.allRecipients?.cc || []).join(" "));
         if (!pEmail.includes(q) && !toList.includes(q) && !ccList.includes(q)) return false;
       }
 
@@ -406,9 +407,9 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
 
       // 13. Sender / Last Email Filter
       if (filterSender.trim()) {
-        const q = filterSender.toLowerCase();
-        const sender = (r.latestThread?.sender || "").toLowerCase();
-        const subject = (r.latestThread?.subject || "").toLowerCase();
+        const q = squish(filterSender);
+        const sender = squish(r.latestThread?.sender);
+        const subject = squish(r.latestThread?.subject);
         if (!sender.includes(q) && !subject.includes(q)) return false;
       }
 

@@ -1,4 +1,5 @@
 import { Prisma } from "@gmd/db-tender";
+import { squish } from "@gmd/dashboard/lib/squish";
 import type { ColumnFilterState } from "@/lib/types";
 import type {
   AnalyticsFilter,
@@ -396,7 +397,7 @@ function selectSql(
 
 function textSql(expr: Prisma.Sql, text: string): Prisma.Sql | null {
   if (!text) return null;
-  return Prisma.sql`${expr} ILIKE ${`%${text}%`}`;
+  return Prisma.sql`regexp_replace((${expr})::text, '\\s', '', 'g') ILIKE ${`%${squish(text)}%`}`;
 }
 
 function booleanSql(expr: Prisma.Sql, value: boolean): Prisma.Sql {

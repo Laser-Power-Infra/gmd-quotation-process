@@ -39,6 +39,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogC
 import { Button } from "@gmd/ui/components/button";
 import { cn } from "@/lib/utils";
 import { formatIndianNumber, cleanNumberInput, hasNumberChanged } from "@/lib/formatCurrency";
+import { looseIncludes } from "@/lib/squish";
 
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
@@ -683,7 +684,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     if (filters.docketNumber) {
       const next: Record<string, boolean> = {};
       for (const enquiry of enquiries) {
-        if (enquiry.docketNumber.toLowerCase().includes(filters.docketNumber.toLowerCase())) {
+        if (looseIncludes(enquiry.docketNumber, filters.docketNumber)) {
           if (expandedRows[enquiry.id] === undefined) {
             next[enquiry.id] = true;
           }
@@ -774,7 +775,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     return enquiry.items.filter((item: EnquiryItemData) => {
       if (
         filters.itemName &&
-        !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())
+        !looseIncludes(item.itemName, filters.itemName)
       ) {
         return false;
       }
@@ -789,7 +790,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.itemTypeSearch &&
-        !(item.itemType || "").toLowerCase().includes(filters.itemTypeSearch.toLowerCase())
+        !looseIncludes((item.itemType || ""), filters.itemTypeSearch)
       ) {
         return false;
       }
@@ -798,7 +799,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.mocSearch &&
-        !(item.moc || "").toLowerCase().includes(filters.mocSearch.toLowerCase())
+        !looseIncludes((item.moc || ""), filters.mocSearch)
       ) {
         return false;
       }
@@ -822,7 +823,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         (filters as any).othersSearch &&
-        !((item as any).others || "").toLowerCase().includes((filters as any).othersSearch.toLowerCase())
+        !looseIncludes(((item as any).others || ""), (filters as any).othersSearch)
       ) {
         return false;
       }
@@ -831,7 +832,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.erpItemCodeSearch &&
-        !(item.erpItemCode || "").toLowerCase().includes(filters.erpItemCodeSearch.toLowerCase())
+        !looseIncludes((item.erpItemCode || ""), filters.erpItemCodeSearch)
       ) {
         return false;
       }
@@ -840,7 +841,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.bomIdSearch &&
-        !((item as any).bomId || "").toLowerCase().includes(filters.bomIdSearch.toLowerCase())
+        !looseIncludes(((item as any).bomId || ""), filters.bomIdSearch)
       ) {
         return false;
       }
@@ -852,13 +853,13 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.contractReviewRateSearch &&
-        !(item.contractReviewRate || "").toLowerCase().includes(filters.contractReviewRateSearch.toLowerCase())
+        !looseIncludes((item.contractReviewRate || ""), filters.contractReviewRateSearch)
       ) {
         return false;
       }
       if (
         filters.pdcostValidationSearch &&
-        !(getPdCostValidation(item) || "").toLowerCase().includes(filters.pdcostValidationSearch.toLowerCase())
+        !looseIncludes((getPdCostValidation(item) || ""), filters.pdcostValidationSearch)
       ) {
         return false;
       }
@@ -873,7 +874,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.costRefCodeSearch &&
-        !(item.costRefCode || "").toLowerCase().includes(filters.costRefCodeSearch.toLowerCase())
+        !looseIncludes((item.costRefCode || ""), filters.costRefCodeSearch)
       ) {
         return false;
       }
@@ -885,13 +886,13 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.stockStatus &&
-        !(item.stockStatus || "").toLowerCase().includes(filters.stockStatus.toLowerCase())
+        !looseIncludes((item.stockStatus || ""), filters.stockStatus)
       ) {
         return false;
       }
       if (
         filters.stockQuantity &&
-        !(item.stockQuantity || "").toLowerCase().includes(filters.stockQuantity.toLowerCase())
+        !looseIncludes((item.stockQuantity || ""), filters.stockQuantity)
       ) {
         return false;
       }
@@ -915,7 +916,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.stockAgainstContract &&
-        !(item.stockAgainstContract || "").toLowerCase().includes(filters.stockAgainstContract.toLowerCase())
+        !looseIncludes((item.stockAgainstContract || ""), filters.stockAgainstContract)
       ) {
         return false;
       }
@@ -936,7 +937,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.itemNameMergeSearch &&
-        !(item.itemNameMerge || "").toLowerCase().includes(filters.itemNameMergeSearch.toLowerCase())
+        !looseIncludes((item.itemNameMerge || ""), filters.itemNameMergeSearch)
       ) {
         return false;
       }

@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Plus, Search, Trash2, Pencil, Save, X, Rows3 } from "lucide-react";
 import { toast } from "sonner";
 import SopResponsibilityDialog from "@/components/admin/SopResponsibilityDialog";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 interface SopRow {
   id: number;
@@ -72,8 +73,8 @@ export default function SopAdminPage() {
 
   const filtered = rows.filter((r) => {
     if (!search.trim()) return true;
-    const q = search.toLowerCase();
-    return r.columnName.toLowerCase().includes(q) || (r.allocatedTo||"").toLowerCase().includes(q) || (r.email||"").toLowerCase().includes(q) || (r.description||"").toLowerCase().includes(q) || (r.source||"").toLowerCase().includes(q) || (r.doneFromWhere||"").toLowerCase().includes(q);
+    const q = squish(search);
+    return squish(r.columnName).includes(q) || squish((r.allocatedTo||"")).includes(q) || squish((r.email||"")).includes(q) || squish((r.description||"")).includes(q) || squish((r.source||"")).includes(q) || squish((r.doneFromWhere||"")).includes(q);
   });
 
   async function handleDelete(id:number){ if(!confirm("Delete this SOP entry?")) return; try{ const res=await fetch(`/api/sop-responsibilities/${id}`,{method:"DELETE"}); const data=await res.json(); if(!res.ok) throw new Error(data.error||"Failed"); toast.success("Deleted"); fetchRows(); } catch(e:any){ toast.error(e.message||"Failed"); } }

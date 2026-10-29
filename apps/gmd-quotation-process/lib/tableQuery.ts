@@ -1,4 +1,5 @@
 import { Prisma } from "@gmd/db-quotation";
+import { squish } from "./squish";
 
 /**
  * SQL mirrors of `GMDUpdateTable`'s client-side filter pipeline.
@@ -61,7 +62,7 @@ export function cellText(expr: Prisma.Sql): Prisma.Sql {
 
 function containsSql(expr: Prisma.Sql, value: string): Prisma.Sql {
   if (BLANK_FILTER_VALUES.has(value)) return sql`${cellText(expr)} = ''`;
-  return sql`(${expr}) ILIKE ${`%${escapeLike(value)}%`}`;
+  return sql`regexp_replace((${expr})::text, '\\s', '', 'g') ILIKE ${`%${escapeLike(squish(value))}%`}`;
 }
 
 function hasValueSql(expr: Prisma.Sql): Prisma.Sql {
@@ -166,7 +167,7 @@ export function buildTableWhere(
     const expressions = Object.values(columns).map((c) => c.text);
     if (expressions.length > 0) {
       const joined = Prisma.join(expressions, " || ' ' || ");
-      parts.push(sql`(${joined}) ILIKE ${`%${escapeLike(search)}%`}`);
+      parts.push(sql`regexp_replace((${joined})::text, '\\s', '', 'g') ILIKE ${`%${escapeLike(squish(search))}%`}`);
     }
   }
 

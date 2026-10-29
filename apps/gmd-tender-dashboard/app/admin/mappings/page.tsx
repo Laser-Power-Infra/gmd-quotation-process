@@ -5,6 +5,7 @@ import { Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import MappingDialog from "@/components/admin/MappingDialog";
 import { MERGED_FIELDS } from "@/lib/tender-columns";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 interface Mapping {
   id: number;
@@ -47,15 +48,15 @@ export default function ColumnMappingsPage() {
   }, [fetchMappings]);
 
   const groups = useMemo(() => {
-    const searchLower = search.toLowerCase().trim();
+    const searchLower = squish(search);
     const headerMap = new Map<string, { id: number; excelHeader: string }[]>();
     const displayMap = new Map<string, string>();
     for (const m of mappings) {
       if (searchLower) {
         const match =
-          m.excelHeader.toLowerCase().includes(searchLower) ||
-          m.dbField.toLowerCase().includes(searchLower) ||
-          (m.displayName?.toLowerCase().includes(searchLower) ?? false);
+          squish(m.excelHeader).includes(searchLower) ||
+          squish(m.dbField).includes(searchLower) ||
+          (squish(m.displayName).includes(searchLower) ?? false);
         if (!match) continue;
       }
       if (!headerMap.has(m.dbField)) headerMap.set(m.dbField, []);

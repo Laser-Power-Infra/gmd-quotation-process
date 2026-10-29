@@ -5,6 +5,7 @@
  * reads them. Money arrives as Prisma `Decimal`, so it is flattened to a number
  * here (same as `lib/pbg/pbg-data.ts`) before it reaches the table.
  */
+import { squish } from "@gmd/dashboard/lib/squish";
 
 export type DebtorRow = {
   id: string;
@@ -58,7 +59,7 @@ export function computeDebtorTotals(
 
 /** Client-side search across the columns the page exposes. */
 export function filterDebtors(rows: DebtorRow[], query: string): DebtorRow[] {
-  const needle = query.trim().toLowerCase();
+  const needle = squish(query);
   if (needle === "") return rows;
   return rows.filter((row) =>
     [
@@ -67,6 +68,6 @@ export function filterDebtors(rows: DebtorRow[], query: string): DebtorRow[] {
       row.vrNo,
       row.partyBillNo,
       row.particular,
-    ].some((value) => (value ?? "").toLowerCase().includes(needle)),
+    ].some((value) => squish(value).includes(needle)),
   );
 }

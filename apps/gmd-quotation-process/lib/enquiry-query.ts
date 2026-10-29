@@ -1,4 +1,5 @@
 import { Prisma } from "@gmd/db-quotation";
+import { squish } from "./squish";
 import { hasActiveItemFilters } from "./enquiryFilterScope";
 import type { EnquiryQuery } from "./enquiryQuery";
 
@@ -67,9 +68,14 @@ function escapeLike(value: string): string {
   return value.replace(/([\\%_])/g, "\\$1");
 }
 
+// Whitespace-insensitive ILIKE: strips spaces from the column and the search text.
+function likeSql(expr: Prisma.Sql, value: string): Prisma.Sql {
+  return sql`regexp_replace((${expr})::text, '\\s', '', 'g') ILIKE ${`%${escapeLike(squish(value))}%`}`;
+}
+
 function containsSql(expr: Prisma.Sql, value: string | null | undefined): Prisma.Sql | null {
   if (!value) return null;
-  return sql`${expr} ILIKE ${`%${escapeLike(value)}%`}`;
+  return likeSql(expr, value);
 }
 
 function blankSql(expr: Prisma.Sql, extraValues: string[] = []): Prisma.Sql {
@@ -296,11 +302,10 @@ function contractNoSql(q: EnquiryQuery): Prisma.Sql | null {
 function globalSearchSql(q: EnquiryQuery): Prisma.Sql | null {
   const value = q.globalSearch.trim();
   if (!value) return null;
-  const like = `%${escapeLike(value)}%`;
   return sql`(
-    e."docketNumber" ILIKE ${like}
-    OR e."partyName" ILIKE ${like}
-    OR EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND i."itemName" ILIKE ${like})
+    ${likeSql(sql`e."docketNumber"`, value)}
+    OR ${likeSql(sql`e."partyName"`, value)}
+    OR EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${likeSql(sql`i."itemName"`, value)})
   )`;
 }
 
@@ -357,7 +362,7 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
   if (f.attachment && skip !== "attachment") {
     parts.push(sql`EXISTS (
       SELECT 1 FROM "Attachment" a
-      WHERE a."enquiryId" = e.id AND a."name" ILIKE ${`%${escapeLike(f.attachment)}%`}
+      WHERE a."enquiryId" = e.id AND ${likeSql(sql`a."name"`, f.attachment)}
     )`);
   }
 

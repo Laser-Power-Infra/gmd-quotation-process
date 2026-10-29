@@ -27,6 +27,7 @@ import { parseClipboardText } from "@/lib/pasteParser";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { closeAddItemsDialog } from "@/lib/dialogsSlice";
 import { formatIndianNumber, cleanNumberInput } from "@/lib/formatCurrency";
+import { looseIncludes } from "@/lib/squish";
 
 interface AddItemsDialogProps {
   enquiries: { id: string; docketNumber: string; partyName: string }[];
@@ -229,8 +230,8 @@ export default function AddItemsDialog({
                       {(() => {
                         const filtered = enquiries.filter(
                           (enq) =>
-                            enq.docketNumber.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
-                            enq.partyName.toLowerCase().includes(debouncedSearch.toLowerCase())
+                            looseIncludes(enq.docketNumber, debouncedSearch) ||
+                            looseIncludes(enq.partyName, debouncedSearch)
                         );
                         if (filtered.length > 0) {
                           return filtered.map((enq) => {

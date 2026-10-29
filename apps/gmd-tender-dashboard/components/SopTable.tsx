@@ -1,4 +1,5 @@
 "use client";
+import { looseIncludes } from "@gmd/dashboard/lib/squish";
 import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { ChevronUp, ChevronDown, Columns3, Search, X } from "lucide-react";
 import "./TenderTable.css";
@@ -128,7 +129,7 @@ export function SopTable({ rows, dailyLogs, selectedDate, onToggle, isAuthentica
         if(col===exclude) continue;
         if(!txt) continue;
         const val = String((r as any)[col] ?? "");
-        if(!val.toLowerCase().includes(txt.toLowerCase())) return false;
+        if(!looseIncludes(val, txt)) return false;
       }
       return true;
     });
@@ -165,7 +166,7 @@ export function SopTable({ rows, dailyLogs, selectedDate, onToggle, isAuthentica
       for(const [col, txt] of Object.entries(columnSearchText)){
         if(!txt) continue;
         const val = String((r as any)[col] ?? "");
-        if(!val.toLowerCase().includes(txt.toLowerCase())) return false;
+        if(!looseIncludes(val, txt)) return false;
       }
       return true;
     });
@@ -210,7 +211,7 @@ export function SopTable({ rows, dailyLogs, selectedDate, onToggle, isAuthentica
             <div className="flex gap-2 mb-2"><button className="text-xs text-brand" onClick={()=>setColumnVisibility({})}>Select All</button><button className="text-xs text-brand" onClick={()=>{const m:Record<string,boolean>={}; columns.forEach(c=> m[String(c.accessor)]=false); // keep at least one
               const first=String(columns[0].accessor); delete m[first]; setColumnVisibility(m);}}>Clear</button></div>
             <div style={{maxHeight:300, overflowY:"auto", display:"flex", flexDirection:"column", gap:4}}>
-              {columns.filter(c=> !pickerSearch || c.header.toLowerCase().includes(pickerSearch.toLowerCase())).map(c=>{
+              {columns.filter(c=> !pickerSearch || looseIncludes(c.header, pickerSearch)).map(c=>{
                 const key=String(c.accessor); const checked= columnVisibility[key]!==false;
                 return <label key={key} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={checked} onChange={e=> setColumnVisibility(prev=>({...prev, [key]: e.target.checked ? undefined as any : false}))} />{c.header}</label>
               })}
