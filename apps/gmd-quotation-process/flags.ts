@@ -68,6 +68,7 @@ export const physicalStockEditableColumns = flag<EditableHeader[]>({
     "DRAWING/ TECHNICAL DATA",
     "BOM ID",
     "COST",
+    "HEAT NO",
   ],
 });
 

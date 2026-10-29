@@ -38,6 +38,8 @@ export const COLUMNS = [
   "COST",
   "BOM ID",
   "MAJOR/MINOR MARKING",
+  "HEAT NO",
+  "SERIAL NO",
 ] as const;
 
 export type PhysicalStockHeader = (typeof COLUMNS)[number];
@@ -80,6 +82,8 @@ export const FIELDS = [
   "cost",
   "bom_id",
   "majorminor_marking",
+  "heat_no",
+  "serial_no",
 ] as const satisfies readonly (keyof PhysicalStockRow)[];
 
 export type PhysicalStockField = (typeof FIELDS)[number];
@@ -112,6 +116,7 @@ export const NUMERIC_COLUMNS: ReadonlySet<string> = new Set([
  */
 export const EDITABLE_CANDIDATES = [
   "ERP CODE",
+  "HEAT NO",
   "DISPATCH QTY.",
   "REMARKS",
   "item type",
@@ -403,6 +408,17 @@ function parseNum(value: unknown): number | null {
 /** `rate/unit * available qty`, two decimals; a blank operand counts as 0. */
 export function computeItemWiseValue(rateUnit: unknown, availableQty: unknown): string {
   return ((parseNum(rateUnit) ?? 0) * (parseNum(availableQty) ?? 0)).toFixed(2);
+}
+
+/** erp_code-l8_item_category-heat_no-heat_seq; null until the row has a heat no and number. */
+export function buildSerial(r: {
+  erp_code?: string | null;
+  l8_item_category?: string | null;
+  heat_no?: string | null;
+  heat_seq?: number | null;
+}): string | null {
+  if (!r.heat_no || r.heat_seq == null) return null;
+  return [r.erp_code, r.l8_item_category, r.heat_no, r.heat_seq].map((v) => String(v ?? "").trim()).join("-");
 }
 
 /** Codes minted by createPhysicalStock: 3 letters + 6 digits. */

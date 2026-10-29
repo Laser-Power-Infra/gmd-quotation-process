@@ -61,8 +61,14 @@ model PhysicalStock {
     form_date                           DateTime @default(now())
   created_at                     DateTime @default(now())
   updated_at                     DateTime @updatedAt
+  // Serial number = erp_code-l8_item_category-heat_no-heat_seq. heat_no is typed
+  // by the user; heat_seq counts up per heat_no across all items (derived
+  // serial_no is built in listPhysicalStock, not stored).
+  heat_no                        String?
+  heat_seq                       Int?
 
   @@index([erp_code])
+  @@unique([heat_no, heat_seq])
 }
 
 model User {
