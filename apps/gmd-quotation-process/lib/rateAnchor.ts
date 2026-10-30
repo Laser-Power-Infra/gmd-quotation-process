@@ -32,3 +32,8 @@ export function resolveCostChangeAnchor(input: {
   }
   return { quotedRate, vaPercent };
 }
+
+/** A sent offer is out of date once its quoted rate moves (compared at the stored 2-dp precision). */
+export function isOfferRevision(emailSentBy: string | null, oldRate: number | null, newRate: number | null): boolean {
+  return !!emailSentBy && (oldRate?.toFixed(2) ?? null) !== (newRate?.toFixed(2) ?? null);
+}

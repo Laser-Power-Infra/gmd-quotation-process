@@ -43,6 +43,27 @@ test('every server action calls requireAccess (or its own admin check)', () => {
   assert.deepEqual(missing, [])
 })
 
+// Dashboard edits need a login even on the open (non-Vercel) server.
+const DASHBOARD_EDITS: Record<string, string[]> = {
+  'actions/item.ts': ['updateItemFieldAction', 'selectBomIdAction', 'fetchErpItemCodesAction', 'updateProductCostFromBomAction', 'update2to1CostAction', 'updateAllBomCostsAction', 'syncDirectM2MAvailableStockAction', 'importExcelDataAction', 'applyAutoFillAction', 'updateVaPercentAction'],
+  'actions/enquiry.ts': ['createNewEnquiryAction', 'addItemsAction', 'updateEnquiryItemAction', 'addAttachmentsAction', 'deleteEnquiryItemAction', 'deleteEnquiryAction', 'updateEnquiryFieldAction', 'sendDocketEmailAction', 'syncEnquiryEmailAddressesAction'],
+  'actions/misc.ts': ['fetchContractReviewRatesAction', 'populatePdCostValidationAction', 'clearQuotedRatesAction', 'bulkUpdateApmAction', 'bulkUpdateValidationAction'],
+}
+
+test('every dashboard edit action checks loginRequired', () => {
+  const missing: string[] = []
+  for (const [file, names] of Object.entries(DASHBOARD_EDITS)) {
+    const src = fs.readFileSync(path.join(APP, file), 'utf8')
+    for (const name of names) {
+      const start = src.indexOf(`export async function ${name}(`)
+      const next = src.indexOf('\nexport ', start + 1)
+      const body = src.slice(start, next < 0 ? undefined : next)
+      if (start < 0 || !/if \(denied\) return denied;/.test(body) || !body.includes('await loginRequired()')) missing.push(`${file}:${name}`)
+    }
+  }
+  assert.deepEqual(missing, [])
+})
+
 test('open deployment lets everyone through; restricted one refuses an anonymous caller', async () => {
   const saved = process.env.VERCEL
   try {

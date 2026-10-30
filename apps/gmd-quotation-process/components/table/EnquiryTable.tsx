@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X, PackageCheck, ExternalLink, ImageIcon, Check, Mail, Loader2 } from "lucide-react";
+import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X, PackageCheck, ExternalLink, ImageIcon, Check, Mail, Loader2, History } from "lucide-react";
 import { shallowEqual } from "react-redux";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
@@ -32,8 +32,9 @@ import { C_BATCH_VALUE } from "@/lib/gmd_lib/verify-bom-columns";
 import { N_BATCH_VALUE } from "@/lib/gmd_lib/contract-review-columns";
 import { correctItemType } from "@/lib/itemTypePatterns";
 import { missingDetails, sizeFromName, type AutoFillChange } from "@/lib/detailsCheck";
-import { previewAutoFillAction } from "@/app/actions/item";
+import { previewAutoFillAction, getItemChangeLogAction } from "@/app/actions/item";
 import AutoFillReviewDialog from "./AutoFillReviewDialog";
+import { ConfirmDialog } from "@/components/chat/ConfirmDialog";
 import { isInternalEmail } from "@/lib/enquiryEmailParty";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@gmd/ui/components/dialog";
 import { Button } from "@gmd/ui/components/button";
@@ -435,6 +436,42 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const [autoFillStatus, setAutoFillStatus] = useState<"idle" | "running">("idle");
   const [autoFillChanges, setAutoFillChanges] = useState<AutoFillChange[] | null>(null);
   const [autoFillApplying, setAutoFillApplying] = useState(false);
+  // In-app replacement for window.confirm(): `if (!(await ask("..."))) return;`
+  const [confirmState, setConfirmState] = useState<{ msg: string; resolve: (ok: boolean) => void } | null>(null);
+  const ask = (msg: string) => new Promise<boolean>((resolve) => setConfirmState({ msg, resolve }));
+  const confirmValidation = async (item: EnquiryItemData, next: "Yes" | "No" | "") => {
+    if (!(await ask(`Set validation to "${next || "Blank"}" for ${item.itemName || "this item"}?`))) return;
+    await handleItemFieldChange(item.id, "validation", next);
+  };
+  // Validation=Yes locks Rate & VA%; say so in the cell and offer the way out.
+  const unlockButton = (item: EnquiryItemData) =>
+    item.validation === "Yes" ? (
+      <button
+        type="button"
+        onClick={() => confirmValidation(item, "")}
+        title="Validated: Rate & VA% are locked. Click to clear validation and edit."
+        className="shrink-0 px-1 py-0.5 text-[9px] font-bold rounded border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 cursor-pointer"
+      >
+        Unlock
+      </button>
+    ) : null;
+  type ChangeRow = { id: string; field: string; oldValue: string | null; newValue: string | null; changedBy: string; createdAt: string };
+  const [history, setHistory] = useState<{ itemName: string; rows: ChangeRow[] } | null>(null);
+  const historyButton = (item: EnquiryItemData) => (
+    <button
+      type="button"
+      onClick={async () => {
+        const r = await getItemChangeLogAction(item.id);
+        if (!r.success) { toast.error(r.error || "Failed to load history."); return; }
+        setHistory({ itemName: item.itemName || "Item", rows: r.data ?? [] });
+      }}
+      title="Who changed VA%, rate or validation, and when"
+      aria-label="Change history"
+      className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+    >
+      <History className="h-3 w-3" />
+    </button>
+  );
   const [vaStatus, setVaStatus] = useState<"idle" | "running">("idle");
   const [fetchCodesStatus, setFetchCodesStatus] = useState<"idle" | "running">("idle");
   const [updateCostStatus, setUpdateCostStatus] = useState<"idle" | "running">("idle");
@@ -575,10 +612,11 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const [bulkValidationRunning, setBulkValidationRunning] = useState<"Yes" | "No" | "Clear" | null>(null);
   const handleBulkValidation = async (val: "Yes" | "No" | "") => {
     let itemIds: string[];
+    let docketCount: number;
     try {
-      itemIds = (
-        await dispatch(loadFilteredEnquiryIds({ query: query })).unwrap()
-      ).itemIds;
+      const ids = await dispatch(loadFilteredEnquiryIds({ query: query })).unwrap();
+      itemIds = ids.itemIds;
+      docketCount = ids.enquiryIds.length;
     } catch {
       toast.error("Failed to load filtered items.");
       return;
@@ -588,7 +626,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       return;
     }
     const label = val === "" ? "Blank" : val;
-    if (!confirm(`Set validation to "${label}" for ${itemIds.length} filtered item(s) across all pages?`)) return;
+    if (!(await ask(`Set validation to "${label}": this will change ${itemIds.length} item(s) in ${docketCount} docket(s) across all pages. Continue?`))) return;
     const runKey = val === "" ? "Clear" : val;
     setBulkValidationRunning(runKey as any);
     const toastId = toast.loading(`Setting validation to "${label}"...`);
@@ -620,7 +658,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       return;
     }
     const label = val === "" ? "Blank" : val;
-    if (!confirm(`Set APM to "${label}" for ${enquiryIds.length} filtered enquir${enquiryIds.length === 1 ? "y" : "ies"} across all pages?`)) return;
+    if (!(await ask(`Set APM to "${label}": this will change ${enquiryIds.length} docket(s) across all pages. Continue?`))) return;
     const runKey = val === "" ? "Clear" : val;
     setBulkApmRunning(runKey as any);
     const toastId = toast.loading(`Setting APM to "${label}"...`);
@@ -1062,7 +1100,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     if (!enquiry.duplicateOfDocket) return;
     const itemCount = enquiry.items?.length ?? 0;
     if (
-      !confirm(
+      !await ask(
         `Delete docket ${enquiry.docketNumber} as a duplicate of ${enquiry.duplicateOfDocket}?` +
           (itemCount > 0 ? `\n\nIts ${itemCount} item(s) will also be deleted.` : "") +
           `\nIts source mail will be re-linked to ${enquiry.duplicateOfDocket}.`,
@@ -1598,7 +1636,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       return
     }
     if (
-      !confirm(
+      !await ask(
         `Re-check ERP item codes for ${matchedItems.length} item(s) against the live master sheet? ` +
           `${alreadyCoded} already coded (updated if the sheet mapping changed), ${missingCodeItems.length} missing.`
       )
@@ -1715,7 +1753,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       return
     }
-    if (!confirm(`Update costs (BOM DIRECT M2M & 2:1, plus Indent Listing fallback) for ${targetItems.length} item(s)?`)) return
+    if (!await ask(`Update costs (BOM DIRECT M2M & 2:1, plus Indent Listing fallback) for ${targetItems.length} item(s)?`)) return
 
     setUpdateCostStatus("running")
     const toastId = toast.loading(`Updating BOM costs for ${targetItems.length} item(s)...`)
@@ -1757,7 +1795,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       toast.info("No blank VA% fields to fill.")
       return
     }
-    if (!confirm(`Auto-fill VA% for ${blankVaItems.length} items (based on item type + size defaults)?`)) return
+    if (!await ask(`Auto-fill VA% for ${blankVaItems.length} items (based on item type + size defaults)?`)) return
 
     setVaStatus("running")
     try {
@@ -1784,7 +1822,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       return
     }
     if (
-      !confirm(
+      !await ask(
         `Fetch Contract Review rates for ${itemsWithCode.length} item(s) with ERP item codes?\n\n` +
           `Any BLANK Cost Ref Code will also be filled from the Contract Review cost code ref. ` +
           `Items that already have a Cost Ref Code are left untouched, and a cost code ref ` +
@@ -1828,7 +1866,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       toast.info("No items with both Contract Review Rate and Product Cost found on this page.")
       return
     }
-    if (!confirm(`Populate PD Cost Validation % for ${matchedItems.length} item(s)?`)) return
+    if (!await ask(`Populate PD Cost Validation % for ${matchedItems.length} item(s)?`)) return
 
     setPdCostValStatus("running")
     const toastId = toast.loading(`Populating PD Cost Validation % for ${matchedItems.length} item(s)...`)
@@ -1844,7 +1882,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   }
 
   const handleSyncAvailableStock = async () => {
-    if (!confirm("Sync available stock and RM Type for ALL items with a raw material code from Raw Materials dashboard (GMDUpdateItem)? This will backfill availableStock and rmType wherever rmItemCode matches.")) return
+    if (!await ask("Sync available stock and RM Type for ALL items with a raw material code from Raw Materials dashboard (GMDUpdateItem)? This will backfill availableStock and rmType wherever rmItemCode matches.")) return
 
     setSyncStockStatus("running")
     const toastId = toast.loading("Syncing available stock and RM Type for all items with an RM code...")
@@ -4416,11 +4454,13 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                     {/* First Item VA% */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (
+                        <div className="flex items-center gap-1">
                         <input
                           key={firstItem.id + "-vaPercent-" + (firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : "")}
                           type="text"
                           defaultValue={firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : ""}
                           disabled={isFrozen}
+                          readOnly={firstItem.validation === "Yes"}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             const val = e.target.value.trim();
@@ -4435,6 +4475,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
+                        {unlockButton(firstItem)}
+                        </div>
                       ) : "-"}
                     </td>
 
@@ -4446,6 +4488,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           type="text"
                           defaultValue={formatIndianNumber(firstItem.quotedRate)}
                           disabled={isFrozen}
+                          readOnly={firstItem.validation === "Yes"}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             const next = cleanNumberInput(e.target.value);
@@ -4545,7 +4588,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
-                            onClick={() => handleItemFieldChange(firstItem.id, "validation", firstItem.validation === "Yes" ? "" : "Yes")}
+                            onClick={() => confirmValidation(firstItem, firstItem.validation === "Yes" ? "" : "Yes")}
                             className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                               firstItem.validation === "Yes"
                                 ? "bg-emerald-500 dark:bg-emerald-500/80 text-white "
@@ -4556,7 +4599,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleItemFieldChange(firstItem.id, "validation", firstItem.validation === "No" ? "" : "No")}
+                            onClick={() => confirmValidation(firstItem, firstItem.validation === "No" ? "" : "No")}
                             className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                               firstItem.validation === "No"
                                 ? "bg-rose-500 dark:bg-rose-500/80 text-white "
@@ -4565,6 +4608,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           >
                             No
                           </button>
+                          {historyButton(firstItem)}
                         </div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
@@ -4945,11 +4989,13 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
                       {/* VA% */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-muted" : ""}`}>
+                          <div className="flex items-center gap-1">
                           <input
                             key={item.id + "-vaPercent-" + (item.vaPercent !== null ? `${item.vaPercent}%` : "")}
                             type="text"
                             defaultValue={item.vaPercent !== null ? `${item.vaPercent}%` : ""}
                             disabled={isFrozen}
+                            readOnly={item.validation === "Yes"}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             const val = e.target.value.trim();
@@ -4964,6 +5010,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
+                          {unlockButton(item)}
+                          </div>
                       </td>
 
                       {/* Quoted Rate */}
@@ -4973,6 +5021,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             type="text"
                             defaultValue={formatIndianNumber(item.quotedRate)}
                             disabled={isFrozen}
+                            readOnly={item.validation === "Yes"}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             const next = cleanNumberInput(e.target.value);
@@ -5064,7 +5113,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
-                              onClick={() => handleItemFieldChange(item.id, "validation", item.validation === "Yes" ? "" : "Yes")}
+                              onClick={() => confirmValidation(item, item.validation === "Yes" ? "" : "Yes")}
                               className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                                 item.validation === "Yes"
                                   ? "bg-emerald-500 dark:bg-emerald-500/80 text-white "
@@ -5075,7 +5124,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleItemFieldChange(item.id, "validation", item.validation === "No" ? "" : "No")}
+                              onClick={() => confirmValidation(item, item.validation === "No" ? "" : "No")}
                               className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                                 item.validation === "No"
                                   ? "bg-rose-500 dark:bg-rose-500/80 text-white "
@@ -5084,6 +5133,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             >
                               No
                             </button>
+                            {historyButton(item)}
                           </div>
                         </td>
 
@@ -5145,6 +5195,39 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       applying={autoFillApplying}
       onApply={handleApplyAutoFill}
       onClose={() => setAutoFillChanges(null)}
+    />
+
+    <Dialog open={history !== null} onOpenChange={(open) => { if (!open) setHistory(null); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-sm">History: {history?.itemName}</DialogTitle>
+        </DialogHeader>
+        {history?.rows.length ? (
+          <ul className="max-h-80 overflow-y-auto divide-y divide-border text-xs">
+            {history.rows.map((r) => (
+              <li key={r.id} className="py-1.5">
+                <span className="text-muted-foreground">{new Date(r.createdAt).toLocaleString()} · {r.changedBy}</span>
+                <div>
+                  <b>{r.field}</b>: {r.oldValue ?? "blank"} → {r.newValue ?? "blank"}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground">No recorded changes yet.</p>
+        )}
+      </DialogContent>
+    </Dialog>
+
+    {/* Promise settles once, so Confirm's trailing onOpenChange(false) is a no-op. */}
+    <ConfirmDialog
+      open={confirmState !== null}
+      onOpenChange={(open) => { if (!open) { confirmState?.resolve(false); setConfirmState(null); } }}
+      title="Please confirm"
+      description={confirmState?.msg ?? ""}
+      confirmLabel="Continue"
+      confirmVariant="default"
+      onConfirm={() => confirmState?.resolve(true)}
     />
 
     {/* Clear Quoted Rate Confirm Dialog — filtered scope, VA% preserved */}
@@ -5346,7 +5429,9 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
   const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState(false);
   const [noThreadOpen, setNoThreadOpen] = useState(false);
-  const [revised, setRevised] = useState(false);
+  // A rate changed after the last send: default the next mail to "Revised".
+  const [revised, setRevised] = useState(!!enquiry.offerRevised);
+  useEffect(() => { if (enquiry.offerRevised) setRevised(true); }, [enquiry.offerRevised]);
 
   const approved = !!enquiry.emailApproved;
   const sentBy = enquiry.emailSentBy ?? null;
@@ -5417,6 +5502,14 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
         <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300">
           <Check className="h-3 w-3 stroke-[3]" /> Sent
         </span>
+        {enquiry.offerRevised && (
+          <span
+            className="px-2 py-0.5 text-[9px] font-bold rounded-full border border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+            title="A quoted rate changed after this offer was sent. Reset, then send it again as Revised."
+          >
+            Revised: re-send
+          </span>
+        )}
         <button
           type="button"
           onClick={handleReset}

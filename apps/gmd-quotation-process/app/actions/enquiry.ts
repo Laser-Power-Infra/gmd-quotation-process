@@ -1,5 +1,5 @@
 "use server";
-import { requireAccess } from "@/lib/access";
+import { requireAccess, loginRequired } from "@/lib/access";
 import { syncAvailableBomIds, maybeUpdateProductCostFromNewCode } from "@/lib/itemBomSync";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { prisma } from "@/lib/prisma";
@@ -53,6 +53,7 @@ export async function createNewEnquiryAction(formData: {
   }[];
 }) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const cleanDocket = formData.docketNumber.replace(/#/g, "").trim();
     // Check if docketNumber already exists
@@ -231,6 +232,7 @@ export async function addItemsAction(formData: {
   }[];
 }) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     console.log(`[Server] addItems enquiry=${formData.enquiryId} items=${formData.items.length}`);
     for (const it of formData.items) {
@@ -364,6 +366,7 @@ export async function updateEnquiryItemAction(formData: {
   orderStatus?: string;
 }) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const item = await prisma.enquiryItem.findUnique({
       where: { id: formData.itemId },
@@ -657,6 +660,7 @@ export async function addAttachmentsAction(formData: {
   attachments: { name: string; size: number; type: string; content?: string }[];
 }) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     if (formData.attachments.length === 0) {
       return { success: false, error: "No files selected." };
@@ -762,6 +766,7 @@ export async function updateOrderStatus(contractNos: string[], docketNo: string)
 // Delete an item. Enquiry is retained even if it becomes empty.
 export async function deleteEnquiryItemAction(itemId: string) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const item = await prisma.enquiryItem.findUnique({
       where: { id: itemId },
@@ -798,6 +803,7 @@ export async function deleteEnquiryItemAction(itemId: string) {
  */
 export async function deleteEnquiryAction(enquiryId: string) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const enquiry = await prisma.enquiry.findUnique({
       where: { id: enquiryId },
@@ -899,6 +905,7 @@ export async function updateEnquiryFieldAction(
   value: any
 ) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     // APM is gated to admin/developer only
     if (field === "apm") {
@@ -1024,6 +1031,7 @@ export async function sendDocketEmailAction(
   revised = false,
 ) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const { auth } = await import("@/auth");
     const session = await auth();
@@ -1136,7 +1144,7 @@ export async function sendDocketEmailAction(
 
     const updated = await prisma.enquiry.update({
       where: { id: enquiryId },
-      data: { emailSentBy: userId },
+      data: { emailSentBy: userId, offerRevised: false },
       include: { items: { orderBy: { position: "asc" } } },
     });
     return { success: true, data: serializeEnquiry(updated) };
@@ -1156,6 +1164,7 @@ export async function sendDocketEmailAction(
  */
 export async function syncEnquiryEmailAddressesAction() {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const result = await syncEnquiryEmailAddresses({ onlyBlank: true, dryRun: false });
     console.log(

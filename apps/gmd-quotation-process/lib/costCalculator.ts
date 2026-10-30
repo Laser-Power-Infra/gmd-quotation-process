@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { matchItemType, matchMoc } from "./itemTypePatterns";
 import { roundUp } from "./rounding";
-import { resolveCostChangeAnchor } from "./rateAnchor";
+import { resolveCostChangeAnchor, isOfferRevision } from "./rateAnchor";
 
 export function serializeItem(item: any) {
   return {
@@ -292,6 +292,11 @@ export async function recalculateItem(
       itemNameMerge: mergedNameVal === "" ? null : mergedNameVal,
     },
   });
+
+  // Every rate change funnels through here, so this one check catches edits, pastes, BOM syncs and VA% fills.
+  if (!item.enquiry.offerRevised && isOfferRevision(item.enquiry.emailSentBy, existingQuotedRate, quotedRate)) {
+    await prisma.enquiry.update({ where: { id: item.enquiryId }, data: { offerRevised: true } });
+  }
 
   return serializeItem(updatedItem);
 }

@@ -17,6 +17,7 @@ interface ConfirmDialogProps {
   description: string;
   confirmLabel: string;
   onConfirm: () => void;
+  confirmVariant?: "default" | "destructive";
 }
 
 export function ConfirmDialog({
@@ -26,6 +27,7 @@ export function ConfirmDialog({
   description,
   confirmLabel,
   onConfirm,
+  confirmVariant = "destructive",
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -34,7 +36,7 @@ export function ConfirmDialog({
           <DialogTitle className="text-sm font-semibold text-foreground">
             {title}
           </DialogTitle>
-          <DialogDescription className="pt-1 text-[13px] leading-5 text-muted-foreground">
+          <DialogDescription className="whitespace-pre-line pt-1 text-[13px] leading-5 text-muted-foreground">
             {description}
           </DialogDescription>
         </DialogHeader>
@@ -47,7 +49,7 @@ export function ConfirmDialog({
             Cancel
           </Button>
           <Button
-            variant="destructive"
+            variant={confirmVariant}
             onClick={() => {
               onConfirm();
               onOpenChange(false);

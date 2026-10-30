@@ -68,6 +68,8 @@ model Enquiry {
   sourceThreadId String? @unique
   emailApproved    Boolean   @default(false)
   emailSentBy      String?
+  // A quoted rate changed after the offer was sent; cleared by the next send.
+  offerRevised     Boolean   @default(false)
   technicalEvaluation String?
   reverseAuctionStatus String?
 
@@ -76,6 +78,20 @@ model Enquiry {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Who changed VA% / quoted rate / validation, and when. No FK: survives item deletion.
+model ItemChangeLog {
+  id        String   @id @default(cuid())
+  itemId    String
+  enquiryId String
+  field     String
+  oldValue  String?
+  newValue  String?
+  changedBy String
+  createdAt DateTime @default(now())
+
+  @@index([itemId])
 }
 
 model Attachment {

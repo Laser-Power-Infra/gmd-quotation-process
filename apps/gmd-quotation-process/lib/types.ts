@@ -89,6 +89,7 @@ export interface EnquiryData {
   duplicateOfDocket?: string | null;
   emailApproved?: boolean | null;
   emailSentBy?: string | null;
+  offerRevised?: boolean | null;
   attachments: AttachmentData[];
   items: EnquiryItemData[];
 }

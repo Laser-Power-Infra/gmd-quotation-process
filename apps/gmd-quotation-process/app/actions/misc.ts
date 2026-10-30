@@ -1,5 +1,5 @@
 "use server";
-import { requireAccess } from "@/lib/access";
+import { requireAccess, loginRequired } from "@/lib/access";
 import { ERP_CLOSED_STATUSES, C_BATCH_VALUE } from "@/lib/erpItemStatus";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { prisma } from "@/lib/prisma";
@@ -318,6 +318,7 @@ export async function updateFlangeBoltWeightAction(id: string, material: string)
 // handling. A cell that already has a value is never touched.
 export async function fetchContractReviewRatesAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     // 1. Fetch the items we care about
     const items = await prisma.enquiryItem.findMany({
@@ -503,6 +504,7 @@ export async function fetchContractReviewRatesAction(itemIds: string[]) {
 // Calculate and populate pdcostValidation % for selected items that have contractReviewRate and productCost
 export async function populatePdCostValidationAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
@@ -548,6 +550,7 @@ export async function populatePdCostValidationAction(itemIds: string[]) {
 // Clear Quoted Rate (and derived columns: GST, totalValue, itemWiseTotalValue) for filtered items. VA% is preserved.
 export async function clearQuotedRatesAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     if (!itemIds || itemIds.length === 0) {
       return { success: false, error: "No items selected." };
@@ -607,6 +610,7 @@ export async function clearQuotedRatesAction(itemIds: string[]) {
 // Now enquiry-based after migration add_apm_in_enquiry. Gated to admin/developer.
 export async function bulkUpdateApmAction(enquiryIds: string[], apm: string | null) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const { auth } = await import("@/auth")
     const session = await auth()
@@ -658,6 +662,7 @@ export async function bulkUpdateApmAction(enquiryIds: string[], apm: string | nu
 // Bulk update validation for many items (all pages, filtered scope). Allowed values: "Yes", "No", null/"" for clear.
 export async function bulkUpdateValidationAction(itemIds: string[], validation: string | null) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     if (!itemIds || itemIds.length === 0) {
       return { success: false, error: "No items selected." };
@@ -670,7 +675,7 @@ export async function bulkUpdateValidationAction(itemIds: string[], validation: 
 
     const existing = await prisma.enquiryItem.findMany({
       where: { id: { in: uniqueIds } },
-      select: { id: true },
+      select: { id: true, enquiryId: true, validation: true },
     });
     if (existing.length !== uniqueIds.length) {
       return { success: false, error: "Some items not found. Please refresh and try again." };
@@ -682,6 +687,10 @@ export async function bulkUpdateValidationAction(itemIds: string[], validation: 
       where: { id: { in: uniqueIds } },
       data: { validation: normalized },
     });
+    const { logItemChanges } = await import("@/lib/itemChangeLog");
+    await logItemChanges(
+      existing.map((e) => ({ itemId: e.id, enquiryId: e.enquiryId, field: "validation", oldValue: e.validation, newValue: normalized })),
+    );
 
     const updatedItems = await prisma.enquiryItem.findMany({
       where: { id: { in: uniqueIds } },
