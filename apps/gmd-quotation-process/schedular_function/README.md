@@ -30,6 +30,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | ACC Master refresh | `POST /api/scheduler/acc-master` | `acc-master-sync` | `ACC_MASTER` |
 | Execution Tracking sync | `POST /api/scheduler/execution-tracking` | `execution-tracking-sync` | `SALE_BILL` (+ the local `acc_master`) |
 | PBG sheet sync *(every 1.2h)* | `POST /api/scheduler/pbg` | `pbg-sync` | PBG sheet tab → `PbgData` |
+| PBG reminder emails *(daily, 09:00 IST)* | `POST /api/scheduler/pbg-reminders` | `pbg-reminders` | `PbgData`, `PbgReminderLog` -> direct SMTP |
 | C Batch marks | `POST /api/scheduler/c-batch` | `c-batch-sync` | `ITEM MASTER ERP` |
 | ERP Contract No sync | `POST /api/scheduler/erp-contract-no` | `erp-contract-no-sync` | `SALE_BILL`, `MC` |
 
@@ -1274,6 +1275,79 @@ Prefer calling existing `lib/` helpers over copying logic — check whether the
 button you are wrapping is already a thin wrapper over a lib.
 6. Add any new env vars to `documentation/10-glossary-appendix.md`.
 
+## `pbg-reminders`
+
+`runScheduledPbgReminders()` in `pbg-reminders.ts` sends the PBG reminder mails
+directly over SMTP (no n8n). It reads only rows whose `mail_trigger` is
+`CONTINUE` and whose status is `OPEN`, `Running` or `Expired`.
+
+- **Pre-expiry:** exactly 30 calendar days before `expiry_date`, once per BG,
+  grouped by party (`client_name`) + contact.
+- **Post-expiry:** one 7-day cycle per **party + contact**. Each cycle includes
+  every currently expired, non-closed BG for that party across all its POs. A
+  BG that expires between cycles joins the next cycle automatically.
+- **Recipients:** parsed from the `contact_person` column; one mail per party +
+  contact group.
+- **Mail body:** one table per PO with PO number, project, BG details, invoice
+  numbers and a PO total. Pre-expiry uses the 30-day notice wording; the
+  expiry-day mail uses the confirmation/discharge wording; later 7-day cycles
+  use the MSME/GFR reminder wording with reminder number and earlier-mail dates.
+- **Branding:** the GMD logo is embedded inline at the top of every HTML mail.
+- **Signature:** all PBG mails close with Ms. Puja Agarwal, Director.
+- **Invoice numbers:** matched from `SupplyHistoryItem` by BG number first, then
+  by PO number. All distinct invoices are shown; SR-series invoices are ignored.
+- **Udyam number:** interval mails read `PBG_UDYAM_NO`; when unset they show
+  `[UDYAM-XX-00-0000000]`.
+- **No party / no PO:** rows with a blank party or PO number are skipped and
+  counted in the job result (`skippedNoParty`, `skippedNoPo`,
+  `skippedNoPoBgNos`) for manual cleanup.
+- **Audit:** every attempt writes `pbg_reminder_log` (`SENT`/`FAILED`) with the
+  PO number and recipient key. Failed sends retry on the next daily run.
+- **Env:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`,
+  `MAIL_FROM`, `MAIL_FROM_NAME`, optional `PBG_REMINDER_CC`,
+  `PBG_UDYAM_NO`, `PBG_REMINDER_BATCH_SIZE`, `PBG_REMINDER_DELAY_MS`.
+
+Dry-run (prints recipients and rows without sending):
+
+```sh
+pnpm --filter gmd-quotation-process pbg:reminders:dry
+```
+
+Test SMTP credentials without sending:
+
+```sh
+pnpm --filter gmd-quotation-process pbg:reminders:verify
+```
+
+Send one live pass:
+
+```sh
+pnpm --filter gmd-quotation-process pbg:reminders:send
+```
+
+Send a test mail for one party (defaults to `MAIL_FROM` when `--to` is omitted):
+
+```sh
+pnpm --filter gmd-quotation-process pbg:test-mail -- --party="G V P R ENGINEERS LIMITED" --template=before
+pnpm --filter gmd-quotation-process pbg:test-mail -- --party="G V P R ENGINEERS LIMITED" --template=expired --reminder-no=1 --earlier-dates=2026-10-26
+pnpm --filter gmd-quotation-process pbg:test-mail -- --party="KALPATARU PROJECTS INTERNATIONAL LIMITED" --template=expired --to=ops@example.com --dry
+```
+
+Backfill the PO number / recipient key on older log rows (dry-run, then apply):
+
+```sh
+pnpm --filter gmd-quotation-process pbg:reminder-log:backfill
+pnpm --filter gmd-quotation-process pbg:reminder-log:backfill:apply
+```
+
+Ofelia wiring is provided at the repo root:
+
+- `infra/pbg-reminders.sh`
+- `infra/pbg-reminders.ofelia.ini`
+- `infra/README.md`
+
+Schedule it **daily** at 09:00 IST. The 7-day cadence is internal to the app.
+
 ## Manual testing
 
 `BASE=http://localhost:4570/api/scheduler`
@@ -1300,6 +1374,9 @@ curl -i -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/pbg"
 
 # run the PBG sheet sync
 curl -i -X POST -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/pbg"
+
+# run the PBG reminder pass (direct SMTP)
+curl -i -X POST -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/pbg-reminders"
 ```
 
 Inspect the container logs for the `[SCHEDULER]` blocks, which print the full

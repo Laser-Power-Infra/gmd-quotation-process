@@ -69,6 +69,7 @@ const SEARCH_KEYS: ColumnKey[] = [
   "contactNumber",
   "remark",
   "status",
+  "mailTrigger",
 ];
 
 export function filterRecords(
