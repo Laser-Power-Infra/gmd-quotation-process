@@ -65,6 +65,7 @@ function docketKeys(docket: string): string[] {
 function mergeInto(target: EmailListEntry, source: EmailListEntry): void {
   for (const e of source.external) if (!target.external.includes(e)) target.external.push(e);
   for (const e of source.internal) if (!target.internal.includes(e)) target.internal.push(e);
+  target.from = [...(target.from ?? []), ...(source.from ?? [])];
 }
 
 /** True when any of the given stored values contains an internal address. */
@@ -88,7 +89,7 @@ export interface DocketEmailMap {
  */
 export async function buildDocketEmailMap(): Promise<DocketEmailMap> {
   const threads = await prisma.docketQuotationThread.findMany({
-    select: { docketNo: true, sender: true, toDetails: true, ccDetails: true },
+    select: { docketNo: true, sender: true, body: true, toDetails: true, ccDetails: true },
   });
 
   const byDocketKey = new Map<string, EmailListEntry>();
@@ -248,6 +249,7 @@ export async function syncEnquiryEmailAddresses(options?: {
       external: docketLists?.external ?? [],
       internal: docketLists?.internal ?? [],
       partyExternal,
+      from: docketLists?.from,
     });
 
     if (!split.senderEmail && split.ccEmails.length === 0) {

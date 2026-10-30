@@ -18,6 +18,8 @@ import {
 import { rebuildSupplyHistoryBomLinks } from "@/lib/supplyHistoryBomSync";
 import { runBomMastErpSync } from "@/schedular_function/bom-mast-sync";
 import { runSupplyRateBackfill } from "@/lib/supplyRateBackfill";
+import { runExecutionTrackingStep } from "@/schedular_function/execution-tracking-sync";
+import { getFiscalYearLabel } from "@/lib/docketNumber";
 
 const SPREADSHEET_ID = process.env.SUPPLY_HISTORY_SPREADSHEET_ID;
 const SHEET_NAME = "MASTER";
@@ -345,6 +347,21 @@ export async function POST() {
       console.error("[supply-sync] BOM link rebuild failed:", err);
     }
 
+    // SALE BILL -> new rows + quantity/state/consignee for the current fiscal year,
+    // the same step the 2-hourly `execution-tracking` job runs. It sits before the
+    // rate backfill so a row it inserts gets its rate and value in this same click.
+    // Non-fatal, like the other enrichments.
+    let executionTracking: Awaited<ReturnType<typeof runExecutionTrackingStep>> | null = null;
+    let executionTrackingError: string | null = null;
+    try {
+      executionTracking = await runExecutionTrackingStep({
+        financialYear: getFiscalYearLabel(new Date()),
+      });
+    } catch (err) {
+      executionTrackingError = err instanceof Error ? err.message : "Unknown error";
+      console.error("[supply-sync] execution tracking failed:", err);
+    }
+
     // Recompute `rate` (from the sale-bill tab), `value = quantity x rate` and
     // the gross total (`value x 1.18`). Non-fatal, like the BOM links: the
     // MASTER row sync is the contract, this is an enrichment, so a failure is
@@ -378,6 +395,10 @@ export async function POST() {
       elapsedMs: elapsed,
       bomLinks,
       bomMast,
+      executionTracking: executionTracking?.sync
+        ? { inserted: executionTracking.sync.inserted, updated: executionTracking.sync.updated }
+        : null,
+      executionTrackingError,
       rateBackfill,
       rateBackfillError,
     });

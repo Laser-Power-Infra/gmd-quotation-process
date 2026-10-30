@@ -141,7 +141,7 @@ check("Available on any other column is just a value", () => {
 
 check("text filters are case-insensitive contains", () => {
   const sql = where({ columnFilters: { organization: { text: "rail" } } });
-  assert.match(text(sql), /t\."organization"::text ILIKE \$1/);
+  assert.match(text(sql), /t\."organization"::text.*ILIKE \$1/);
   assert.equal(sql.values[0], "%rail%");
 });
 
@@ -369,7 +369,7 @@ check("a blank separator means the first field verbatim", () => {
       columnFilters: { Size: { text: "x" } },
     }),
   );
-  assert.match(t, /t\."size"::text ILIKE/);
+  assert.match(t, /t\."size"::text.*ILIKE/);
   assert.equal(t.includes("concat_ws"), false);
   assert.equal(t.includes('t."quantity"'), false);
 });

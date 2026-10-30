@@ -11,7 +11,7 @@ import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
 import CellSelect, { optionsWithCurrent } from "./CellSelect";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly } from "@/lib/enquiriesSlice";
 import { enquiryFilterKey } from "@/lib/enquiryQuery";
 import { fetchDocketNumbers, fetchFilteredEnquiryExport } from "@/app/actions/enquiryQuery";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
@@ -31,11 +31,15 @@ import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import { C_BATCH_VALUE } from "@/lib/gmd_lib/verify-bom-columns";
 import { N_BATCH_VALUE } from "@/lib/gmd_lib/contract-review-columns";
 import { correctItemType } from "@/lib/itemTypePatterns";
+import { missingDetails, sizeFromName, type AutoFillChange } from "@/lib/detailsCheck";
+import { previewAutoFillAction } from "@/app/actions/item";
+import AutoFillReviewDialog from "./AutoFillReviewDialog";
 import { isInternalEmail } from "@/lib/enquiryEmailParty";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@gmd/ui/components/dialog";
 import { Button } from "@gmd/ui/components/button";
 import { cn } from "@/lib/utils";
 import { formatIndianNumber, cleanNumberInput, hasNumberChanged } from "@/lib/formatCurrency";
+import { looseIncludes } from "@/lib/squish";
 
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
@@ -221,11 +225,20 @@ function ItemDetailFields({
   isFrozen: boolean;
 }) {
   const others = Array.isArray(item.others) ? item.others : [];
+  const nameSize = sizeFromName(item.itemName);
   return (
     <div className="flex flex-wrap gap-x-1.5 gap-y-1">
       <CellSelect variant="chip" chipLabel="type" placeholder="-" value={item.itemType || ""} options={dropdownOptions.itemTypes} onChange={(v) => onChange(item.id, "itemType", v)} />
       <CellSelect variant="chip" chipLabel="moc" placeholder="-" value={item.moc || ""} options={dropdownOptions.mocs} onChange={(v) => onChange(item.id, "moc", v)} />
       <CellSelect variant="chip" chipLabel="size" placeholder="-" value={item.size || ""} options={dropdownOptions.sizes} onChange={(v) => onChange(item.id, "size", v)} />
+      {nameSize && item.size && nameSize !== item.size.trim() && (
+        <span
+          title={`Item name says size ${nameSize}, Details has ${item.size}`}
+          className="inline-flex items-center rounded bg-amber-100 px-1 text-[9px] font-bold text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
+        >
+          name: {nameSize}
+        </span>
+      )}
       <CellSelect variant="chip" chipLabel="pn_rating" placeholder="-" value={item.pnRating || ""} options={dropdownOptions.pnRatings} onChange={(v) => onChange(item.id, "pnRating", v)} />
       <CellSelect variant="chip" chipLabel="operation_type" placeholder="-" value={item.operationType || ""} options={dropdownOptions.operationTypes} onChange={(v) => onChange(item.id, "operationType", v)} />
       <CellSelect variant="chip" chipLabel="extension" placeholder="-" value={item.extension || ""} options={dropdownOptions.extensions} onChange={(v) => onChange(item.id, "extension", v)} />
@@ -420,6 +433,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   }, [projectReferenceInput, dispatch]);
   const [editingItemNameId, setEditingItemNameId] = useState<string | null>(null);
   const [autoFillStatus, setAutoFillStatus] = useState<"idle" | "running">("idle");
+  const [autoFillChanges, setAutoFillChanges] = useState<AutoFillChange[] | null>(null);
+  const [autoFillApplying, setAutoFillApplying] = useState(false);
   const [vaStatus, setVaStatus] = useState<"idle" | "running">("idle");
   const [fetchCodesStatus, setFetchCodesStatus] = useState<"idle" | "running">("idle");
   const [updateCostStatus, setUpdateCostStatus] = useState<"idle" | "running">("idle");
@@ -439,6 +454,9 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   // BOM ID header filter: show only items whose selected BOM is closed (VerifyBom.cBatch = "C").
   const closedBomOnly = pageState.closedBomOnly;
   const setClosedBomOnly = (value: boolean) => dispatch(setEnquiryClosedBomOnly(value));
+  // Details header filter: only items missing Type, MOC, Size, PN or Op Type.
+  const incompleteOnly = pageState.incompleteOnly;
+  const setIncompleteOnly = (value: boolean) => dispatch(setEnquiryIncompleteOnly(value));
   const [addingContractFor, setAddingContractFor] = useState<string | null>(null);
 
   // Image lookup: GeneratedImage rows keyed by imageKey (itemType__operationType__rmType).
@@ -666,7 +684,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     if (filters.docketNumber) {
       const next: Record<string, boolean> = {};
       for (const enquiry of enquiries) {
-        if (enquiry.docketNumber.toLowerCase().includes(filters.docketNumber.toLowerCase())) {
+        if (looseIncludes(enquiry.docketNumber, filters.docketNumber)) {
           if (expandedRows[enquiry.id] === undefined) {
             next[enquiry.id] = true;
           }
@@ -694,6 +712,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     dispatch(resetFilters());
     setPendingOnly(false);
     setClosedBomOnly(false);
+    setIncompleteOnly(false);
     setProjectReferenceInput("");
     dispatch(setEnquiryProjectReference(""));
     toast.success("All filters reset successfully.");
@@ -756,7 +775,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     return enquiry.items.filter((item: EnquiryItemData) => {
       if (
         filters.itemName &&
-        !item.itemName.toLowerCase().includes(filters.itemName.toLowerCase())
+        !looseIncludes(item.itemName, filters.itemName)
       ) {
         return false;
       }
@@ -771,7 +790,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.itemTypeSearch &&
-        !(item.itemType || "").toLowerCase().includes(filters.itemTypeSearch.toLowerCase())
+        !looseIncludes((item.itemType || ""), filters.itemTypeSearch)
       ) {
         return false;
       }
@@ -780,7 +799,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.mocSearch &&
-        !(item.moc || "").toLowerCase().includes(filters.mocSearch.toLowerCase())
+        !looseIncludes((item.moc || ""), filters.mocSearch)
       ) {
         return false;
       }
@@ -804,7 +823,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         (filters as any).othersSearch &&
-        !((item as any).others || "").toLowerCase().includes((filters as any).othersSearch.toLowerCase())
+        !looseIncludes(((item as any).others || ""), (filters as any).othersSearch)
       ) {
         return false;
       }
@@ -813,7 +832,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.erpItemCodeSearch &&
-        !(item.erpItemCode || "").toLowerCase().includes(filters.erpItemCodeSearch.toLowerCase())
+        !looseIncludes((item.erpItemCode || ""), filters.erpItemCodeSearch)
       ) {
         return false;
       }
@@ -822,7 +841,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.bomIdSearch &&
-        !((item as any).bomId || "").toLowerCase().includes(filters.bomIdSearch.toLowerCase())
+        !looseIncludes(((item as any).bomId || ""), filters.bomIdSearch)
       ) {
         return false;
       }
@@ -834,13 +853,13 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.contractReviewRateSearch &&
-        !(item.contractReviewRate || "").toLowerCase().includes(filters.contractReviewRateSearch.toLowerCase())
+        !looseIncludes((item.contractReviewRate || ""), filters.contractReviewRateSearch)
       ) {
         return false;
       }
       if (
         filters.pdcostValidationSearch &&
-        !(getPdCostValidation(item) || "").toLowerCase().includes(filters.pdcostValidationSearch.toLowerCase())
+        !looseIncludes((getPdCostValidation(item) || ""), filters.pdcostValidationSearch)
       ) {
         return false;
       }
@@ -855,7 +874,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.costRefCodeSearch &&
-        !(item.costRefCode || "").toLowerCase().includes(filters.costRefCodeSearch.toLowerCase())
+        !looseIncludes((item.costRefCode || ""), filters.costRefCodeSearch)
       ) {
         return false;
       }
@@ -867,13 +886,13 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.stockStatus &&
-        !(item.stockStatus || "").toLowerCase().includes(filters.stockStatus.toLowerCase())
+        !looseIncludes((item.stockStatus || ""), filters.stockStatus)
       ) {
         return false;
       }
       if (
         filters.stockQuantity &&
-        !(item.stockQuantity || "").toLowerCase().includes(filters.stockQuantity.toLowerCase())
+        !looseIncludes((item.stockQuantity || ""), filters.stockQuantity)
       ) {
         return false;
       }
@@ -897,7 +916,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.stockAgainstContract &&
-        !(item.stockAgainstContract || "").toLowerCase().includes(filters.stockAgainstContract.toLowerCase())
+        !looseIncludes((item.stockAgainstContract || ""), filters.stockAgainstContract)
       ) {
         return false;
       }
@@ -918,7 +937,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (
         filters.itemNameMergeSearch &&
-        !(item.itemNameMerge || "").toLowerCase().includes(filters.itemNameMergeSearch.toLowerCase())
+        !looseIncludes((item.itemNameMerge || ""), filters.itemNameMergeSearch)
       ) {
         return false;
       }
@@ -947,13 +966,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
         if (wantBlank && !wantPresent && hasImg) return false;
       }
       if (!itemDeletedStatus(item, filters.deletedStatus)) return false;
+      if (incompleteOnly && missingDetails(item).length === 0) return false;
       if (closedBomOnly) {
         const bomId = (item as unknown as Record<string, unknown>).bomId as string | null | undefined;
         if (!bomId || !closedBomIdSet.has(bomId)) return false;
       }
       return true;
     });
-  }, [filters, getItemImage, closedBomOnly, closedBomIdSet]);
+  }, [filters, getItemImage, closedBomOnly, closedBomIdSet, incompleteOnly]);
 
   const toggleExpand = (id: string, currentExpanded: boolean) => {
     dispatch(setRowExpanded({ id, expanded: !currentExpanded }));
@@ -1525,17 +1545,38 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       ...blankItems,
       ...correctableItems.filter((c) => !blankItems.some((b) => b.id === c.id)),
     ]
-    console.log(`[Client] autoFillBlanks: ${itemsToProcess.length} items (${blankItems.length} with blanks, ${correctableItems.length} wrong item type) out of ${matchedItems.length} matched`);
     if (itemsToProcess.length === 0) {
       toast.info("No blank fields or item types to fix.")
       return
     }
-    if (!confirm(`Auto-fill blanks / fix item types for ${itemsToProcess.length} items? This uses AI tokens for complex cases.`)) return
 
+    // Preview only: nothing is saved until the user accepts rows in the review dialog.
     setAutoFillStatus("running")
-    await dispatch(autoFillBlanks(itemsToProcess.map((i: EnquiryItemData) => i.id))).unwrap()
-    setAutoFillStatus("idle")
-    toast.success(`Auto-fill complete.`)
+    try {
+      const result = await previewAutoFillAction(itemsToProcess.map((i: EnquiryItemData) => i.id))
+      if (!result.success) {
+        toast.error(result.error || "Auto-fill preview failed.")
+      } else if (result.data!.changes.length === 0) {
+        toast.info("Auto-fill found nothing to change.")
+      } else {
+        setAutoFillChanges(result.data!.changes)
+      }
+    } finally {
+      setAutoFillStatus("idle")
+    }
+  }
+
+  const handleApplyAutoFill = async (accepted: AutoFillChange[]) => {
+    setAutoFillApplying(true)
+    try {
+      await dispatch(autoFillBlanks(accepted)).unwrap()
+      toast.success(`Auto-fill applied: ${accepted.length} change(s).`)
+      setAutoFillChanges(null)
+    } catch {
+      toast.error("Failed to apply auto-fill.")
+    } finally {
+      setAutoFillApplying(false)
+    }
   }
 
   const handleFetchItemCodes = async () => {
@@ -2555,6 +2596,19 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                   </button>
                 )}
               </div>
+
+              <label
+                className="mt-1 flex items-center gap-1.5 text-[9px] font-semibold text-muted-foreground cursor-pointer select-none normal-case"
+                title="Show only items missing Type, MOC, Size, PN or Op Type (or where Type is UNKNOWN)"
+              >
+                <input
+                  type="checkbox"
+                  checked={incompleteOnly}
+                  onChange={(e) => setIncompleteOnly(e.target.checked)}
+                  className="h-3 w-3 rounded border-border cursor-pointer"
+                />
+                Details incomplete
+              </label>
 
               {/* Side-by-side compact dropdown filters (4 per row grid structure) */}
               <div className="grid grid-cols-4 gap-1 mt-1.5 normal-case font-normal text-left text-foreground">
@@ -3585,6 +3639,19 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         <span className="hover:underline cursor-pointer truncate">
                           {enquiry.docketNumber}
                         </span>
+                        {(() => {
+                          const incomplete = (enquiry.items ?? []).filter((i: EnquiryItemData) => missingDetails(i).length > 0).length;
+                          return incomplete > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => setIncompleteOnly(true)}
+                              title={`${incomplete} item(s) missing Type, MOC, Size, PN or Op Type - click to filter`}
+                              className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-red-600 text-white cursor-pointer"
+                            >
+                              {incomplete}
+                            </button>
+                          ) : null;
+                        })()}
                         <DocketAttachmentsCell
                           docketNumber={enquiry.docketNumber}
                           attachments={enquiry.attachments}
@@ -5073,6 +5140,13 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       </div>
     )}
 
+    <AutoFillReviewDialog
+      changes={autoFillChanges}
+      applying={autoFillApplying}
+      onApply={handleApplyAutoFill}
+      onClose={() => setAutoFillChanges(null)}
+    />
+
     {/* Clear Quoted Rate Confirm Dialog — filtered scope, VA% preserved */}
     <Dialog open={clearQrConfirmOpen} onOpenChange={(v) => { if (!v && !clearQrRunning) { setClearQrConfirmOpen(false); setClearQrPending(null); } }}>
       <DialogContent className="sm:max-w-md">
@@ -5272,6 +5346,7 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
   const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState(false);
   const [noThreadOpen, setNoThreadOpen] = useState(false);
+  const [revised, setRevised] = useState(false);
 
   const approved = !!enquiry.emailApproved;
   const sentBy = enquiry.emailSentBy ?? null;
@@ -5306,9 +5381,10 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
     setSending(true);
     const toastId = toast.loading("Sending email...");
     try {
-      await dispatch(sendDocketEmail({ enquiryId: enquiry.id, allowNoThread })).unwrap();
+      await dispatch(sendDocketEmail({ enquiryId: enquiry.id, allowNoThread, revised })).unwrap();
       toast.success("Email sent.", { id: toastId });
       setNoThreadOpen(false);
+      setRevised(false);
     } catch (e) {
       // No linked thread: let the user decide to send it as a new mail instead.
       if (e && typeof e === "object" && (e as { code?: string }).code === "NO_THREAD") {
@@ -5386,6 +5462,16 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
           <X className="h-3 w-3 stroke-[3]" />
         </button>
       </div>
+      <label className="flex items-center gap-1 text-[9px] text-muted-foreground cursor-pointer">
+        <input
+          type="checkbox"
+          checked={revised}
+          onChange={(e) => setRevised(e.target.checked)}
+          disabled={sending}
+          className="h-3 w-3"
+        />
+        Revised
+      </label>
       <button
         type="button"
         onClick={handleSend}

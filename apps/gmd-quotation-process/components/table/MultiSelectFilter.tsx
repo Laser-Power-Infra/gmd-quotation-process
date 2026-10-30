@@ -8,6 +8,7 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@gmd/ui/components/popover";
+import { squish } from "@/lib/squish";
 
 export const BLANK = "__blank__";
 export const AVAILABLE = "__available__";
@@ -62,12 +63,12 @@ export default function MultiSelectFilter({
       cascadedOptions.length > 0
         ? Array.from(new Set([...cascadedOptions, ...selected]))
         : options;
-    const q = search.toLowerCase();
+    const q = squish(search);
     return source.filter((opt) => {
       if (!q) return true;
       return (
-        opt.toLowerCase().includes(q) ||
-        (optionLabels?.[opt]?.toLowerCase().includes(q) ?? false)
+        squish(opt).includes(q) ||
+        squish(optionLabels?.[opt]).includes(q)
       );
     });
   }, [options, cascadedOptions, selected, search, optionLabels]);

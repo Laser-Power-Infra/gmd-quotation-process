@@ -8,7 +8,7 @@ import type { PayloadAction } from "@reduxjs/toolkit";
 import type { RootState } from "./store";
 import type { EnquiryData, EnquiryItemData } from "./types";
 import { updateEnquiryFieldAction, createNewEnquiryAction, addItemsAction, updateEnquiryItemAction, deleteEnquiryItemAction, deleteEnquiryAction, addAttachmentsAction, syncEnquiryEmailAddressesAction, sendDocketEmailAction } from "@/app/actions/enquiry";
-import { updateItemFieldAction, importExcelDataAction, autoFillBlanksAction, updateVaPercentAction, fetchErpItemCodesAction, updateProductCostFromBomAction, update2to1CostAction, updateAllBomCostsAction, selectBomIdAction, syncDirectM2MAvailableStockAction } from "@/app/actions/item";
+import { updateItemFieldAction, importExcelDataAction, applyAutoFillAction, updateVaPercentAction, fetchErpItemCodesAction, updateProductCostFromBomAction, update2to1CostAction, updateAllBomCostsAction, selectBomIdAction, syncDirectM2MAvailableStockAction } from "@/app/actions/item";
 import { bulkUpdateValidationAction, bulkUpdateApmAction, clearQuotedRatesAction, fetchContractReviewRatesAction, populatePdCostValidationAction } from "@/app/actions/misc";
 import {
   fetchEnquiryFacet,
@@ -231,10 +231,11 @@ export const sendDocketEmail = createAsyncThunk(
     {
       enquiryId,
       allowNoThread = false,
-    }: { enquiryId: string; allowNoThread?: boolean },
+      revised = false,
+    }: { enquiryId: string; allowNoThread?: boolean; revised?: boolean },
     { rejectWithValue }
   ) => {
-    const result = await sendDocketEmailAction(enquiryId, allowNoThread);
+    const result = await sendDocketEmailAction(enquiryId, allowNoThread, revised);
     if (!result.success) {
       return rejectWithValue({
         error: result.error || "Failed to send docket email",
@@ -263,10 +264,10 @@ export const importExcelData = createAsyncThunk(
 export const autoFillBlanks = createAsyncThunk(
   "enquiries/autoFillBlanks",
   async (
-    payload: Parameters<typeof autoFillBlanksAction>[0],
+    payload: Parameters<typeof applyAutoFillAction>[0],
     { rejectWithValue }
   ) => {
-    const result = await autoFillBlanksAction(payload);
+    const result = await applyAutoFillAction(payload);
     if (!result.success) {
       return rejectWithValue(result.error || "Failed to auto-fill blanks");
     }
@@ -389,6 +390,7 @@ interface EnquiryPageState {
   projectReference: string;
   pendingOnly: boolean;
   closedBomOnly: boolean;
+  incompleteOnly: boolean;
   /** Set by any enquiry/item mutation so the page refetches instead of guessing. */
   stale: boolean;
   /** Background revalidation (e.g. after a cell edit) - rows stay visible. */
@@ -436,6 +438,7 @@ const initialState: EnquiriesState = {
     projectReference: "",
     pendingOnly: false,
     closedBomOnly: false,
+    incompleteOnly: false,
     stale: false,
     refreshing: false,
   },
@@ -541,6 +544,9 @@ const enquiriesSlice = createSlice({
     },
     setEnquiryClosedBomOnly(state, action: PayloadAction<boolean>) {
       state.page.closedBomOnly = action.payload;
+    },
+    setEnquiryIncompleteOnly(state, action: PayloadAction<boolean>) {
+      state.page.incompleteOnly = action.payload;
     },
     setLoading(state, action) {
       state.loading = action.payload;
@@ -1169,6 +1175,7 @@ export const {
   setEnquiryProjectReference,
   setEnquiryPendingOnly,
   setEnquiryClosedBomOnly,
+  setEnquiryIncompleteOnly,
   setLoading,
 } = enquiriesSlice.actions;
 
@@ -1210,6 +1217,7 @@ export const selectEnquiryQuery = (state: RootState): EnquiryQuery => ({
   projectReference: state.enquiries.page.projectReference,
   pendingOnly: state.enquiries.page.pendingOnly,
   closedBomOnly: state.enquiries.page.closedBomOnly,
+  incompleteOnly: state.enquiries.page.incompleteOnly,
   selectedEnquiryIds: state.ui.selectedEnquiryIds,
   sort: state.enquiries.page.sort,
   page: state.pagination.currentPage,

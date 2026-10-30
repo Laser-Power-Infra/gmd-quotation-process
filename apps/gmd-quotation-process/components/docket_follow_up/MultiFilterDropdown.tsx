@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { ChevronDown, Check, X, Search } from "lucide-react";
+import { squish } from "@/lib/squish";
 
 export interface FilterOption {
   value: string;
@@ -48,9 +49,9 @@ export function MultiFilterDropdown({
   }, [isOpen]);
 
   const filteredOptions = useMemo(() => {
-    if (!searchQuery.trim()) return options;
-    const q = searchQuery.toLowerCase();
-    return options.filter((opt) => opt.label.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q));
+    if (!squish(searchQuery)) return options;
+    const q = squish(searchQuery);
+    return options.filter((opt) => squish(opt.label).includes(q) || squish(opt.value).includes(q));
   }, [options, searchQuery]);
 
   const handleToggle = (value: string) => {

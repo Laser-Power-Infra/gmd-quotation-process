@@ -1,4 +1,5 @@
 import type { EnquiryData, EnquiryItemData, FiltersState } from "./types";
+import { looseIncludes, squish } from "@gmd/dashboard/lib/squish";
 import { makeImageKey } from "./imageKey";
 import { C_BATCH_VALUE } from "./gmd_lib/verify-bom-columns";
 import { N_BATCH_VALUE } from "./gmd_lib/contract-review-columns";
@@ -75,7 +76,7 @@ export function matchesMultiCI(values: string[], actual: unknown, blankCheck: (v
 export function matchesText(filterVal: string, actual: unknown): boolean {
   if (!filterVal) return true;
   if (actual == null) return false;
-  return String(actual).toLowerCase().includes(filterVal.toLowerCase());
+  return looseIncludes(actual, filterVal);
 }
 
 export type GeneratedImagesMap = Record<string, { url: string | null; driveFileId: string | null }>;
@@ -134,7 +135,7 @@ export function enquiryPassesFilters(
   }
   if (filters.attachment) {
     if (!enquiry.attachments || enquiry.attachments.length === 0) return false;
-    const match = enquiry.attachments.some((a) => a.name.toLowerCase().includes(filters.attachment.toLowerCase()));
+    const match = enquiry.attachments.some((a) => looseIncludes(a.name, filters.attachment));
     if (!match) return false;
   }
 
@@ -146,12 +147,12 @@ export function enquiryPassesFilters(
 // Mirrors the case-insensitive OR of docketNumber / partyName / any item name that the
 // dashboard search used to run as a Prisma `where` clause. An empty query matches everything.
 export function matchesGlobalSearch(enquiry: EnquiryData, globalSearch?: string): boolean {
-  const q = (globalSearch || "").trim().toLowerCase();
+  const q = squish(globalSearch);
   if (!q) return true;
   return (
-    enquiry.docketNumber.toLowerCase().includes(q) ||
-    enquiry.partyName.toLowerCase().includes(q) ||
-    enquiry.items.some((it) => it.itemName.toLowerCase().includes(q))
+    squish(enquiry.docketNumber).includes(q) ||
+    squish(enquiry.partyName).includes(q) ||
+    enquiry.items.some((it) => squish(it.itemName).includes(q))
   );
 }
 

@@ -14,6 +14,7 @@ export interface EnquiryQuery {
   projectReference: string;
   pendingOnly: boolean;
   closedBomOnly: boolean;
+  incompleteOnly: boolean;
   selectedEnquiryIds: string[];
   sort: EnquirySort;
   page: number;
@@ -72,6 +73,7 @@ export function emptyEnquiryQuery(): EnquiryQuery {
     projectReference: "",
     pendingOnly: false,
     closedBomOnly: false,
+    incompleteOnly: false,
     selectedEnquiryIds: [],
     sort: null,
     page: 1,
@@ -88,6 +90,7 @@ export function emptyEnquiryQuery(): EnquiryQuery {
     projectReference: q.projectReference,
     pendingOnly: q.pendingOnly,
     closedBomOnly: q.closedBomOnly,
+    incompleteOnly: q.incompleteOnly,
     selectedEnquiryIds: [...q.selectedEnquiryIds].sort(),
     sort: q.sort,
     page: q.page,

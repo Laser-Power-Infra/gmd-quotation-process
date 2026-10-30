@@ -10,6 +10,7 @@ import {
   computeItemWiseValue,
   computeMajorMinorMarking,
   fieldOf,
+  buildSerial,
 } from "../columns";
 import { NEW_ITEM_FIELDS } from "../types";
 import type { ActionResult, FieldUpdate, NewItemInput, PhysicalStockRow } from "../types";
@@ -36,7 +37,28 @@ export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
   return items.map(({ created_at: _c, updated_at: _u, form_date, ...rest }) => ({
     ...rest,
     form_date: form_date ? form_date.toISOString() : null,
+    serial_no: buildSerial(rest),
   }));
+}
+
+/**
+ * Runs `write` with the next heat_seq for `heat_no` (highest + 1, shared by every
+ * item under that heat). The unique (heat_no, heat_seq) index rejects a
+ * concurrent writer that picked the same number (P2002): re-read and retry.
+ */
+async function withHeatSeq<T>(heatNo: string, write: (heatSeq: number) => Promise<T>): Promise<T> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { _max } = await stockPrisma.physicalStock.aggregate({
+      where: { heat_no: heatNo },
+      _max: { heat_seq: true },
+    });
+    try {
+      return await write((_max.heat_seq ?? 0) + 1);
+    } catch (err) {
+      if ((err as { code?: string }).code !== "P2002") throw err;
+    }
+  }
+  throw new Error("Could not assign a heat serial number.");
 }
 
 /**
@@ -57,6 +79,22 @@ export async function updatePhysicalStockField(
   return run(async () => {
     const row = await stockPrisma.physicalStock.findUnique({ where: { id } });
     if (!row) throw new Error("Physical stock row not found.");
+    // HEAT NO: needs an ERP code (the serial is built from it). A new heat takes
+    // the next number of that heat (the old heat's number is left as a gap);
+    // blank clears heat and number.
+    if (field === "heat_no") {
+      const heat = value?.trim().toUpperCase() || null;
+      if (heat === (row.heat_no ?? null)) return {} as FieldUpdate;
+      if (!heat) {
+        await stockPrisma.physicalStock.update({ where: { id }, data: { heat_no: null, heat_seq: null } });
+        return { heat_no: null, heat_seq: null, serial_no: null } as FieldUpdate;
+      }
+      if (!String(row.erp_code ?? "").trim()) throw new Error("Fill the ERP CODE before the heat no.");
+      return withHeatSeq(heat, async (heat_seq) => {
+        await stockPrisma.physicalStock.update({ where: { id }, data: { heat_no: heat, heat_seq } });
+        return { heat_no: heat, heat_seq, serial_no: buildSerial({ ...row, heat_no: heat, heat_seq }) } as FieldUpdate;
+      });
+    }
     // Blank-only columns (ERP CODE, location, the L/Dia dropdowns) may be
     // filled but never overwritten, except on a row with a blank ERP CODE.
     const erpBlank = !String(row.erp_code ?? "").trim();
@@ -88,7 +126,7 @@ export async function updatePhysicalStockField(
     if (erpBlank && IDENTITY_FIELDS.has(field) && String(next.location ?? "").trim()) {
       const key = itemKey(next);
       const targets = (await stockPrisma.physicalStock.findMany({ where: { erp_code: { not: null } } })).filter(
-        (r) => String(r.erp_code).trim() && r.id !== id && itemKey(r) === key,
+        (r) => String(r.erp_code).trim() && !r.heat_no && r.id !== id && itemKey(r) === key,
       );
       if (targets.length === 1) {
         const [target] = targets;
@@ -106,7 +144,8 @@ export async function updatePhysicalStockField(
         } as FieldUpdate;
       }
     }
-    return changes as FieldUpdate;
+    // The serial embeds l8_item_category: send the refreshed one with the edit.
+    return (row.heat_no ? { ...changes, serial_no: buildSerial(next) } : changes) as FieldUpdate;
   });
 }
 
@@ -132,15 +171,18 @@ export async function createPhysicalStock(
   input: NewItemInput,
 ): Promise<ActionResult<{ erp_code: string; merged: boolean }>> {
   return run(async () => {
-    const data: Record<string, string | boolean | null> = {};
+    const data: Record<string, string | boolean | number | null> = {};
     for (const f of NEW_ITEM_FIELDS) data[f] = input[f]?.trim().toUpperCase() || null;
 
+    // A row with a heat no is its own serialised item: never added into another.
     const key = itemKey(data);
-    const generated = await stockPrisma.physicalStock.findMany({
-      where: { erp_code: { not: null } },
-      orderBy: { created_at: "asc" },
-    });
-    const match = generated.find((r) => isGeneratedErpCode(r.erp_code) && itemKey(r) === key);
+    const generated = data.heat_no
+      ? []
+      : await stockPrisma.physicalStock.findMany({
+          where: { erp_code: { not: null } },
+          orderBy: { created_at: "asc" },
+        });
+    const match = generated.find((r) => !r.heat_no && isGeneratedErpCode(r.erp_code) && itemKey(r) === key);
     if (match) {
       const received_qty = addQty(match.received_qty, data.received_qty);
       const dispatch_qty = addQty(match.dispatch_qty, data.dispatch_qty);
@@ -160,7 +202,11 @@ export async function createPhysicalStock(
     if (available !== null) data.available_qty = available;
     const marking = computeMajorMinorMarking(data.l8_item_category as string | null);
     if (marking !== null) data.majorminor_marking = marking;
-    await stockPrisma.physicalStock.create({ data });
+    if (typeof data.heat_no === "string") {
+      await withHeatSeq(data.heat_no, (heat_seq) => stockPrisma.physicalStock.create({ data: { ...data, heat_seq } }));
+    } else {
+      await stockPrisma.physicalStock.create({ data });
+    }
     return { erp_code, merged: false };
   });
 }

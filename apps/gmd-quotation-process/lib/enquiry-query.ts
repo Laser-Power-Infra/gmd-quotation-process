@@ -1,4 +1,5 @@
 import { Prisma } from "@gmd/db-quotation";
+import { squish } from "./squish";
 import { hasActiveItemFilters } from "./enquiryFilterScope";
 import type { EnquiryQuery } from "./enquiryQuery";
 
@@ -67,9 +68,14 @@ function escapeLike(value: string): string {
   return value.replace(/([\\%_])/g, "\\$1");
 }
 
+// Whitespace-insensitive ILIKE: strips spaces from the column and the search text.
+function likeSql(expr: Prisma.Sql, value: string): Prisma.Sql {
+  return sql`regexp_replace((${expr})::text, '\\s', '', 'g') ILIKE ${`%${escapeLike(squish(value))}%`}`;
+}
+
 function containsSql(expr: Prisma.Sql, value: string | null | undefined): Prisma.Sql | null {
   if (!value) return null;
-  return sql`${expr} ILIKE ${`%${escapeLike(value)}%`}`;
+  return likeSql(expr, value);
 }
 
 function blankSql(expr: Prisma.Sql, extraValues: string[] = []): Prisma.Sql {
@@ -158,6 +164,19 @@ const IMAGE_EXISTS_SQL = (alias: Prisma.Sql) => sql`EXISTS (
     AND lower(btrim(coalesce(g."operationType", ''))) = lower(btrim(coalesce(${alias}."operationType", '')))
     AND lower(btrim(coalesce(g."rmType", ''))) = lower(btrim(coalesce(${alias}."rmType", '')))
     AND (g."url" IS NOT NULL OR g."driveFileId" IS NOT NULL)
+)`;
+
+// Any of the five Details fields blank/UNKNOWN (size also counts SIZE_BLANK_VALUES).
+// Keep in step with isEmptyDetail in lib/detailsCheck.ts.
+const DETAILS_INCOMPLETE_SQL = (alias: Prisma.Sql) => sql`(
+  ${Prisma.join(
+    ["itemType", "moc", "size", "pnRating", "operationType"].map(
+      (f) =>
+        sql`(btrim(coalesce(${alias}.${Prisma.raw(`"${f}"`)}, '')) = '' OR upper(btrim(${alias}.${Prisma.raw(`"${f}"`)})) = 'UNKNOWN')`,
+    ),
+    " OR ",
+  )}
+  OR btrim(${alias}."size") IN (${Prisma.join(SIZE_BLANK_VALUES)})
 )`;
 
 const CLOSED_BOM_SQL = (alias: Prisma.Sql) => sql`${alias}."bomId" IS NOT NULL AND EXISTS (
@@ -256,6 +275,7 @@ export function buildItemWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): Pri
   }
 
   if (q.closedBomOnly && "closedBomOnly" !== skip) parts.push(CLOSED_BOM_SQL(sql`i`));
+  if (q.incompleteOnly && "incompleteOnly" !== skip) parts.push(DETAILS_INCOMPLETE_SQL(sql`i`));
 
   if (parts.length === 0) return sql`TRUE`;
   return Prisma.join(parts, " AND ");
@@ -282,11 +302,10 @@ function contractNoSql(q: EnquiryQuery): Prisma.Sql | null {
 function globalSearchSql(q: EnquiryQuery): Prisma.Sql | null {
   const value = q.globalSearch.trim();
   if (!value) return null;
-  const like = `%${escapeLike(value)}%`;
   return sql`(
-    e."docketNumber" ILIKE ${like}
-    OR e."partyName" ILIKE ${like}
-    OR EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND i."itemName" ILIKE ${like})
+    ${likeSql(sql`e."docketNumber"`, value)}
+    OR ${likeSql(sql`e."partyName"`, value)}
+    OR EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${likeSql(sql`i."itemName"`, value)})
   )`;
 }
 
@@ -343,7 +362,7 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
   if (f.attachment && skip !== "attachment") {
     parts.push(sql`EXISTS (
       SELECT 1 FROM "Attachment" a
-      WHERE a."enquiryId" = e.id AND a."name" ILIKE ${`%${escapeLike(f.attachment)}%`}
+      WHERE a."enquiryId" = e.id AND ${likeSql(sql`a."name"`, f.attachment)}
     )`);
   }
 
@@ -361,13 +380,13 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
     parts.push(
       sql`(e."closureStatus" IS NULL OR btrim(e."closureStatus") = '' OR lower(btrim(e."closureStatus")) = 'pending')`,
     );
-    if (hasActiveItemFilters(f, q.closedBomOnly)) {
+    if (hasActiveItemFilters(f, q.closedBomOnly || q.incompleteOnly)) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,
       );
     }
   } else {
-    const needsItem = hasActiveFilters(q) || q.closedBomOnly;
+    const needsItem = hasActiveFilters(q) || q.closedBomOnly || q.incompleteOnly;
     if (needsItem) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,

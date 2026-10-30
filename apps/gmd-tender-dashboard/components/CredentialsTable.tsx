@@ -30,6 +30,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CATEGORY_OPTIONS, STATE_OPTIONS } from "@/lib/credentialsOptions";
 import "./TenderTable.css";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 type Col = {
   header: string;
@@ -259,13 +260,13 @@ export default function CredentialsTable({
       });
     }
     if (globalSearch.trim() !== "") {
-      const q = globalSearch.toLowerCase().trim();
+      const q = squish(globalSearch);
       r = r.filter((x) =>
         COLS.some((c) => {
           if (c.accessor === "actions") return false;
           const v = (x as any)[c.accessor];
           if (v == null) return false;
-          return String(v).toLowerCase().includes(q);
+          return squish(String(v)).includes(q);
         }),
       );
     }

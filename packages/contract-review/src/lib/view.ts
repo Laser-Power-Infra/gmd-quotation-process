@@ -3,6 +3,7 @@
 // host app can run the very same code on the server so both paths agree.
 
 import { CONTRACT_REVIEW_HEADERS } from "./columns";
+import { looseIncludes, squish } from "@gmd/dashboard/lib/squish";
 import { BOM_ID_COLUMN, type BomIdCategory } from "@gmd/dashboard/lib/bomCategory";
 import { isDateHeader } from "@gmd/dashboard/lib/sheet-columns";
 import { cellCompare, compareDates } from "@gmd/dashboard/lib/tableSort";
@@ -312,8 +313,8 @@ function rowHay(row: unknown[], headerCount: number): string {
   if (hay === undefined) {
     const parts: string[] = new Array(headerCount);
     for (let i = 0; i < headerCount; i++)
-      parts[i] = String(row[i] ?? "").toLowerCase();
-    hay = parts.join(" ");
+      parts[i] = squish(row[i]);
+    hay = parts.join("");
     rowHayCache.set(row, hay);
   }
   return hay;
@@ -341,7 +342,7 @@ export function matchesTableFilters(
   bomCategoryByRow?: WeakMap<unknown[], BomIdCategory>,
 ): boolean {
   if (globalSearch.trim()) {
-    const q = globalSearch.toLowerCase();
+    const q = squish(globalSearch);
     if (!rowHay(row, headers.length).includes(q)) return false;
   }
   for (const [colName, filterVal] of Object.entries(columnFilters)) {
@@ -360,7 +361,7 @@ export function matchesTableFilters(
     const cellVal = String(row[colIdx] ?? "");
     if (filterVal === "(Blank)" || filterVal === "-" || filterVal === "—") {
       if (cellVal !== "") return false;
-    } else if (!cellVal.toLowerCase().includes(filterVal.toLowerCase())) {
+    } else if (!looseIncludes(cellVal, filterVal)) {
       return false;
     }
   }

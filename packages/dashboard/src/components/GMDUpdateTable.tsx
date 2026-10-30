@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect, type ReactNode } from "react";
 import { ChevronUp, ChevronDown, ArrowUpDown, Search, RotateCcw, X, Download, Files, FileText, ExternalLink, Copy, Upload, Eye, Paperclip, Trash2, ImageIcon, Check, Highlighter, AlertTriangle, Loader2 } from "lucide-react";
 import GMDUpdateStatusBadge from "./GMDUpdateStatusBadge";
+import { looseIncludes, squish } from "../lib/squish";
 import type { ContractReviewImage } from "../lib/types";
 import {
   STATUS_COLUMNS,
@@ -1697,7 +1698,7 @@ castingRateInputs,
     for (const row of rows) {
       cache.set(
         row,
-        headers.map((_, i) => String(row[i] ?? "").toLowerCase()).join(" "),
+        headers.map((_, i) => squish(row[i])).join(""),
       );
     }
     return cache;
@@ -1734,7 +1735,7 @@ castingRateInputs,
       if (showOnlyDuplicateErp && !duplicateRowSet.has(row)) return false;
       const gs = globalSearch;
       if (gs.trim()) {
-        const q = gs.toLowerCase();
+        const q = squish(gs);
         if (!(rowSearchCache.get(row) ?? "").includes(q)) return false;
       }
 
@@ -1756,7 +1757,7 @@ castingRateInputs,
           filterVal === "—"
         ) {
           if (cellVal !== "") return false;
-        } else if (!cellVal.toLowerCase().includes(filterVal.toLowerCase())) {
+        } else if (!looseIncludes(cellVal, filterVal)) {
           return false;
         }
       }

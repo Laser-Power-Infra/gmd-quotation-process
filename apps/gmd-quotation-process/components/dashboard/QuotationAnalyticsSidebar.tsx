@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@gmd/
 import MultiSelectFilter from "@/components/table/MultiSelectFilter";
 import { X, Filter, Search, Check } from "lucide-react";
 import { enquiryPassesFilters, itemPassesFilters } from "@/lib/filterUtils";
+import { squish } from "@/lib/squish";
 
 function sortStrings(arr: string[]): string[] {
   return [...arr].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -220,8 +221,8 @@ export default function QuotationAnalyticsSidebar({
 
   const visibleStateOptions = useMemo(() => {
     if (!stateSearchQuery.trim()) return allOptions.states;
-    const q = stateSearchQuery.toLowerCase().trim();
-    return allOptions.states.filter((s) => s.toLowerCase().includes(q));
+    const q = squish(stateSearchQuery);
+    return allOptions.states.filter((s) => squish(s).includes(q));
   }, [allOptions.states, stateSearchQuery]);
 
   const clearAll = () => {

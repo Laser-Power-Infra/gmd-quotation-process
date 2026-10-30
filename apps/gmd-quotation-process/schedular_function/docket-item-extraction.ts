@@ -152,6 +152,74 @@ ${candidates}`,
   return applyVerdicts(items, result.output?.verdicts ?? []);
 }
 
+const CONDENSE_CHUNK = 40;
+const MAX_NAME_CHARS = 250;
+
+const aiCondenseSchema = z.object({
+  names: z.array(
+    z.object({
+      index: z.number().int().describe("Index of the candidate item, as numbered in the prompt."),
+      itemName: z.string().describe("Short, compact item name built only from facts in the candidate."),
+    }),
+  ),
+});
+
+/** Swaps in condensed names; bad indices and empty / longer-than-original names are ignored. */
+export function applyCondensed(
+  items: ParsedDocketItem[],
+  raw: { index: number; itemName: string }[],
+): ParsedDocketItem[] {
+  const names = new Map<number, string>();
+  for (const r of raw) {
+    const name = String(r.itemName ?? "").replace(/\s+/g, " ").trim();
+    if (Number.isInteger(r.index) && r.index >= 0 && r.index < items.length && name.length >= 2) {
+      names.set(r.index, name.slice(0, MAX_NAME_CHARS));
+    }
+  }
+  const seen = new Set<string>();
+  const out: ParsedDocketItem[] = [];
+  items.forEach((item, n) => {
+    const name = names.get(n);
+    const next = name && name.length <= item.itemName.length ? { ...item, itemName: name } : item;
+    const key = `${next.itemName.toLowerCase()}|${next.quantity}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(next);
+  });
+  return out;
+}
+
+/** Rewrites long BOQ descriptions into compact names. Throws on AI failure (caller keeps originals). */
+async function aiCondense(items: ParsedDocketItem[]): Promise<ParsedDocketItem[]> {
+  const names: { index: number; itemName: string }[] = [];
+  for (let start = 0; start < items.length; start += CONDENSE_CHUNK) {
+    const chunk = items.slice(start, start + CONDENSE_CHUNK);
+    const result = await generateText({
+      model: openai(process.env.AI_EXTRACTION_MODEL || "gpt-4o-mini"),
+      output: Output.object({ schema: aiCondenseSchema }),
+      system: `You shorten industrial item descriptions (valves, pipes, fittings) from quotation enquiries into compact item names.
+Build each name ONLY from facts stated in the candidate: item type, body/disc material of construction, seat/type, operation (tamper proof, gear operated, etc.), applicable standards (IS / AWWA / BS), PN or pressure rating, end connection and size (mm / DN).
+Drop contractual boilerplate: providing / fixing / jointing, rate inclusions, taxes, freight, testing certificates, painting, encasing, supports, accessories.
+Never invent or change values. If a candidate is already short and clear, return it unchanged. Return one name per candidate, max ${MAX_NAME_CHARS} characters.`,
+      prompt: chunk.map((i, n) => `${n}. ${i.itemName}`).join("\n"),
+      temperature: 0,
+    });
+    for (const r of result.output?.names ?? []) names.push({ index: r.index + start, itemName: r.itemName });
+  }
+  return applyCondensed(items, names);
+}
+
+/** Condenses names when AI is enabled; any failure keeps the original names. */
+async function condenseNames(items: ParsedDocketItem[]): Promise<ParsedDocketItem[]> {
+  if (!aiFallbackEnabled() || items.length === 0) return items;
+  try {
+    return await aiCondense(items);
+  } catch (e) {
+    console.warn("[docket-item-extraction] AI condense failed:", e instanceof Error ? e.message : e);
+    return items;
+  }
+}
+
 /**
  * Extracts `{ itemName, quantity }` candidates for one thread.
  *
@@ -190,7 +258,7 @@ export async function extractDocketItems(
       }
     }
     return {
-      items,
+      items: await condenseNames(items),
       source: "parser",
       parserItems: parserItems.length,
       aiUsed: false,
@@ -206,7 +274,7 @@ export async function extractDocketItems(
       const aiItems = await aiExtract(buildAiInput(input, attachments.texts));
       if (aiItems.length > 0) {
         return {
-          items: aiItems,
+          items: await condenseNames(aiItems),
           source: "ai",
           parserItems: 0,
           aiUsed: true,

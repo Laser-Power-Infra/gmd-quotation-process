@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { Plus, Search, Pencil, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import ColumnIndexDialog from "@/components/admin/ColumnIndexDialog";
+import { squish } from "@gmd/dashboard/lib/squish";
 
 interface ColumnIndex {
   id: number;
@@ -53,11 +54,11 @@ export default function ColumnIndicesPage() {
 
   const filteredIndices = useMemo(() => {
     if (!search.trim()) return indices;
-    const lower = search.toLowerCase().trim();
+    const lower = squish(search);
     return indices.filter(
       (idx) =>
-        idx.columnName.toLowerCase().includes(lower) ||
-        (idx.displayName ?? "").toLowerCase().includes(lower),
+        squish(idx.columnName).includes(lower) ||
+        squish((idx.displayName ?? "")).includes(lower),
     );
   }, [indices, search]);
 

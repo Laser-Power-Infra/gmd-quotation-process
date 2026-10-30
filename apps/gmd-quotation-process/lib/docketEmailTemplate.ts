@@ -8,6 +8,8 @@
 
 export interface DocketEmailData {
   docketNumber: string;
+  /** Mail revises the prices of an earlier offer. */
+  revised?: boolean;
   /** Project / reference shown in the opening sentence (optional). */
   projectName?: string;
   /**
@@ -33,8 +35,10 @@ function esc(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
-export function buildDocketEmailSubject(data: Pick<DocketEmailData, "docketNumber">): string {
-  return `Offer - ${data.docketNumber}`;
+export function buildDocketEmailSubject(
+  data: Pick<DocketEmailData, "docketNumber" | "revised">,
+): string {
+  return `${data.revised ? "Revised Offer" : "Offer"} - ${data.docketNumber}`;
 }
 
 /**
@@ -91,7 +95,7 @@ export function buildDocketEmailHtml(data: DocketEmailData): string {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Offer - ${esc(docket)}</title>
+<title>${esc(subject)}</title>
 </head>
 <body style="margin:0; padding:0; background:#ffffff; font-family:Arial, Helvetica, sans-serif; color:#222222;">
 
@@ -108,8 +112,13 @@ export function buildDocketEmailHtml(data: DocketEmailData): string {
             <p style="margin:0 0 16px 0;"><strong>Subject:</strong> ${esc(subject)}</p>
             ${projectSentence}
             <p style="margin:0;">
-              Please find our detailed offer below as per reference <strong>${esc(docket)}</strong>${itemClause}.
-            </p>
+              Please find our detailed ${data.revised ? "<strong>revised</strong> " : ""}offer below as per reference <strong>${esc(docket)}</strong>${itemClause}.
+            </p>${
+              data.revised
+                ? `
+            <p style="margin:16px 0 0 0;">This mail is sent revising the prices of our earlier offer.</p>`
+                : ""
+            }
           </td>
         </tr>
 

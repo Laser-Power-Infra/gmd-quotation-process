@@ -176,9 +176,19 @@ export function resolveEmailsForParty(
   return emailsByPartyKey.get(partyKey(partyName)) ?? [];
 }
 
+/**
+ * From address of the thread's first mail. The thread row's `sender` is
+ * overwritten by every later reply, but the body keeps `--- Message 1 From: ... ---`.
+ */
+export function rootSenderEmails(body: string | null | undefined): string[] {
+  const header = String(body ?? "").match(/---\s*Message\s*1\s*From:([^\n\r]*?)---/i);
+  return header ? extractEmailsFromValue(header[1]) : [];
+}
+
 /** The subset of thread columns needed to split sender vs cc. */
 export interface ThreadEmailFields {
   sender: string | null;
+  body?: string | null;
   toDetails: unknown;
   ccDetails: unknown;
 }
@@ -229,6 +239,8 @@ export function threadCcEmails(thread: ThreadEmailFields): string[] {
 export interface EmailListEntry {
   external: string[];
   internal: string[];
+  /** Root mail From first, then the row's latest `sender`; see `pickSenderAndCc`. */
+  from?: string[];
 }
 
 export function threadEmailLists(thread: ThreadEmailFields): EmailListEntry {
@@ -240,6 +252,7 @@ export function threadEmailLists(thread: ThreadEmailFields): EmailListEntry {
   return {
     external: uniqLower(all.filter(isExternalEmail)),
     internal: uniqLower(all.filter((e) => isInternalEmail(e) && !isSpamOrBotEmail(e))),
+    from: [...rootSenderEmails(thread.body), ...extractEmailsFromValue(thread.sender)],
   };
 }
 
@@ -266,8 +279,14 @@ export function pickSenderAndCc(input: {
   external: string[];
   internal: string[];
   partyExternal?: string[];
+  /** The thread's own From address(es); an external one always wins over the party pool. */
+  from?: string[];
 }): ThreadEmailSplit {
   const external = uniqLower(input.external);
+  const from = uniqLower((input.from ?? []).filter(isExternalEmail));
+  if (from.length > 0) {
+    return { senderEmail: from[0], ccEmails: external.filter((e) => e !== from[0]), source: "thread" };
+  }
   const party = uniqLower((input.partyExternal ?? []).filter(isExternalEmail));
   const hasInternal = uniqLower(input.internal).length > 0;
 
@@ -293,5 +312,6 @@ export function splitThreadEmails(
     external: lists.external,
     internal: lists.internal,
     partyExternal: partyExternalEmails,
+    from: lists.from,
   });
 }
