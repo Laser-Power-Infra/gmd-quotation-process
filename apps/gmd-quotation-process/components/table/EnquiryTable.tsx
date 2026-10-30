@@ -5346,6 +5346,7 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
   const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState(false);
   const [noThreadOpen, setNoThreadOpen] = useState(false);
+  const [revised, setRevised] = useState(false);
 
   const approved = !!enquiry.emailApproved;
   const sentBy = enquiry.emailSentBy ?? null;
@@ -5380,9 +5381,10 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
     setSending(true);
     const toastId = toast.loading("Sending email...");
     try {
-      await dispatch(sendDocketEmail({ enquiryId: enquiry.id, allowNoThread })).unwrap();
+      await dispatch(sendDocketEmail({ enquiryId: enquiry.id, allowNoThread, revised })).unwrap();
       toast.success("Email sent.", { id: toastId });
       setNoThreadOpen(false);
+      setRevised(false);
     } catch (e) {
       // No linked thread: let the user decide to send it as a new mail instead.
       if (e && typeof e === "object" && (e as { code?: string }).code === "NO_THREAD") {
@@ -5460,6 +5462,16 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
           <X className="h-3 w-3 stroke-[3]" />
         </button>
       </div>
+      <label className="flex items-center gap-1 text-[9px] text-muted-foreground cursor-pointer">
+        <input
+          type="checkbox"
+          checked={revised}
+          onChange={(e) => setRevised(e.target.checked)}
+          disabled={sending}
+          className="h-3 w-3"
+        />
+        Revised
+      </label>
       <button
         type="button"
         onClick={handleSend}

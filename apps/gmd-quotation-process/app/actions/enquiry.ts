@@ -1021,6 +1021,7 @@ export async function updateEnquiryFieldAction(
 export async function sendDocketEmailAction(
   enquiryId: string,
   allowNoThread = false,
+  revised = false,
 ) {
   await requireAccess();
   try {
@@ -1106,9 +1107,10 @@ export async function sendDocketEmailAction(
       "READY STOCK";
 
     const state = (enquiry.state || "").trim();
-    const subject = buildDocketEmailSubject({ docketNumber: enquiry.docketNumber });
+    const subject = buildDocketEmailSubject({ docketNumber: enquiry.docketNumber, revised });
     const html = buildDocketEmailHtml({
       docketNumber: enquiry.docketNumber,
+      revised,
       projectName,
       itemsClause,
       paymentTerms: enquiry.paymentTerms || "",
