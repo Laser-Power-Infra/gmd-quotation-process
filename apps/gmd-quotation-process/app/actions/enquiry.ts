@@ -16,6 +16,17 @@ import { resolveImportedInhouse } from "@/lib/importInhouseMapping";
 import { syncEnquiryEmailAddresses } from "@/lib/enquiryEmailSync";
 import { mergeMandatoryCc, isBlockedPartyEmail } from "@/lib/enquiryEmailParty";
 import { isDeletableDuplicate } from "@/lib/pendingDocketMaterializer";
+import { ASSIGNEE_FIELDS } from "@/lib/stageAgeing";
+
+// People who can own a docket stage (Details / Cost / Validation / Send).
+export async function listAssignableUsersAction() {
+  const denied = await loginRequired(); if (denied) return [];
+  const users = await prisma.user.findMany({
+    select: { id: true, name: true, email: true },
+    orderBy: [{ name: "asc" }, { email: "asc" }],
+  });
+  return users.map((u) => ({ id: u.id, name: u.name || u.email }));
+}
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -930,6 +941,16 @@ export async function updateEnquiryFieldAction(
     if (field === "emailApproved") {
       if (value !== true && value !== false) {
         return { success: false, error: "emailApproved must be true or false." };
+      }
+    }
+    // Stage owners must be blank or a real user.
+    if ((ASSIGNEE_FIELDS as string[]).includes(field)) {
+      if (value === "" || value === undefined) value = null;
+      if (value !== null) {
+        const user = typeof value === "string"
+          ? await prisma.user.findUnique({ where: { id: value }, select: { id: true } })
+          : null;
+        if (!user) return { success: false, error: "Unknown user for stage assignment." };
       }
     }
     const prev = await prisma.enquiry.findUnique({

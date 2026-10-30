@@ -20,6 +20,7 @@ import type {
   EnquiryPageResult,
   EnquiryQuery,
   EnquirySort,
+  EnquiryStage,
   EnquirySummary,
   FilteredIds,
 } from "./enquiryQuery";
@@ -391,6 +392,7 @@ interface EnquiryPageState {
   pendingOnly: boolean;
   closedBomOnly: boolean;
   incompleteOnly: boolean;
+  stage: EnquiryStage;
   /** Set by any enquiry/item mutation so the page refetches instead of guessing. */
   stale: boolean;
   /** Background revalidation (e.g. after a cell edit) - rows stay visible. */
@@ -439,6 +441,7 @@ const initialState: EnquiriesState = {
     pendingOnly: false,
     closedBomOnly: false,
     incompleteOnly: false,
+    stage: "",
     stale: false,
     refreshing: false,
   },
@@ -547,6 +550,9 @@ const enquiriesSlice = createSlice({
     },
     setEnquiryIncompleteOnly(state, action: PayloadAction<boolean>) {
       state.page.incompleteOnly = action.payload;
+    },
+    setEnquiryStage(state, action: PayloadAction<EnquiryStage>) {
+      state.page.stage = action.payload;
     },
     setLoading(state, action) {
       state.loading = action.payload;
@@ -1176,6 +1182,7 @@ export const {
   setEnquiryPendingOnly,
   setEnquiryClosedBomOnly,
   setEnquiryIncompleteOnly,
+  setEnquiryStage,
   setLoading,
 } = enquiriesSlice.actions;
 
@@ -1218,6 +1225,7 @@ export const selectEnquiryQuery = (state: RootState): EnquiryQuery => ({
   pendingOnly: state.enquiries.page.pendingOnly,
   closedBomOnly: state.enquiries.page.closedBomOnly,
   incompleteOnly: state.enquiries.page.incompleteOnly,
+  stage: state.enquiries.page.stage,
   selectedEnquiryIds: state.ui.selectedEnquiryIds,
   sort: state.enquiries.page.sort,
   page: state.pagination.currentPage,

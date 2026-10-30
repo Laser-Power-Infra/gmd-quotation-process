@@ -15,11 +15,15 @@ export interface EnquiryQuery {
   pendingOnly: boolean;
   closedBomOnly: boolean;
   incompleteOnly: boolean;
+  /** Status-tile filter; "" = all stages. */
+  stage: EnquiryStage;
   selectedEnquiryIds: string[];
   sort: EnquirySort;
   page: number;
   pageSize: number;
 }
+
+export type EnquiryStage = "" | "details" | "cost" | "validation" | "ready" | "sent";
 
 export interface ClosureCounts {
   [status: string]: number;
@@ -35,6 +39,11 @@ export interface EnquirySummary {
   closureCounts: ClosureCounts;
   notSentCount: number;
   totalEnquiries: number;
+  stageCounts: Record<string, number>;
+  /** stage → age bucket (days since enquiry) → docket count. */
+  stageAgeing: Record<string, Record<string, number>>;
+  /** Open dockets per owner of their current stage; userId null = unassigned. */
+  assigneePending: { userId: string | null; name: string; stage: string; count: number }[];
 }
 
 export interface EnquiryPageResult {
@@ -54,6 +63,9 @@ export const EMPTY_ENQUIRY_SUMMARY: EnquirySummary = {
   closureCounts: {},
   notSentCount: 0,
   totalEnquiries: 0,
+  stageCounts: {},
+  stageAgeing: {},
+  assigneePending: [],
 };
 
 export interface EnquiryFacetResult {
@@ -74,6 +86,7 @@ export function emptyEnquiryQuery(): EnquiryQuery {
     pendingOnly: false,
     closedBomOnly: false,
     incompleteOnly: false,
+    stage: "",
     selectedEnquiryIds: [],
     sort: null,
     page: 1,
@@ -91,6 +104,7 @@ export function emptyEnquiryQuery(): EnquiryQuery {
     pendingOnly: q.pendingOnly,
     closedBomOnly: q.closedBomOnly,
     incompleteOnly: q.incompleteOnly,
+    stage: q.stage,
     selectedEnquiryIds: [...q.selectedEnquiryIds].sort(),
     sort: q.sort,
     page: q.page,

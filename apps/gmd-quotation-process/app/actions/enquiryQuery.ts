@@ -9,6 +9,7 @@ import {
   buildItemWhereSql,
   facetExpression,
   FIRST_ITEM_JOIN_SQL,
+  STAGE_SQL,
 } from "@/lib/enquiry-query";
 import type {
   ClosureCounts,
@@ -23,6 +24,15 @@ import {
   getClosedBomIdSet,
   getNoUseBomIdSet,
 } from "@/lib/verifyBomLookup";
+import { ageBucket, STAGE_ASSIGNEE_FIELD } from "@/lib/stageAgeing";
+
+// Owner column of the docket's current stage, from STAGE_ASSIGNEE_FIELD.
+const STAGE_ASSIGNEE_SQL = Prisma.sql`(CASE t.stage ${Prisma.join(
+  Object.entries(STAGE_ASSIGNEE_FIELD).map(
+    ([stage, field]) => Prisma.sql`WHEN ${stage} THEN t.${Prisma.raw(`"${field}"`)}`,
+  ),
+  " ",
+)} END)`;
 
 const MAX_PAGE_SIZE = 500;
 const FACET_LIMIT = 500;
@@ -64,7 +74,10 @@ export async function fetchEnquiryPage(
       : where;
   const { orderBy, needsFirstItem } = buildEnquiryOrderBySql(query);
 
-  const [idRows, countRows, scopedCountRows, totalRows, itemRows, closureRows] =
+  // Tiles keep their counts while one is active, so drop the stage filter here.
+  const stageWhere = buildEnquiryWhereSql({ ...query, selectedEnquiryIds: [] }, { skipField: "stage" });
+
+  const [idRows, countRows, scopedCountRows, totalRows, itemRows, closureRows, stageRows, ageRows, ownerRows] =
     await Promise.all([
       prisma.$queryRaw<{ id: string }[]>`
         SELECT e.id FROM "Enquiry" e
@@ -97,6 +110,37 @@ export async function fetchEnquiryPage(
             SELECT btrim(coalesce(e."closureStatus", '')) AS status, count(*)::int AS count
             FROM "Enquiry" e WHERE ${where}
             GROUP BY 1
+          `
+        : Promise.resolve(undefined),
+      includeSummary
+        ? prisma.$queryRaw<{ stage: string | null; count: number }[]>`
+            SELECT ${STAGE_SQL} AS stage, count(*)::int AS count
+            FROM "Enquiry" e WHERE ${stageWhere}
+            GROUP BY 1
+          `
+        : Promise.resolve(undefined),
+      // Whole IST days since enquiry; bucketed in JS by ageBucket().
+      includeSummary
+        ? prisma.$queryRaw<{ stage: string | null; days: number; count: number }[]>`
+            SELECT ${STAGE_SQL} AS stage,
+              ((now() AT TIME ZONE 'Asia/Kolkata')::date
+                - (e."enquiryDate" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')::date)::int AS days,
+              count(*)::int AS count
+            FROM "Enquiry" e WHERE ${stageWhere}
+            GROUP BY 1, 2
+          `
+        : Promise.resolve(undefined),
+      includeSummary
+        ? prisma.$queryRaw<{ stage: string; userId: string | null; name: string | null; count: number }[]>`
+            SELECT t.stage, u.id AS "userId", coalesce(u.name, u.email) AS name, count(*)::int AS count
+            FROM (
+              SELECT ${STAGE_SQL} AS stage, e."detailsAssigneeId", e."costAssigneeId",
+                e."validationAssigneeId", e."sendAssigneeId"
+              FROM "Enquiry" e WHERE ${stageWhere}
+            ) t
+            LEFT JOIN "User" u ON u.id = ${STAGE_ASSIGNEE_SQL}
+            WHERE t.stage IN (${Prisma.join(Object.keys(STAGE_ASSIGNEE_FIELD))})
+            GROUP BY 1, 2, 3
           `
         : Promise.resolve(undefined),
     ]);
@@ -202,6 +246,14 @@ export async function fetchEnquiryPage(
       closureCounts[status] = (closureCounts[status] ?? 0) + count;
     }
 
+    const stageAgeing: EnquirySummary["stageAgeing"] = {};
+    for (const row of ageRows ?? []) {
+      if (!row.stage) continue;
+      const buckets = (stageAgeing[row.stage] ??= {});
+      const bucket = ageBucket(Number(row.days));
+      buckets[bucket] = (buckets[bucket] ?? 0) + Number(row.count);
+    }
+
     summary = {
       filteredEnquiries: scopedCountRows ? Number(scopedCountRows[0]?.count ?? 0) : total,
       analyticsItems: itemRows.length,
@@ -212,6 +264,16 @@ export async function fetchEnquiryPage(
       closureCounts,
       notSentCount,
       totalEnquiries: totalRows ?? 0,
+      stageCounts: Object.fromEntries(
+        (stageRows ?? []).filter((r) => r.stage).map((r) => [r.stage, Number(r.count)]),
+      ),
+      stageAgeing,
+      assigneePending: (ownerRows ?? []).map((r) => ({
+        userId: r.userId,
+        name: r.name ?? "Unassigned",
+        stage: r.stage,
+        count: Number(r.count),
+      })),
     };
   }
 

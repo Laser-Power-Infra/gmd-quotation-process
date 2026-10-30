@@ -179,6 +179,19 @@ const DETAILS_INCOMPLETE_SQL = (alias: Prisma.Sql) => sql`(
   OR btrim(${alias}."size") IN (${Prisma.join(SIZE_BLANK_VALUES)})
 )`;
 
+/**
+ * Status-tile stage of a docket (`e` alias): the first unmet step wins.
+ * NULL for dockets without items, and for sent offers that already got a reply.
+ */
+export const STAGE_SQL = sql`(CASE
+  WHEN NOT EXISTS (SELECT 1 FROM "EnquiryItem" s WHERE s."enquiryId" = e.id) THEN NULL
+  WHEN EXISTS (SELECT 1 FROM "EnquiryItem" s WHERE s."enquiryId" = e.id AND ${DETAILS_INCOMPLETE_SQL(sql`s`)}) THEN 'details'
+  WHEN EXISTS (SELECT 1 FROM "EnquiryItem" s WHERE s."enquiryId" = e.id AND (s."cost" IS NULL OR s."cost" = 0)) THEN 'cost'
+  WHEN EXISTS (SELECT 1 FROM "EnquiryItem" s WHERE s."enquiryId" = e.id AND btrim(coalesce(s."validation", '')) <> 'Yes') THEN 'validation'
+  WHEN e."emailSentBy" IS NULL OR e."offerRevised" THEN 'ready'
+  WHEN btrim(coalesce(e."orderStatus", '')) = '' THEN 'sent'
+END)`;
+
 const CLOSED_BOM_SQL = (alias: Prisma.Sql) => sql`${alias}."bomId" IS NOT NULL AND EXISTS (
   SELECT 1 FROM "Bom" b JOIN "BomItem" bi ON bi."bomId" = b.id
   WHERE b."bomId" = ${alias}."bomId" AND bi."cBatch" = ${C_BATCH_VALUE}
@@ -369,6 +382,7 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
   if (q.selectedEnquiryIds.length > 0) {
     parts.push(sql`e.id = ANY(${[...q.selectedEnquiryIds]}::text[])`);
   }
+  if (q.stage && skip !== "stage") parts.push(sql`${STAGE_SQL} = ${q.stage}`);
 
   // Pending = auto-created, still no items, closure status blank/Pending. Once
   // items exist or closure moves (Sent, Rejected, …) the docket leaves the list.

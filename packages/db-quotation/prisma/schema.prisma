@@ -18,6 +18,10 @@ model User {
   updatedAt     DateTime      @updatedAt
   chatSessions  ChatSession[]
   userMemories  UserMemory[]
+  detailsAssigned    Enquiry[] @relation("DetailsAssignee")
+  costAssigned       Enquiry[] @relation("CostAssignee")
+  validationAssigned Enquiry[] @relation("ValidationAssignee")
+  sendAssigned       Enquiry[] @relation("SendAssignee")
 }
 
 model UserMemory {
@@ -72,6 +76,16 @@ model Enquiry {
   offerRevised     Boolean   @default(false)
   technicalEvaluation String?
   reverseAuctionStatus String?
+
+  // Per-docket owner of each stage (Details, Cost, Validation, Send).
+  detailsAssigneeId    String?
+  detailsAssignee      User?   @relation("DetailsAssignee", fields: [detailsAssigneeId], references: [id], onDelete: SetNull)
+  costAssigneeId       String?
+  costAssignee         User?   @relation("CostAssignee", fields: [costAssigneeId], references: [id], onDelete: SetNull)
+  validationAssigneeId String?
+  validationAssignee   User?   @relation("ValidationAssignee", fields: [validationAssigneeId], references: [id], onDelete: SetNull)
+  sendAssigneeId       String?
+  sendAssignee         User?   @relation("SendAssignee", fields: [sendAssigneeId], references: [id], onDelete: SetNull)
 
   attachments Attachment[]
   items       EnquiryItem[]
