@@ -107,6 +107,16 @@ function NewItemForm({ rows, create, onCreated }: Omit<NewItemDialogProps, "open
         />
       </div>
       <div className="flex flex-col gap-1.5">
+        <Label htmlFor="ps-heat_no">Heat No</Label>
+        <Input
+          id="ps-heat_no"
+          className="uppercase"
+          placeholder="3500"
+          value={values.heat_no ?? ""}
+          onChange={(e) => setValues((prev) => ({ ...prev, heat_no: e.target.value.toUpperCase() }))}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
         <Label>Quantity</Label>
         <div className="flex items-center gap-4">
           {QTY_TYPES.map(([field, label]) => (

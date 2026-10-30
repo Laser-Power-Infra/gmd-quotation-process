@@ -36,6 +36,10 @@ export interface PhysicalStockRow {
   cost: string | null;
   bom_id: string | null;
   majorminor_marking: boolean | null;
+  heat_no: string | null;
+  heat_seq: number | null;
+  /** Derived (erp_code-l8_item_category-heat_no-heat_seq); blank without a heat no. */
+  serial_no: string | null;
 }
 
 export type ActionResult<T> =
@@ -59,6 +63,7 @@ export const NEW_ITEM_FIELDS = [
   "l8_item_category",
   "received_qty",
   "dispatch_qty",
+  "heat_no",
 ] as const;
 
 export type NewItemInput = Partial<Record<(typeof NEW_ITEM_FIELDS)[number], string>>;

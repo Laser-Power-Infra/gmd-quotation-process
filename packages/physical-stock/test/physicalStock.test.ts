@@ -7,6 +7,7 @@ import {
   EDITABLE_CANDIDATES,
   FIELDS,
   addQty,
+  buildSerial,
   computeAvailableQty,
   computeItemWiseValue,
   fieldOf,
@@ -70,6 +71,18 @@ test("blank-only dropdown columns map to editable DB fields", () => {
     resolvePhysicalStockFlags({ editableColumns: [...BLANK_ONLY_HEADERS] }),
   );
   assert.deepEqual([...fields].sort(), BLANK_ONLY_HEADERS.map((h) => fieldOf(h)!).sort());
+});
+
+test("buildSerial joins code, category, heat and number", () => {
+  const row = { erp_code: "F001", l8_item_category: "CASTING", heat_no: "3500", heat_seq: 6 };
+  assert.equal(buildSerial(row), "F001-CASTING-3500-6");
+  assert.equal(buildSerial({ ...row, heat_no: null }), null);
+  assert.equal(buildSerial({ ...row, heat_seq: null }), null);
+});
+
+test("HEAT NO is editable through the flag", () => {
+  const flags = resolvePhysicalStockFlags({ editableColumns: ["HEAT NO"] });
+  assert.deepEqual([...editableFieldsFor(flags)], ["heat_no"]);
 });
 
 // Allow-list is checked before any DB access, so no database is needed.
