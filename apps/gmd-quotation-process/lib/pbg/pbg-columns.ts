@@ -1,5 +1,8 @@
 import { VALIDITY_OPTIONS } from "@/lib/pbg/validity";
 
+/** Reminder gate values shown in the Mail Trigger column. */
+export const MAIL_TRIGGER_OPTIONS = ["HOLD", "CONTINUE"];
+
 export type ColumnType =
   | "text"
   | "select"
@@ -24,6 +27,7 @@ export type ColumnKey =
   | "contactNumber"
   | "remark"
   | "status"
+  | "mailTrigger"
   | "bankGuarantee"
   | "orderList"
   | "validityOn"
@@ -52,6 +56,14 @@ export const PBG_COLUMN_DEFS: ColumnDef[] = [
   { key: "poNumber", label: "PO Number", type: "text", width: 190, readonly: true },
   { key: "poDate", label: "PO Date", type: "date", width: 115, readonly: true },
   { key: "bgNo", label: "BG No", type: "text", width: 160 },
+  {
+    key: "mailTrigger",
+    label: "Mail Trigger",
+    type: "select",
+    width: 130,
+    filter: "multiselect",
+    options: MAIL_TRIGGER_OPTIONS,
+  },
   { key: "bgDate", label: "BG Date", type: "date", width: 115 },
   { key: "bgAmtFc", label: "BG Amt (FC)", type: "number", align: "right", width: 130 },
   { key: "expiryDate", label: "Expiry Date", type: "date", width: 115 },

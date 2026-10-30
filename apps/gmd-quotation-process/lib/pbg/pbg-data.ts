@@ -55,6 +55,8 @@ export type PbgRecord = {
   contactNumber: string | null;
   remark: string | null;
   status: string | null;
+  /** HOLD (or null) blocks reminders; CONTINUE allows the daily job to mail. */
+  mailTrigger: string | null;
   bankGuarantee: PbgFile[] | null;
   /** Order-list attachment links from the matched supply-history row. */
   orderList: string[] | null;
@@ -148,6 +150,7 @@ export async function getPbgData(
       contactNumber: row.contactNumber,
       remark: row.remark,
       status: row.status,
+      mailTrigger: row.mailTrigger,
       bankGuarantee: parsePbgFiles(row.bankGuarantee),
       orderList,
       validityOn: row.validityOn,
