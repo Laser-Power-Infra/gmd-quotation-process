@@ -1025,7 +1025,17 @@ export default function Home() {
   );
 
   const fmt = (n: number) =>
-    n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+    n.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  const totalSum = cardStats.indian.sum + cardStats.imported.sum;
+  const totalCount = cardStats.indian.count + cardStats.imported.count;
+  // Pairs cover the same scope only when both toggles are off.
+  const totalDiff =
+    indianImported === "all" && majorFilter === "all"
+      ? totalSum - (cardStats.major.sum + cardStats.minor.sum)
+      : 0;
 
   const handleUsdCostUpdate = useCallback(
     (id: string, usdCost: string) =>
@@ -1089,6 +1099,24 @@ export default function Home() {
               <span className="text-xs font-bold uppercase tracking-wider text-white dark:text-foreground">
                 STOCK VALUE
               </span>
+
+              <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                  Total Stock Value
+                </span>
+                <span className="block text-lg font-bold text-white dark:text-foreground mt-1">
+                  {fmt(totalSum)}
+                </span>
+                <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+                  {totalCount} item
+                  {totalCount === 1 ? "" : "s"}
+                </span>
+                {Math.abs(totalDiff) > 0.005 && (
+                  <span className="block text-[10px] font-medium text-amber-300 mt-0.5">
+                    ≠ Major+Minor by ₹{fmt(Math.abs(totalDiff))}
+                  </span>
+                )}
+              </div>
 
               <button
                 type="button"
