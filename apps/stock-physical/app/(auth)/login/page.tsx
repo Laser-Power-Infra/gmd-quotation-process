@@ -18,6 +18,10 @@ export default function LoginPage() {
     setLoading(true)
     const res = await signIn("credentials", { email, password, redirect: false })
     setLoading(false)
+    if (res?.code === "pending_approval") {
+      toast.error("Your account is awaiting admin approval")
+      return
+    }
     if (res?.error) {
       toast.error("Invalid email or password")
       return
@@ -42,7 +46,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value.toLowerCase())} required autoComplete="email" autoCapitalize="none" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>

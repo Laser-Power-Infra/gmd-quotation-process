@@ -236,9 +236,14 @@ export async function runPendingDocketCreation(
     }),
   );
 
+  // Existing docket parties, tried against the mail text only when nothing else names the party.
+  const matchKnownParty = buildPartyMatcher(
+    enquiries.map((e) => e.partyName ?? "").filter((n) => n.trim() && n.trim().toLowerCase() !== "unknown"),
+  );
+
   const plan = pending.map((thread, index) => {
-    const resolved = resolvePartyForThread(thread, emailPartyMap);
     const searchText = buildPartySearchText(thread);
+    const resolved = resolvePartyForThread(thread, emailPartyMap, () => matchKnownParty(searchText));
     // Single sender (future "To"); the rest go to cc. When the thread has only
     // internal mailboxes, fall back to the party's most recent docket emails.
     const partyExternal = partyEmailMap.byPartyKey.get(partyKey(resolved.partyName));

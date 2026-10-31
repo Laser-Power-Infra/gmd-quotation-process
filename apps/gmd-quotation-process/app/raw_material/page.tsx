@@ -38,10 +38,18 @@ import {
   withHardcodedL7Options,
 } from "@/lib/gmd_lib/sheet-columns";
 import { C_BATCH_HEADER, cBatchBadges, cBatchFilter } from "@/lib/gmd_lib/verify-bom-columns";
-import { getUsdInrRateAction, setGMDUpdateTransferredAction, addTransferredBlankItemsAction, importTransferredExcelAction, transferFilteredByCodeAction, getTradingValveOptionsAction, getTransferCostMatchProposalsAction, applyTransferCostMatchAction, type TransferCostMatchProposal } from "@/app/actions/gmdUpdate";
+import { getUsdInrRateAction, setGMDUpdateTransferredAction, addTransferredBlankItemsAction, importTransferredExcelAction, transferFilteredByCodeAction, getTradingValveOptionsAction, getTransferCostMatchProposalsAction, applyTransferCostMatchAction, uploadSupplierRatesAction, type TransferCostMatchProposal } from "@/app/actions/gmdUpdate";
 import { getGMDCastingRatesAction, saveGMDCastingRateAction } from "@/app/actions/misc";
 import TransferCostMatchDialog from "../../components/gmd_dashboard/TransferCostMatchDialog";
 import { toast } from "sonner";
+import { Button } from "@gmd/ui/components/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@gmd/ui/components/dialog";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -897,6 +905,60 @@ export default function Home() {
     fetchData();
   }, [fetchData]);
 
+  const [supplierSummary, setSupplierSummary] = useState<{
+    rate: number;
+    updated: { code: string; oldUsd: number | null; newUsd: number; oldCost: number | null; newCost: number }[];
+    added: { code: string; newUsd: number; newCost: number }[];
+    notMatched: { code: string; reason: string }[];
+    unchanged: number;
+  } | null>(null);
+  const supplierFileRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadSupplierTemplate = useCallback(async () => {
+    const XLSX = await import("xlsx");
+    const { SUPPLIER_RATE_HEADERS } = await import("@/lib/supplierRateUpload");
+    const ws = XLSX.utils.aoa_to_sheet([[...SUPPLIER_RATE_HEADERS]]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Supplier prices");
+    XLSX.writeFile(wb, "supplier-price-template.xlsx");
+  }, []);
+
+  const handleUploadSupplierPrices = useCallback(
+    async (file: File) => {
+      const toastId = toast.loading("Reading supplier prices...");
+      try {
+        const { parseSupplierRateFile } = await import("@/lib/supplierRateUpload");
+        const { rates, errors } = parseSupplierRateFile(await file.arrayBuffer());
+        if (!rates.length && !errors.length) {
+          toast.error("No data rows found in the sheet.", { id: toastId });
+          return;
+        }
+        const res = rates.length ? await uploadSupplierRatesAction(rates) : null;
+        if (res && !res.success) {
+          toast.error(res.error || "Failed to upload supplier prices.", { id: toastId });
+          return;
+        }
+        toast.dismiss(toastId);
+        const d = res?.data;
+        setSupplierSummary({
+          rate: d?.rate ?? 0,
+          updated: d?.updated ?? [],
+          added: d?.added ?? [],
+          // Rows rejected while reading the sheet (no code, bad rate/date, repeated) are not matched too.
+          notMatched: [
+            ...errors.map((e) => ({ code: `Row ${e.row}`, reason: e.message })),
+            ...(d?.notMatched ?? []),
+          ],
+          unchanged: d?.unchanged ?? 0,
+        });
+        void fetchData();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to read Excel file.", { id: toastId });
+      }
+    },
+    [fetchData],
+  );
+
   // Table filter lift (controlled like contract_review) for true cascading
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
     {},
@@ -1190,6 +1252,25 @@ export default function Home() {
 
           <ResizablePanel id="content" minSize="40%">
             <div className="flex h-full flex-col min-h-0 min-w-0">
+              <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={handleDownloadSupplierTemplate}>
+                  Download supplier price template
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => supplierFileRef.current?.click()}>
+                  Upload supplier prices
+                </Button>
+                <input
+                  ref={supplierFileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) void handleUploadSupplierPrices(f);
+                  }}
+                />
+              </div>
               <GMDUpdateHeader
                 totalRows={totalRows}
                 syncedAt={syncedAt}
@@ -1342,6 +1423,46 @@ export default function Home() {
         onApply={handleApplyMatch}
         onClose={handleMatchClose}
       />
+      <Dialog open={!!supplierSummary} onOpenChange={(o) => !o && setSupplierSummary(null)}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Supplier price upload</DialogTitle>
+            <DialogDescription>
+              {supplierSummary?.rate ? `INR at live rate 1 USD = ₹${supplierSummary.rate}. ` : ""}
+              Existing quotes are not re-costed.
+            </DialogDescription>
+          </DialogHeader>
+          {supplierSummary && (
+            <div className="space-y-3 text-sm">
+              <section>
+                <h4 className="font-semibold">Updated ({supplierSummary.updated.length})</h4>
+                {supplierSummary.updated.map((u) => (
+                  <p key={u.code}>
+                    {u.code}: ${u.oldUsd ?? "-"} → ${u.newUsd} (₹{u.oldCost ?? "-"} → ₹{u.newCost})
+                  </p>
+                ))}
+              </section>
+              <section>
+                <h4 className="font-semibold">Added ({supplierSummary.added.length})</h4>
+                {supplierSummary.added.map((a) => (
+                  <p key={a.code}>
+                    {a.code}: ${a.newUsd} (₹{a.newCost})
+                  </p>
+                ))}
+              </section>
+              <section>
+                <h4 className="font-semibold">Not matched ({supplierSummary.notMatched.length})</h4>
+                {supplierSummary.notMatched.map((n, i) => (
+                  <p key={i}>
+                    {n.code}: {n.reason}
+                  </p>
+                ))}
+              </section>
+              <p>Unchanged: {supplierSummary.unchanged}</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

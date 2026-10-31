@@ -160,6 +160,86 @@ export async function updateBisStatusFieldAction(
   }
 }
 
+export async function addBisStatusUpdateAction(input: {
+  bisStatusId: string;
+  status?: string | null;
+  nextStep?: string | null;
+  nextDate?: string | null;
+  remark?: string | null;
+  updatedBy?: string | null;
+}) {
+  "use server";
+  await requireAccess();
+  const clean = (v?: string | null) => (v?.trim() ? v.trim() : null);
+  const status = clean(input.status);
+  const remark = clean(input.remark);
+  if (!status && !remark) {
+    return { success: false, error: "Enter a status or a remark." } as any;
+  }
+  let nextDate: Date | null = null;
+  if (clean(input.nextDate)) {
+    nextDate = new Date(input.nextDate as string);
+    if (isNaN(nextDate.getTime())) {
+      return { success: false, error: "Next follow-up date is not a valid date." } as any;
+    }
+  }
+  try {
+    const { auth } = await import("@/auth");
+    const user = (await auth())?.user as { name?: string | null } | undefined;
+    const updatedBy = user?.name ?? clean(input.updatedBy);
+    const [update] = await prisma.$transaction([
+      prisma.bisStatusUpdate.create({
+        data: { bisStatusId: input.bisStatusId, status, nextStep: clean(input.nextStep), nextDate, remark, updatedBy },
+      }),
+      prisma.bisStatus.update({
+        where: { id: input.bisStatusId },
+        data: { ...(status && { applicationStatus: status }), ...(remark && { remark }) },
+      }),
+    ]);
+    return { success: true, data: update } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || "Failed to add update." } as any;
+  }
+}
+
+export async function getBisStatusHistoryAction(bisStatusId: string) {
+  "use server";
+  await requireAccess();
+  try {
+    const data = await prisma.bisStatusUpdate.findMany({
+      where: { bisStatusId },
+      orderBy: { createdAt: "desc" },
+    });
+    return { success: true, data } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || "Failed to load history." } as any;
+  }
+}
+
+/** BisStatus ids with no update in the last 3 calendar days (or never updated). */
+export async function getBisStaleIdsAction() {
+  "use server";
+  await requireAccess();
+  try {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - 3);
+    const fresh = await prisma.bisStatusUpdate.findMany({
+      where: { createdAt: { gte: cutoff } },
+      select: { bisStatusId: true },
+      distinct: ["bisStatusId"],
+    });
+    const freshIds = fresh.map((f) => f.bisStatusId);
+    const stale = await prisma.bisStatus.findMany({
+      where: { id: { notIn: freshIds } },
+      select: { id: true },
+    });
+    return { success: true, data: stale.map((s) => s.id) } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || "Failed to load stale rows." } as any;
+  }
+}
+
 export async function getGMDCastingRatesAction() {
   "use server";
   await requireAccess();

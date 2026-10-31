@@ -9,6 +9,17 @@ import MultiSelectFilter, { BLANK } from "@/components/table/MultiSelectFilter";
 import Pagination from "@/components/table/Pagination";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import type { VariantMetrics } from "@/lib/indentListingMetrics";
+import { summarizeIndentRows } from "@/lib/indentListingSummary";
+
+// Which item variant each V column holds (rules in lib/itemVersionResolver.ts).
+const VARIANT_LEGEND: [string, string][] = [
+  ["SLV / TPAV+SLV / SLV METAL", "V1 plain · V2 9523 · V3 rising · V4 rising + 9523"],
+  ["BFV", "V1 plain/DI · V2 CS · V3 wafer · V4 9523"],
+  ["DPCV", "V1 plain/DI · V2 CS · V3 other · V4 9523"],
+  ["NRV", "V1 plain (swing)/DI · V2 9523"],
+  ["TPAV", "V1 plain/DI · V2 other · V4 9523"],
+  ["CF / DV / GV / PRV", "V1 plain · V2 other"],
+];
 
 interface IndentListingTableProps {
   title: string;
@@ -349,6 +360,12 @@ export default function IndentListingTable({
     [applyFilters, rows],
   );
 
+  // Tiles follow the table's filters so their counts always match the rows shown.
+  const summary = useMemo(
+    () => summarizeIndentRows(filtered, getMetrics),
+    [filtered, getMetrics],
+  );
+
   // Cascading options/counts: each column offers only the values present among
   // rows matching all other active filters (plus its own current selection, so
   // a selected value can still be deselected).
@@ -523,6 +540,47 @@ export default function IndentListingTable({
 
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0">
+      {/* Summary tiles + V1..V4 legend */}
+      <div className="flex flex-wrap items-start gap-2 px-4 py-2 border-b border-slate-300 dark:border-slate-600">
+        {(
+          [
+            ["Total", summary.total, "Rows shown in the table"],
+            ["Received", summary.received, "MC RECEIVED/PENDING = Received"],
+            ["Pending", summary.pending, "MC RECEIVED/PENDING = Pending"],
+            ["Shortage", summary.shortage, "Rows where a V1..V4 balance is above that variant's stock"],
+          ] as const
+        ).map(([label, value, hint]) => (
+          <div
+            key={label}
+            title={hint}
+            className={`flex flex-col items-start rounded-md border px-3 py-1.5 min-w-28 ${
+              label === "Shortage" && value > 0
+                ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300"
+                : "border-border bg-background text-foreground"
+            }`}
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">{label}</span>
+            <span className="text-lg font-bold leading-tight tabular-nums">{value}</span>
+          </div>
+        ))}
+        <details className="ml-auto max-w-md text-[11px] text-muted-foreground">
+          <summary className="cursor-pointer font-semibold select-none">What are V1–V4?</summary>
+          <p className="mt-1">
+            Each item&apos;s balance (bill against contract) is split by variant. Per V block: stock, the
+            balance with its variant label and RM code, ordered qty and pending order qty.
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {VARIANT_LEGEND.map(([item, rule]) => (
+              <li key={item}>
+                <span className="font-semibold text-foreground">{item}:</span> {rule}
+              </li>
+            ))}
+          </ul>
+        </details>
+      </div>
+      <p className="px-4 py-1 text-[11px] text-muted-foreground border-b border-border">
+        {VARIANT_LEGEND.map(([item, rule]) => `${item}: ${rule}`).join("; ")}
+      </p>
       {/* Toolbar */}
       <div className="flex justify-between items-center px-4 py-2.5 bg-muted/50 border-b border-slate-300 dark:border-slate-600">
         <span className="text-[11px] font-semibold text-muted-foreground">

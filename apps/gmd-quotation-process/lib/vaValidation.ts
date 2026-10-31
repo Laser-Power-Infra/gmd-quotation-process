@@ -54,7 +54,7 @@ export function validateVaPercent(
     return { isValid: vaPercent <= maxVa, maxVaPercent: maxVa };
   }
 
-  if (type === "TPAV") {
+  if (type === "TPAV" || type === "TPV") {
     return { isValid: vaPercent <= 35, maxVaPercent: 35 };
   }
 
@@ -203,7 +203,7 @@ export function getDefaultVaPercent(
     return 30;
   }
 
-  if (type === "TPAV") return 35;
+  if (type === "TPAV" || type === "TPV") return 35;
   if (type === "PRESSURE RELIEF VALVE") return 200;
   if (type === "CHECK VALVE") return 200;
   if (type === "DPCV") return 15;

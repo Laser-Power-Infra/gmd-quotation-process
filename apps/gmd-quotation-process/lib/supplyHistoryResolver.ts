@@ -7,7 +7,7 @@ const OPENAI_KEY = process.env.OPENAI_API_KEY;
 
 const SUPPLY_ITEM_TYPE_PATTERNS = [
   // Mirror of ITEM_TYPE_PATTERNS: the whole air-valve family is TPAV.
-  { category: "TPAV",             patterns: [/tpav/i, /\btamper\s*proof\s*air\s*valve\b/i, /\bair\s*release\s*valve\b/i, /\bkinetic[^,]*air\s*(?:release\s*)?valve\b/i, /\bair\s*valve\b/i] },
+  { category: "TPAV",             patterns: [/tpav/i, /\btpv\b/i,/\btamper\s*proof\s*air\s*valve\b/i, /\bair\s*release\s*valve\b/i, /\bkinetic[^,]*air\s*(?:release\s*)?valve\b/i, /\bair\s*valve\b/i] },
   { category: "KNIFE GATE VALVE", patterns: [/knife\s*gate\s*valve/i, /knife\s*gate/i, /knee\s*gate\s*valve/i, /knee\s*gate/i] },
   { category: "BUTTERFLY VALVE",  patterns: [/butter\s?fly\s*(valve)?/i, /butterfly\s*valve/i, /\bbfv/i] },
   { category: "SLUICE VALVE-RESILIENT-RISING",    patterns: [/sluice.*resilient.*rising/i, /resilient.*rising.*sluice/i, /gate\s*valve/i, /\bgv/i] },

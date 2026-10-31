@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeActuatorPart } from "@/lib/verifyBomLookup";
 import { buildDerivedItemName } from "@/lib/gmd_lib/derived-item-name";
 import { getUsdInrRate } from "@/lib/gmd_lib/exchangeRate";
+import { planSupplierRateUpload, vendorReferenceOf, type SupplierRate } from "@/lib/supplierRateUpload";
 import { withHardcodedL7Options } from "@/lib/gmd_lib/sheet-columns";
 import { uploadToS3, deleteFromS3, validateAttachment, buildAttachmentKey } from "@/lib/s3";
 
@@ -967,7 +968,7 @@ export async function selectGMDUpdateBomIdAction(
     if (!value) {
       await prisma.bomItem.updateMany({
         where: { rawMaterialId: id },
-        data: { rawMaterialId: null },
+        data: { rawMaterialId: null, manualLink: false },
       });
       return { success: true, data: { id, bomId: null } };
     }
@@ -987,14 +988,20 @@ export async function selectGMDUpdateBomIdAction(
     // Unlink this RM from any other BOM (keeps those rows).
     await prisma.bomItem.updateMany({
       where: { rawMaterialId: id, bomId: { not: bom.id } },
-      data: { rawMaterialId: null },
+      data: { rawMaterialId: null, manualLink: false },
     });
 
+    // manualLink keeps a hand pick from being unlinked by the hourly BOM MAST sync.
     const linked = await prisma.bomItem.findFirst({
       where: { bomId: bom.id, rawMaterialId: id },
       select: { id: true },
     });
-    if (!linked) {
+    if (linked) {
+      await prisma.bomItem.update({
+        where: { id: linked.id },
+        data: { manualLink: true },
+      });
+    } else {
       // Reuse a freed row for this BOM (preserves its data), else create.
       const free = await prisma.bomItem.findFirst({
         where: { bomId: bom.id, rawMaterialId: null, fullItemId: null },
@@ -1003,11 +1010,11 @@ export async function selectGMDUpdateBomIdAction(
       if (free) {
         await prisma.bomItem.update({
           where: { id: free.id },
-          data: { rawMaterialId: id },
+          data: { rawMaterialId: id, manualLink: true },
         });
       } else {
         await prisma.bomItem.create({
-          data: { bomId: bom.id, rawMaterialId: id },
+          data: { bomId: bom.id, rawMaterialId: id, manualLink: true },
         });
       }
     }
@@ -1015,5 +1022,94 @@ export async function selectGMDUpdateBomIdAction(
   } catch (error: any) {
     console.error("Error selecting GMD BOM ID:", error);
     return { success: false, error: error.message || "Failed to select BOM ID." };
+  }
+}
+
+export async function uploadSupplierRatesAction(rows: SupplierRate[]) {
+  "use server";
+  await requireAccess();
+  try {
+    const rates = rows.filter(
+      (r) => typeof r?.erpItemCode === "string" && Number.isFinite(r.rateUsd) && r.rateUsd >= 0,
+    );
+    const existing = await prisma.rawMaterial.findMany({
+      where: { erpItemCode: { in: rates.map((r) => r.erpItemCode) } },
+      select: { id: true, erpItemCode: true, usdRateOption: true, cost: true, vendorReference: true, l8ItemCategory: true },
+    });
+    const byCode = new Map(existing.map((e) => [e.erpItemCode!, e]));
+    const plan = planSupplierRateUpload(
+      existing.map((e) => ({
+        erpItemCode: e.erpItemCode!,
+        usd: e.usdRateOption?.trim() ? Number(e.usdRateOption) : null,
+        vendorReference: e.vendorReference,
+        category: e.l8ItemCategory,
+      })),
+      rates,
+    );
+
+    const { rate } = await getUsdInrRate();
+    const { auth } = await import("@/auth");
+    const user = (await auth())?.user as { name?: string | null } | undefined;
+    const changedBy = user?.name ?? null;
+    const inr = (usd: number) => Number((usd * rate).toFixed(2));
+    const hist = (r: SupplierRate, oldUsd: number | null, oldCost: number | null) => ({
+      erpItemCode: r.erpItemCode,
+      oldUsd,
+      newUsd: r.rateUsd,
+      oldCost,
+      newCost: inr(r.rateUsd),
+      supplier: r.supplier || null,
+      offerNo: r.offerNo || null,
+      offerDate: r.offerDate ? new Date(r.offerDate) : null,
+      changedBy,
+    });
+
+    const updated = plan.updates.map(({ old, next }) => ({
+      code: next.erpItemCode,
+      oldUsd: old.usd,
+      newUsd: next.rateUsd,
+      oldCost: byCode.get(next.erpItemCode)!.cost == null ? null : Number(byCode.get(next.erpItemCode)!.cost),
+      newCost: inr(next.rateUsd),
+    }));
+    await prisma.$transaction([
+      ...plan.updates.map(({ next }) =>
+        prisma.rawMaterial.update({
+          where: { id: byCode.get(next.erpItemCode)!.id },
+          data: { usdRateOption: String(next.rateUsd), cost: inr(next.rateUsd), vendorReference: vendorReferenceOf(next) },
+        }),
+      ),
+      // Only a valid ERP code absent from the master is created (planner guarantees it); nothing is deleted.
+      ...plan.adds.map((r) =>
+        prisma.rawMaterial.create({
+          data: {
+            erpItemCode: r.erpItemCode,
+            l8ItemCategory: "TRADING VALVE",
+            usdRateOption: String(r.rateUsd),
+            cost: inr(r.rateUsd),
+            vendorReference: vendorReferenceOf(r),
+          },
+        }),
+      ),
+      prisma.supplierRateHistory.createMany({
+        data: [
+          ...updated.map((u, i) => hist(plan.updates[i].next, u.oldUsd, u.oldCost)),
+          ...plan.adds.map((r) => hist(r, null, null)),
+        ],
+      }),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        rate,
+        updated,
+        added: plan.adds.map((r) => ({ code: r.erpItemCode, newUsd: r.rateUsd, newCost: inr(r.rateUsd) })),
+        notMatched: plan.notMatched.map((n) => ({ code: n.rate.erpItemCode, reason: n.reason })),
+        unchanged: plan.unchanged.length,
+      },
+    };
+  } catch (error: any) {
+    console.error("Error uploading supplier rates:", error);
+    return { success: false, error: error.message || "Failed to upload supplier rates." };
   }
 }

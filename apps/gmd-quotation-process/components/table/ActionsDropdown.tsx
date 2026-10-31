@@ -122,7 +122,9 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
   const [docketNumber, setDocketNumber] = useState(item.enquiry.docketNumber);
   const [partyName, setPartyName] = useState(item.enquiry.partyName);
   const [enquiryDate, setEnquiryDate] = useState(
-    new Date(item.enquiry.enquiryDate).toISOString().split("T")[0]
+    // Local (IST) calendar date: the UTC date of an IST-midnight timestamp is the day
+    // before, which made every edit move the docket date back one day.
+    new Date(item.enquiry.enquiryDate).toLocaleDateString("en-CA")
   );
   
   // Enquiry-level metadata states

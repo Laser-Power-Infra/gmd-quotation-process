@@ -58,6 +58,8 @@
     "rmtype:common:apply": "tsx scripts/backfill-rmtype-common.ts --apply",
     "docket:pending:backfill": "tsx scripts/backfill-docket-pending-party.ts",
     "docket:pending:backfill:apply": "tsx scripts/backfill-docket-pending-party.ts --apply",
+    "docket:306-codes": "tsx scripts/fix-docket-306-codes.ts",
+    "docket:306-codes:apply": "tsx scripts/fix-docket-306-codes.ts --apply",
     "docket:pending:state-utility": "tsx scripts/backfill-pending-docket-state-utility.ts",
     "docket:pending:state-utility:apply": "tsx scripts/backfill-pending-docket-state-utility.ts --apply",
     "docket:ai-validate": "tsx scripts/backfill-docket-ai-validation.ts",
@@ -103,7 +105,8 @@
     "contractno:sync:apply": "tsx scripts/sync-erp-contract-no.ts --apply",
     "contractno:headers": "tsx scripts/sync-erp-contract-no.ts --dump-headers",
     "debtors:sync": "tsx scripts/sync-debtors.ts",
-    "debtors:sync:apply": "tsx scripts/sync-debtors.ts --apply"
+    "debtors:sync:apply": "tsx scripts/sync-debtors.ts --apply",
+    "totals:outliers": "tsx scripts/list-total-outliers.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",

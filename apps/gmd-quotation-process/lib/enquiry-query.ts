@@ -1,6 +1,7 @@
 import { Prisma } from "@gmd/db-quotation";
 import { squish } from "./squish";
 import { hasActiveItemFilters } from "./enquiryFilterScope";
+import { hasCostWarningSql } from "./costSanity";
 import type { EnquiryQuery } from "./enquiryQuery";
 
 /**
@@ -289,6 +290,8 @@ export function buildItemWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): Pri
 
   if (q.closedBomOnly && "closedBomOnly" !== skip) parts.push(CLOSED_BOM_SQL(sql`i`));
   if (q.incompleteOnly && "incompleteOnly" !== skip) parts.push(DETAILS_INCOMPLETE_SQL(sql`i`));
+  // shortcut: ~4s over all items without an EnquiryItem(enquiryId) index; add that index to speed it up.
+  if (q.costWarningOnly && "costWarningOnly" !== skip) parts.push(hasCostWarningSql(sql`i`));
 
   if (parts.length === 0) return sql`TRUE`;
   return Prisma.join(parts, " AND ");
@@ -394,13 +397,13 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
     parts.push(
       sql`(e."closureStatus" IS NULL OR btrim(e."closureStatus") = '' OR lower(btrim(e."closureStatus")) = 'pending')`,
     );
-    if (hasActiveItemFilters(f, q.closedBomOnly || q.incompleteOnly)) {
+    if (hasActiveItemFilters(f, q.closedBomOnly || q.incompleteOnly || q.costWarningOnly)) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,
       );
     }
   } else {
-    const needsItem = hasActiveFilters(q) || q.closedBomOnly || q.incompleteOnly;
+    const needsItem = hasActiveFilters(q) || q.closedBomOnly || q.incompleteOnly || q.costWarningOnly;
     if (needsItem) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,
@@ -537,6 +540,23 @@ export const FIRST_ITEM_JOIN_SQL = sql`LEFT JOIN LATERAL (
 export interface FacetExpression {
   level: "enquiry" | "item";
   expr: Prisma.Sql;
+}
+
+/** Analytics-sidebar fields whose option counts span every filtered docket, not one page. */
+export const SIDEBAR_COUNT_FIELDS = ["partyNames", "utility", "enquiryType", "state", "itemType", "size"];
+
+/** Docket count per value of `field` under every filter except its own (so counts cascade). */
+export function facetCountSql(q: EnquiryQuery, field: string): Prisma.Sql | null {
+  const facet = facetExpression(field);
+  if (!facet) return null;
+  const where = buildEnquiryWhereSql(q, { skipField: field });
+  if (facet.level === "enquiry") {
+    return sql`SELECT ${facet.expr} AS value, count(*)::int AS count
+      FROM "Enquiry" e WHERE ${where} GROUP BY 1`;
+  }
+  return sql`SELECT ${facet.expr} AS value, count(DISTINCT e.id)::int AS count
+    FROM "EnquiryItem" i JOIN "Enquiry" e ON e.id = i."enquiryId"
+    WHERE ${where} AND ${buildItemWhereSql(q, { skipField: field })} GROUP BY 1`;
 }
 
 /** Distinct-value expression for a cascading dropdown, or null when unknown. */

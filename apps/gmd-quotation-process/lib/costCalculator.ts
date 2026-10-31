@@ -97,7 +97,9 @@ export async function recalculateItem(
     vaPercent?: number | null;
     quotedRate?: number | null;
     cost?: number | null;
-  }
+  },
+  // Contract-match: store the quoted rate as given (no round-up) and skip the offer-revised flag.
+  opts?: { exactQuotedRate?: boolean }
 ) {
   // Fetch item and its parent enquiry
   const item = await prisma.enquiryItem.findUnique({
@@ -205,7 +207,7 @@ export async function recalculateItem(
 
   let quotedRate: number | null;
   if (updates && updates.quotedRate !== undefined) {
-    quotedRate = updates.quotedRate !== null ? roundUp(updates.quotedRate) : null;
+    quotedRate = updates.quotedRate !== null && !opts?.exactQuotedRate ? roundUp(updates.quotedRate) : updates.quotedRate;
   } else {
     quotedRate = existingQuotedRate;
   }
@@ -294,7 +296,7 @@ export async function recalculateItem(
   });
 
   // Every rate change funnels through here, so this one check catches edits, pastes, BOM syncs and VA% fills.
-  if (!item.enquiry.offerRevised && isOfferRevision(item.enquiry.emailSentBy, existingQuotedRate, quotedRate)) {
+  if (!opts?.exactQuotedRate && !item.enquiry.offerRevised && isOfferRevision(item.enquiry.emailSentBy, existingQuotedRate, quotedRate)) {
     await prisma.enquiry.update({ where: { id: item.enquiryId }, data: { offerRevised: true } });
   }
 

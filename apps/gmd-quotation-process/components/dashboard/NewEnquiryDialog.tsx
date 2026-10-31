@@ -57,7 +57,8 @@ const fileToBase64 = (file: File): Promise<string> => {
   });
 };
 
-const today = () => new Date().toISOString().split("T")[0];
+// Local (IST) date, YYYY-MM-DD; the UTC date is still yesterday before 05:30 IST.
+const today = () => new Date().toLocaleDateString("en-CA");
 
 const emptyItem = () => ({
   itemName: "",

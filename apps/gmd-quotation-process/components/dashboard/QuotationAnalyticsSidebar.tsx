@@ -1,13 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { useAppDispatch, useAppSelector } from "@/lib/hooks";
-import { selectAllEnquiries } from "@/lib/enquiriesSlice";
+import { useAppSelector } from "@/lib/hooks";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@gmd/ui/components/card";
 import MultiSelectFilter from "@/components/table/MultiSelectFilter";
-import { X, Filter, Search, Check } from "lucide-react";
-import { enquiryPassesFilters, itemPassesFilters } from "@/lib/filterUtils";
+import { X, Filter } from "lucide-react";
 import { squish } from "@/lib/squish";
 
 function sortStrings(arr: string[]): string[] {
@@ -29,6 +26,8 @@ interface QuotationAnalyticsSidebarProps {
   onSizesChange: (v: string[]) => void;
   onClearAll: () => void;
   hasActiveAnalyticsFilters: boolean;
+  /** Server summary counts (field → value → dockets) over the full filtered set. */
+  facetCounts: Record<string, Record<string, number>>;
 }
 
 export default function QuotationAnalyticsSidebar({
@@ -46,184 +45,35 @@ export default function QuotationAnalyticsSidebar({
   onSizesChange,
   onClearAll,
   hasActiveAnalyticsFilters,
+  facetCounts,
 }: QuotationAnalyticsSidebarProps) {
-  const dispatch = useAppDispatch();
   const isCollapsed = useAppSelector((s) => s.ui.isAnalyticsSidebarCollapsed);
-  const allEnquiries = useAppSelector(selectAllEnquiries);
-  const selectedEnquiryIds = useAppSelector((s) => s.ui.selectedEnquiryIds);
-  const filters = useAppSelector((s) => s.filters);
-  const generatedImages = useAppSelector((s) => s.ui.generatedImages);
-  const searchParams = useSearchParams();
-  const globalSearch = (searchParams.get("search") || "").trim();
-
-  // Selection scope: options and counts cascade within the dockets selected in
-  // the table (falling back to every enquiry when nothing is selected).
-  const selectedEnquiryIdSet = useMemo(() => new Set(selectedEnquiryIds), [selectedEnquiryIds]);
-  const enquiries = useMemo(
-    () =>
-      selectedEnquiryIds.length > 0
-        ? allEnquiries.filter((e) => selectedEnquiryIdSet.has(e.id))
-        : allEnquiries,
-    [allEnquiries, selectedEnquiryIds, selectedEnquiryIdSet]
-  );
-
   const [stateSearchQuery, setStateSearchQuery] = useState("");
 
-  // All unique options (static) derived from current enquiries
-  const allOptions = useMemo(() => {
-    const partySet = new Set<string>();
-    const utilitySet = new Set<string>();
-    const typeSet = new Set<string>();
-    const stateSet = new Set<string>();
-    const itemTypeSet = new Set<string>();
-    const sizeSet = new Set<string>();
-    for (const e of enquiries) {
-      if (e.partyName) partySet.add(e.partyName);
-      if (e.utility) utilitySet.add(e.utility);
-      if (e.enquiryType) typeSet.add(e.enquiryType);
-      if (e.state) stateSet.add(e.state);
-      for (const item of e.items ?? []) {
-        if (item.itemType) itemTypeSet.add(item.itemType);
-        if (item.size) sizeSet.add(item.size);
-      }
-    }
+  // Options and counts come from the server summary: every filtered docket
+  // (scoped to the table selection), each field skipping its own filter so the
+  // lists cascade. Selected values stay listed so they can still be cleared.
+  const fields = useMemo(() => {
+    const build = (key: string, selected: string[]) => {
+      const counts = facetCounts[key] ?? {};
+      const available = sortStrings(Object.keys(counts));
+      return { counts, available, options: sortStrings([...new Set([...available, ...selected])]) };
+    };
     return {
-      parties: sortStrings([...partySet]),
-      utilities: sortStrings([...utilitySet]),
-      enquiryTypes: sortStrings([...typeSet]),
-      states: sortStrings([...stateSet]),
-      itemTypes: sortStrings([...itemTypeSet]),
-      sizes: sortStrings([...sizeSet]),
+      parties: build("partyNames", selectedPartyNames),
+      utilities: build("utility", selectedUtilities),
+      enquiryTypes: build("enquiryType", selectedEnquiryTypes),
+      states: build("state", selectedStates),
+      itemTypes: build("itemType", selectedItemTypes),
+      sizes: build("size", selectedSizes),
     };
-  }, [enquiries]);
-
-  // Compute party counts under all active filters except partyNames
-  const partyCounts = useMemo(() => {
-    const filtersWithoutParty = { ...filters, partyNames: [] };
-    const filteredByOthers = enquiries.filter((e) => {
-      if (!enquiryPassesFilters(e, filtersWithoutParty, globalSearch, generatedImages)) return false;
-      if (!e.items || e.items.length === 0) return true;
-      return e.items.some((item) => itemPassesFilters(item, filtersWithoutParty, generatedImages));
-    });
-
-    const counts: Record<string, number> = {};
-    for (const e of filteredByOthers) {
-      if (e.partyName) {
-        counts[e.partyName] = (counts[e.partyName] || 0) + 1;
-      }
-    }
-    return counts;
-  }, [enquiries, filters, globalSearch, generatedImages]);
-
-  // Compute state counts under all active filters except state
-  const stateCounts = useMemo(() => {
-    const filtersWithoutState = { ...filters, state: [] };
-    const filteredByOthers = enquiries.filter((e) => {
-      if (!enquiryPassesFilters(e, filtersWithoutState, globalSearch, generatedImages)) return false;
-      if (!e.items || e.items.length === 0) return true;
-      return e.items.some((item) => itemPassesFilters(item, filtersWithoutState, generatedImages));
-    });
-
-    const counts: Record<string, number> = {};
-    for (const e of filteredByOthers) {
-      if (e.state) {
-        counts[e.state] = (counts[e.state] || 0) + 1;
-      }
-    }
-    return counts;
-  }, [enquiries, filters, globalSearch, generatedImages]);
-
-  // Compute item type counts (enquiry counts) under all active filters except itemType
-  const itemTypeCounts = useMemo(() => {
-    const filtersWithoutItemType = { ...filters, itemType: [] };
-    const filteredByOthers = enquiries.filter((e) => {
-      if (!enquiryPassesFilters(e, filtersWithoutItemType as any, globalSearch, generatedImages)) return false;
-      if (!e.items || e.items.length === 0) return true;
-      return e.items.some((item) => itemPassesFilters(item, filtersWithoutItemType as any, generatedImages));
-    });
-    const counts: Record<string, number> = {};
-    for (const e of filteredByOthers) {
-      const seen = new Set<string>();
-      for (const item of e.items ?? []) {
-        if (item.itemType && !seen.has(item.itemType)) {
-          seen.add(item.itemType);
-          counts[item.itemType] = (counts[item.itemType] || 0) + 1;
-        }
-      }
-    }
-    return counts;
-  }, [enquiries, filters, globalSearch, generatedImages]);
-
-  // Compute size counts (enquiry counts) under all active filters except size
-  const sizeCounts = useMemo(() => {
-    const filtersWithoutSize = { ...filters, size: [] };
-    const filteredByOthers = enquiries.filter((e) => {
-      if (!enquiryPassesFilters(e, filtersWithoutSize as any, globalSearch, generatedImages)) return false;
-      if (!e.items || e.items.length === 0) return true;
-      return e.items.some((item) => itemPassesFilters(item, filtersWithoutSize as any, generatedImages));
-    });
-    const counts: Record<string, number> = {};
-    for (const e of filteredByOthers) {
-      const seen = new Set<string>();
-      for (const item of e.items ?? []) {
-        if (item.size && !seen.has(item.size)) {
-          seen.add(item.size);
-          counts[item.size] = (counts[item.size] || 0) + 1;
-        }
-      }
-    }
-    return counts;
-  }, [enquiries, filters, globalSearch, generatedImages]);
-
-  // Cascaded options: for each field, exclude its own filter when computing availability
-  const cascaded = useMemo(() => {
-    const getCascadedFor = (
-      exclude: "party" | "utility" | "enquiryType" | "state" | "itemType" | "size"
-    ): string[] => {
-      const fieldName = exclude === "party" ? "partyNames" : exclude;
-      const customFilters = { ...filters, [fieldName]: [] };
-
-      const filtered = enquiries.filter((e) => {
-        if (!enquiryPassesFilters(e, customFilters as any, globalSearch, generatedImages)) return false;
-        if (!e.items || e.items.length === 0) return true;
-        return e.items.some((item) => itemPassesFilters(item, customFilters as any, generatedImages));
-      });
-
-      const set = new Set<string>();
-      for (const e of filtered) {
-        if (exclude === "itemType") {
-          for (const item of e.items ?? []) if (item.itemType) set.add(item.itemType);
-          continue;
-        }
-        if (exclude === "size") {
-          for (const item of e.items ?? []) if (item.size) set.add(item.size);
-          continue;
-        }
-        let val: string | null | undefined;
-        if (exclude === "party") val = e.partyName;
-        else if (exclude === "utility") val = (e as any).utility;
-        else if (exclude === "enquiryType") val = (e as any).enquiryType;
-        else val = (e as any).state;
-        if (val) set.add(val);
-      }
-      return sortStrings([...set]);
-    };
-
-    return {
-      parties: getCascadedFor("party"),
-      utilities: getCascadedFor("utility"),
-      enquiryTypes: getCascadedFor("enquiryType"),
-      states: getCascadedFor("state"),
-      itemTypes: getCascadedFor("itemType"),
-      sizes: getCascadedFor("size"),
-    };
-  }, [enquiries, filters, globalSearch, generatedImages]);
+  }, [facetCounts, selectedPartyNames, selectedUtilities, selectedEnquiryTypes, selectedStates, selectedItemTypes, selectedSizes]);
 
   const visibleStateOptions = useMemo(() => {
-    if (!stateSearchQuery.trim()) return allOptions.states;
+    if (!stateSearchQuery.trim()) return fields.states.options;
     const q = squish(stateSearchQuery);
-    return allOptions.states.filter((s) => squish(s).includes(q));
-  }, [allOptions.states, stateSearchQuery]);
+    return fields.states.options.filter((s) => squish(s).includes(q));
+  }, [fields.states.options, stateSearchQuery]);
 
   const clearAll = () => {
     onClearAll();
@@ -265,11 +115,11 @@ export default function QuotationAnalyticsSidebar({
           <MultiSelectFilter
             label="Party Name"
             allLabel="All Parties"
-            options={allOptions.parties}
-            cascadedOptions={cascaded.parties}
+            options={fields.parties.options}
+            cascadedOptions={fields.parties.available}
             selected={selectedPartyNames}
             onChange={onPartyNamesChange}
-            counts={partyCounts}
+            counts={fields.parties.counts}
             searchPlaceholder="Search party..."
             panelClassName="w-72 z-80"
           />
@@ -286,8 +136,9 @@ export default function QuotationAnalyticsSidebar({
           <MultiSelectFilter
             label="Utility"
             allLabel="All Utilities"
-            options={allOptions.utilities}
-            cascadedOptions={cascaded.utilities}
+            options={fields.utilities.options}
+            cascadedOptions={fields.utilities.available}
+            counts={fields.utilities.counts}
             selected={selectedUtilities}
             onChange={onUtilitiesChange}
             searchPlaceholder="Search utility..."
@@ -306,8 +157,9 @@ export default function QuotationAnalyticsSidebar({
           <MultiSelectFilter
             label="Enquiry Type"
             allLabel="All Types"
-            options={allOptions.enquiryTypes}
-            cascadedOptions={cascaded.enquiryTypes}
+            options={fields.enquiryTypes.options}
+            cascadedOptions={fields.enquiryTypes.available}
+            counts={fields.enquiryTypes.counts}
             selected={selectedEnquiryTypes}
             onChange={onEnquiryTypesChange}
             searchPlaceholder="Search enquiry type..."
@@ -326,11 +178,11 @@ export default function QuotationAnalyticsSidebar({
           <MultiSelectFilter
             label="Item Type"
             allLabel="All Item Types"
-            options={allOptions.itemTypes}
-            cascadedOptions={cascaded.itemTypes}
+            options={fields.itemTypes.options}
+            cascadedOptions={fields.itemTypes.available}
             selected={selectedItemTypes}
             onChange={onItemTypesChange}
-            counts={itemTypeCounts}
+            counts={fields.itemTypes.counts}
             includeBlank
             searchPlaceholder="Search item type..."
             panelClassName="w-72 z-80"
@@ -348,11 +200,11 @@ export default function QuotationAnalyticsSidebar({
           <MultiSelectFilter
             label="Size"
             allLabel="All Sizes"
-            options={allOptions.sizes}
-            cascadedOptions={cascaded.sizes}
+            options={fields.sizes.options}
+            cascadedOptions={fields.sizes.available}
             selected={selectedSizes}
             onChange={onSizesChange}
-            counts={sizeCounts}
+            counts={fields.sizes.counts}
             includeBlank
             searchPlaceholder="Search size..."
             panelClassName="w-72 z-80"
@@ -385,7 +237,7 @@ export default function QuotationAnalyticsSidebar({
           )}
         </CardHeader>
         <CardContent className="space-y-2">
-          {allOptions.states.length > 6 && (
+          {fields.states.options.length > 6 && (
             <div className="relative">
               <input
                 type="text"
@@ -400,8 +252,8 @@ export default function QuotationAnalyticsSidebar({
           <div className="grid grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-0.5">
             {visibleStateOptions.map((st) => {
               const isSelected = selectedStates.includes(st);
-              const count = stateCounts[st] || 0;
-              const isAvailable = count > 0 || cascaded.states.includes(st);
+              const count = fields.states.counts[st] || 0;
+              const isAvailable = count > 0;
 
               const toggleState = () => {
                 if (isSelected) {

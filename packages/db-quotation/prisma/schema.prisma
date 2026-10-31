@@ -543,6 +543,9 @@ model BomItem {
   cost     Decimal?
   noUse    String?
   cBatch   String?
+  // Linked by hand from the Raw Material "BOM ID" dropdown. The hourly BOM MAST
+  // sync never unlinks these, even when the sheet does not back the pairing.
+  manualLink Boolean @default(false)
   supplyHistoryLinks SupplyHistoryBomLink[]
 
 selectedBySupplyHistory SupplyHistoryItem[] @relation("SupplyHistorySelectedBomItem")
@@ -701,9 +704,24 @@ model BisStatus {
   remark            String?
   reachedLab        String?
   licenseNo         String?
+  updates           BisStatusUpdate[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model BisStatusUpdate {
+  id          String    @id @default(cuid())
+  bisStatusId String
+  bisStatus   BisStatus @relation(fields: [bisStatusId], references: [id], onDelete: Cascade)
+  status      String?
+  nextStep    String?
+  nextDate    DateTime?
+  remark      String?
+  updatedBy   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([bisStatusId])
 }
 
 model IndentListing {
@@ -1130,4 +1148,20 @@ model Debtor {
   @@index([dueDate])
   @@index([accCode])
   
+}
+// One row per price change from a supplier price upload (valve rate master).
+model SupplierRateHistory {
+  id          String    @id @default(cuid())
+  erpItemCode String
+  oldUsd      Float?
+  newUsd      Float?
+  oldCost     Float?
+  newCost     Float?
+  supplier    String?
+  offerNo     String?
+  offerDate   DateTime?
+  changedBy   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([erpItemCode])
 }

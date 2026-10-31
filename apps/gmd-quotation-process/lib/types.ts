@@ -40,6 +40,8 @@ export interface EnquiryItemData {
   availableBomIds?: string[] | null;
   /** Derived at hydration: available/selected BOM IDs whose VerifyBom.cBatch = "C". */
   closedBomIds?: string[] | null;
+  /** Derived at hydration: COST_WARNING labels from lib/costSanity.ts. */
+  costWarnings?: string[] | null;
   stockQuantity?: string | null;
   costLogic?: string | null;
   availableStock?: string | null;

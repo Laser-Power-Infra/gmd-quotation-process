@@ -7,6 +7,7 @@ import { Label } from "@gmd/ui/components/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@gmd/ui/components/card"
 import Link from "next/link"
 import { toast } from "sonner"
+import { ALLOWED_EMAIL_DOMAINS } from "@/lib/registration"
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -29,7 +30,7 @@ export default function RegisterPage() {
         toast.error(data.error || "Registration failed")
         return
       }
-      toast.success("Registered — please login")
+      toast.success("Registered — an admin must approve your account before you can log in")
       router.push("/login")
     } catch (err: any) {
       toast.error(err.message || "Registration failed")
@@ -43,7 +44,7 @@ export default function RegisterPage() {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Register</CardTitle>
-          <CardDescription>Create account as user. Role upgrades are assigned by backend admin only.</CardDescription>
+          <CardDescription>Company emails only ({ALLOWED_EMAIL_DOMAINS.map((d) => "@" + d).join(", ")}). New accounts need admin approval before login.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -53,7 +54,7 @@ export default function RegisterPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value.toLowerCase())} required autoComplete="email" autoCapitalize="none" />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password (min 6)</Label>

@@ -7,8 +7,10 @@ import {
   buildEnquiryOrderBySql,
   buildEnquiryWhereSql,
   buildItemWhereSql,
+  facetCountSql,
   facetExpression,
   FIRST_ITEM_JOIN_SQL,
+  SIDEBAR_COUNT_FIELDS,
   STAGE_SQL,
 } from "@/lib/enquiry-query";
 import type {
@@ -25,6 +27,7 @@ import {
   getNoUseBomIdSet,
 } from "@/lib/verifyBomLookup";
 import { ageBucket, STAGE_ASSIGNEE_FIELD } from "@/lib/stageAgeing";
+import { costWarningsSql } from "@/lib/costSanity";
 
 // Owner column of the docket's current stage, from STAGE_ASSIGNEE_FIELD.
 const STAGE_ASSIGNEE_SQL = Prisma.sql`(CASE t.stage ${Prisma.join(
@@ -77,7 +80,7 @@ export async function fetchEnquiryPage(
   // Tiles keep their counts while one is active, so drop the stage filter here.
   const stageWhere = buildEnquiryWhereSql({ ...query, selectedEnquiryIds: [] }, { skipField: "stage" });
 
-  const [idRows, countRows, scopedCountRows, totalRows, itemRows, closureRows, stageRows, ageRows, ownerRows] =
+  const [idRows, countRows, scopedCountRows, totalRows, itemRows, closureRows, stageRows, ageRows, ownerRows, facetRows] =
     await Promise.all([
       prisma.$queryRaw<{ id: string }[]>`
         SELECT e.id FROM "Enquiry" e
@@ -103,6 +106,9 @@ export async function fetchEnquiryPage(
             FROM "EnquiryItem" i
             JOIN "Enquiry" e ON e.id = i."enquiryId"
             WHERE ${scopedWhere} AND ${itemWhere}
+              AND coalesce(btrim(e."duplicate"), '') <> 'Yes'
+              AND coalesce(btrim(i."cBatch"), '') <> 'C'
+              AND coalesce(btrim(i."nBatch"), '') <> 'N'
           `
         : Promise.resolve(undefined),
       includeSummary
@@ -143,6 +149,14 @@ export async function fetchEnquiryPage(
             GROUP BY 1, 2, 3
           `
         : Promise.resolve(undefined),
+      // Sidebar option counts over every filtered (selection-scoped) docket, not just this page.
+      includeSummary
+        ? Promise.all(
+            SIDEBAR_COUNT_FIELDS.map((field) =>
+              prisma.$queryRaw<{ value: string | null; count: number }[]>(facetCountSql(query, field)!),
+            ),
+          )
+        : Promise.resolve(undefined),
     ]);
 
   const total = Number(countRows[0]?.count ?? 0);
@@ -150,6 +164,14 @@ export async function fetchEnquiryPage(
 
   let enquiries: EnquiryPageResult["enquiries"] = [];
   if (ids.length > 0) {
+    // Cost sanity warnings for this page's items only; runs alongside the loads below.
+    const warnRowsPromise = prisma.$queryRaw<{ id: string; warnings: string[] }[]>`
+      SELECT i.id, ${costWarningsSql(Prisma.sql`i`)} AS warnings
+      FROM "EnquiryItem" i WHERE i."enquiryId" = ANY(${ids}::text[])
+    `.catch((error) => {
+      console.warn("[enquiryQuery] cost warnings failed:", error);
+      return [];
+    });
     const rows = await prisma.enquiry.findMany({
       where: { id: { in: ids } },
       include: {
@@ -184,6 +206,9 @@ export async function fetchEnquiryPage(
       console.warn("[enquiryQuery] BOM availability batch failed:", error);
     }
 
+    const costWarnings = new Map<string, string[]>();
+    for (const r of await warnRowsPromise) if (r.warnings.length > 0) costWarnings.set(r.id, r.warnings);
+
     enquiries = rows.map((enquiry) => ({
       ...enquiry,
       items: enquiry.items.map((item) => {
@@ -202,6 +227,7 @@ export async function fetchEnquiryPage(
           ...item,
           availableBomIds,
           closedBomIds: visibleBomIds.filter((id) => closedBomSet.has(id)),
+          costWarnings: costWarnings.get(item.id) ?? [],
           quantity: item.quantity != null ? Number(item.quantity) : 0,
           productCost: item.productCost != null ? Number(item.productCost) : null,
           cost: item.cost != null ? Number(item.cost) : null,
@@ -274,6 +300,16 @@ export async function fetchEnquiryPage(
         stage: r.stage,
         count: Number(r.count),
       })),
+      facetCounts: Object.fromEntries(
+        SIDEBAR_COUNT_FIELDS.map((field, i) => [
+          field,
+          Object.fromEntries(
+            (facetRows?.[i] ?? [])
+              .filter((r) => r.value != null && r.value.trim() !== "")
+              .map((r) => [r.value!.trim(), Number(r.count)]),
+          ),
+        ]),
+      ),
     };
   }
 

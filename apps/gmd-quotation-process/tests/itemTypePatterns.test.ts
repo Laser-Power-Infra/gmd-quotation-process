@@ -16,7 +16,8 @@ test('matchItemType does NOT return companion flange for butterfly valve', () =>
 })
 
 test('matchItemType detects sluice valve', () => {
-  assert.equal(matchItemType('CI Sluice Valve 200mm'), 'SLUICE VALVE-METAL-NON-RISING')
+  // Unqualified sluice valve falls to the generic catch-all: resilient, non-rising.
+  assert.equal(matchItemType('CI Sluice Valve 200mm'), 'SLUICE VALVE-RESILIENT-NON-RISING')
 })
 
 test('matchItemType detects resilient seated sluice valve', () => {

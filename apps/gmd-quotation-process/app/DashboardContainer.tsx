@@ -174,6 +174,7 @@ export default function DashboardContainer({
         onSizesChange={setSelectedSizes}
         onClearAll={clearAllAnalytics}
         hasActiveAnalyticsFilters={hasActiveAnalyticsFilters}
+        facetCounts={summary.facetCounts ?? {}}
       />
       <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0 overflow-hidden transition-all duration-300">
         <div className="shrink-0">
