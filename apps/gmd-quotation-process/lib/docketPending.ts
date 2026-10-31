@@ -29,6 +29,32 @@ export function hasDocketCreationKeyword(text: string): boolean {
   return DOCKET_CREATION_PATTERNS.some((p) => p.test(text));
 }
 
+const PO_NEGATIVE = [
+  /\bP\.?\s?O\.?\s*box\b/i,
+  /\bpost\s+office\b/i,
+  /\brfq\b/i,
+  /\brequest\s+for\s+(?:quotation|quote|proposal)\b/i,
+  /\b(?:enquiry|inquiry)\b/i,
+  /\bquotation\s+(?:for|request)\b/i,
+];
+const PO_POSITIVE = [
+  /\bpurchase[\s_-]+orders?\b/i,
+  // [_-] separators and a non-letter lookbehind so filenames like "PO_114.pdf" match
+  /(?<![a-z])P\.?\s?O\.?[\s_-]*(?:no\.?|number|#)?[\s_:.#-]*[A-Z0-9\/-]*\d[A-Z0-9\/-]{2,}/i,
+  /(?<![a-z])P\.?O\.?[\s_]+(?:copy|attached|issued|released)\b/i,
+  /\bwork\s+order\b/i,
+  /\bsupply\s+order\b/i,
+  /\bletter\s+of\s+(?:award|acceptance|intent)\b/i,
+];
+
+// Subject + attachment names only: bodies quote old POs in genuine docket requests.
+export function isPurchaseOrderMail(t: { subject?: string | null; attachNames?: unknown }): boolean {
+  const names = Array.isArray(t.attachNames) ? t.attachNames.join(" ") : JSON.stringify(t.attachNames ?? "");
+  const head = `${t.subject || ""}\n${names}`;
+  if (PO_NEGATIVE.some((p) => p.test(head))) return false;
+  return PO_POSITIVE.some((p) => p.test(head));
+}
+
 export function extractEmailsFromValue(val: unknown): string[] {
   if (!val) return [];
   let str = "";

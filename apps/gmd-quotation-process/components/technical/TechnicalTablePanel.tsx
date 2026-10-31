@@ -138,6 +138,7 @@ export default function TechnicalTablePanel({
             title={tab.label}
             totalRows={state.data.totalRows}
             syncedAt={state.data.syncedAt}
+            warnIfStale
             actions={syncAction}
           />
           <div className="flex-1 min-h-0 mt-0 overflow-hidden flex flex-col">

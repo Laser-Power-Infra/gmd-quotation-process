@@ -7,6 +7,7 @@ import {
   extractEmailsFromValue,
   hasDocketCreationKeyword,
   isGenuineGmdClientThread,
+  isPurchaseOrderMail,
   isSentToLaserEntry,
 } from "@/lib/docketPending";
 import {
@@ -218,6 +219,8 @@ export async function GET() {
 
       const text = `${t.subject || ""} ${t.body || ""} ${t.bodyPreview || ""}`;
       const hasCreationKeyword = hasDocketCreationKeyword(text);
+      // Customer POs are not docket requests; hides rows flagged earlier.
+      if (isPurchaseOrderMail(t) && !hasCreationKeyword) continue;
 
       const toEmails = extractEmailsFromValue(t.toDetails);
       const ccEmails = extractEmailsFromValue(t.ccDetails);

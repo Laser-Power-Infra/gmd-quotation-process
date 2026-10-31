@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
+import SyncStaleBanner from "@gmd/dashboard/components/SyncStaleBanner";
 import GMDUpdateTable, {
   type ServerTableMode,
 } from "@gmd/dashboard/components/GMDUpdateTable";
@@ -2373,6 +2374,7 @@ export function ContractReviewPage({
             }
           />
           {error && <div className="mt-2 text-sm text-red-600 dark:text-red-300">{error}</div>} */}
+          <SyncStaleBanner syncedAt={data ? data.syncedAt : undefined} />
           <ResizablePanelGroup
             orientation="vertical"
             id="contract-review-vertical"

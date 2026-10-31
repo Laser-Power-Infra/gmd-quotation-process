@@ -773,6 +773,7 @@ export default function BomPage() {
           title="VERIFY BOM"
           totalRows={data?.totalRows ?? 0}
           syncedAt={data?.syncedAt ?? undefined}
+          warnIfStale
           onSync={handleSync}
           syncing={syncing}
           actions={

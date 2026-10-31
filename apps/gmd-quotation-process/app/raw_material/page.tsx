@@ -1193,6 +1193,7 @@ export default function Home() {
               <GMDUpdateHeader
                 totalRows={totalRows}
                 syncedAt={syncedAt}
+                warnIfStale
                 onSync={handleSync}
                 syncing={syncing}
               />

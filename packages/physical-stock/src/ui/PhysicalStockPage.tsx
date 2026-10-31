@@ -73,14 +73,19 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
   }, [flags, updateBomId]);
 
   const loadData = useCallback(async () => {
-    const res = await load();
-    if (res.success) {
-      setItems(res.data.items);
-      setBomIdOptions(res.data.bomIdOptions ?? {});
-    } else {
-      toast.error(res.error || "Failed to load physical stock data.");
+    try {
+      const res = await load();
+      if (res.success) {
+        setItems(res.data.items);
+        setBomIdOptions(res.data.bomIdOptions ?? {});
+      } else {
+        toast.error(res.error || "Failed to load physical stock data.");
+      }
+    } catch {
+      toast.error("Failed to load physical stock data.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [load]);
 
   useEffect(() => {

@@ -19,8 +19,8 @@ const code = (erp: string | null) => (erp ?? "").trim().toUpperCase();
 
 /** Rows plus per-row BOM ID options from the quotation DB BOM relations. */
 export async function load() {
-  await requireAccess();
   try {
+    await requireAccess();
     const items = await listPhysicalStock();
     const derivations = await derivePhysicalStockByCodes(items.map((i) => code(i.erp_code)));
     const bomIdOptions: Record<string, string[]> = {};

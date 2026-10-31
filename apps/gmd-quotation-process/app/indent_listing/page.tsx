@@ -156,6 +156,7 @@ export default function IndentListingPage() {
         title="INDENT CHECKING"
         totalRows={data?.totalRows ?? 0}
         syncedAt={data?.syncedAt ?? undefined}
+        warnIfStale
       />
       <div className="px-6 py-4 flex items-center gap-3">
         <button

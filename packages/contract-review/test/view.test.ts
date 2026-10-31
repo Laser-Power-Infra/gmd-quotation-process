@@ -72,6 +72,18 @@ function makeRows(n: number): unknown[][] {
 }
 
 const rows = makeRows(400);
+// The random fixture correlates columns, so guarantee a Dispatch Pending row
+// (same path as a Dispatch Done row, but with a balance left to bill).
+{
+  const { tree, scope } = enabledTrees(() => true)[0];
+  const path = pathTo(tree, "dispatchDone");
+  const done = rows.find(
+    (r) => matchesScope(r, scope) && path.every((p) => matchesGraphFilter(r, p.filter)),
+  )!;
+  const pending = [...done];
+  pending[col("BAL BILL AG CONT")] = "5";
+  rows.push(pending);
+}
 const bomCategoryByRow = new WeakMap<unknown[], "Blanks" | "Single" | "Dropdown">();
 rows.forEach((row, i) =>
   bomCategoryByRow.set(row, (["Blanks", "Single", "Dropdown"] as const)[i % 3]),
@@ -121,6 +133,10 @@ const scenarios: Record<string, Partial<ViewQuery>> = {
       "CLEARANCE STATUS": ["APPROVED", "NA", "NR"],
     },
     statusFilter: "Blanks",
+  },
+  // What a node click writes to the table: the node's own column filter.
+  graphNodeClick: {
+    multiFilters: { "BAL BILL AG CONT": ["(Non-Zero)"], "DI DATE": ["(Has Value)"] },
   },
   contract: { multiFilters: { "CONTRACT NO": ["C1"] } },
   bomCategory: { columnFilters: { "BOM ID": "Single" } },
@@ -208,7 +224,12 @@ function oracle(q: ViewQuery) {
     return { sum, count };
   };
 
-  const graphPath = new Set(["STATUS", "CLEARANCE STATUS"]);
+  const graphPath = new Set(
+    ctx.trees.flatMap(({ tree, scope }) => [
+      ...flatten(tree).map((n) => n.filter.column),
+      ...(scope ? [scope.column] : []),
+    ]),
+  );
   const graphCounts: Record<string, number> = {};
   for (const { tree, scope } of ctx.trees) {
     for (const node of flatten(tree)) {
@@ -270,6 +291,13 @@ for (const [name, patch] of Object.entries(scenarios)) {
     assert.deepEqual(got.view.contractNoMeta, want.contractNoMeta);
   });
 }
+
+test("clicking a flow node does not zero its sibling nodes", () => {
+  const q: ViewQuery = { ...base, ...scenarios.graphNodeClick };
+  const { graphCounts } = computeView(ctx, q).view;
+  assert.ok(graphCounts.dispatchDone > 0, "Dispatch Done");
+  assert.ok(graphCounts.dispatchPending > 0, "Dispatch Pending");
+});
 
 test("visibleIdx is the sidebar + rate-tile subset without table filters", () => {
   const q: ViewQuery = {

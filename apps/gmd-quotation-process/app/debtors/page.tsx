@@ -69,6 +69,7 @@ export default function DebtorsPage() {
         title="DEBTORS"
         totalRows={data?.rows.length ?? 0}
         syncedAt={data?.syncedAt ?? undefined}
+      warnIfStale
       />
       {error && (
         <div className="px-6 py-4 text-sm text-red-600">{error}</div>

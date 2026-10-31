@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import SyncStaleBanner from "@gmd/dashboard/components/SyncStaleBanner";
 import {
   DEFAULT_VISIBLE_COLUMNS,
   PBG_COLUMN_DEFS,
@@ -473,6 +474,9 @@ export function PbgTable({
 
   return (
     <section className="relative flex h-full min-h-0 flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
+      <SyncStaleBanner
+        syncedAt={rows.reduce<string | null>((m, r) => (r.syncedAt && (!m || r.syncedAt > m) ? r.syncedAt : m), null)}
+      />
       <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-baseline gap-2">
           <h2 className="text-base font-semibold text-slate-900">PBG Records</h2>

@@ -3,7 +3,9 @@ import {
   PARTY_LOOKUP_TYPE,
   buildPartyMatcher,
   buildPartySearchText,
+  hasDocketCreationKeyword,
   isPendingDocketCandidate,
+  isPurchaseOrderMail,
 } from "@/lib/docketPending";
 import {
   isDocketAiEligible,
@@ -221,6 +223,14 @@ async function runDocketFollowupSyncInternal(
     });
 
     if (!isCandidate) continue;
+
+    // Customer PO, not a docket request: clear any earlier flag and skip.
+    if (isPurchaseOrderMail(t) && !hasDocketCreationKeyword(text)) {
+      if (t.pendingDocket || t.aiIsNewDocket !== false) {
+        updates.push({ id: t.id, pendingDocket: false, aiIsNewDocket: false });
+      }
+      continue;
+    }
     candidatesCount++;
 
     const detectedDocket = detectDocketNumber(t);

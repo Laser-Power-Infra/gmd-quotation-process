@@ -41,7 +41,13 @@ import { buildPartyEmailMap } from "@/lib/enquiryEmailSync";
 import { parseThreadAttachments } from "@/lib/docketSnapshot";
 import { buildSnapshotAttachment } from "@/lib/docketSnapshotPdf";
 import { extractEmailsFromValue, mergeMandatoryCc } from "@/lib/enquiryEmailParty";
-import { buildPartyMatcher, buildPartySearchText, istDayWindow } from "@/lib/docketPending";
+import {
+  buildPartyMatcher,
+  buildPartySearchText,
+  hasDocketCreationKeyword,
+  isPurchaseOrderMail,
+  istDayWindow,
+} from "@/lib/docketPending";
 import { extractDocketItems } from "./docket-item-extraction";
 import type { ParsedDocketItem } from "./docket-item-parser";
 import pLimit from "p-limit";
@@ -165,7 +171,15 @@ export async function runPendingDocketCreation(
       })
     : [];
   const docketed = new Set(alreadyLinked.map((e) => e.sourceThreadId));
-  const pending = candidates.filter((t) => !docketed.has(t.threadId));
+  const pending = candidates.filter(
+    (t) =>
+      !docketed.has(t.threadId) &&
+      // A customer PO is not a docket request (see docket-followup-sync).
+      !(
+        isPurchaseOrderMail(t) &&
+        !hasDocketCreationKeyword(`${t.subject || ""} ${t.body || ""} ${t.bodyPreview || ""}`)
+      ),
+  );
   let skippedAlreadyDocketed = candidates.length - pending.length;
 
   if (pending.length === 0) {

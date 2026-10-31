@@ -582,7 +582,20 @@ export interface ViewResult {
   visibleIdx: number[];
 }
 
-const GRAPH_PATH_COLUMNS = new Set(["STATUS", "CLEARANCE STATUS"]);
+// Node clicks write the whole path into table filters; the graph must ignore all
+// of them or a node's own column filter zeroes its siblings.
+export function graphPathColumns(trees: ViewContext["trees"]): Set<string> {
+  const cols = new Set<string>();
+  const visit = (n: FlowNode) => {
+    cols.add(n.filter.column);
+    n.children?.forEach(visit);
+  };
+  for (const { tree, scope } of trees) {
+    visit(tree);
+    if (scope) cols.add(scope.column);
+  }
+  return cols;
+}
 
 const byNumericLocale = (a: string, b: string) =>
   a.localeCompare(b, undefined, { numeric: true });
@@ -857,11 +870,11 @@ export function computeView(
   }
 
   // --- Flow diagram ------------------------------------------------------------
-  // Respects every active filter except the graph's own columns (STATUS /
-  // CLEARANCE STATUS), so selecting one branch never collapses sibling counts.
+  // Respects every active filter except the graph's own columns (every column
+  // any tree node filters on), so selecting one branch never collapses sibling counts.
   // A node's rows are its parent's rows narrowed by the node's own filter, so
   // each level only walks the survivors of the level above.
-  const graphBase = baseFor("graph", undefined, GRAPH_PATH_COLUMNS);
+  const graphBase = baseFor("graph", undefined, graphPathColumns(ctx.trees));
   const graphCounts: Record<string, number> = {};
   const graphValues: Record<string, string> = {};
   const walk = (node: FlowNode, inIdx: number[]) => {
