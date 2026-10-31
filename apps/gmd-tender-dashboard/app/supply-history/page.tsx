@@ -3,6 +3,7 @@ import React, { useState, useMemo, useRef, useCallback, useEffect } from "react"
 import { useSupplyHistory } from "@/hooks/useSupplyHistory";
 import { SupplyHistoryRecord } from "@/types/supplyHistory";
 import { SupplyAttachmentModal } from "@/components/SupplyAttachmentModal";
+import { utilityMasterNames } from "@gmd/contract-review/utility-master";
 // import { Package, RefreshCw, Eraser, ExternalLink, FileSpreadsheet, AlertTriangle, Search, ChevronUp, ChevronDown, ArrowUpDown, X, Inbox, FolderOpen } from "lucide-react";
 import { Package, RefreshCw, Eraser, FileSpreadsheet, AlertTriangle, Search, ChevronUp, ChevronDown, ArrowUpDown, X, Inbox, FolderOpen, FileText, ExternalLink, Download, Pencil, Check, Mail, Send, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -832,11 +833,8 @@ const SupplyHistoryDashboard: React.FC = () => {
     return ["All", ...Array.from(set).sort()];
   }, [displayData]);
 
-  const utilitiesList = useMemo(() => {
-    const set = new Set<string>();
-    displayData.forEach(r => { if (r.utility) set.add(r.utility.trim()); });
-    return ["All", ...Array.from(set).sort()];
-  }, [displayData]);
+  // Options come from the utility master only, never from row text.
+  const utilitiesList = useMemo(() => ["All", ...utilityMasterNames().sort()], []);
 
   const fyList = useMemo(() => {
     const set = new Set<string>();

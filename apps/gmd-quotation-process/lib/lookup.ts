@@ -10,6 +10,15 @@ export async function getActiveLookupValuesByType(): Promise<Record<string, stri
   return grouped;
 }
 
+/** Active UTILITY value -> its master default state (only utilities that have one). */
+export async function getUtilityDefaultStates(): Promise<Record<string, string>> {
+  const rows = await prisma.lookupOption.findMany({
+    where: { type: "UTILITY", isActive: true, defaultState: { not: null } },
+    select: { value: true, defaultState: true },
+  });
+  return Object.fromEntries(rows.map((r) => [r.value, r.defaultState!]));
+}
+
 // ITEM_TYPE options rarely change; cache briefly so API routes and item loops
 // don't re-query on every call.
 let cachedItemTypes: string[] | null = null;

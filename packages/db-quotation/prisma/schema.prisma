@@ -708,6 +708,9 @@ model LookupOption {
   value     String
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
+  // UTILITY master key (UTL-<sector>-<state>-<nnn>) and its default state
+  code         String?  @unique
+  defaultState String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -1,0 +1,68 @@
+sl,oldValue,newUtility,newCode,newShortName,action,projectReference,note,verify
+1,Ajmer Pesangam Project,"Public Health Engineering Department, Rajasthan",UTL-WTR-RJ-001,PHED RJ,Move name to Project Reference,Ajmer Pisangan Project,"Project name, not a utility",
+2,Amdavad Municipal Corporation,Ahmedabad Municipal Corporation,UTL-WTR-GJ-001,AMC,Rename,,,
+3,Andhra Pradesh Jal Jeevan Mission (AP JJM),Andhra Pradesh Jal Jeevan Mission,UTL-WTR-AP-001,AP JJM,Rename (short name to Short Name column),,,
+4,ANDHRA PRADESH STATE IRRIGATION DEVELOPMENT CORPORATION LIMITED,Andhra Pradesh State Irrigation Development Corporation Limited,UTL-WTR-AP-002,APSIDC,Rename (case),,,
+5,Assam Urban Water Supply & Sewerage Board,Assam Urban Water Supply and Sewerage Board,UTL-WTR-AS-001,AUWSSB,Rename,,,
+6,Bharat Petroleum Corporation Ltd,Bharat Petroleum Corporation Limited,UTL-ONG-IN-001,BPCL,Rename,,,
+7,"BHEL, Power Sector - Project Engineering Managment",Bharat Heavy Electricals Limited,UTL-PWR-IN-001,BHEL,Rename; unit to Project Reference,BHEL PS-PEM,,
+8,Bhilai Steel Plant,Steel Authority of India Limited,UTL-STL-IN-001,SAIL,Merge into SAIL; plant to Project Reference,Bhilai Steel Plant,State CHHATTISGARH,
+9,Chennai Metropolitan Water Supply and Sewerage Board,Chennai Metropolitan Water Supply and Sewerage Board,UTL-WTR-TN-001,CMWSSB,No change,,,
+10,City and Industrial Development Corporation,City and Industrial Development Corporation of Maharashtra Limited,UTL-OTH-MH-001,CIDCO,Rename,,,
+11,Delhi Jal Board,Delhi Jal Board,UTL-WTR-DL-001,DJB,No change,,,
+12,Department Of Atomic Energy,Department of Atomic Energy,UTL-PWR-IN-002,DAE,Rename (case),,,
+13,Department of Water Resources - Government Of Odisha,"Department of Water Resources, Government of Odisha",UTL-WTR-OD-001,DoWR ODISHA,Rename,,,
+14,GOA Project,VERIFY PER DOCKET (suggest: Goa Public Works Department (Water Supply)),,,Verify per docket; name to Project Reference,Goa Project,"Project name, not a utility",Y
+15,Gujarat Industrial Development Corporation,Gujarat Industrial Development Corporation,UTL-OTH-GJ-001,GIDC,No change,,,
+16,Gujarat Water Infrastructure Limited (GWIL),Gujarat Water Infrastructure Limited,UTL-WTR-GJ-002,GWIL,Rename (short name to Short Name column),,,
+17,Gujarat Water Resources Development Corporation,Gujarat Water Resources Development Corporation Limited,UTL-WTR-GJ-003,GWRDC,Rename,,,
+18,GUJARAT WATER SUPPLY & SEWERAGE BOARD(GWSSB),Gujarat Water Supply and Sewerage Board,UTL-WTR-GJ-004,GWSSB,Rename,,,
+19,Hyderabad Metropolitan Water Supply and Sewerage Board,Hyderabad Metropolitan Water Supply and Sewerage Board,UTL-WTR-TG-001,HMWSSB,No change,,,
+20,Indian Oil Corporation Limited,Indian Oil Corporation Limited,UTL-ONG-IN-002,IOCL,No change,,,
+21,INDIAN RAILWAYS,Indian Railways,UTL-RLY-IN-001,IR,Rename (case),,,
+22,Irrigation & CAD Department,"Irrigation and CAD Department, Government of Telangana",UTL-WTR-TG-002,I&CAD TG,Verify state per docket (AP or Telangana),,Ambiguous — no state in name,Y
+23,Irrigation and CAD Department of Andhra Pradesh,"Irrigation and CAD Department, Government of Andhra Pradesh",UTL-WTR-AP-003,I&CAD AP,Rename,,,
+24,Jal shakti Department,"VERIFY PER DOCKET (HP: Himachal Pradesh Jal Shakti Vibhag / J&K: Jal Shakti Department, Jammu and Kashmir)",,,Verify state per docket,,Ambiguous — no state; docket 393 shows GUJARAT,Y
+25,Jhalawar @ PHED projects,"Public Health Engineering Department, Rajasthan",UTL-WTR-RJ-001,PHED RJ,Merge; place to Project Reference,Jhalawar PHED Project,"Project name, not a utility",
+26,Karnataka Neeravari Nigam Limited: KNNL,Karnataka Neeravari Nigam Limited,UTL-WTR-KA-002,KNNL,Rename,,,
+27,Karnataka Urban Water Supply and Drainage Board,Karnataka Urban Water Supply and Drainage Board,UTL-WTR-KA-003,KUWSDB,No change,,,
+28,Kolkata Metropolitan Development Authority,Kolkata Metropolitan Development Authority,UTL-WTR-WB-001,KMDA,Keep (master),,Duplicate pair — keep this one,
+29,Kolkata Metropolitan Development Authority (KMDA),Kolkata Metropolitan Development Authority,UTL-WTR-WB-001,KMDA,Merge duplicate,,,
+30,"MACHILIPATNAM PORT, A.P",Machilipatnam Port Development Corporation Limited,UTL-OTH-AP-001,MPDCL,Rename,,,
+31,Madhya Pradesh Jal Nigam Maryadit,Madhya Pradesh Jal Nigam Maryadit,UTL-WTR-MP-002,MPJNM,No change,,,
+32,Maharashtra Jeevan Pradhikaran,Maharashtra Jeevan Pradhikaran,UTL-WTR-MH-002,MJP,No change,,,
+33,"Narmada and Water Resources, Water Supply and Kalpsar Department:- Government of Gujarat","Narmada, Water Resources, Water Supply and Kalpsar Department, Government of Gujarat",UTL-WTR-GJ-005,NWRWS&K,Rename,,,
+34,Narmada Valley Development Authority,Narmada Valley Development Authority,UTL-WTR-MP-003,NVDA,No change,,,
+35,National Aluminium Company Limited,National Aluminium Company Limited,UTL-STL-OD-001,NALCO,No change,,,
+36,NMDC Steel Plant,NMDC Steel Limited,UTL-STL-CG-001,NSL,Rename,Nagarnar Steel Plant,,
+37,NTPC Limited,NTPC Limited,UTL-PWR-IN-003,NTPC,No change,,,
+38,O&M Project,VERIFY PER DOCKET,,,Remove from master; set real utility per docket,O&M Project,Not a utility,Y
+39,OGKR Project (Orissa)_IBPS- Mohana,VERIFY PER DOCKET (Odisha — DoWR / RWSS Odisha),,,Remove from master; name to Project Reference,OGKR – IBPS Mohana (Kalpataru),"Project name, not a utility",Y
+40,Oil And Natural Gas Corporation Limited,Oil and Natural Gas Corporation Limited,UTL-ONG-IN-003,ONGC,Rename (case),,,
+41,OKDR Project (Orissa)_IBPS- Nandapur,VERIFY PER DOCKET (Odisha — DoWR / RWSS Odisha),,,Remove from master; name to Project Reference,OKDR – IBPS Nandapur (Kalpataru),"Project name, not a utility",Y
+42,Pholnakhara Project,VERIFY PER DOCKET (Odisha),,,Remove from master; name to Project Reference,Pholnakhara Project,"Project name, not a utility",Y
+43,Private Project,Private / EPC (Non-Utility),UTL-PVT-NA-001,PRIVATE,Rename,,,
+44,Public Health Engineering Department(PHED) Rajasthan,"Public Health Engineering Department, Rajasthan",UTL-WTR-RJ-001,PHED RJ,Rename,,,
+45,"Raipur, CG project : Sluice Valves",VERIFY PER DOCKET (suggest: Raipur Municipal Corporation / PHED Chhattisgarh),,,Remove from master; name to Project Reference,Raipur CG Project,"Project name, not a utility",Y
+46,Rajasthan Rajya Vidyut Utpadan Nigam Ltd (RVUNL),Rajasthan Rajya Vidyut Utpadan Nigam Limited,UTL-PWR-RJ-001,RVUNL,Rename,,,
+47,Rajasthan Urban Infrastructure Development Project,Rajasthan Urban Infrastructure Development Project,UTL-WTR-RJ-002,RUIDP,No change,,,
+48,Rajkot Municipal Corporation,Rajkot Municipal Corporation,UTL-WTR-GJ-006,RMC,No change,,,
+49,"Rashtriya Ispat Nigam Ltd,VIZAG STEEL",Rashtriya Ispat Nigam Limited,UTL-STL-AP-001,RINL,Rename; plant to Project Reference,Visakhapatnam Steel Plant,,
+50,"Rourkela Steel Plant, SAIL",Steel Authority of India Limited,UTL-STL-IN-001,SAIL,Merge into SAIL; plant to Project Reference,Rourkela Steel Plant,State ODISHA,
+51,Rural Drinking Water and Sanitation Department,"Rural Drinking Water and Sanitation Department, Government of Karnataka",UTL-WTR-KA-004,RDWSD KA,Rename (verify state = Karnataka),,,
+52,Rural Water Supply & Sanitation Orissa,"Rural Water Supply and Sanitation, Odisha",UTL-WTR-OD-002,RWSS ODISHA,Rename,,,
+53,Saurashtra Narmada Avtaran Irrigation,"Narmada, Water Resources, Water Supply and Kalpsar Department, Government of Gujarat",UTL-WTR-GJ-005,NWRWS&K,Merge; scheme to Project Reference,SAUNI Yojana,"Scheme name, not a utility",
+54,State Water and Sanitation Mission,"State Water and Sanitation Mission, Uttar Pradesh",UTL-WTR-UP-001,SWSM UP,Verify state per docket,,Ambiguous — add state,Y
+55,Steel Authority Of India Limited,Steel Authority of India Limited,UTL-STL-IN-001,SAIL,Rename (case),,,
+56,TamilNadu Water Supply And Drainage Board Chennai,Tamil Nadu Water Supply and Drainage Board,UTL-WTR-TN-002,TWAD,Rename,,,
+57,Telangana State Industrial Development Corporation Limited,Telangana State Industrial Infrastructure Corporation Limited,UTL-OTH-TG-001,TGIIC,Rename (verify),,,
+58,The Fertilisers And Chemicals Travancore Limited,The Fertilisers and Chemicals Travancore Limited,UTL-OTH-KL-001,FACT,Rename (case),,,
+59,Ujjain Project,VERIFY PER DOCKET (MP — MP Jal Nigam / UADD MP),,,Remove from master; name to Project Reference,Ujjain Project,"Project name, not a utility",Y
+60,UP Jalnigam limited,Uttar Pradesh Jal Nigam,UTL-WTR-UP-002,UPJN,Rename,,,
+61,UPPR PROJECT,VERIFY PER DOCKET,,,Remove from master; name to Project Reference,UPPR Project,"Project name, not a utility",Y
+62,Urban Administration & Development,"Urban Administration and Development Department, Madhya Pradesh",UTL-WTR-MP-005,UADD MP,Rename (verify state = MP),,,
+63,Vadodara Municipal Corporation,Vadodara Municipal Corporation,UTL-WTR-GJ-009,VMC,No change,,,
+64,Vidarbha Irrigation Development Corporation,Vidarbha Irrigation Development Corporation,UTL-WTR-MH-004,VIDC,No change,,,
+65,Visvesvaraya Jala Nigam Ltd,Visvesvaraya Jala Nigam Limited,UTL-WTR-KA-005,VJNL,Rename,,Docket 502 has state ANDHRA PRADESH — VJNL is Karnataka; verify,
+66,Water Corporation of Odisha – Government of Odisha,Water Corporation of Odisha,UTL-WTR-OD-003,WATCO,Rename,,,
+67,Water Resources Department,"Split by state: Water Resources Department, Government of Kerala / of Assam",,,Verify state per docket,,"Dockets 432 (Kerala), 399 (Assam)",Y

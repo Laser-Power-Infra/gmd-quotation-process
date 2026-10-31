@@ -25,6 +25,7 @@ import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { openViewDialog, closeViewDialog, openEditDialog, closeEditDialog, openDeleteDialog, closeDeleteDialog } from "@/lib/dialogsSlice";
 import { isEnquiryFrozen } from "@/lib/oneClickAccess";
 import { formatIndianNumber } from "@/lib/formatCurrency";
+import { useUtilityDefaultStates } from "@/lib/hooks/useUtilityDefaultStates";
 
 interface Attachment {
   id: string;
@@ -132,6 +133,13 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
   const [inspection, setInspection] = useState(item.enquiry.inspection || "");
   const [pbg, setPbg] = useState(item.enquiry.pbg || "");
   const [utility, setUtility] = useState(item.enquiry.utility || "");
+  const utilityDefaultStates = useUtilityDefaultStates();
+  // Picking a utility fills a blank State with its master default (still editable).
+  const handleUtilityChange = (value: string) => {
+    setUtility(value);
+    const defaultState = utilityDefaultStates[value];
+    if (!state && defaultState && dropdownOptions.states.includes(defaultState)) setState(defaultState);
+  };
   const [vaPercent, setVaPercent] = useState(item.vaPercent !== null ? `${item.vaPercent}%` : "");
   const [orderStatus, setOrderStatus] = useState(item.enquiry.orderStatus || "");
 
@@ -874,7 +882,7 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
                   </Label>
                   <select
                     value={utility}
-                    onChange={(e) => setUtility(e.target.value)}
+                    onChange={(e) => handleUtilityChange(e.target.value)}
                     className={selectClass}
                   >
                     <option value="">Select utility...</option>

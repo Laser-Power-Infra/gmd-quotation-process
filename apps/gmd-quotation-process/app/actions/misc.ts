@@ -3,6 +3,7 @@ import { requireAccess } from "@/lib/access";
 import { ERP_CLOSED_STATUSES, C_BATCH_VALUE } from "@/lib/erpItemStatus";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { prisma } from "@/lib/prisma";
+import { getUtilityDefaultStates } from "@/lib/lookup";
 import { uploadFileToDrive } from "@/lib/gdrive";
 import { serializeItem, serializeEnquiry } from "@/lib/costCalculator";
 import { makeImageKey } from "@/lib/imageKey";
@@ -158,6 +159,12 @@ export async function updateBisStatusFieldAction(
   } catch (error: any) {
     return { success: false, error: error.message || `Failed to update ${field}.` } as any;
   }
+}
+
+export async function getUtilityDefaultStatesAction() {
+  "use server";
+  await requireAccess();
+  return getUtilityDefaultStates();
 }
 
 export async function getGMDCastingRatesAction() {
