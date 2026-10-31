@@ -187,6 +187,12 @@ export function rankDocketsForContracts(
  * set carry different rates is left out (no single rate to write).
  */
 export function contractRateByCode(lines: ContractLine[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const [k, set] of contractRateSets(lines)) if (set.size === 1) out.set(k, [...set][0]);
+  return out;
+}
+
+function contractRateSets(lines: ContractLine[]): Map<string, Set<number>> {
   const rates = new Map<string, Set<number>>();
   for (const l of lines) {
     const k = codeKey(l.itemCode);
@@ -196,8 +202,41 @@ export function contractRateByCode(lines: ContractLine[]): Map<string, number> {
     set.add(r);
     rates.set(k, set);
   }
-  const out = new Map<string, number>();
-  for (const [k, set] of rates) if (set.size === 1) out.set(k, [...set][0]);
+  return rates;
+}
+
+export type SkippedRateLine = {
+  itemId: string;
+  itemName: string | null;
+  code: string | null;
+  reason: string;
+};
+
+/**
+ * Docket lines that get no contract rate on apply, so they are reported instead
+ * of skipped silently: a wrong item code (see `findCodeMismatches`), or a matched
+ * code with several (or no) contract rates. No rate is guessed for these.
+ */
+export function skippedRateLines(items: DocketLine[], lines: ContractLine[], matchedCodes: Set<string>): SkippedRateLine[] {
+  const out: SkippedRateLine[] = findCodeMismatches(items, lines).map((m) => ({
+    itemId: m.itemId,
+    itemName: m.itemName,
+    code: m.docketCode,
+    reason: `Item code not on contract (contract has ${m.contractCodes.join(" / ")} for size ${m.size} x ${m.qty})`,
+  }));
+  const sets = contractRateSets(lines.filter((l) => matchedCodes.has(codeKey(l.itemCode))));
+  for (const it of items) {
+    const code = codeKey(it.erpItemCode);
+    if (!matchedCodes.has(code)) continue;
+    const rates = [...(sets.get(code) ?? [])].sort((a, b) => a - b);
+    if (rates.length === 1) continue;
+    out.push({
+      itemId: it.id,
+      itemName: it.itemName ?? null,
+      code: it.erpItemCode,
+      reason: rates.length ? `${rates.length} different contract rates (${rates.join(", ")})` : "No contract rate on the contract line",
+    });
+  }
   return out;
 }
 

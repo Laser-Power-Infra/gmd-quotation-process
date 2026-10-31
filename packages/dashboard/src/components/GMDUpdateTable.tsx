@@ -912,6 +912,8 @@ interface GMDUpdateTableProps {
   categoryOptions?: Record<string, string[]>;
   uniqueKeyColumns?: string[];
   fixedDropdownOptions?: Record<string, string[]>;
+  /** Per-row dropdown options (e.g. cascading levels); falls back to fixedDropdownOptions. */
+  rowDropdownOptions?: (header: string, row: unknown[]) => string[] | undefined;
   onCellUpdate?: (id: string, colIndex: number, value: string) => Promise<void>;
   /** Fallback save when onCellUpdate is not given: persist one DB field. */
   onFieldUpdate?: (id: string, field: string, value: string | null) => Promise<unknown>;
@@ -1202,6 +1204,7 @@ export default function GMDUpdateTable({
   categoryOptions,
   uniqueKeyColumns,
   fixedDropdownOptions,
+  rowDropdownOptions,
   onCellUpdate,
   onFieldUpdate,
   onUsdCostUpdate,
@@ -1555,6 +1558,7 @@ castingRateInputs,
     return { id: confirmDeleteId, erpCode: String(rows[idx]?.[0] ?? "").trim() };
   }, [confirmDeleteId, ids, rows]);
 
+  const sortStorageKey = `gmd-table-sort:${title ?? "table"}`;
   const handleSort = (colIndex: number) => {
     const sameColumn = activeSortColumn === colIndex;
     const h = headers[colIndex] ?? "";
@@ -1567,14 +1571,30 @@ castingRateInputs,
         : "desc";
     if (isServer) {
       serverMode!.onSortChange({ column: colIndex, direction: nextDirection });
-    } else if (sameColumn) {
-      setSortDirection(nextDirection);
     } else {
       setSortColumn(colIndex);
       setSortDirection(nextDirection);
+      try {
+        localStorage.setItem(sortStorageKey, JSON.stringify({ header: h, direction: nextDirection }));
+      } catch {}
     }
     setCurrentPage(1);
   };
+
+  // Keep the user's sort across reloads (local mode; server mode owns its sort).
+  const sortRestored = useRef(false);
+  useEffect(() => {
+    if (isServer || sortRestored.current || headers.length === 0) return;
+    sortRestored.current = true;
+    try {
+      const saved = JSON.parse(localStorage.getItem(sortStorageKey) ?? "null");
+      const col = saved ? headers.indexOf(saved.header) : -1;
+      if (col !== -1) {
+        setSortColumn(col);
+        setSortDirection(saved.direction === "asc" ? "asc" : "desc");
+      }
+    } catch {}
+  }, [isServer, headers, sortStorageKey]);
 
   const handleColumnFilter = (header: string, value: string) => {
     if (isControlled) filterActions!.onColumnFilter(header, value);
@@ -2412,6 +2432,7 @@ castingRateInputs,
         fixedDropdownOptions?.[header]
       ) {
         const options = (
+          rowDropdownOptions?.(header, row) ||
           fixedDropdownOptions?.[header] ||
           categoryOptions?.[header] ||
           columnUniqueVals[header] ||

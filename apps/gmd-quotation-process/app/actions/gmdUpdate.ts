@@ -1083,7 +1083,7 @@ export async function uploadSupplierRatesAction(rows: SupplierRate[]) {
         prisma.rawMaterial.create({
           data: {
             erpItemCode: r.erpItemCode,
-            l8ItemCategory: "TRADING VALVE",
+            l8ItemCategory: "TRADING VALVES", // plural, as every existing master row is stored
             usdRateOption: String(r.rateUsd),
             cost: inr(r.rateUsd),
             vendorReference: vendorReferenceOf(r),

@@ -11,6 +11,7 @@ import {
   DROPDOWN_OPTIONS,
   FIELDS,
   NUMERIC_COLUMNS,
+  cascadedOptions,
   rowToArray,
 } from "../columns";
 import type { PhysicalStockFlags, SidebarSection } from "../flags";
@@ -21,7 +22,7 @@ import NewItemDialog from "./NewItemDialog";
 const HEADERS = [...COLUMNS] as string[];
 const BLANK_ONLY = new Set<string>(BLANK_ONLY_HEADERS);
 const AVAILABLE_IDX = COLUMNS.indexOf("AVAILABLE QTY.");
-const RATE_IDX = COLUMNS.indexOf("rate/unit");
+const COST_IDX = COLUMNS.indexOf("COST");
 const MAJOR_IDX = COLUMNS.indexOf("MAJOR/MINOR MARKING");
 
 function toNum(value: unknown): number {
@@ -102,6 +103,10 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
 
   const rows = useMemo(() => items.map(rowToArray), [items]);
   const ids = useMemo(() => items.map((i) => i.id), [items]);
+  const rowDropdownOptions = useCallback(
+    (header: string, row: unknown[]) => cascadedOptions(header, row, rows),
+    [rows],
+  );
 
   // Stat-card filter narrows the table only; the sidebar totals ignore it so
   // toggling a card never changes the qty/value figures.
@@ -111,7 +116,7 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
     for (const row of rows) {
       const qty = toNum(row[AVAILABLE_IDX]);
       if (cardFilter === "qty" && qty <= 0) continue;
-      if (cardFilter === "value" && toNum(row[RATE_IDX]) * qty <= 0) continue;
+      if (cardFilter === "value" && toNum(row[COST_IDX]) * qty <= 0) continue;
       rowsOut.push(row);
     }
     return rowsOut;
@@ -121,7 +126,7 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
     (row: unknown[]) => {
       if (!cardFilter) return true;
       const qty = toNum(row[AVAILABLE_IDX]);
-      return cardFilter === "qty" ? qty > 0 : toNum(row[RATE_IDX]) * qty > 0;
+      return cardFilter === "qty" ? qty > 0 : toNum(row[COST_IDX]) * qty > 0;
     },
     [cardFilter],
   );
@@ -162,7 +167,7 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
     for (const row of statsRows) {
       const available = toNum(row[AVAILABLE_IDX]);
       qty += available;
-      value += toNum(row[RATE_IDX]) * available;
+      value += toNum(row[COST_IDX]) * available;
     }
     return { availableQty: qty, availableValue: value };
   }, [statsRows]);
@@ -272,6 +277,7 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
                 blankOnlyEditableColumns={blankOnlyColumns}
                 blankOnlyUnlockedBy="ERP CODE"
                 fixedDropdownOptions={dropdownOptions}
+                rowDropdownOptions={rowDropdownOptions}
                 hiddenColumns={flags.hiddenColumns}
                 numericColumns={NUMERIC_COLUMNS}
                 bomIdOptionsById={updateBomId ? bomIdOptions : undefined}

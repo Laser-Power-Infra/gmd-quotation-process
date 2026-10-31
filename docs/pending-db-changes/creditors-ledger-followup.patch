@@ -1,0 +1,1644 @@
+diff --git a/apps/gmd-quotation-process/app/actions/ledgerFollowUp.ts b/apps/gmd-quotation-process/app/actions/ledgerFollowUp.ts
+new file mode 100644
+index 0000000..84bc60f
+--- /dev/null
++++ b/apps/gmd-quotation-process/app/actions/ledgerFollowUp.ts
+@@ -0,0 +1,67 @@
++"use server";
++import { loginRequired } from "@/lib/access";
++import { prisma } from "@/lib/prisma";
++
++export type LedgerFollowUpInput = {
++  ledger: string;
++  accCode: string;
++  owner?: string | null;
++  contactName?: string | null;
++  contactPhone?: string | null;
++  contactEmail?: string | null;
++  followUpDate?: string | null; // YYYY-MM-DD
++  promisedDate?: string | null;
++  promisedAmount?: string | number | null;
++  nextActionDate?: string | null;
++  status?: string | null;
++  remarks?: string | null;
++};
++
++/** Appends a follow-up entry for a Debtors/Creditors party; the newest entry is the party's current state. */
++export async function saveLedgerFollowUpAction(input: LedgerFollowUpInput) {
++  const denied = await loginRequired();
++  if (denied) return denied;
++
++  const clean = (v?: string | null) => (v?.trim() ? v.trim() : null);
++  if (input.ledger !== "debtor" && input.ledger !== "creditor") return { success: false as const, error: "Unknown ledger." };
++  const accCode = clean(input.accCode);
++  if (!accCode) return { success: false as const, error: "Party code is required." };
++
++  const dates: Record<string, Date | null> = {};
++  for (const k of ["followUpDate", "promisedDate", "nextActionDate"] as const) {
++    const v = clean(input[k]);
++    if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) return { success: false as const, error: `${k} is not a valid date.` };
++    dates[k] = v ? new Date(`${v}T00:00:00Z`) : null;
++    if (dates[k] && Number.isNaN(dates[k]!.getTime())) return { success: false as const, error: `${k} is not a valid date.` };
++  }
++  const amountText = clean(input.promisedAmount == null ? null : String(input.promisedAmount).replace(/,/g, ""));
++  const promisedAmount = amountText === null ? null : Number(amountText);
++  if (promisedAmount !== null && (!Number.isFinite(promisedAmount) || promisedAmount < 0)) {
++    return { success: false as const, error: "Amount must be a positive number." };
++  }
++
++  try {
++    const { auth } = await import("@/auth");
++    const user = (await auth())?.user as { name?: string | null } | undefined;
++    await prisma.ledgerFollowUp.create({
++      data: {
++        ledger: input.ledger,
++        accCode,
++        owner: clean(input.owner),
++        contactName: clean(input.contactName),
++        contactPhone: clean(input.contactPhone),
++        contactEmail: clean(input.contactEmail),
++        followUpDate: dates.followUpDate,
++        promisedDate: dates.promisedDate,
++        promisedAmount,
++        nextActionDate: dates.nextActionDate,
++        status: clean(input.status),
++        remarks: clean(input.remarks),
++        createdBy: user?.name ?? null,
++      },
++    });
++    return { success: true as const };
++  } catch (error) {
++    return { success: false as const, error: error instanceof Error ? error.message : "Save failed." };
++  }
++}
+diff --git a/apps/gmd-quotation-process/app/api/creditors/route.ts b/apps/gmd-quotation-process/app/api/creditors/route.ts
+new file mode 100644
+index 0000000..72abe4b
+--- /dev/null
++++ b/apps/gmd-quotation-process/app/api/creditors/route.ts
+@@ -0,0 +1,17 @@
++import { denyIfNoAccess } from "@/lib/access";
++import { NextResponse } from "next/server";
++import { getCreditors } from "@/lib/creditors-server";
++
++export async function GET() {
++  const denied = await denyIfNoAccess();
++  if (denied) return denied;
++  try {
++    const data = await getCreditors();
++    return NextResponse.json(data);
++  } catch (error) {
++    return NextResponse.json(
++      { error: error instanceof Error ? error.message : "Unknown error" },
++      { status: 500 },
++    );
++  }
++}
+diff --git a/apps/gmd-quotation-process/app/api/scheduler/ledgers/route.ts b/apps/gmd-quotation-process/app/api/scheduler/ledgers/route.ts
+new file mode 100644
+index 0000000..561e644
+--- /dev/null
++++ b/apps/gmd-quotation-process/app/api/scheduler/ledgers/route.ts
+@@ -0,0 +1,68 @@
++/**
++ * Ofelia entry point for the daily Debtors / Creditors refresh (07:30 IST).
++ *
++ * Replaces the Debtor, SaleBill/SaleRegister/BankGuarantee and Creditor snapshot
++ * tables from the execution-tracking workbook. Follow-ups are never touched.
++ *
++ * Deliberately thin: all logic lives in `@/schedular_function`.
++ */
++
++// Must be Node: `lib/googleAuth.ts` uses the Node-only Google OAuth client.
++export const runtime = "nodejs";
++
++// Matches `wget -T 600` in the ofelia script. Six tabs, a few thousand rows.
++export const maxDuration = 1800;
++
++import { NextResponse } from "next/server";
++import {
++  JobAlreadyRunningError,
++  requireSyncApiKey,
++  runScheduledLedgers,
++} from "@/schedular_function";
++
++export async function POST(request: Request) {
++  // 503 if GMD_SYNC_API_KEY is unset on the server, 401 if the key is wrong.
++  const auth = requireSyncApiKey(request);
++  if (!auth.ok) {
++    return NextResponse.json(
++      { success: false, error: auth.error },
++      { status: auth.status },
++    );
++  }
++
++  try {
++    const result = await runScheduledLedgers();
++
++    return NextResponse.json(result);
++  } catch (err) {
++    if (err instanceof JobAlreadyRunningError) {
++      return NextResponse.json(
++        { success: false, error: err.message },
++        { status: 409 },
++      );
++    }
++
++    const message = err instanceof Error ? err.message : "Unknown error";
++    console.error(`[scheduler-ledgers] fatal: ${message}`, err);
++
++    return NextResponse.json({ success: false, error: message }, { status: 500 });
++  }
++}
++
++// Credential probe: authenticates without running the sync.
++export async function GET(request: Request) {
++  const auth = requireSyncApiKey(request);
++  if (!auth.ok) {
++    return NextResponse.json(
++      { success: false, error: auth.error },
++      { status: auth.status },
++    );
++  }
++
++  return NextResponse.json({
++    success: true,
++    job: "ledgers",
++    auth: "ok",
++    note: "POST to refresh the Debtor, SaleBill/SaleRegister/BankGuarantee and Creditor snapshots.",
++  });
++}
+diff --git a/apps/gmd-quotation-process/app/creditors/page.tsx b/apps/gmd-quotation-process/app/creditors/page.tsx
+new file mode 100644
+index 0000000..7c289b6
+--- /dev/null
++++ b/apps/gmd-quotation-process/app/creditors/page.tsx
+@@ -0,0 +1,5 @@
++import { LedgerPage } from "@/components/debtors/LedgerPage";
++
++export default function CreditorsPage() {
++  return <LedgerPage ledger="creditor" />;
++}
+diff --git a/apps/gmd-quotation-process/app/debtors/page.tsx b/apps/gmd-quotation-process/app/debtors/page.tsx
+index 1a28a1c..51e93f2 100644
+--- a/apps/gmd-quotation-process/app/debtors/page.tsx
++++ b/apps/gmd-quotation-process/app/debtors/page.tsx
+@@ -1,86 +1,5 @@
+-"use client";
+-
+-import { useEffect, useState } from "react";
+-import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
+-import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkeleton";
+-import DebtorsTable from "@/components/debtors/DebtorsTable";
+-import type { DebtorTotals, DebtorsResult } from "@/lib/debtors";
+-
+-type DebtorsData = DebtorsResult;
+-
+-const EMPTY_TOTALS: DebtorTotals = {
+-  drAmt: 0,
+-  drAllocAmt: 0,
+-  unAllocDr: 0,
+-  unAllocCr: 0,
+-};
++import { LedgerPage } from "@/components/debtors/LedgerPage";
+ 
+ export default function DebtorsPage() {
+-  const [data, setData] = useState<DebtorsData | null>(null);
+-  const [loading, setLoading] = useState(true);
+-  const [error, setError] = useState<string | null>(null);
+-
+-  useEffect(() => {
+-    let cancelled = false;
+-
+-    void (async () => {
+-      try {
+-        const res = await fetch("/api/debtors");
+-        if (!res.ok) {
+-          const body = await res.json().catch(() => ({}));
+-          throw new Error(body.error ?? `Failed to load (${res.status})`);
+-        }
+-        const json = await res.json();
+-        if (!cancelled) setData(json);
+-      } catch (err) {
+-        if (!cancelled) {
+-          setError(err instanceof Error ? err.message : "Failed to load data");
+-        }
+-      } finally {
+-        if (!cancelled) setLoading(false);
+-      }
+-    })();
+-
+-    return () => {
+-      cancelled = true;
+-    };
+-  }, []);
+-
+-  if (loading) {
+-    return (
+-      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
+-        <GMDUpdateHeader
+-          title="DEBTORS"
+-          totalRows={0}
+-          syncedAt={undefined}
+-        />
+-        <GMDUpdateSkeleton />
+-      </main>
+-    );
+-  }
+-
+-  return (
+-    <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
+-      <GMDUpdateHeader
+-        title="DEBTORS"
+-        totalRows={data?.rows.length ?? 0}
+-        syncedAt={data?.syncedAt ?? undefined}
+-      warnIfStale
+-      />
+-      {error && (
+-        <div className="px-6 py-4 text-sm text-red-600">{error}</div>
+-      )}
+-      <div className="flex-1 min-h-0 px-6 pb-6 flex gap-4">
+-        <div className="flex-1 min-h-0">
+-          <DebtorsTable
+-            rows={data?.rows ?? []}
+-            totals={data?.totals ?? EMPTY_TOTALS}
+-            billInfo={data?.billInfo ?? {}}
+-            bgs={data?.bgs ?? []}
+-            followUps={data?.followUps ?? {}}
+-          />
+-        </div>
+-      </div>
+-    </main>
+-  );
++  return <LedgerPage ledger="debtor" />;
+ }
+diff --git a/apps/gmd-quotation-process/components/debtors/DebtorsTable.tsx b/apps/gmd-quotation-process/components/debtors/DebtorsTable.tsx
+index c6feded..59451fb 100644
+--- a/apps/gmd-quotation-process/components/debtors/DebtorsTable.tsx
++++ b/apps/gmd-quotation-process/components/debtors/DebtorsTable.tsx
+@@ -1,24 +1,42 @@
+ "use client";
+ 
+ import { Fragment, useMemo, useState } from "react";
++import type { ReactNode } from "react";
+ import { User } from "lucide-react";
++import { toast } from "sonner";
+ import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
+ import { squish } from "@gmd/dashboard/lib/squish";
+ import type { DebtorRow, DebtorTotals } from "@/lib/debtors";
+ import { BUCKETS, bucketOf, daysOverdue, formatLakh, outstanding, summarise } from "@/lib/debtorsAgeing";
+-import type { Bucket } from "@/lib/debtorsAgeing";
++import type { Bucket, PartyAgeing } from "@/lib/debtorsAgeing";
+ import { formatIndianNumber } from "@/lib/formatCurrency";
+-import { bgExposureByName, bgFor, billInfoFor, downloadCsv, followUpFor, toCsv } from "@/lib/debtorJoins";
++import {
++  CREDITOR_STATUSES, DEBTOR_STATUSES, DEFAULT_OWNER, bgExposureByName, bgFor, billInfoFor, downloadCsv,
++  followUpFor, followUpHistory, isFollowUpDue, promisedThisWeek, toCsv,
++} from "@/lib/debtorJoins";
+ import type { BgRow, BillInfo, FollowUp } from "@/lib/debtorJoins";
++import { CREDITOR_GROUPS, creditorGroup } from "@/lib/creditors";
++import type { CreditorGroup } from "@/lib/creditors";
++import { saveLedgerFollowUpAction } from "@/app/actions/ledgerFollowUp";
++
++type Ledger = "debtor" | "creditor";
+ 
+ interface DebtorsTableProps {
++  ledger?: Ledger;
+   rows: DebtorRow[];
+   totals: DebtorTotals;
+   billInfo: Record<string, BillInfo>;
+   bgs: BgRow[];
+-  followUps: Record<string, FollowUp>;
++  followUps: Record<string, FollowUp[]>;
++  agedFromVrDate?: string[];
++  onSaved?: () => void;
+ }
+ 
++const LABELS = {
++  debtor: { dues: "Total dues", credit: "Unadjusted credit", credits: "Unadjusted credits / advances", net: "Net (dues minus credits)", promised: "Promised", promisedWeek: "Promised this week", empty: "No debtors data synced yet." },
++  creditor: { dues: "Total bills", credit: "Advances", credits: "Advances (not adjusted)", net: "Net payable (bills minus advances)", promised: "Payment planned", promisedWeek: "Planned this week", empty: "No creditors data synced yet." },
++} as const;
++
+ function formatDate(value: string | null): string {
+   if (!value) return "-";
+   const date = new Date(value);
+@@ -26,15 +44,16 @@ function formatDate(value: string | null): string {
+   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+ }
+ 
+-const TH = "border-r border-border px-3 py-2.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground whitespace-normal break-words align-bottom";
++const TH = "border-r border-border px-3 py-2.5 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground whitespace-normal break-words align-bottom";
+ const TD = "border-r border-border px-3 py-2 text-right tabular-nums";
+ const isRed = (b: Bucket) => b === "91-180" || b === "180+";
++const INPUT = "w-full rounded border border-border bg-background px-2 py-1 text-[13px]";
+ 
+ function Tile({ label, value, danger }: { label: string; value: string; danger?: boolean }) {
+   return (
+     <div className="rounded-lg border border-border bg-card px-4 py-3">
+-      <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
+-      <div className={`mt-1 text-xl font-bold tabular-nums ${danger ? "text-red-600" : "text-foreground"}`}>{value}</div>
++      <div className="text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</div>
++      <div className={`mt-1 text-2xl font-bold tabular-nums ${danger ? "text-red-600" : "text-foreground"}`}>{value}</div>
+     </div>
+   );
+ }
+@@ -62,16 +81,112 @@ function DocLinks({ info }: { info?: BillInfo }) {
+   );
+ }
+ 
+-export default function DebtorsTable({ rows, billInfo, bgs, followUps }: DebtorsTableProps) {
++const day = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
++
++/** Inline follow-up editor; each save appends a history entry (the newest is the party's current state). */
++function FollowUpEditor({ ledger, accCode, latest, history, onSaved }: { ledger: Ledger; accCode: string; latest?: FollowUp; history: FollowUp[]; onSaved?: () => void }) {
++  const L = LABELS[ledger];
++  const [saving, setSaving] = useState(false);
++  const [f, setF] = useState({
++    owner: latest?.owner ?? DEFAULT_OWNER,
++    contactName: latest?.contactName ?? "",
++    contactPhone: latest?.contactPhone ?? "",
++    contactEmail: latest?.contactEmail ?? "",
++    followUpDate: new Date().toISOString().slice(0, 10),
++    promisedDate: day(latest?.promisedDate ?? null),
++    promisedAmount: latest?.promisedAmount != null ? String(latest.promisedAmount) : "",
++    nextActionDate: day(latest?.nextActionDate ?? null),
++    status: latest?.status ?? "",
++    remarks: "",
++  });
++  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF((p) => ({ ...p, [k]: e.target.value }));
++  const statuses = ledger === "creditor" ? CREDITOR_STATUSES : DEBTOR_STATUSES;
++
++  const save = async () => {
++    setSaving(true);
++    const res = await saveLedgerFollowUpAction({ ledger, accCode, ...f });
++    setSaving(false);
++    if (!res.success) return void toast.error(res.error);
++    toast.success("Follow-up saved");
++    onSaved?.();
++  };
++
++  const field = (label: string, el: ReactNode) => (
++    <label className="flex flex-col gap-1 text-[12px] font-medium text-muted-foreground">{label}{el}</label>
++  );
++
++  return (
++    <div className="mt-3 rounded-md border border-border bg-card p-3">
++      <div className="mb-2 text-[13px] font-semibold">Follow-up</div>
++      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
++        {field("Owner", <input className={INPUT} value={f.owner} onChange={set("owner")} />)}
++        {field("Contact name", <input className={INPUT} value={f.contactName} onChange={set("contactName")} />)}
++        {field("Contact phone", <input className={INPUT} value={f.contactPhone} onChange={set("contactPhone")} />)}
++        {field("Contact email", <input className={INPUT} type="email" value={f.contactEmail} onChange={set("contactEmail")} />)}
++        {field("Follow-up date", <input className={INPUT} type="date" value={f.followUpDate} onChange={set("followUpDate")} />)}
++        {field(`${L.promised} date`, <input className={INPUT} type="date" value={f.promisedDate} onChange={set("promisedDate")} />)}
++        {field(`${L.promised} amount (₹)`, <input className={INPUT} inputMode="decimal" value={f.promisedAmount} onChange={set("promisedAmount")} />)}
++        {field("Next action date", <input className={INPUT} type="date" value={f.nextActionDate} onChange={set("nextActionDate")} />)}
++        {field("Status", (
++          <select className={INPUT} value={f.status} onChange={set("status")}>
++            <option value="">-</option>
++            {statuses.map((s) => <option key={s} value={s}>{s}</option>)}
++          </select>
++        ))}
++        {field("Remarks / client response", <input className={INPUT} value={f.remarks} onChange={set("remarks")} />)}
++      </div>
++      <button type="button" disabled={saving} onClick={save} className="mt-2 rounded bg-primary px-3 py-1 text-[13px] font-medium text-primary-foreground disabled:opacity-50">
++        {saving ? "Saving..." : "Save follow-up"}
++      </button>
++      {history.length > 0 && (
++        <table className="mt-3 w-full border-collapse text-[13px]">
++          <thead>
++            <tr>{["Saved", "By", "Owner", "Follow-up", `${L.promised} date`, "Amount", "Next action", "Status", "Remarks"].map((h) => <th key={h} className={TH}>{h}</th>)}</tr>
++          </thead>
++          <tbody className="divide-y divide-border/60">
++            {history.map((h) => (
++              <tr key={h.createdAt}>
++                <td className="px-3 py-1.5">{formatDate(h.createdAt)}</td>
++                <td className="px-3 py-1.5">{h.createdBy ?? "-"}</td>
++                <td className="px-3 py-1.5">{h.owner ?? "-"}</td>
++                <td className="px-3 py-1.5">{formatDate(h.lastFollowUp)}</td>
++                <td className="px-3 py-1.5">{formatDate(h.promisedDate)}</td>
++                <td className={TD}>{h.promisedAmount != null ? formatIndianNumber(h.promisedAmount, 2) : "-"}</td>
++                <td className="px-3 py-1.5">{formatDate(h.nextActionDate)}</td>
++                <td className="px-3 py-1.5">{h.status ?? "-"}</td>
++                <td className="px-3 py-1.5">{h.remarks ?? "-"}</td>
++              </tr>
++            ))}
++          </tbody>
++        </table>
++      )}
++    </div>
++  );
++}
++
++export default function DebtorsTable({ ledger = "debtor", rows, billInfo, bgs, followUps, agedFromVrDate = [], onSaved }: DebtorsTableProps) {
++  const L = LABELS[ledger];
++  const creditor = ledger === "creditor";
+   const [search, setSearch] = useState("");
+   const [bucket, setBucket] = useState<Bucket | null>(null);
+   const [overdueOnly, setOverdueOnly] = useState(false);
++  const [dueToday, setDueToday] = useState(false);
++  const [owner, setOwner] = useState("");
++  const [schedule, setSchedule] = useState("");
++  const [group, setGroup] = useState<CreditorGroup>("Local vendors");
+   const [open, setOpen] = useState<string | null>(null);
+ 
+   const today = useMemo(() => new Date(), []);
+-  const summary = useMemo(() => summarise(rows, today), [rows, today]);
++  const vrAged = useMemo(() => new Set(agedFromVrDate), [agedFromVrDate]);
++  const schedOf = useMemo(() => new Map(rows.map((r) => [r.accCode, r.accSch ?? ""])), [rows]);
++  const schedules = useMemo(() => [...new Set(schedOf.values())].filter(Boolean).sort(), [schedOf]);
+ 
++  // Creditors: customs / labour / import parties are split off so they never mix with local vendors.
++  const scoped = useMemo(() => (creditor ? rows.filter((r) => creditorGroup(r.accName) === group) : rows), [rows, creditor, group]);
++  const summary = useMemo(() => summarise(scoped, today), [scoped, today]);
+   const bgMap = useMemo(() => bgExposureByName(bgs), [bgs]);
++  const ownerOf = (p: PartyAgeing) => followUpFor(followUps, p.accCode)?.owner ?? DEFAULT_OWNER;
++  const owners = useMemo(() => [...new Set(summary.parties.map(ownerOf))].sort(), [summary, followUps]); // eslint-disable-line react-hooks/exhaustive-deps
+ 
+   const parties = useMemo(() => {
+     const needle = squish(search);
+@@ -79,9 +194,15 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps }: Debtors
+       if (needle && !squish(`${p.accName} ${p.accCode}`).includes(needle)) return false;
+       if (overdueOnly && p.overdue <= 0) return false;
+       if (bucket && p.buckets[bucket] <= 0) return false;
++      if (owner && ownerOf(p) !== owner) return false;
++      if (schedule && schedOf.get(p.accCode) !== schedule) return false;
++      if (dueToday && !isFollowUpDue(p.overdue, followUpFor(followUps, p.accCode), today)) return false;
+       return true;
+     });
+-  }, [summary, search, overdueOnly, bucket]);
++  }, [summary, search, overdueOnly, bucket, owner, schedule, dueToday, followUps, today, schedOf]); // eslint-disable-line react-hooks/exhaustive-deps
++
++  const top10 = useMemo(() => summary.parties.filter((p) => p.overdue > 0).slice(0, 10), [summary]);
++  const promisedWeek = useMemo(() => promisedThisWeek(followUps, today), [followUps, today]);
+ 
+   const bills = useMemo(() => {
+     if (!open) return [];
+@@ -94,46 +215,84 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps }: Debtors
+ 
+   const exportParties = () =>
+     downloadCsv(
+-      "debtors_party_wise.csv",
++      `${ledger}s_party_wise.csv`,
+       toCsv(
+-        ["Party", "Total dues", "Overdue", ...BUCKETS, "Unadjusted credit", "Net", "BG exposure", "Accounts owner", "Last follow-up", "Promised date", "Promised amount", "Status"],
++        ["Party", ...(creditor ? ["Schedule"] : []), L.dues, "Overdue", ...BUCKETS, L.credit, "Net", ...(creditor ? [] : ["BG exposure"]), "Owner", "Last follow-up", `${L.promised} date`, `${L.promised} amount`, "Status"],
+         parties.map((p) => {
+           const f = followUpFor(followUps, p.accCode);
+-          return [p.accName, p.totalDues, p.overdue, ...BUCKETS.map((b) => p.buckets[b]), p.credits, p.net, bgFor(bgMap, p.accName), f?.owner, f?.lastFollowUp, f?.promisedDate, f?.promisedAmount, f?.status];
++          return [p.accName, ...(creditor ? [schedOf.get(p.accCode)] : []), p.totalDues, p.overdue, ...BUCKETS.map((b) => p.buckets[b]), p.credits, p.net, ...(creditor ? [] : [bgFor(bgMap, p.accName)]), ownerOf(p), formatDate(f?.lastFollowUp ?? null), formatDate(f?.promisedDate ?? null), f?.promisedAmount, f?.status];
+         }),
+       ),
+     );
+ 
+-  const exportStatement = (accName: string) =>
+-    downloadCsv(
+-      `statement_${accName.replace(/[^A-Za-z0-9]+/g, "_")}.csv`,
+-      toCsv(
+-        ["Invoice no", "Date", "Order no", "PO ref", "Items", "Amount", "Allocated", "Balance", "Due date", "Days overdue"],
+-        bills.map(({ r, days, bal }) => {
+-          const i = billInfoFor(billInfo, r.vrNo);
+-          return [r.vrNo, formatDate(r.vrDate), i?.orderNo ?? r.particular, i?.poRef, i?.items, r.drAmt, r.drAllocAmt, bal, formatDate(r.dueDate), days];
+-        }),
+-      ),
+-    );
++  const statementRows = () => {
++    const header = creditor
++      ? ["Voucher no", "Type", "Party bill no", "Party bill date", "Voucher date", "Amount", "Balance", "Due date", "Days overdue"]
++      : ["Invoice no", "Date", "Order no", "PO ref", "Items", "Amount", "Allocated", "Balance", "Due date", "Days overdue"];
++    const body = bills.map(({ r, days, bal }) => {
++      if (creditor) return [r.vrNo, r.tCode, r.partyBillNo, formatDate(r.partyBillDate), formatDate(r.vrDate), r.drAmt, bal, formatDate(r.dueDate), days];
++      const i = billInfoFor(billInfo, r.vrNo);
++      return [r.vrNo, formatDate(r.vrDate), i?.orderNo ?? r.particular, i?.poRef, i?.items, r.drAmt, r.drAllocAmt, bal, formatDate(r.dueDate), days];
++    });
++    return { header, body };
++  };
++  const fileBase = (accName: string) => `statement_${accName.replace(/[^A-Za-z0-9]+/g, "_")}`;
++  const exportStatement = (accName: string) => {
++    const { header, body } = statementRows();
++    downloadCsv(`${fileBase(accName)}.csv`, toCsv(header, body));
++  };
++  const exportStatementXlsx = async (accName: string) => {
++    const XLSX = await import("xlsx");
++    const { header, body } = statementRows();
++    const wb = XLSX.utils.book_new();
++    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([[accName], [], header, ...body]), "Statement");
++    XLSX.writeFile(wb, `${fileBase(accName)}.xlsx`);
++  };
+ 
+   if (rows.length === 0) {
+     return (
+       <div className="rounded-lg border border-border bg-card py-16 text-center">
+         <User className="mx-auto mb-2 h-8 w-8 text-muted-foreground/60" />
+-        <p className="text-sm font-medium text-muted-foreground">No debtors data synced yet.</p>
++        <p className="text-sm font-medium text-muted-foreground">{L.empty}</p>
+       </div>
+     );
+   }
+ 
+-  const span = BUCKETS.length + 9;
++  const followCols = ["Owner", "Last follow-up", `${L.promised} date`, `${L.promised} amount`, "Follow-up status"];
++  const span = BUCKETS.length + 6 + followCols.length;
++  const maxTop = top10[0]?.overdue ?? 1;
++  const partyCount = summary.parties.filter((p) => p.totalDues > 0 || (creditor && p.credits > 0)).length;
++
+   return (
+-    <div className="flex h-full min-h-0 flex-col gap-3 overflow-auto">
+-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+-        <Tile label="Total dues" value={formatLakh(summary.totalDues)} />
+-        <Tile label="Overdue" value={formatLakh(summary.overdue)} />
+-        <Tile label="Over 90 days" value={formatLakh(summary.over90)} danger />
+-        <Tile label={`Unadjusted credits / advances (net ${formatLakh(summary.net)})`} value={formatLakh(summary.credits)} />
+-        <Tile label="No. of parties" value={String(summary.parties.filter((p) => p.totalDues > 0).length)} />
++    <div className="flex h-full min-h-0 flex-col gap-3 overflow-auto text-[14px]">
++      {creditor && (
++        <div className="flex flex-wrap gap-2">
++          {CREDITOR_GROUPS.map((g) => (
++            <button key={g} type="button" onClick={() => { setGroup(g); setOpen(null); }} className={`rounded-full border px-3 py-1 text-[13px] ${group === g ? "border-primary bg-primary/10 font-semibold" : "border-border bg-card"}`}>
++              {g}
++            </button>
++          ))}
++        </div>
++      )}
++
++      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
++        <Tile label={L.dues} value={formatLakh(summary.totalDues)} />
++        {creditor ? (
++          <>
++            <Tile label={L.credits} value={formatLakh(summary.credits)} />
++            <Tile label="Net payable" value={formatLakh(summary.net)} />
++            <Tile label="Overdue" value={formatLakh(summary.overdue)} />
++            <Tile label="180+ days" value={formatLakh(summary.buckets["180+"])} danger />
++          </>
++        ) : (
++          <>
++            <Tile label="Overdue" value={formatLakh(summary.overdue)} />
++            <Tile label="Over 90 days" value={formatLakh(summary.over90)} danger />
++            <Tile label={`${L.credits} (net ${formatLakh(summary.net)})`} value={formatLakh(summary.credits)} />
++          </>
++        )}
++        <Tile label="No. of parties" value={String(partyCount)} />
++        {!creditor && <Tile label={L.promisedWeek} value={formatLakh(promisedWeek)} />}
+       </div>
+ 
+       <div className="grid grid-cols-3 gap-3 md:grid-cols-6">
+@@ -144,53 +303,90 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps }: Debtors
+             onClick={() => setBucket(bucket === b ? null : b)}
+             className={`rounded-lg border px-3 py-2 text-left ${bucket === b ? "border-primary bg-primary/10" : "border-border bg-card"}`}
+           >
+-            <div className="text-[11px] font-semibold uppercase text-muted-foreground">{b === "Not due" ? b : `${b} days`}</div>
++            <div className="text-[12px] font-semibold uppercase text-muted-foreground">{b === "Not due" ? b : `${b} days`}</div>
+             <div className={`text-base font-bold tabular-nums ${isRed(b) ? "text-red-600" : ""}`}>{formatLakh(summary.buckets[b])}</div>
+           </button>
+         ))}
+       </div>
+ 
++      {top10.length > 0 && (
++        <div className="rounded-lg border border-border bg-card px-4 py-3">
++          <div className="mb-2 text-[13px] font-semibold">Top 10 parties by overdue amount</div>
++          <div className="flex flex-col gap-1">
++            {top10.map((p) => (
++              <button key={p.accCode} type="button" onClick={() => setOpen(p.accCode)} className="grid grid-cols-[minmax(0,12rem)_1fr_auto] items-center gap-2 text-left text-[13px]">
++                <span className="truncate" title={p.accName}>{p.accName}</span>
++                <span className="h-3 rounded bg-muted">
++                  <span className="block h-3 rounded bg-primary" style={{ width: `${Math.max(2, (p.overdue / maxTop) * 100)}%` }} />
++                </span>
++                <span className="tabular-nums">{formatLakh(p.overdue)}</span>
++              </button>
++            ))}
++          </div>
++        </div>
++      )}
++
+       <div className="flex min-h-[320px] flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
+         <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
+-          <h2 className="text-sm font-semibold text-foreground">Party-wise outstanding</h2>
+-          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{parties.length} parties</span>
+-          <label className="flex items-center gap-1.5 text-xs text-foreground">
++          <h2 className="text-sm font-semibold text-foreground">Party-wise {creditor ? "payables" : "outstanding"}</h2>
++          <span className="rounded-full bg-muted px-2 py-0.5 text-[12px] font-semibold text-muted-foreground">{parties.length} parties</span>
++          <label className="flex items-center gap-1.5 text-[13px] text-foreground">
+             <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} />
+             Overdue only
+           </label>
++          <label className="flex items-center gap-1.5 text-[13px] text-foreground" title="Overdue, and no follow-up in 7 days, a passed promised date, or next action due">
++            <input type="checkbox" checked={dueToday} onChange={(e) => setDueToday(e.target.checked)} />
++            Follow-up due today
++          </label>
++          <select aria-label="Owner" className="rounded border border-border bg-background px-2 py-1 text-[13px]" value={owner} onChange={(e) => setOwner(e.target.value)}>
++            <option value="">All owners</option>
++            {owners.map((o) => <option key={o} value={o}>{o}</option>)}
++          </select>
++          {creditor && (
++            <select aria-label="Schedule" className="rounded border border-border bg-background px-2 py-1 text-[13px]" value={schedule} onChange={(e) => setSchedule(e.target.value)}>
++              <option value="">All schedules</option>
++              {schedules.map((s) => <option key={s} value={s}>{s}</option>)}
++            </select>
++          )}
+           {bucket && (
+-            <button type="button" className="text-xs text-primary underline" onClick={() => setBucket(null)}>
++            <button type="button" className="text-[13px] text-primary underline" onClick={() => setBucket(null)}>
+               Clear bucket: {bucket}
+             </button>
+           )}
+-          <button type="button" className="rounded border border-border px-2 py-1 text-xs" onClick={exportParties}>Download CSV</button>
+-          <div className="ml-auto w-72">
++          <button type="button" className="rounded border border-border px-2 py-1 text-[13px]" onClick={exportParties}>Download CSV</button>
++          <div className="ml-auto w-full sm:w-72">
+             <DebouncedSearchInput value={search} onCommit={setSearch} placeholder="Search party name or code" />
+           </div>
+         </div>
+         <div className="min-h-0 flex-1 overflow-auto">
+-          <table className="w-full border-collapse text-left text-[13px]">
+-            <thead className="sticky top-0 z-10 border-b border-border bg-muted/80 select-none">
++          <table className="w-full border-collapse text-left text-[14px]">
++            <thead className="sticky top-0 z-10 border-b border-border bg-muted select-none">
+               <tr>
+                 <th className={TH}>Party</th>
+-                <th className={`${TH} text-right`}>Total dues</th>
++                {creditor && <th className={TH}>Schedule</th>}
++                <th className={`${TH} text-right`}>{L.dues}</th>
+                 <th className={`${TH} text-right`}>Overdue</th>
+                 {BUCKETS.map((b) => (
+                   <th key={b} className={`${TH} text-right`}>{b === "Not due" ? b : `${b} days`}</th>
+                 ))}
+-                <th className={`${TH} text-right`}>Unadjusted credit</th>
+-                <th className={`${TH} text-right`}>Net (dues minus credits)</th>
+-                <th className={`${TH} text-right`}>BG exposure (open BGs)</th>
+-                {["Accounts owner", "Last follow-up", "Promised date", "Promised amount", "Follow-up status"].map((h) => (
+-                  <th key={h} className={TH}>{h}</th>
+-                ))}
++                <th className={`${TH} text-right`}>{L.credit}</th>
++                <th className={`${TH} text-right`}>{L.net}</th>
++                {!creditor && <th className={`${TH} text-right`}>BG exposure (open BGs)</th>}
++                {followCols.map((h) => <th key={h} className={TH}>{h}</th>)}
+               </tr>
+             </thead>
+             <tbody className="divide-y divide-border/60">
+-              {parties.map((p) => (
++              {parties.map((p) => {
++                const f = followUpFor(followUps, p.accCode);
++                return (
+                 <Fragment key={p.accCode}>
+                   <tr className="cursor-pointer hover:bg-muted/40" onClick={() => setOpen(open === p.accCode ? null : p.accCode)}>
+-                    <td className="border-r border-border px-3 py-2 font-medium">{open === p.accCode ? "▾" : "▸"} {p.accName}</td>
++                    <td className="border-r border-border px-3 py-2 font-medium">
++                      {open === p.accCode ? "▾" : "▸"} {p.accName}
++                      {creditor && p.totalDues > 0 && p.credits > 0 && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[12px] text-amber-800">Advance not adjusted</span>}
++                      {creditor && p.net < 0 && <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[12px] text-blue-800">Recover / adjust</span>}
++                    </td>
++                    {creditor && <td className="border-r border-border px-3 py-2">{schedOf.get(p.accCode) || "-"}</td>}
+                     <td className={TD}>{formatLakh(p.totalDues)}</td>
+                     <td className={TD}>{formatLakh(p.overdue)}</td>
+                     {BUCKETS.map((b) => (
+@@ -200,57 +396,80 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps }: Debtors
+                     ))}
+                     <td className={TD}>{p.credits ? formatLakh(p.credits) : "-"}</td>
+                     <td className={TD}>{formatLakh(p.net)}</td>
+-                    <td className={TD}>{bgFor(bgMap, p.accName) ? formatLakh(bgFor(bgMap, p.accName)) : "-"}</td>
+-                    {(() => {
+-                      const f = followUpFor(followUps, p.accCode);
+-                      return [f?.owner, f?.lastFollowUp, f?.promisedDate, f?.promisedAmount, f?.status].map((v, i) => (
+-                        <td key={i} className="border-r border-border px-3 py-2">{v ?? ""}</td>
+-                      ));
+-                    })()}
++                    {!creditor && <td className={TD}>{bgFor(bgMap, p.accName) ? formatLakh(bgFor(bgMap, p.accName)) : "-"}</td>}
++                    <td className="border-r border-border px-3 py-2">{ownerOf(p)}</td>
++                    <td className="border-r border-border px-3 py-2">{f ? formatDate(f.lastFollowUp) : ""}</td>
++                    <td className="border-r border-border px-3 py-2">{f ? formatDate(f.promisedDate) : ""}</td>
++                    <td className={TD}>{f?.promisedAmount != null ? formatLakh(f.promisedAmount) : ""}</td>
++                    <td className="border-r border-border px-3 py-2">{f?.status ?? ""}</td>
+                   </tr>
+                   {open === p.accCode && (
+                     <tr>
+                       <td colSpan={span} className="bg-muted/20 p-3">
+-                        <table className="w-full border-collapse text-[12px]">
++                        <div className="mb-2 flex gap-2">
++                          <button type="button" className="rounded border border-border px-2 py-1 text-[12px]" onClick={() => exportStatement(p.accName)}>Statement CSV</button>
++                          <button type="button" className="rounded border border-border px-2 py-1 text-[12px]" onClick={() => void exportStatementXlsx(p.accName)}>Statement Excel</button>
++                        </div>
++                        <table className="w-full border-collapse text-[13px]">
+                           <thead>
+                             <tr>
+-                              {["Invoice no", "Date", "Order no", "PO ref", "Item", "Amount", "Allocated", "Balance", "Due date", "Days overdue"].map((h, i) => (
+-                                <th key={h} className={`${TH} ${i >= 5 && i !== 8 ? "text-right" : ""}`}>{h}</th>
+-                              ))}
+-                              <th className={TH} colSpan={2}>
+-                                Documents{" "}
+-                                <button type="button" className="ml-2 rounded border border-border px-2 py-1 text-[10px] normal-case" onClick={() => exportStatement(p.accName)}>Download CSV</button>
+-                              </th>
++                              {creditor
++                                ? ["Voucher no", "Type", "Party bill no", "Party bill date", "Voucher date", "Amount", "Balance", "Due date", "Days overdue"].map((h, i) => (
++                                    <th key={h} className={`${TH} ${i >= 5 && i !== 7 ? "text-right" : ""}`}>{h}</th>
++                                  ))
++                                : ["Invoice no", "Date", "Order no", "PO ref", "Item", "Amount", "Allocated", "Balance", "Due date", "Days overdue", "Documents"].map((h, i) => (
++                                    <th key={h} className={`${TH} ${i >= 5 && i !== 8 && i !== 10 ? "text-right" : ""}`}>{h}</th>
++                                  ))}
+                             </tr>
+                           </thead>
+                           <tbody className="divide-y divide-border/60">
+                             {bills.map(({ r, days, bal }) => {
+-                              const info = billInfoFor(billInfo, r.vrNo);
+-                              return (
+-                              <tr key={r.id}>
+-                                <td className="px-3 py-1.5">{r.vrNo ?? "-"}</td>
+-                                <td className="px-3 py-1.5">{formatDate(r.vrDate)}</td>
+-                                <td className="px-3 py-1.5">{info?.orderNo ?? r.particular ?? "-"}</td>
+-                                <td className="px-3 py-1.5">{info?.poRef ?? "-"}</td>
+-                                <td className="px-3 py-1.5">{info?.items ?? "-"}</td>
+-                                <td className={TD}>{formatIndianNumber(r.drAmt, 2) || "-"}</td>
+-                                <td className={TD}>{formatIndianNumber(r.drAllocAmt, 2) || "-"}</td>
++                              const daysCell = <td className={`${TD} ${days !== null && days > 90 ? "font-semibold text-red-600" : ""}`}>{days ?? "-"}</td>;
++                              const balCell = (
+                                 <td className={`${TD} ${bal < 0 ? "text-green-700" : ""}`}>
+-                                  {formatIndianNumber(bal, 2)}{bal < 0 ? " (credit)" : ""}
++                                  {formatIndianNumber(Math.abs(bal), 2)}{bal < 0 ? ` (${creditor ? "advance" : "credit"})` : ""}
+                                 </td>
+-                                <td className="px-3 py-1.5">{formatDate(r.dueDate)}</td>
+-                                <td className={`${TD} ${days !== null && days > 90 ? "font-semibold text-red-600" : ""}`}>{days ?? "-"}</td>
+-                                <td className="px-3 py-1.5" colSpan={2}><DocLinks info={info} /></td>
+-                              </tr>
++                              );
++                              if (creditor)
++                                return (
++                                  <tr key={r.id}>
++                                    <td className="px-3 py-1.5">{r.vrNo ?? "-"}</td>
++                                    <td className="px-3 py-1.5">{r.tCode === "advance" ? "Advance" : "Bill"}</td>
++                                    <td className="px-3 py-1.5">{r.partyBillNo ?? "-"}</td>
++                                    <td className="px-3 py-1.5">{formatDate(r.partyBillDate)}</td>
++                                    <td className="px-3 py-1.5">{formatDate(r.vrDate)}</td>
++                                    <td className={TD}>{formatIndianNumber(r.drAmt, 2) || "-"}</td>
++                                    {balCell}
++                                    <td className="px-3 py-1.5">{r.tCode === "advance" ? "-" : `${formatDate(r.dueDate)}${vrAged.has(r.id) ? " (voucher date)" : ""}`}</td>
++                                    {r.tCode === "advance" ? <td className={TD}>-</td> : daysCell}
++                                  </tr>
++                                );
++                              const info = billInfoFor(billInfo, r.vrNo);
++                              return (
++                                <tr key={r.id}>
++                                  <td className="px-3 py-1.5">{r.vrNo ?? "-"}</td>
++                                  <td className="px-3 py-1.5">{formatDate(r.vrDate)}</td>
++                                  <td className="px-3 py-1.5">{info?.orderNo ?? r.particular ?? "-"}</td>
++                                  <td className="px-3 py-1.5">{info?.poRef ?? "-"}</td>
++                                  <td className="px-3 py-1.5">{info?.items ?? "-"}</td>
++                                  <td className={TD}>{formatIndianNumber(r.drAmt, 2) || "-"}</td>
++                                  <td className={TD}>{formatIndianNumber(r.drAllocAmt, 2) || "-"}</td>
++                                  {balCell}
++                                  <td className="px-3 py-1.5">{formatDate(r.dueDate)}</td>
++                                  {daysCell}
++                                  <td className="px-3 py-1.5"><DocLinks info={info} /></td>
++                                </tr>
+                               );
+                             })}
+                           </tbody>
+                         </table>
++                        <FollowUpEditor key={f?.createdAt ?? "new"} ledger={ledger} accCode={p.accCode} latest={f} history={followUpHistory(followUps, p.accCode)} onSaved={onSaved} />
+                       </td>
+                     </tr>
+                   )}
+                 </Fragment>
+-              ))}
++                );
++              })}
+               {parties.length === 0 && (
+                 <tr>
+                   <td colSpan={span} className="py-12 text-center text-sm text-muted-foreground">No parties match the filters.</td>
+diff --git a/apps/gmd-quotation-process/components/debtors/LedgerPage.tsx b/apps/gmd-quotation-process/components/debtors/LedgerPage.tsx
+new file mode 100644
+index 0000000..a364909
+--- /dev/null
++++ b/apps/gmd-quotation-process/components/debtors/LedgerPage.tsx
+@@ -0,0 +1,91 @@
++"use client";
++
++import { useEffect, useState } from "react";
++import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
++import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkeleton";
++import DebtorsTable from "@/components/debtors/DebtorsTable";
++import type { DebtorTotals, DebtorsResult } from "@/lib/debtors";
++
++type DebtorsData = DebtorsResult;
++
++const EMPTY_TOTALS: DebtorTotals = {
++  drAmt: 0,
++  drAllocAmt: 0,
++  unAllocDr: 0,
++  unAllocCr: 0,
++};
++
++export function LedgerPage({ ledger }: { ledger: "debtor" | "creditor" }) {
++  const title = ledger === "creditor" ? "CREDITORS" : "DEBTORS";
++  const [data, setData] = useState<DebtorsData | null>(null);
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState<string | null>(null);
++  const [reload, setReload] = useState(0);
++
++  useEffect(() => {
++    let cancelled = false;
++
++    void (async () => {
++      try {
++        const res = await fetch(ledger === "creditor" ? "/api/creditors" : "/api/debtors");
++        if (!res.ok) {
++          const body = await res.json().catch(() => ({}));
++          throw new Error(body.error ?? `Failed to load (${res.status})`);
++        }
++        const json = await res.json();
++        if (!cancelled) setData(json);
++      } catch (err) {
++        if (!cancelled) {
++          setError(err instanceof Error ? err.message : "Failed to load data");
++        }
++      } finally {
++        if (!cancelled) setLoading(false);
++      }
++    })();
++
++    return () => {
++      cancelled = true;
++    };
++  }, [ledger, reload]);
++
++  if (loading) {
++    return (
++      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
++        <GMDUpdateHeader
++          title={title}
++          totalRows={0}
++          syncedAt={undefined}
++        />
++        <GMDUpdateSkeleton />
++      </main>
++    );
++  }
++
++  return (
++    <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
++      <GMDUpdateHeader
++        title={title}
++        totalRows={data?.rows.length ?? 0}
++        syncedAt={data?.syncedAt ?? undefined}
++        warnIfStale
++      />
++      {error && (
++        <div className="px-6 py-4 text-sm text-red-600">{error}</div>
++      )}
++      <div className="flex-1 min-h-0 px-6 pb-6 flex gap-4">
++        <div className="flex-1 min-h-0">
++          <DebtorsTable
++            ledger={ledger}
++            agedFromVrDate={data?.agedFromVrDate ?? []}
++            rows={data?.rows ?? []}
++            totals={data?.totals ?? EMPTY_TOTALS}
++            billInfo={data?.billInfo ?? {}}
++            bgs={data?.bgs ?? []}
++            followUps={data?.followUps ?? {}}
++            onSaved={() => setReload((n) => n + 1)}
++          />
++        </div>
++      </div>
++    </main>
++  );
++}
+diff --git a/apps/gmd-quotation-process/lib/creditors-server.ts b/apps/gmd-quotation-process/lib/creditors-server.ts
+new file mode 100644
+index 0000000..9648dce
+--- /dev/null
++++ b/apps/gmd-quotation-process/lib/creditors-server.ts
+@@ -0,0 +1,56 @@
++import "server-only";
++
++import { prisma } from "@/lib/prisma";
++import { computeDebtorTotals } from "@/lib/debtors";
++import type { DebtorRow, DebtorsResult } from "@/lib/debtors";
++import { followUpKey } from "@/lib/debtorJoins";
++import { getFollowUps, toIso, toNum } from "@/lib/debtors-server";
++
++/**
++ * Creditors in the Debtors row shape so the same ageing/summary code serves both:
++ * a bill's amount owed is the "due" (unAllocDr), an unadjusted advance is the "credit" (unAllocCr).
++ * Bills with no DUEDATE age from VRDATE.
++ */
++export async function getCreditors(): Promise<DebtorsResult> {
++  const [records, names, followUps] = await Promise.all([
++    prisma.creditor.findMany({ orderBy: [{ accCode: "asc" }, { vrDate: "asc" }] }),
++    prisma.accMaster.findMany({ select: { accCode: true, accName: true } }),
++    getFollowUps("creditor"),
++  ]);
++  const nameOf = new Map(names.map((n) => [followUpKey(n.accCode), n.accName]));
++
++  const agedFromVrDate: string[] = [];
++  const rows: DebtorRow[] = records.map((r) => {
++    const amount = toNum(r.amount);
++    const bill = r.kind === "bill";
++    if (bill && !r.dueDate && r.vrDate) agedFromVrDate.push(r.id);
++    return {
++      id: r.id,
++      accSch: r.accSch,
++      accCode: r.accCode,
++      accName: r.accName ?? nameOf.get(followUpKey(r.accCode)) ?? null,
++      tCode: r.kind,
++      vrNo: r.vrNo,
++      vrDate: toIso(r.vrDate),
++      dueDate: toIso(bill ? (r.dueDate ?? r.vrDate) : r.dueDate),
++      particular: r.particular,
++      drAmt: amount,
++      drAllocAmt: null,
++      unAllocDr: bill ? amount : null,
++      unAllocCr: bill ? null : amount,
++      partyBillNo: r.partyBillNo,
++      partyBillDate: toIso(r.partyBillDate),
++    };
++  });
++
++  const latest = records.reduce<Date | null>((a, r) => (a === null || r.syncedAt > a ? r.syncedAt : a), null);
++  return {
++    rows,
++    totals: computeDebtorTotals(rows),
++    syncedAt: latest ? latest.toISOString() : null,
++    billInfo: {},
++    bgs: [],
++    followUps,
++    agedFromVrDate,
++  };
++}
+diff --git a/apps/gmd-quotation-process/lib/creditors.ts b/apps/gmd-quotation-process/lib/creditors.ts
+new file mode 100644
+index 0000000..c532a6b
+--- /dev/null
++++ b/apps/gmd-quotation-process/lib/creditors.ts
+@@ -0,0 +1,80 @@
++/**
++ * CREDITORS / ADVANCE TO CREDITORS tabs (execution-tracking workbook) -> `Creditor`.
++ * Same rules as `debtorsSync.ts`: exact (normalised) header match, bad number/date skips the row.
++ * Pure, so the mapping and grouping are testable without Google or a DB.
++ */
++import { cell } from "./gmd_lib/bomMastErp";
++import { parseAmount, parseSheetDate } from "./debtorsSync";
++
++// shortcut: tabs resolved by title (gids not known yet); switch to readSheetTabByGid once the gids are recorded.
++export const CREDITORS_TAB = "CREDITORS";
++export const ADVANCES_TAB = "ADVANCE TO CREDITORS";
++
++export const CREDITOR_HEADERS = ["ACC_SCH", "ACC_CODE", "ACC_NAME", "VRNO", "VRDATE", "DUEDATE", "UN_ALLOC_CR", "PARTYBILLNO", "PARTYBILLDATE"] as const;
++export const ADVANCE_HEADERS = ["ACC_SCH", "ACC_CODE", "VRNO", "VRDATE", "UN_ALLOC_DR", "PARTYBILLNO", "PARTYBILLDATE", "PARTICULAR"] as const;
++
++export type CreditorRecord = {
++  kind: "bill" | "advance";
++  accSch: string | null;
++  accCode: string;
++  accName: string | null;
++  vrNo: string | null;
++  vrDate: Date | null;
++  dueDate: Date | null;
++  amount: number | null;
++  partyBillNo: string | null;
++  partyBillDate: Date | null;
++  particular: string | null;
++};
++
++const text = (row: string[], i: number) => cell(row, i) || null;
++
++/** Columns in CREDITOR_HEADERS order. Throws on a bad number/date (caller counts it as skipped). */
++export function mapCreditorBill(row: string[], c: number[]): CreditorRecord | null {
++  const accCode = cell(row, c[1]);
++  if (!accCode) return null;
++  return {
++    kind: "bill",
++    accSch: text(row, c[0]),
++    accCode,
++    accName: text(row, c[2]),
++    vrNo: text(row, c[3]),
++    vrDate: parseSheetDate(cell(row, c[4])),
++    dueDate: parseSheetDate(cell(row, c[5])),
++    amount: parseAmount(cell(row, c[6])),
++    partyBillNo: text(row, c[7]),
++    partyBillDate: parseSheetDate(cell(row, c[8])),
++    particular: null,
++  };
++}
++
++/** Columns in ADVANCE_HEADERS order. The tab has no ACC_NAME; the name comes from acc_master at read time. */
++export function mapCreditorAdvance(row: string[], c: number[]): CreditorRecord | null {
++  const accCode = cell(row, c[1]);
++  if (!accCode) return null;
++  return {
++    kind: "advance",
++    accSch: text(row, c[0]),
++    accCode,
++    accName: null,
++    vrNo: text(row, c[2]),
++    vrDate: parseSheetDate(cell(row, c[3])),
++    dueDate: null,
++    amount: parseAmount(cell(row, c[4])),
++    partyBillNo: text(row, c[5]),
++    partyBillDate: parseSheetDate(cell(row, c[6])),
++    particular: text(row, c[7]),
++  };
++}
++
++export const CREDITOR_GROUPS = ["Local vendors", "Customs", "Labour", "Import"] as const;
++export type CreditorGroup = (typeof CREDITOR_GROUPS)[number];
++
++/** shortcut: name keyword heuristic (the sheet has no vendor-type column); an importer with a plain name lands in Local. Upgrade to a vendor-type column/lookup. */
++export function creditorGroup(name: string | null): CreditorGroup {
++  const n = (name ?? "").toUpperCase();
++  if (/CUSTOMS/.test(n)) return "Customs";
++  if (/LABOU?R/.test(n)) return "Labour";
++  if (/IMPORT|TIANJIN|GMBH|\bPTE\b|\bFZE\b|\bLLC\b|\bINC\b|\bS\.?P\.?A\b|\bB\.?V\b/.test(n)) return "Import";
++  return "Local vendors";
++}
+diff --git a/apps/gmd-quotation-process/lib/debtorJoins.ts b/apps/gmd-quotation-process/lib/debtorJoins.ts
+index 1cab71c..7a84790 100644
+--- a/apps/gmd-quotation-process/lib/debtorJoins.ts
++++ b/apps/gmd-quotation-process/lib/debtorJoins.ts
+@@ -1,4 +1,4 @@
+-/** Pure joins/helpers for the Debtors dashboard: bill info, BG exposure, follow-ups, CSV. */
++/** Pure joins/helpers for the Debtors / Creditors dashboards: bill info, BG exposure, follow-ups, CSV. */
+ 
+ export type BillInfo = {
+   orderNo: string | null; // SALE BILL ORDER_VRNO
+@@ -10,7 +10,22 @@ export type BillInfo = {
+   driveLink: string | null;
+ };
+ export type BgRow = { beneficiaryName: string | null; bgAmt: number | null; cancelledStatus: string | null };
+-export type FollowUp = { owner: string | null; lastFollowUp: string | null; promisedDate: string | null; promisedAmount: string | null; status: string | null };
++export type FollowUp = {
++  owner: string | null;
++  contactName: string | null;
++  contactPhone: string | null;
++  contactEmail: string | null;
++  lastFollowUp: string | null; // ISO date
++  promisedDate: string | null;
++  promisedAmount: number | null;
++  nextActionDate: string | null;
++  status: string | null;
++  remarks: string | null;
++  createdBy: string | null;
++  createdAt: string;
++};
++export const DEBTOR_STATUSES = ["Open", "Promised", "Paid", "Dispute"] as const;
++export const CREDITOR_STATUSES = ["To pay", "On hold", "Disputed", "Adjust advance"] as const;
+ 
+ type SaleBillIn = { vrNo: string; orderVrNo: string | null; partyRefNo: string | null; itemCode: string | null };
+ type SaleRegIn = { invoiceNo: string; itemName: string | null; orderCopy: string | null; invoice: string | null; inspectionReport: string | null; driveLink: string | null };
+@@ -56,32 +71,42 @@ export function bgExposureByName(bgs: BgRow[]): Map<string, number> {
+ }
+ export const bgFor = (m: Map<string, number>, partyName: string) => m.get(key(partyName)) ?? 0;
+ 
++/** Latest-first follow-up history per party, keyed by normalised ACC_CODE. Entry [0] is the current state. */
++export const followUpFor = (m: Record<string, FollowUp[]>, accCode: string): FollowUp | undefined => m[key(accCode)]?.[0];
++export const followUpHistory = (m: Record<string, FollowUp[]>, accCode: string): FollowUp[] => m[key(accCode)] ?? [];
++export const followUpKey = key;
++
++/** shortcut: owner defaults to Koushal (GMD accounts) per Puja's instruction until a per-party owner is saved. */
++export const DEFAULT_OWNER = "Koushal";
++
++const DAY = 86_400_000;
++const dayStart = (d: Date) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
++const isoDay = (s: string | null) => (s ? Date.parse(s.slice(0, 10)) : NaN);
++
+ /**
+- * Follow-up tabs (read only if present). Expected headers, matched after normalisation, missing ones stay blank:
+- * OS_STAFF_ALLOC: ACC_CODE, OWNER.  OS_FOLLOWUP_LOG: ACC_CODE, FOLLOWUP_DATE, PROMISED_DATE, PROMISED_AMOUNT, STATUS (later rows win).
++ * "Follow-up due today": an overdue party with no follow-up in the last 7 days,
++ * a promised date that has passed, or a next-action date on/before today.
+  */
+-export function buildFollowUps(
+-  alloc: { headers: string[]; rows: string[][] } | null,
+-  log: { headers: string[]; rows: string[][] } | null,
+-): Record<string, FollowUp> {
+-  const out: Record<string, FollowUp> = {};
+-  const norm = (h: string) => key(h).replace(/_/g, " ");
+-  const col = (t: { headers: string[] }, name: string) => t.headers.map(norm).indexOf(norm(name));
+-  const val = (r: string[], i: number) => (i < 0 ? null : (r[i] ?? "").trim() || null);
+-  const slot = (code: string) => (out[key(code)] ??= { owner: null, lastFollowUp: null, promisedDate: null, promisedAmount: null, status: null });
+-  if (alloc) {
+-    const c = col(alloc, "ACC_CODE"), o = col(alloc, "OWNER");
+-    if (c >= 0) for (const r of alloc.rows) if (val(r, c)) slot(r[c]).owner = val(r, o);
+-  }
+-  if (log) {
+-    const c = col(log, "ACC_CODE"), d = col(log, "FOLLOWUP_DATE"), pd = col(log, "PROMISED_DATE"), pa = col(log, "PROMISED_AMOUNT"), s = col(log, "STATUS");
+-    if (c >= 0)
+-      for (const r of log.rows)
+-        if (val(r, c)) Object.assign(slot(r[c]), { lastFollowUp: val(r, d), promisedDate: val(r, pd), promisedAmount: val(r, pa), status: val(r, s) });
++export function isFollowUpDue(overdue: number, f: FollowUp | undefined, today: Date): boolean {
++  if (overdue <= 0) return false;
++  const t = dayStart(today);
++  const last = isoDay(f?.lastFollowUp ?? null);
++  if (Number.isNaN(last) || t - last >= 7 * DAY) return true;
++  if (isoDay(f?.promisedDate ?? null) < t) return true;
++  return isoDay(f?.nextActionDate ?? null) <= t;
++}
++
++/** Sum of the latest promised amounts whose promised date falls in the current Mon–Sun week. */
++export function promisedThisWeek(m: Record<string, FollowUp[]>, today: Date): number {
++  const t = dayStart(today);
++  const monday = t - ((today.getDay() + 6) % 7) * DAY;
++  let sum = 0;
++  for (const list of Object.values(m)) {
++    const d = isoDay(list[0]?.promisedDate ?? null);
++    if (d >= monday && d < monday + 7 * DAY) sum += list[0].promisedAmount ?? 0;
+   }
+-  return out;
++  return sum;
+ }
+-export const followUpFor = (m: Record<string, FollowUp>, accCode: string) => m[key(accCode)];
+ 
+ export function toCsv(header: string[], rows: (string | number | null | undefined)[][]): string {
+   const q = (v: string | number | null | undefined) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+diff --git a/apps/gmd-quotation-process/lib/debtors-server.ts b/apps/gmd-quotation-process/lib/debtors-server.ts
+index d92fbcf..6441b7f 100644
+--- a/apps/gmd-quotation-process/lib/debtors-server.ts
++++ b/apps/gmd-quotation-process/lib/debtors-server.ts
+@@ -3,35 +3,40 @@ import "server-only";
+ import { prisma } from "@/lib/prisma";
+ import { computeDebtorTotals } from "@/lib/debtors";
+ import type { DebtorRow, DebtorsResult } from "@/lib/debtors";
+-import { buildBillInfo, buildFollowUps } from "@/lib/debtorJoins";
++import { buildBillInfo } from "@/lib/debtorJoins";
+ import type { FollowUp } from "@/lib/debtorJoins";
+-import { readSheetTabByTitleIfPresent } from "@/lib/gmd_lib/bomMastErp";
++import { followUpKey } from "@/lib/debtorJoins";
+ 
+-// Optional follow-up tabs are read live; cached briefly so the page does not hit the Sheets API every load.
+-let followCache: { at: number; data: Record<string, FollowUp> } | null = null;
+-async function getFollowUps(): Promise<Record<string, FollowUp>> {
+-  const id = process.env.GMD_EXECUTION_TRACKING_SPREADSHEET_ID;
+-  if (!id) return {};
+-  if (followCache && Date.now() - followCache.at < 5 * 60_000) return followCache.data;
+-  try {
+-    const [alloc, log] = await Promise.all([
+-      readSheetTabByTitleIfPresent(id, "OS_STAFF_ALLOC"),
+-      readSheetTabByTitleIfPresent(id, "OS_FOLLOWUP_LOG"),
+-    ]);
+-    followCache = { at: Date.now(), data: buildFollowUps(alloc, log) };
+-    return followCache.data;
+-  } catch {
+-    return {}; // follow-up columns are optional; never fail the page
++/** Latest-first follow-up history per party from the append-only LedgerFollowUp table. */
++export async function getFollowUps(ledger: "debtor" | "creditor"): Promise<Record<string, FollowUp[]>> {
++  const rows = await prisma.ledgerFollowUp.findMany({ where: { ledger }, orderBy: { createdAt: "desc" } });
++  const out: Record<string, FollowUp[]> = {};
++  for (const r of rows) {
++    (out[followUpKey(r.accCode)] ??= []).push({
++      owner: r.owner,
++      contactName: r.contactName,
++      contactPhone: r.contactPhone,
++      contactEmail: r.contactEmail,
++      lastFollowUp: toIso(r.followUpDate),
++      promisedDate: toIso(r.promisedDate),
++      promisedAmount: toNum(r.promisedAmount),
++      nextActionDate: toIso(r.nextActionDate),
++      status: r.status,
++      remarks: r.remarks,
++      createdBy: r.createdBy,
++      createdAt: r.createdAt.toISOString(),
++    });
+   }
++  return out;
+ }
+ 
+-function toNum(value: { toString(): string } | null): number | null {
++export function toNum(value: { toString(): string } | null): number | null {
+   if (value === null || value === undefined) return null;
+   const n = Number(value.toString());
+   return Number.isFinite(n) ? n : null;
+ }
+ 
+-function toIso(value: Date | null): string | null {
++export function toIso(value: Date | null): string | null {
+   return value ? value.toISOString() : null;
+ }
+ 
+@@ -40,7 +45,7 @@ export async function getDebtors(): Promise<DebtorsResult> {
+     prisma.saleBill.findMany({ select: { vrNo: true, orderVrNo: true, partyRefNo: true, itemCode: true } }),
+     prisma.saleRegister.findMany({ select: { invoiceNo: true, itemName: true, orderCopy: true, invoice: true, inspectionReport: true, driveLink: true } }),
+     prisma.bankGuarantee.findMany({ select: { beneficiaryName: true, bgAmt: true, cancelledStatus: true } }),
+-    getFollowUps(),
++    getFollowUps("debtor"),
+   ]);
+ 
+   const records = await prisma.debtor.findMany({
+diff --git a/apps/gmd-quotation-process/lib/debtors.ts b/apps/gmd-quotation-process/lib/debtors.ts
+index 636bd14..9246f52 100644
+--- a/apps/gmd-quotation-process/lib/debtors.ts
++++ b/apps/gmd-quotation-process/lib/debtors.ts
+@@ -40,7 +40,9 @@ export type DebtorsResult = {
+   /** Optional joins; empty when the tables / tabs are empty. */
+   billInfo: Record<string, BillInfo>;
+   bgs: BgRow[];
+-  followUps: Record<string, FollowUp>;
++  followUps: Record<string, FollowUp[]>;
++  /** Creditors only: rows with no due date that were aged from the voucher date (by row id). */
++  agedFromVrDate?: string[];
+ };
+ 
+ /** Sums the four money columns, treating a missing value as zero. */
+diff --git a/apps/gmd-quotation-process/schedular_function/README.md b/apps/gmd-quotation-process/schedular_function/README.md
+index 271756e..8b138b0 100644
+--- a/apps/gmd-quotation-process/schedular_function/README.md
++++ b/apps/gmd-quotation-process/schedular_function/README.md
+@@ -1397,4 +1397,15 @@ per-step diff:
+ 
+ ```
+ docker logs -f gmd-quotation-process | grep SCHEDULER
+-```
+\ No newline at end of file
++```
++## `ledgers` (daily, 07:30 IST)
++
++`runScheduledLedgers()` in `ledgers-sync.ts` refreshes the Debtors / Creditors
++snapshot tables from the execution-tracking workbook: `DEBTORS` -> `Debtor`;
++`SALE BILL` / `SALE REGISTER` / `BG` -> `SaleBill` / `SaleRegister` /
++`BankGuarantee`; `CREDITORS` + `ADVANCE TO CREDITORS` -> `Creditor`. Each group
++is replaced in its own transaction, so a renamed column fails only that group
++(`success: false`, the step's `error` says why). `LedgerFollowUp` (follow-ups
++typed on the pages) is never touched. Files: `app/api/scheduler/ledgers/route.ts`,
++`infra/ledgers-sync.sh`, `infra/ledgers.conf`. The manual CLIs
++(`npm run debtors:sync`, `debtors:joins:sync`) still work.
+diff --git a/apps/gmd-quotation-process/schedular_function/index.ts b/apps/gmd-quotation-process/schedular_function/index.ts
+index 05735f6..9460bbd 100644
+--- a/apps/gmd-quotation-process/schedular_function/index.ts
++++ b/apps/gmd-quotation-process/schedular_function/index.ts
+@@ -226,3 +226,8 @@ export {
+   type PbgReminderTaskResult,
+   type ScheduledPbgRemindersResult,
+ } from "./pbg-reminders";
++
++export {
++  runScheduledLedgers,
++  type ScheduledLedgersResult,
++} from "./ledgers-sync";
+diff --git a/apps/gmd-quotation-process/schedular_function/infra/ledgers-sync.sh b/apps/gmd-quotation-process/schedular_function/infra/ledgers-sync.sh
+new file mode 100644
+index 0000000..2b80119
+--- /dev/null
++++ b/apps/gmd-quotation-process/schedular_function/infra/ledgers-sync.sh
+@@ -0,0 +1,44 @@
++#!/bin/sh
++# Usage: ledgers-sync.sh  -- POSTs to $GMD_APP_SERVER/api/scheduler/ledgers
++# Daily refresh of the Debtors / Creditors snapshot tables (DEBTORS, SALE BILL,
++# SALE REGISTER, BG, CREDITORS, ADVANCE TO CREDITORS). Follow-ups are never touched.
++#
++# Scheduled daily at 07:30 IST (see ledgers.conf).
++#
++# Env (set in the ofelia container, not committed):
++#   GMD_APP_SERVER      base URL of this app, e.g. http://gmd-quotation-process:4570
++#   GMD_SYNC_API_KEY    must match GMD_SYNC_API_KEY on the app
++set -eu
++
++: "${GMD_APP_SERVER:?GMD_APP_SERVER is not set in the ofelia container}"
++: "${GMD_SYNC_API_KEY:?GMD_SYNC_API_KEY is not set in the ofelia container}"
++
++url="${GMD_APP_SERVER}/api/scheduler/ledgers"
++
++# Cheap credential probe first: GET authenticates but does NOT run the job.
++probe=$(wget -qO- -T 30 --header "x-api-key: ${GMD_SYNC_API_KEY}" "${url}" || true)
++case "$probe" in
++  *'"auth":"ok"'*) : ;;
++  *)
++    echo "ERROR: credential probe failed for $url"
++    echo "$probe"
++    exit 1
++    ;;
++esac
++
++echo "POST $url (key length ${#GMD_SYNC_API_KEY})"
++body=$(wget -qO- -T 600 \
++  --header 'Content-Type: application/json' \
++  --header "x-api-key: ${GMD_SYNC_API_KEY}" \
++  --post-data '{}' \
++  "$url")
++
++echo "$body"
++
++if echo "$body" | grep -q '"success": *false'; then
++  echo "ERROR: ledgers sync reported success=false"
++  exit 1
++fi
++
++
++echo "OK: ledgers sync completed"
+diff --git a/apps/gmd-quotation-process/schedular_function/infra/ledgers.conf b/apps/gmd-quotation-process/schedular_function/infra/ledgers.conf
+new file mode 100644
+index 0000000..d643bd0
+--- /dev/null
++++ b/apps/gmd-quotation-process/schedular_function/infra/ledgers.conf
+@@ -0,0 +1,10 @@
++; Daily Debtors / Creditors refresh — DEBTORS, SALE BILL, SALE REGISTER, BG,
++; CREDITORS, ADVANCE TO CREDITORS -> snapshot tables. Follow-ups are never touched.
++; Endpoint: app/api/scheduler/ledgers/route.ts (logic in schedular_function/ledgers-sync.ts).
++;
++; 07:30 IST assumes the ofelia container runs with TZ=Asia/Kolkata (on UTC use 0 0 2 * * *).
++; ofelia uses a 6-field cron: sec min hour dom mon dow.
++[job-local "ledgers-sync"]
++schedule = 0 30 7 * * *
++command = sh /scripts/api/ledgers-sync.sh
++no-overlap = true
+diff --git a/apps/gmd-quotation-process/schedular_function/ledgers-sync.ts b/apps/gmd-quotation-process/schedular_function/ledgers-sync.ts
+new file mode 100644
+index 0000000..92fa8d9
+--- /dev/null
++++ b/apps/gmd-quotation-process/schedular_function/ledgers-sync.ts
+@@ -0,0 +1,123 @@
++/**
++ * Scheduled job — daily Debtors / Creditors refresh.
++ *
++ * Copies these execution-tracking tabs into snapshot tables:
++ *   DEBTORS -> Debtor; SALE BILL / SALE REGISTER / BG -> SaleBill / SaleRegister / BankGuarantee;
++ *   CREDITORS + ADVANCE TO CREDITORS -> Creditor.
++ * Each group is replaced in its own transaction, so a renamed column in one tab fails
++ * that group only and leaves the others' data in place. Follow-ups (LedgerFollowUp)
++ * are never touched. Same mapping helpers as the manual `scripts/sync-debtors*.ts`.
++ */
++
++import { prisma } from "@/lib/prisma";
++import { readSheetTabByGid, readSheetTabByTitleIfPresent, requireColumns } from "@/lib/gmd_lib/bomMastErp";
++import { DEBTORS_GID, mapDebtorRow, resolveDebtorColumns } from "@/lib/debtorsSync";
++import {
++  BG_GID, BG_HEADERS, SALE_BILL_GID, SALE_BILL_HEADERS, SALE_REGISTER_GID, SALE_REGISTER_HEADERS,
++  mapBg, mapSaleBill, mapSaleRegister,
++} from "@/lib/debtorJoinsSync";
++import { ADVANCE_HEADERS, ADVANCES_TAB, CREDITOR_HEADERS, CREDITORS_TAB, mapCreditorAdvance, mapCreditorBill } from "@/lib/creditors";
++import { JobAlreadyRunningError } from "./run-gmd-update";
++
++const CHUNK = 500;
++const JOB = "ledgers";
++let inFlight = false;
++
++type Tab = { tabTitle: string; headers: string[]; rows: string[][] };
++type StepResult = { ok: boolean; written: number; skipped: number; error?: string };
++export type ScheduledLedgersResult = {
++  success: boolean;
++  job: typeof JOB;
++  startedAt: string;
++  elapsedMs: number;
++  steps: Record<"debtors" | "debtorJoins" | "creditors", StepResult>;
++};
++
++function mapRows<T>(tab: Tab, expected: readonly string[], map: (row: string[], c: number[]) => T | null) {
++  const c = requireColumns(tab.headers, [...expected], tab.tabTitle);
++  const out: T[] = [];
++  let skipped = 0;
++  for (const row of tab.rows) {
++    try {
++      const rec = map(row, c);
++      if (rec) out.push(rec);
++      else skipped++;
++    } catch {
++      skipped++;
++    }
++  }
++  return { out, skipped };
++}
++
++const chunks = <T>(a: T[]) => Array.from({ length: Math.ceil(a.length / CHUNK) }, (_, i) => a.slice(i * CHUNK, (i + 1) * CHUNK));
++
++async function byTitle(id: string, title: string): Promise<Tab> {
++  const t = await readSheetTabByTitleIfPresent(id, title);
++  if (!t) throw new Error(`No tab titled "${title}" in the execution-tracking workbook`);
++  return { tabTitle: title, ...t };
++}
++
++async function step(name: string, fn: () => Promise<{ written: number; skipped: number }>): Promise<StepResult> {
++  try {
++    const r = await fn();
++    console.log(`[scheduler] ${JOB}/${name}: written=${r.written} skipped=${r.skipped}`);
++    return { ok: true, ...r };
++  } catch (err) {
++    const error = err instanceof Error ? err.message : String(err);
++    console.error(`[scheduler] ${JOB}/${name} failed: ${error}`);
++    return { ok: false, written: 0, skipped: 0, error };
++  }
++}
++
++export async function runScheduledLedgers(): Promise<ScheduledLedgersResult> {
++  if (inFlight) throw new JobAlreadyRunningError(JOB);
++  inFlight = true;
++  const startedAtMs = Date.now();
++  try {
++    const id = process.env.GMD_EXECUTION_TRACKING_SPREADSHEET_ID;
++    if (!id) throw new Error("GMD_EXECUTION_TRACKING_SPREADSHEET_ID is not set");
++
++    const debtors = await step("debtors", async () => {
++      const tab = await readSheetTabByGid(id, DEBTORS_GID);
++      const idx = resolveDebtorColumns(tab.headers, tab.tabTitle);
++      const results = tab.rows.map((r) => mapDebtorRow(r, idx));
++      const data = results.flatMap((r) => (r.ok ? [r.record] : []));
++      await prisma.$transaction([prisma.debtor.deleteMany(), ...chunks(data).map((d) => prisma.debtor.createMany({ data: d }))]);
++      return { written: data.length, skipped: results.length - data.length };
++    });
++
++    const debtorJoins = await step("debtorJoins", async () => {
++      const bills = mapRows(await readSheetTabByGid(id, SALE_BILL_GID), SALE_BILL_HEADERS, mapSaleBill);
++      const regs = mapRows(await readSheetTabByGid(id, SALE_REGISTER_GID), SALE_REGISTER_HEADERS, mapSaleRegister);
++      const bgs = mapRows(await readSheetTabByGid(id, BG_GID), BG_HEADERS, mapBg);
++      await prisma.$transaction([
++        prisma.saleBill.deleteMany(),
++        prisma.saleRegister.deleteMany(),
++        prisma.bankGuarantee.deleteMany(),
++        ...chunks(bills.out).map((data) => prisma.saleBill.createMany({ data })),
++        ...chunks(regs.out).map((data) => prisma.saleRegister.createMany({ data })),
++        ...chunks(bgs.out).map((data) => prisma.bankGuarantee.createMany({ data })),
++      ]);
++      return { written: bills.out.length + regs.out.length + bgs.out.length, skipped: bills.skipped + regs.skipped + bgs.skipped };
++    });
++
++    const creditors = await step("creditors", async () => {
++      const bills = mapRows(await byTitle(id, CREDITORS_TAB), CREDITOR_HEADERS, mapCreditorBill);
++      const advances = mapRows(await byTitle(id, ADVANCES_TAB), ADVANCE_HEADERS, mapCreditorAdvance);
++      const data = [...bills.out, ...advances.out];
++      await prisma.$transaction([prisma.creditor.deleteMany(), ...chunks(data).map((d) => prisma.creditor.createMany({ data: d }))]);
++      return { written: data.length, skipped: bills.skipped + advances.skipped };
++    });
++
++    const steps = { debtors, debtorJoins, creditors };
++    return {
++      success: Object.values(steps).every((s) => s.ok),
++      job: JOB,
++      startedAt: new Date(startedAtMs).toISOString(),
++      elapsedMs: Date.now() - startedAtMs,
++      steps,
++    };
++  } finally {
++    inFlight = false;
++  }
++}
+diff --git a/apps/gmd-quotation-process/tests/creditors.test.ts b/apps/gmd-quotation-process/tests/creditors.test.ts
+new file mode 100644
+index 0000000..3fdd71f
+--- /dev/null
++++ b/apps/gmd-quotation-process/tests/creditors.test.ts
+@@ -0,0 +1,23 @@
++import test from 'node:test'
++import assert from 'node:assert/strict'
++import { creditorGroup, mapCreditorAdvance, mapCreditorBill } from '../lib/creditors.js'
++
++test('creditor bill and advance rows map amounts and dates', () => {
++  const bill = mapCreditorBill(['G', 'C1', 'Acme', 'PB1', '01-10-2026', '', '1,000.50', 'B9', '30-09-2026'], [0, 1, 2, 3, 4, 5, 6, 7, 8])!
++  assert.equal(bill.kind, 'bill')
++  assert.equal(bill.amount, 1000.5)
++  assert.equal(bill.dueDate, null)
++  assert.equal(bill.vrDate?.toISOString().slice(0, 10), '2026-10-01')
++  const adv = mapCreditorAdvance(['G', 'C1', 'BP1', '02-10-2026', '500', '', '', 'adv'], [0, 1, 2, 3, 4, 5, 6, 7])!
++  assert.equal(adv.kind, 'advance')
++  assert.equal(adv.amount, 500)
++  assert.equal(mapCreditorBill(['G', '', 'x'], [0, 1, 2, 3, 4, 5, 6, 7, 8]), null)
++  assert.throws(() => mapCreditorBill(['G', 'C1', 'x', '', '', '', 'abc', '', ''], [0, 1, 2, 3, 4, 5, 6, 7, 8]))
++})
++
++test('creditor grouping keeps customs, labour and importers apart', () => {
++  assert.equal(creditorGroup('COMMISSIONER OF CUSTOMS'), 'Customs')
++  assert.equal(creditorGroup('Ram Labour Contractor'), 'Labour')
++  assert.equal(creditorGroup('Tianjin Tangfa Valve Co'), 'Import')
++  assert.equal(creditorGroup('Shree Castings Pvt Ltd'), 'Local vendors')
++})
+diff --git a/apps/gmd-quotation-process/tests/debtorJoins.test.ts b/apps/gmd-quotation-process/tests/debtorJoins.test.ts
+index 6fd4872..80c7a9f 100644
+--- a/apps/gmd-quotation-process/tests/debtorJoins.test.ts
++++ b/apps/gmd-quotation-process/tests/debtorJoins.test.ts
+@@ -1,6 +1,7 @@
+ import test from 'node:test'
+ import assert from 'node:assert/strict'
+-import { bgExposureByName, bgFor, billInfoFor, buildBillInfo, buildFollowUps, toCsv } from '../lib/debtorJoins.js'
++import { bgExposureByName, bgFor, billInfoFor, buildBillInfo, followUpFor, isFollowUpDue, promisedThisWeek, toCsv } from '../lib/debtorJoins.js'
++import type { FollowUp } from '../lib/debtorJoins.js'
+ 
+ test('bill info joins bill + register on invoice no', () => {
+   const m = buildBillInfo(
+@@ -23,12 +24,27 @@ test('BG exposure counts only open BGs, name matched loosely on case/spaces', ()
+   assert.equal(bgFor(m, 'other'), 0)
+ })
+ 
+-test('follow-ups tolerate missing tabs and columns', () => {
+-  assert.deepEqual(buildFollowUps(null, null), {})
+-  const f = buildFollowUps({ headers: ['ACC_CODE', 'OWNER'], rows: [['A1', 'Ravi']] }, { headers: ['ACC_CODE', 'STATUS'], rows: [['A1', 'Promised']] })
+-  assert.equal(f['A1'].owner, 'Ravi')
+-  assert.equal(f['A1'].status, 'Promised')
+-  assert.equal(f['A1'].promisedDate, null)
++const fu = (o: Partial<FollowUp>): FollowUp => ({ owner: null, contactName: null, contactPhone: null, contactEmail: null, lastFollowUp: null, promisedDate: null, promisedAmount: null, nextActionDate: null, status: null, remarks: null, createdBy: null, createdAt: '2026-10-01T00:00:00Z', ...o })
++
++test('follow-up due today: overdue and stale, promise missed, or next action due', () => {
++  const today = new Date(2026, 9, 31) // Sat 31 Oct 2026 local
++  assert.equal(isFollowUpDue(0, undefined, today), false, 'not overdue')
++  assert.equal(isFollowUpDue(100, undefined, today), true, 'never followed up')
++  assert.equal(isFollowUpDue(100, fu({ lastFollowUp: '2026-10-29T00:00:00Z' }), today), false, 'recent')
++  assert.equal(isFollowUpDue(100, fu({ lastFollowUp: '2026-10-24T00:00:00Z' }), today), true, '7 days old')
++  assert.equal(isFollowUpDue(100, fu({ lastFollowUp: '2026-10-29T00:00:00Z', promisedDate: '2026-10-30T00:00:00Z' }), today), true, 'promise passed')
++  assert.equal(isFollowUpDue(100, fu({ lastFollowUp: '2026-10-29T00:00:00Z', nextActionDate: '2026-10-31T00:00:00Z' }), today), true, 'next action today')
++})
++
++test('promised this week sums latest entries dated Mon-Sun of the current week', () => {
++  const today = new Date(2026, 9, 28) // Wed; week = 26 Oct .. 1 Nov
++  const m = {
++    A: [fu({ promisedDate: '2026-10-26T00:00:00Z', promisedAmount: 100 }), fu({ promisedDate: '2026-10-27T00:00:00Z', promisedAmount: 999 })],
++    B: [fu({ promisedDate: '2026-11-01T00:00:00Z', promisedAmount: 50 })],
++    C: [fu({ promisedDate: '2026-11-02T00:00:00Z', promisedAmount: 7 })],
++  }
++  assert.equal(promisedThisWeek(m, today), 150)
++  assert.equal(followUpFor(m, ' a ')?.promisedAmount, 100)
+ })
+ 
+ test('csv escapes quotes', () => {
+diff --git a/packages/db-quotation/prisma/migrations/20261031150000_add_creditors_ledger_followup/migration.sql b/packages/db-quotation/prisma/migrations/20261031150000_add_creditors_ledger_followup/migration.sql
+new file mode 100644
+index 0000000..2980ee7
+--- /dev/null
++++ b/packages/db-quotation/prisma/migrations/20261031150000_add_creditors_ledger_followup/migration.sql
+@@ -0,0 +1,45 @@
++-- CreateTable
++CREATE TABLE "Creditor" (
++    "id" TEXT NOT NULL,
++    "kind" TEXT NOT NULL,
++    "accSch" TEXT,
++    "accCode" TEXT NOT NULL,
++    "accName" TEXT,
++    "vrNo" TEXT,
++    "vrDate" TIMESTAMP(3),
++    "dueDate" TIMESTAMP(3),
++    "amount" DECIMAL(18,2),
++    "partyBillNo" TEXT,
++    "partyBillDate" TIMESTAMP(3),
++    "particular" TEXT,
++    "syncedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++
++    CONSTRAINT "Creditor_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateTable
++CREATE TABLE "LedgerFollowUp" (
++    "id" TEXT NOT NULL,
++    "ledger" TEXT NOT NULL,
++    "accCode" TEXT NOT NULL,
++    "owner" TEXT,
++    "contactName" TEXT,
++    "contactPhone" TEXT,
++    "contactEmail" TEXT,
++    "followUpDate" TIMESTAMP(3),
++    "promisedDate" TIMESTAMP(3),
++    "promisedAmount" DECIMAL(18,2),
++    "nextActionDate" TIMESTAMP(3),
++    "status" TEXT,
++    "remarks" TEXT,
++    "createdBy" TEXT,
++    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
++
++    CONSTRAINT "LedgerFollowUp_pkey" PRIMARY KEY ("id")
++);
++
++-- CreateIndex
++CREATE INDEX "Creditor_accCode_idx" ON "Creditor"("accCode");
++
++-- CreateIndex
++CREATE INDEX "LedgerFollowUp_ledger_accCode_createdAt_idx" ON "LedgerFollowUp"("ledger", "accCode", "createdAt");
+diff --git a/packages/db-quotation/prisma/schema.prisma b/packages/db-quotation/prisma/schema.prisma
+index c391631..5635494 100644
+--- a/packages/db-quotation/prisma/schema.prisma
++++ b/packages/db-quotation/prisma/schema.prisma
+@@ -1205,3 +1205,45 @@ model BankGuarantee {
+ 
+   @@index([beneficiaryName])
+ }
++
++/// CREDITORS (kind "bill", amount = UN_ALLOC_CR) and ADVANCE TO CREDITORS
++/// (kind "advance", amount = UN_ALLOC_DR) rows; snapshot replaced by the daily ledgers sync.
++model Creditor {
++  id            String    @id @default(cuid())
++  kind          String
++  accSch        String?
++  accCode       String
++  accName       String?
++  vrNo          String?
++  vrDate        DateTime?
++  dueDate       DateTime?
++  amount        Decimal?  @db.Decimal(18, 2)
++  partyBillNo   String?
++  partyBillDate DateTime?
++  particular    String?
++  syncedAt      DateTime  @default(now())
++
++  @@index([accCode])
++}
++
++/// Append-only follow-up log for the Debtors / Creditors pages. The newest row per
++/// (ledger, accCode) is the current state; older rows are the history. Never touched by the sheet sync.
++model LedgerFollowUp {
++  id             String    @id @default(cuid())
++  ledger         String // "debtor" | "creditor"
++  accCode        String
++  owner          String?
++  contactName    String?
++  contactPhone   String?
++  contactEmail   String?
++  followUpDate   DateTime?
++  promisedDate   DateTime?
++  promisedAmount Decimal?  @db.Decimal(18, 2)
++  nextActionDate DateTime?
++  status         String?
++  remarks        String?
++  createdBy      String?
++  createdAt      DateTime  @default(now())
++
++  @@index([ledger, accCode, createdAt])
++}

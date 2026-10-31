@@ -72,3 +72,10 @@ test('plan classifies updated / added / unchanged / notMatched, never deletes', 
   assert.match(plan.notMatched[0].reason, /not TRADING VALVE/)
   assert.equal('deletes' in plan, false)
 })
+
+test('plan accepts the plural TRADING VALVES category the master actually stores', () => {
+  const master = [{ erpItemCode: 'ABC000001', usd: 20, vendorReference: null, category: 'TRADING VALVES' }]
+  const plan = planSupplierRateUpload(master, [{ erpItemCode: 'ABC000001', rateUsd: 22, supplier: '', offerNo: '', offerDate: '' }])
+  assert.equal(plan.updates.length, 1)
+  assert.equal(plan.notMatched.length, 0)
+})

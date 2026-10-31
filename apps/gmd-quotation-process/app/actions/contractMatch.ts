@@ -16,6 +16,7 @@ import {
   normalizeParty,
   parseNum,
   rankDocketsForContracts,
+  skippedRateLines,
   type CodeMismatch,
 } from "@/lib/contractDocketMatch";
 import { recalculateItem } from "@/lib/costCalculator";
@@ -152,7 +153,7 @@ export async function applyContractDocketMatchAction(enquiryId: string, contract
       where: { id: enquiryId },
       select: {
         docketNumber: true, selectedContractNo: true,
-        items: { select: { id: true, itemName: true, erpItemCode: true, quantity: true, quotedRate: true, vaPercent: true, contractReviewRate: true } },
+        items: { select: { id: true, itemName: true, erpItemCode: true, size: true, quantity: true, quotedRate: true, vaPercent: true, contractReviewRate: true } },
       },
     });
     if (!enquiry) return { success: false as const, error: "Docket not found." };
@@ -195,9 +196,10 @@ export async function applyContractDocketMatchAction(enquiryId: string, contract
 
     const updated = items.filter((i) => !i.error).length;
     const negativeVaCount = items.filter((i) => i.negativeVa).length;
+    const skipped = skippedRateLines(enquiry.items, lines, matched);
     return {
       success: true as const,
-      data: { docketNumber: enquiry.docketNumber, selectedContractNo: merged, matchedCodes: matched.size, items, updated, negativeVaCount },
+      data: { docketNumber: enquiry.docketNumber, selectedContractNo: merged, matchedCodes: matched.size, items, updated, negativeVaCount, skipped, skippedCount: skipped.length },
     };
   } catch (error) {
     console.error("[contract-match] apply failed:", error);

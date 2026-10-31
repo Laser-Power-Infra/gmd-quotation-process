@@ -16,9 +16,6 @@ export const physicalStockHiddenColumns = flag<PhysicalStockHeader[]>({
   decide: () => [
     "sum of PHYSICAL stock",
     "stock as per erp",
-    "rate/unit",
-    "rate per pc*qty*weight",
-    "weight per pc",
     "item wise-value",
     "MOVING WITHIN 3 MONTHS",
     "Order Ag Approval recvd",
