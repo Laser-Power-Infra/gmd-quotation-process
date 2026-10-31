@@ -16,6 +16,7 @@ import { resolveImportedInhouse } from "@/lib/importInhouseMapping";
 import { syncEnquiryEmailAddresses } from "@/lib/enquiryEmailSync";
 import { mergeMandatoryCc, isBlockedPartyEmail } from "@/lib/enquiryEmailParty";
 import { isDeletableDuplicate } from "@/lib/pendingDocketMaterializer";
+import { NOT_SENT_CLOSURE_STATUS } from "@/lib/closureStatusSync";
 
 // Create a new enquiry with initial items and multiple attachments
 export async function createNewEnquiryAction(formData: {
@@ -933,6 +934,11 @@ export async function updateEnquiryFieldAction(
     console.log(`[Server] updateEnquiryField enquiry=${enquiryId} field=${field} old="${oldVal}" new="${value}"`);
 
     let parsedVal = value;
+    // "-" (blank) is the manual Not Sent marker. Stored literally so the
+    // closure-status sync, which fills only blanks, never turns it into Pending.
+    if (field === "closureStatus" && (value === null || ["", "-"].includes(String(value).trim()))) {
+      parsedVal = NOT_SENT_CLOSURE_STATUS;
+    }
     // When APM leaves "Yes" (cleared or set to "No"), reset the one-time PDF freeze so a future
     // "Yes" grants a fresh one-time download and pricing columns unfreeze.
     const data: Record<string, any> = { [field]: parsedVal };

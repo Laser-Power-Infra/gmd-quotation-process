@@ -217,3 +217,8 @@ export {
   runScheduledPbg,
   type ScheduledPbgResult,
 } from "./run-pbg";
+
+export {
+  runScheduledClosureStatus,
+  type ScheduledClosureStatusResult,
+} from "./run-closure-status";

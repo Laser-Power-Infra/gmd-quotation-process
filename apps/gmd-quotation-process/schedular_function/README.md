@@ -32,6 +32,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | PBG sheet sync *(every 1.2h)* | `POST /api/scheduler/pbg` | `pbg-sync` | PBG sheet tab → `PbgData` |
 | C Batch marks | `POST /api/scheduler/c-batch` | `c-batch-sync` | `ITEM MASTER ERP` |
 | ERP Contract No sync | `POST /api/scheduler/erp-contract-no` | `erp-contract-no-sync` | `SALE_BILL`, `MC` |
+| Closure Status sync *(every 10m)* | `POST /api/scheduler/closure-status` | `closure-status-sync` | `docket_quotation_threads`, `enquiries` |
 
 The stagger is deliberate. `raw-material`, `supply-history` and
 `contract-review` each full-table-read the tables the others write. `bom-mast`
@@ -60,6 +61,10 @@ creates.
 because a plain cron cannot express "every 72 minutes". The interval counts from
 when ofelia starts, not wall-clock. It writes only `PbgData`, which no other
 scheduled job touches, so overlap with any other job is harmless.
+
+`closure-status` is also off the grid, on `@every 10m`. It writes only
+`enquiries.closureStatus`, each write guarded on the value it read, so overlap
+with `docket-creation` is harmless.
 
 ## `bom-mast`
 
@@ -488,6 +493,39 @@ repo/container:
 Verify: `GET $GMD_APP_SERVER/api/scheduler/pbg` with `x-api-key` returns
 `auth:"ok"`; `docker logs <ofelia> | grep pbg` shows the run; the app logs a
 `[SCHEDULER] pbg ... done` block.
+
+## `closure-status`
+
+Single step in `run-closure-status.ts`, delegating to `syncClosureStatuses()`
+(`lib/closureStatusSync.ts`). It used to run on every dashboard render; the
+full thread scan (regex over OCR text and mail bodies) starved the DB pool and
+caused 503s, so the dashboard now only reads the last run's result for styling.
+
+Every write goes through `decideClosureStatus`:
+
+| Current value | Mail evidence | No thread references the docket |
+|---|---|---|
+| blank / `-` | `Sent` (`-` stays without evidence) | `Pending` (blank only) |
+| `Pending` | `Sent` | unchanged |
+| `Not Sent` (the manual "-" marker) | `Sent` | unchanged |
+| `Sent`, `Rejected`, anything else | unchanged | unchanged |
+
+Writes are one `updateMany` per (target, value read), guarded on the value
+read, so a manual save made during the run is kept.
+
+### Deployment (infra repo)
+
+1. Add the `[job-local "closure-status-sync"]` block from
+   `infra/closure-status.conf` to the ofelia config the daemon loads.
+2. Place `infra/closure-status-sync.sh` at `/scripts/api/closure-status-sync.sh`
+   and `chmod +x`.
+3. No new secret: `GMD_APP_SERVER` and `GMD_SYNC_API_KEY` are already set.
+4. Reload or restart ofelia.
+
+Until ofelia runs it, closure status is not auto-filled at all.
+
+Verify: `GET $GMD_APP_SERVER/api/scheduler/closure-status` with `x-api-key`
+returns `auth:"ok"`; the app logs a `[SCHEDULER] closure-status ... done` block.
 
 ## `docket-creation`
 
@@ -1300,6 +1338,9 @@ curl -i -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/pbg"
 
 # run the PBG sheet sync
 curl -i -X POST -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/pbg"
+
+# run the Closure Status sync
+curl -i -X POST -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/closure-status"
 ```
 
 Inspect the container logs for the `[SCHEDULER]` blocks, which print the full

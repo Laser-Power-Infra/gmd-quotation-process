@@ -14,6 +14,8 @@ import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import AddItemsDialog from "./AddItemsDialog";
 import NewEnquiryDialog from "./NewEnquiryDialog";
 
+const NOT_SENT = "Not Sent";
+
 interface DashboardHeaderProps {
   enquiries: { id: string; docketNumber: string; partyName: string }[];
   nextDocketNumber: string;
@@ -65,7 +67,10 @@ export default function DashboardHeader({
   const closureFilter = useAppSelector((s) => s.filters.closureStatus);
   const summary = useAppSelector(selectEnquirySummary) ?? initialSummary;
 
-  const closureOptions: string[] = (dropdownOptions?.closureStatuses as string[]) ?? [];
+  // "Not Sent" has its own tab below (blank + "Not Sent"), so no second button.
+  const closureOptions: string[] = ((dropdownOptions?.closureStatuses as string[]) ?? []).filter(
+    (s) => s.trim().toLowerCase() !== NOT_SENT.toLowerCase(),
+  );
 
   const countForStatus = (status: string) =>
     Object.entries(summary?.closureCounts ?? {}).reduce(
@@ -84,7 +89,7 @@ export default function DashboardHeader({
     dispatch(setFilter({ field: "closureStatus", value: isStatusActive(status) ? [] : [status] }));
 
   const toggleNotSent = () =>
-    dispatch(setFilter({ field: "closureStatus", value: notSentActive ? [] : [BLANK] }));
+    dispatch(setFilter({ field: "closureStatus", value: notSentActive ? [] : [BLANK, NOT_SENT] }));
 
   return (
     <div className="flex flex-col gap-4 py-3 px-6 bg-card sm:flex-row sm:items-center sm:justify-between border-b border-border shrink-0">
@@ -141,7 +146,7 @@ export default function DashboardHeader({
           <button
             type="button"
             onClick={toggleNotSent}
-            title="Show enquiries with blank Closure Status"
+            title="Show enquiries with blank or 'Not Sent' Closure Status"
             className={`h-7 rounded-md px-3 text-sm font-semibold transition-colors cursor-pointer ${
               notSentActive
                 ? "bg-[#0f62fe] dark:bg-blue-500/80 text-white"

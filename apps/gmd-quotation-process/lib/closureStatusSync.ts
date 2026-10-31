@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 //              therefore went out.
 //  - Pending : no email thread references the docket at all.
 // A thread that mentions the docket (subject/body/...) without any documentary
-// evidence is neither: it is left blank.
+// evidence is neither: it is left blank. Write rules: decideClosureStatus().
 // The docket-key helpers below mirror the ones used by the docket follow-up
 // dashboard so both surfaces agree on what a match is.
 
@@ -180,6 +180,26 @@ function threadSearchText(t: ThreadFields): string {
 /** The value written to Enquiry.closureStatus; matches the CLOSURE_STATUS lookup. */
 export const SENT_CLOSURE_STATUS = "Sent";
 export const PENDING_CLOSURE_STATUS = "Pending";
+/** Manual "quotation not going out" marker; automation only ever upgrades it to Sent. */
+export const NOT_SENT_CLOSURE_STATUS = "Not Sent";
+
+/**
+ * The status the sync should write, or null to leave the row alone.
+ *  - mail evidence: blank / Pending / Not Sent ("-" legacy) -> Sent.
+ *  - no thread references the docket: blank only -> Pending.
+ * Sent, Rejected and every other manual value are never touched.
+ */
+export function decideClosureStatus(
+  current: string | null | undefined,
+  evidence: boolean,
+  referenced: boolean,
+): string | null {
+  const v = (current ?? "").trim().toLowerCase();
+  if (evidence) {
+    return v === "" || v === "-" || v === "pending" || v === "not sent" ? SENT_CLOSURE_STATUS : null;
+  }
+  return !referenced && v === "" ? PENDING_CLOSURE_STATUS : null;
+}
 
 export interface ClosureStatusSyncResult {
   scanned: number;
@@ -300,8 +320,11 @@ async function runSync(dryRun: boolean): Promise<ClosureStatusSyncResult> {
 
   const sentDockets: string[] = [];
   const pendingDockets: string[] = [];
-  const sentProposals: string[] = [];
-  const pendingProposals: string[] = [];
+  // Proposed writes grouped by (target, value read), so each write can
+  // re-check the row still holds the value the decision was made on.
+  const proposals = new Map<string, { to: string; from: string | null; ids: string[] }>();
+  let sentCount = 0;
+  let pendingCount = 0;
 
   for (const e of enquiries) {
     const lookupKeys = new Set<string>();
@@ -326,49 +349,39 @@ async function runSync(dryRun: boolean): Promise<ClosureStatusSyncResult> {
       }
     }
 
-    // Fill-blanks-only: a manual Sent, Rejected or Pending is never overwritten.
-    const isBlank = !e.closureStatus || !e.closureStatus.trim();
+    if (evidence) sentDockets.push(e.docketNumber);
+    else if (!referenced) pendingDockets.push(e.docketNumber);
 
-    if (evidence) {
-      sentDockets.push(e.docketNumber);
-      if (isBlank) sentProposals.push(e.id);
-    } else if (!referenced) {
-      pendingDockets.push(e.docketNumber);
-      if (isBlank) pendingProposals.push(e.id);
-    }
-  }
-
-  if (dryRun) {
-    return {
-      scanned: enquiries.length,
-      updated: 0,
-      sent: sentProposals.length,
-      pending: pendingProposals.length,
-      sentDockets,
-      pendingDockets,
-      threadCount: threads.length,
-    };
+    const to = decideClosureStatus(e.closureStatus, evidence, referenced);
+    if (!to) continue;
+    if (to === SENT_CLOSURE_STATUS) sentCount++;
+    else pendingCount++;
+    const key = JSON.stringify([to, e.closureStatus]);
+    const group = proposals.get(key) ?? { to, from: e.closureStatus, ids: [] };
+    group.ids.push(e.id);
+    proposals.set(key, group);
   }
 
   let updated = 0;
-  const CHUNK = 100;
-  const writeChunk = async (ids: string[], closureStatus: string) => {
-    for (let i = 0; i < ids.length; i += CHUNK) {
-      const chunk = ids.slice(i, i + CHUNK);
-      await Promise.all(
-        chunk.map((id) => prisma.enquiry.update({ where: { id }, data: { closureStatus } }))
-      );
-      updated += chunk.length;
+  if (!dryRun) {
+    const CHUNK = 1000; // stay well under Postgres' bind-parameter limit
+    for (const { to, from, ids } of proposals.values()) {
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        // Guard on the value read above: a manual save made meanwhile is kept.
+        const res = await prisma.enquiry.updateMany({
+          where: { id: { in: ids.slice(i, i + CHUNK) }, closureStatus: from },
+          data: { closureStatus: to },
+        });
+        updated += res.count;
+      }
     }
-  };
-  await writeChunk(sentProposals, SENT_CLOSURE_STATUS);
-  await writeChunk(pendingProposals, PENDING_CLOSURE_STATUS);
+  }
 
   return {
     scanned: enquiries.length,
     updated,
-    sent: sentProposals.length,
-    pending: pendingProposals.length,
+    sent: sentCount,
+    pending: pendingCount,
     sentDockets,
     pendingDockets,
     threadCount: threads.length,
@@ -379,12 +392,17 @@ const CACHE_TTL_MS = 60_000;
 let cache: { at: number; result: ClosureStatusSyncResult } | null = null;
 let inFlight: Promise<ClosureStatusSyncResult> | null = null;
 
+/** Last completed (non-dry-run) sync result, possibly stale; null before the first run. */
+export function lastClosureStatusSync(): ClosureStatusSyncResult | null {
+  return cache?.result ?? null;
+}
+
 /**
  * Fills `Enquiry.closureStatus` from the DocketQuotationThread table:
  *  - "Sent"    when a thread evidences the docket (attachment filename, or the
  *              scanned OCR text of an attached PDF).
  *  - "Pending" when no thread references the docket at all.
- * Existing non-blank values are never touched, so repeated runs are idempotent.
+ * Only blank / Pending / Not Sent rows change; see decideClosureStatus.
  *
  * Returns the evidenced and mail-less docket numbers so the client can style
  * the auto-detected statuses distinctly.
