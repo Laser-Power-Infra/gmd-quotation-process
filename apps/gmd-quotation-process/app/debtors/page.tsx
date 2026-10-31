@@ -4,13 +4,9 @@ import { useEffect, useState } from "react";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
 import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkeleton";
 import DebtorsTable from "@/components/debtors/DebtorsTable";
-import type { DebtorRow, DebtorTotals } from "@/lib/debtors";
+import type { DebtorTotals, DebtorsResult } from "@/lib/debtors";
 
-interface DebtorsData {
-  rows: DebtorRow[];
-  totals: DebtorTotals;
-  syncedAt: string | null;
-}
+type DebtorsData = DebtorsResult;
 
 const EMPTY_TOTALS: DebtorTotals = {
   drAmt: 0,
@@ -79,6 +75,9 @@ export default function DebtorsPage() {
           <DebtorsTable
             rows={data?.rows ?? []}
             totals={data?.totals ?? EMPTY_TOTALS}
+            billInfo={data?.billInfo ?? {}}
+            bgs={data?.bgs ?? []}
+            followUps={data?.followUps ?? {}}
           />
         </div>
       </div>

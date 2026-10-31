@@ -1,7 +1,7 @@
 import "server-only";
 import { applyColumnFlags } from "@gmd/contract-review/server";
 import { columnAccess } from "@gmd/contract-review/flags";
-import { nBatchFilter } from "@gmd/contract-review/columns";
+import { incompleteFilter, nBatchFilter } from "@gmd/contract-review/columns";
 import { enabledTrees } from "@gmd/contract-review/tree";
 import {
   CLEARANCE_STATUS_IDX,
@@ -88,6 +88,7 @@ async function buildDataset(): Promise<Dataset> {
     batchPresenceFilters: [
       ...(isEnabled("C BATCH") ? [cBatchFilter()] : []),
       ...(isEnabled("N BATCH") ? [nBatchFilter()] : []),
+      ...(isEnabled("DATA INCOMPLETE") ? [incompleteFilter()] : []),
     ],
     hasImage: (code) => (itemImages[code]?.length ?? 0) > 0,
   };

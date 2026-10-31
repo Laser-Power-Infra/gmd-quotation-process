@@ -10,6 +10,8 @@ import Pagination from "@/components/table/Pagination";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import type { VariantMetrics } from "@/lib/indentListingMetrics";
 import { summarizeIndentRows } from "@/lib/indentListingSummary";
+import { valveTypesForIndentItem } from "@/lib/indentItemValveTypes";
+import { rmOptionFitsIndentRow, type RmCodeOption } from "@/lib/indentRmCodeOptions";
 
 // Which item variant each V column holds (rules in lib/itemVersionResolver.ts).
 const VARIANT_LEGEND: [string, string][] = [
@@ -30,7 +32,7 @@ interface IndentListingTableProps {
   /** Stored-row ids behind each displayed row, aligned with `rows`. */
   sourceIds: string[][];
   /** Raw materials offered by the hand-pick RM code dropdown. */
-  rmOptions: { code: string; name: string }[];
+  rmOptions: RmCodeOption[];
   /** Re-fetch the listing after a hand-picked RM code is saved. */
   onRefresh: () => void;
 }
@@ -131,7 +133,10 @@ function cellText(row: unknown[], idx: number): string {
 // their raw materials are not in the option list, so a picker there offers the
 // wrong valve family.
 function canPickRmCode(row: unknown[]): boolean {
-  return cellText(row, 0).toUpperCase() in RM_CODE_MATCH_BY_ITEM;
+  return (
+    cellText(row, 0).toUpperCase() in RM_CODE_MATCH_BY_ITEM ||
+    valveTypesForIndentItem(cellText(row, 0)).length > 0
+  );
 }
 
 // The value shown (and sorted) in a leaf column. Variant metrics come from the
@@ -279,7 +284,6 @@ export default function IndentListingTable({
     return map;
   }, [rows, sourceIds]);
 
-  const rmCodes = useMemo(() => rmOptions.map((o) => o.code), [rmOptions]);
   const rmOptionLabels = useMemo(
     () => Object.fromEntries(rmOptions.map((o) => [o.code, `${o.code} — ${o.name}`])),
     [rmOptions],
@@ -451,6 +455,15 @@ export default function IndentListingTable({
       const rmCode =
         col.rmCodeIdx === undefined ? "" : cellText(row, col.rmCodeIdx);
       const targets = sourceIdsByRow.get(row) ?? [];
+      const selectedCodes = rmCode
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      // Only same valve type + size; an already-saved code stays listed so it can be removed.
+      const rowCodes = rmOptions
+        .filter((o) => rmOptionFitsIndentRow(o, cellText(row, 0), cellText(row, 1)))
+        .map((o) => o.code);
+      const options = [...new Set([...rowCodes, ...selectedCodes])];
 
       if (value === "") return "—";
       if (category === "" && rmCode === "" && targets.length === 0) return value;
@@ -469,16 +482,9 @@ export default function IndentListingTable({
             // Stored rows exist behind this line, so the code is hand-pickable.
             <RmCodeCell
               label={`${col.slotLabel} RM code`}
-              options={rmCodes}
+              options={options}
               optionLabels={rmOptionLabels}
-              selected={
-                rmCode === ""
-                  ? []
-                  : rmCode
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-              }
+              selected={selectedCodes}
               onChange={(vals) => handleRmCodeChange(row, col.slot, vals.join(", "))}
             />
           ) : rmCode !== "" ? (

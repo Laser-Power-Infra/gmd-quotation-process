@@ -38,7 +38,7 @@ import { useServerTable } from "@/lib/useServerTable";
 import type { BisQuery } from "@/lib/bisQuery";
 import type { TableSort } from "@/lib/tableQuery";
 
-const EDITABLE_FIELDS = new Set(["remark", "licenseNo"]);
+const EDITABLE_FIELDS = new Set(["remark", "licenseNo", "bisDocs"]);
 const EMPTY_FORM = { status: "", nextStep: "", nextDate: "", remark: "", updatedBy: "" };
 type HistoryRow = {
   id: string;
@@ -304,9 +304,12 @@ export default function BisStatusPage() {
             onSelect={setSelectedIndex}
             title="BIS Status"
             editable
-            editableColumns={["remark", "licenseNo"]}
+            editableColumns={["remark", "licenseNo", "BIS Documents (Link)"]}
             onCellUpdate={handleCellUpdate}
             uniqueKeyColumns={["bisNo"]}
+            // The docs cell is an input for pasting links; this adds a clickable links button next to the item name.
+            linkedFilesColumn="BIS Documents (Link)"
+            linkedFilesIconColumn="itemName"
             filterState={filterState}
             filterActions={filterActions}
             serverMode={serverMode}

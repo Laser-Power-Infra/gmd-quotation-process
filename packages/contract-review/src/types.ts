@@ -78,6 +78,8 @@ export interface ContractReviewActions {
   ) => Promise<ActionResult<{ uploadUrl: string; key: string }>>;
   confirmDiagramUploadAction: (id: string, key: string) => Promise<ActionResult>;
   clearContractReviewDiagramAction: (id: string) => Promise<ActionResult>;
+  /** Appends a mail / document link to a contract. Omit to make the column read-only. */
+  addContractMailDocAction?: (contractNo: string, category: string, url: string) => Promise<ActionResult<{ contractNo: string; mailDocs: string }>>;
   setContractReviewDiagramVerdictAction: (
     id: string,
     verdict: string | null,

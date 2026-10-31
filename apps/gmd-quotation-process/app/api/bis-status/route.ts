@@ -12,6 +12,7 @@ export async function GET() {
   try {
     const items = await prisma.bisStatus.findMany({
       orderBy: { updatedAt: "desc" },
+      include: { updates: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
 
     const lastSynced = items.length > 0

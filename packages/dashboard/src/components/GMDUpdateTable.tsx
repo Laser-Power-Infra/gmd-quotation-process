@@ -927,6 +927,8 @@ interface GMDUpdateTableProps {
    */
   displayOnlyRowFilter?: (row: unknown[], id: string) => boolean;
   usdInrRate?: number | null;
+  /** Shown after the rate, e.g. "open.er-api.com · as of 31 Oct 2026, 1:05 pm". */
+  usdRateNote?: string | null;
   onRefreshRate?: () => void;
   /** Show the Export Excel button. Default true. */
   allowExport?: boolean;
@@ -983,6 +985,8 @@ interface GMDUpdateTableProps {
   onErpCodeChange?: (id: string, code: string) => void;
   fieldOverride?: Record<string, string>;
   filterOptionsOverride?: Record<string, string[]>;
+  /** Renders one column with a host-supplied widget (e.g. a list of links with an add button). */
+  customCell?: { column: string; render: (row: unknown[], id: string) => React.ReactNode };
   attachmentColumn?: string;
   onUploadAttachment?: (id: string, file: File) => Promise<void>;
   onClearAttachment?: (id: string) => Promise<void>;
@@ -1204,6 +1208,7 @@ export default function GMDUpdateTable({
   onFilteredRowsChange,
   displayOnlyRowFilter,
   usdInrRate,
+  usdRateNote,
   onRefreshRate,
   allowExport = true,
   onReset,
@@ -1221,6 +1226,7 @@ castingRateInputs,
   onErpCodeChange,
   fieldOverride,
   filterOptionsOverride,
+  customCell,
   attachmentColumn,
   onUploadAttachment,
   onClearAttachment,
@@ -2209,6 +2215,8 @@ castingRateInputs,
           }
         />
       );
+    } else if (customCell && header === customCell.column) {
+      cellContent = customCell.render(row, id);
     } else if (header === "BOM ID" && onSelectBomId) {
       const options = bomIdOptionsById?.[id] ?? [];
       if (options.length === 0) {
@@ -2740,6 +2748,9 @@ castingRateInputs,
           {usdInrRate != null && (
             <span className="flex items-center gap-1 text-xs font-semibold text-green-700 dark:text-green-300 bg-card border border-border rounded px-2 py-0.5">
               1 USD = ₹{usdInrRate.toFixed(2)}
+              {usdRateNote && (
+                <span className="font-normal text-muted-foreground">· {usdRateNote}</span>
+              )}
               {onRefreshRate && (
                 <button
                   onClick={(e) => {

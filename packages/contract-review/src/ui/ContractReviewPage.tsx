@@ -20,6 +20,9 @@ import {
   CONTRACT_REVIEW_COLUMN_WIDTHS,
   nBatchBadges,
   nBatchFilter,
+  incompleteBadges,
+  incompleteFilter,
+  MAIL_DOCS_COLUMN,
 } from "../lib/columns";
 import { cBatchBadges, cBatchFilter } from "@gmd/dashboard/lib/verify-bom-columns";
 import type { ContractReviewImage } from "@gmd/dashboard/lib/types";
@@ -64,6 +67,7 @@ import {
   ResizablePanelGroup,
 } from "@gmd/ui/components/resizable";
 import { useDefaultLayout } from "react-resizable-panels";
+import { MailDocsCell } from "./MailDocsCell";
 import { FlowDiagram } from "./graph_flow/FlowDiagram";
 import {
   enabledTrees,
@@ -82,6 +86,7 @@ const layoutStorage = {
 
 
 const UPLOAD_DIAGRAM_COLUMN = "Upload Drawing";
+const MAIL_DOCS_IDX = CONTRACT_REVIEW_HEADERS.indexOf(MAIL_DOCS_COLUMN);
 const UPLOAD_DIAGRAM_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf(UPLOAD_DIAGRAM_COLUMN);
 
@@ -172,6 +177,7 @@ const HIDDEN_COLUMNS = [
   "CV",
   "C BATCH",
   "N BATCH",
+  "DATA INCOMPLETE",
   "COST FROM QUOTATION",
   "FREE STOCK",
   "FINAL REQ",
@@ -219,12 +225,14 @@ export function ContractReviewPage({
     () => [
       ...(isEnabled("C BATCH") ? [cBatchFilter()] : []),
       ...(isEnabled("N BATCH") ? [nBatchFilter()] : []),
+      ...(isEnabled("DATA INCOMPLETE") ? [incompleteFilter()] : []),
     ],
     [isEnabled],
   );
   const {
     updateContractReviewFieldAction,
     clearContractReviewDiagramAction,
+    addContractMailDocAction,
     setContractReviewDiagramVerdictAction,
     backfillContractReviewOfferPendingDoneBatchAction,
     backfillContractReviewInspectionBatchAction,
@@ -968,6 +976,57 @@ export function ContractReviewPage({
     [headers, serverMode, loadServerView],
   );
 
+  const handleAddMailDoc = useCallback(
+    async (contractNo: string, category: string, url: string) => {
+      const res = await addContractMailDocAction?.(contractNo, category, url);
+      if (!res?.success || !res.data) {
+        toast.error(res?.error || "Failed to add the link.");
+        return false;
+      }
+      const cell = res.data.mailDocs;
+      setData((prev) =>
+        prev && MAIL_DOCS_IDX !== -1
+          ? {
+              ...prev,
+              rows: prev.rows.map((row) => {
+                if (String(row[CONTRACT_NO_IDX] ?? "").trim() !== contractNo) return row;
+                const next = [...row];
+                next[MAIL_DOCS_IDX] = cell;
+                return next;
+              }),
+            }
+          : prev,
+      );
+      toast.success("Link added");
+      if (serverMode) void loadServerView(true);
+      return true;
+    },
+    [addContractMailDocAction, serverMode, loadServerView],
+  );
+
+  const mailDocsCell = useMemo(
+    () =>
+      isEnabled(MAIL_DOCS_COLUMN)
+        ? {
+            column: MAIL_DOCS_COLUMN,
+            render: (row: unknown[]) => {
+              const contractNo = String(row[CONTRACT_NO_IDX] ?? "").trim();
+              return (
+                <MailDocsCell
+                  value={row[MAIL_DOCS_IDX]}
+                  onAdd={
+                    addContractMailDocAction && isEditable(MAIL_DOCS_COLUMN) && contractNo
+                      ? (c, u) => handleAddMailDoc(contractNo, c, u)
+                      : undefined
+                  }
+                />
+              );
+            },
+          }
+        : undefined,
+    [isEnabled, isEditable, addContractMailDocAction, handleAddMailDoc],
+  );
+
   const handleUploadDiagram = useCallback(
     async (id: string, file: File) => {
       const toastId = toast.loading("Uploading drawing...");
@@ -1575,6 +1634,7 @@ export function ContractReviewPage({
     () => [
       ...(isEnabled("C BATCH") ? cBatchBadges("ITEM_CODE") : []),
       ...(isEnabled("N BATCH") ? nBatchBadges("ITEM_CODE") : []),
+      ...(isEnabled("DATA INCOMPLETE") ? incompleteBadges("ITEM_CODE") : []),
     ],
     [isEnabled],
   );
@@ -2422,6 +2482,7 @@ export function ContractReviewPage({
                 multilineEditableColumns={["Remarks"]}
                 defaultColumnWidths={CONTRACT_REVIEW_COLUMN_WIDTHS}
                 cellBadges={tableCellBadges}
+                customCell={mailDocsCell}
                 batchFilterHeader={batchPresenceFilters.length ? "ITEM_CODE" : undefined}
                 batchPresenceFilters={batchPresenceFilters.length ? batchPresenceFilters : undefined}
                 allowExport={flags.excelExport}

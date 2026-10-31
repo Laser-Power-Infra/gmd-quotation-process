@@ -704,6 +704,8 @@ model BisStatus {
   remark            String?
   reachedLab        String?
   licenseNo         String?
+  // Comma-separated Drive links (licence, application, test report, manual).
+  bisDocs           String?
   updates           BisStatusUpdate[]
 
   createdAt DateTime @default(now())
@@ -1164,4 +1166,42 @@ model SupplierRateHistory {
   createdAt   DateTime  @default(now())
 
   @@index([erpItemCode])
+}
+
+// Snapshot copies of SALE BILL / SALE REGISTER / BG tabs (execution-tracking sheet) for the Debtors dashboard.
+model SaleBill {
+  id            String   @id @default(cuid())
+  vrNo          String
+  orderVrNo     String?
+  partyRefNo    String?
+  consigneeCode String?
+  consigneeAdd  String?
+  itemCode      String?
+  syncedAt      DateTime @default(now())
+
+  @@index([vrNo])
+}
+
+model SaleRegister {
+  id               String   @id @default(cuid())
+  invoiceNo        String
+  itemName         String?
+  orderCopy        String?
+  invoice          String?
+  inspectionReport String?
+  driveLink        String?
+  syncedAt         DateTime @default(now())
+
+  @@index([invoiceNo])
+}
+
+model BankGuarantee {
+  id              String   @id @default(cuid())
+  bgNo            String?
+  bgAmt           Decimal? @db.Decimal(18, 2)
+  cancelledStatus String?
+  beneficiaryName String?
+  syncedAt        DateTime @default(now())
+
+  @@index([beneficiaryName])
 }

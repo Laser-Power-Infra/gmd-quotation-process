@@ -132,6 +132,13 @@ const PROCESSED_ITEMS_HIDDEN_COLUMNS = [
 ];
 const TRANSFERRED_ITEMS_HIDDEN_COLUMNS = ["BOM ID", C_BATCH_HEADER];
 
+const RAW_MATERIAL_TABS = [
+  { key: "new-items", label: "New Items (Blank Status)" },
+  { key: "filtered-items", label: "Filtered Items" },
+  { key: "transferred-items", label: "Transferred Items" },
+] as const;
+type RawMaterialTab = (typeof RAW_MATERIAL_TABS)[number]["key"];
+
 function rowToGMDUpdateItem(
   id: string,
   row: unknown[],
@@ -243,6 +250,8 @@ export default function Home() {
     Record<string, string[]>
   >({});
   const [usdInrRate, setUsdInrRate] = useState<number | null>(null);
+  const [usdRateNote, setUsdRateNote] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<RawMaterialTab>("new-items");
   const [bomIdOptionsById, setBomIdOptionsById] = useState<
     Record<string, string[]>
   >({});
@@ -267,14 +276,6 @@ export default function Home() {
     onLayoutChanged: onHorizontalLayoutChanged,
   } = useDefaultLayout({
     id: "raw-material-horizontal",
-    storage: layoutStorage,
-  });
-  const {
-    defaultLayout: verticalLayout,
-    onLayoutChanged: onVerticalLayoutChanged,
-  } = useDefaultLayout({
-    id: "raw-material-vertical",
-    panelIds: ["new-items", "filtered-items", "transferred-items"],
     storage: layoutStorage,
   });
 
@@ -327,16 +328,28 @@ export default function Home() {
     [castingRates, handleCastingRateChange],
   );
 
+  const applyUsdRate = useCallback(
+    (data: { rate: number; source: string; fetchedAt: string }) => {
+      setUsdInrRate(data.rate);
+      const asOf = new Date(data.fetchedAt).toLocaleString("en-IN", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+      setUsdRateNote(`${data.source} · as of ${asOf}`);
+    },
+    [],
+  );
+
   const refreshRate = useCallback(async () => {
     const res = await getUsdInrRateAction(true);
-    if (res.success && res.data) setUsdInrRate(res.data.rate);
-  }, []);
+    if (res.success && res.data) applyUsdRate(res.data);
+  }, [applyUsdRate]);
 
   useEffect(() => {
     getUsdInrRateAction(false).then((res) => {
-      if (res.success && res.data) setUsdInrRate(res.data.rate);
+      if (res.success && res.data) applyUsdRate(res.data);
     });
-  }, []);
+  }, [applyUsdRate]);
 
   const enhancedCategoryOptions = useMemo(
     () =>
@@ -1278,14 +1291,40 @@ export default function Home() {
                 onSync={handleSync}
                 syncing={syncing}
               />
-              <ResizablePanelGroup
-                orientation="vertical"
-                id="raw-material-vertical"
-                defaultLayout={verticalLayout}
-                onLayoutChanged={onVerticalLayoutChanged}
-                className="flex-1 min-h-0 mt-4"
+              <div
+                role="tablist"
+                aria-label="Raw material tables"
+                className="mt-4 flex gap-1 overflow-x-auto border-b border-border"
               >
-                <ResizablePanel id="new-items" defaultSize="50" minSize="12">
+                {RAW_MATERIAL_TABS.map((tab) => {
+                  const isActive = tab.key === activeTab;
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      role="tab"
+                      id={`tab-${tab.key}`}
+                      aria-selected={isActive}
+                      aria-controls={`panel-${tab.key}`}
+                      onClick={() => setActiveTab(tab.key)}
+                      className={`shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+                        isActive
+                          ? "border-primary text-primary"
+                          : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Panels stay mounted so each table keeps its filters and scroll when switching tabs. */}
+              <div
+                id="panel-new-items"
+                role="tabpanel"
+                aria-labelledby="tab-new-items"
+                className={`mt-4 min-h-0 flex-1 flex-col ${activeTab === "new-items" ? "flex" : "hidden"}`}
+              >
                   <GMDUpdateTable
                     headers={headers}
                     rows={scopedNewItemRows}
@@ -1311,6 +1350,7 @@ export default function Home() {
                     bomIdOptionsById={bomIdOptionsById}
                     onSelectBomId={handleSelectBomId}
                     usdInrRate={usdInrRate}
+                    usdRateNote={usdRateNote}
                     onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
                     hiddenColumns={NEW_ITEMS_HIDDEN_COLUMNS}
@@ -1321,15 +1361,14 @@ export default function Home() {
                     warningColumn="ITEM NAME (derived)"
                     fullHeight
                   />
-                </ResizablePanel>
+              </div>
 
-                <ResizableHandle withHandle className="my-2 bg-border" />
-
-                <ResizablePanel
-                  id="filtered-items"
-                  defaultSize="25"
-                  minSize="12"
-                >
+              <div
+                id="panel-filtered-items"
+                role="tabpanel"
+                aria-labelledby="tab-filtered-items"
+                className={`mt-4 min-h-0 flex-1 flex-col ${activeTab === "filtered-items" ? "flex" : "hidden"}`}
+              >
                   <GMDUpdateTable
                     headers={headers}
                     rows={processedItemRows}
@@ -1345,6 +1384,7 @@ export default function Home() {
                     bomIdOptionsById={bomIdOptionsById}
                     onSelectBomId={handleSelectBomId}
                     usdInrRate={usdInrRate}
+                    usdRateNote={usdRateNote}
                     onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
                     hiddenColumns={PROCESSED_ITEMS_HIDDEN_COLUMNS}
@@ -1355,15 +1395,14 @@ export default function Home() {
                     warningColumn="ITEM NAME (derived)"
                     fullHeight
                   />
-                </ResizablePanel>
+              </div>
 
-                <ResizableHandle withHandle className="my-2 bg-border" />
-
-                <ResizablePanel
-                  id="transferred-items"
-                  defaultSize="25"
-                  minSize="12"
-                >
+              <div
+                id="panel-transferred-items"
+                role="tabpanel"
+                aria-labelledby="tab-transferred-items"
+                className={`mt-4 min-h-0 flex-1 flex-col ${activeTab === "transferred-items" ? "flex" : "hidden"}`}
+              >
                   <GMDUpdateTable
                     headers={transferredHeaders}
                     rows={transferredRows}
@@ -1380,6 +1419,7 @@ export default function Home() {
                     bomIdOptionsById={bomIdOptionsById}
                     onSelectBomId={handleSelectBomId}
                     usdInrRate={usdInrRate}
+                    usdRateNote={usdRateNote}
                     onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
                     hiddenColumns={TRANSFERRED_ITEMS_HIDDEN_COLUMNS}
@@ -1411,8 +1451,7 @@ export default function Home() {
                     onMatchCosts={handleStartMatchCosts}
                     fullHeight
                   />
-                </ResizablePanel>
-              </ResizablePanelGroup>
+              </div>
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>

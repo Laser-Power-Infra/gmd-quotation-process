@@ -6,6 +6,10 @@ export const BIS_STATUS_HEADERS = [
   "applicationStatus",
   "remark",
   "reachedLab",
+  "BIS Documents (Link)",
+  "Last Update",
+  "Updated By",
+  "Next Action",
 ] as const;
 
 export const BIS_HEADER_TO_DB_FIELD: Record<string, string> = {
@@ -18,6 +22,7 @@ export const BIS_HEADER_TO_DB_FIELD: Record<string, string> = {
   applicationStatus: "applicationStatus",
   remark: "remark",
   reachedLab: "reachedLab",
+  "BIS Documents (Link)": "bisDocs",
 };
 
 function formatDate(value: Date | string | null | undefined): string | null {
@@ -44,7 +49,11 @@ export function dbBisStatusToRow(item: {
   applicationStatus: string | null;
   remark: string | null;
   reachedLab: string | null;
+  bisDocs?: string | null;
+  updates?: { createdAt: Date; updatedBy: string | null; nextStep: string | null }[];
 }): unknown[] {
+  // Callers include only the latest update.
+  const last = item.updates?.[0];
   return [
     item.itemName,
     item.bisNo,
@@ -53,5 +62,9 @@ export function dbBisStatusToRow(item: {
     item.applicationStatus,
     item.remark,
     item.reachedLab,
+    item.bisDocs ?? null,
+    formatDate(last?.createdAt),
+    last?.updatedBy ?? null,
+    last?.nextStep ?? null,
   ];
 }

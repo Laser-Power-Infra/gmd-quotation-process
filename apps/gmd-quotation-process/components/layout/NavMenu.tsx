@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@gmd/ui/components/dropdown-menu";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@gmd/ui/components/sheet";
-import { NAV, isActive, isGroup, type NavLink } from "./nav-items";
+import { NAV, isActive, isGroup, type NavEntry, type NavLink } from "./nav-items";
 
 const TAB =
   "relative inline-flex h-9 items-center gap-1 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98] data-popup-open:bg-muted data-popup-open:text-foreground";
@@ -21,14 +21,21 @@ const TAB_ACTIVE =
 
 const linkProps = (l: NavLink) => (l.external ? { target: "_blank", rel: "noopener noreferrer" } : {});
 
-export default function NavMenu() {
+export default function NavMenu({ showAdminOnly }: { showAdminOnly: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  // Drops admin-only links (and any group left empty) for non-admin/developer users.
+  const nav = NAV.flatMap((entry): NavEntry[] => {
+    const visible = (l: NavLink) => showAdminOnly || !l.adminOnly;
+    if (!isGroup(entry)) return visible(entry) ? [entry] : [];
+    const items = entry.items.filter(visible);
+    return items.length ? [{ ...entry, items }] : [];
+  });
 
   return (
     <>
       <nav aria-label="Main" className="hidden items-center gap-0.5 lg:flex">
-        {NAV.map((entry) => {
+        {nav.map((entry) => {
           if (!isGroup(entry)) {
             const active = isActive(pathname, entry.href);
             return (
@@ -84,7 +91,7 @@ export default function NavMenu() {
         <SheetContent side="left" className="gap-0 overflow-y-auto p-4">
           <SheetTitle className="mb-3 px-2">Navigation</SheetTitle>
           <nav aria-label="Main" className="flex flex-col gap-4">
-            {NAV.map((entry) => {
+            {nav.map((entry) => {
               const items = isGroup(entry) ? entry.items : [entry];
               return (
                 <div key={entry.label} className="flex flex-col">

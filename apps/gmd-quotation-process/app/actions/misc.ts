@@ -140,7 +140,7 @@ export async function updateBisStatusFieldAction(
 ) {
   "use server";
   await requireAccess();
-  const allowed = ["remark", "licenseNo", "itemName", "bisNo", "expiryDate", "applicationStatus", "reachedLab"];
+  const allowed = ["remark", "licenseNo", "itemName", "bisNo", "expiryDate", "applicationStatus", "reachedLab", "bisDocs"];
   if (!allowed.includes(field)) {
     return { success: false, error: `Field ${field} is not editable.` } as any;
   }

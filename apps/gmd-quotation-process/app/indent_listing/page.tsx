@@ -8,6 +8,7 @@ import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkel
 import IndentListingTable from "@/components/indent_listing/IndentListingTable";
 import { recomputeIndentListingVersionsAction } from "@/app/actions/contractReview";
 import type { VariantMetrics } from "@/lib/indentListingMetrics";
+import type { RmCodeOption } from "@/lib/indentRmCodeOptions";
 
 interface IndentListingData {
   headers: string[];
@@ -15,7 +16,7 @@ interface IndentListingData {
   ids: string[];
   sourceIds: string[][];
   metrics: VariantMetrics[][];
-  rmOptions: { code: string; name: string }[];
+  rmOptions: RmCodeOption[];
   totalRows: number;
   syncedAt: string | null;
 }

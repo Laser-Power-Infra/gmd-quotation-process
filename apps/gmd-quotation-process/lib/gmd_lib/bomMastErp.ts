@@ -56,6 +56,23 @@ export async function readSheetTabByGid(
   return { tabTitle, headers, rows };
 }
 
+/** Reads a tab by title, or returns null when the tab does not exist (for optional tabs only). */
+export async function readSheetTabByTitleIfPresent(
+  spreadsheetId: string,
+  title: string,
+): Promise<{ headers: string[]; rows: string[][] } | null> {
+  const sheets = getClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId });
+  if (!(meta.data.sheets ?? []).some((s) => s.properties?.title === title)) return null;
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: `'${title}'!A1:ZZZ`,
+    valueRenderOption: "FORMATTED_VALUE",
+  });
+  const values = res.data.values ?? [];
+  return { headers: (values[0] ?? []).map(String), rows: values.slice(1).map((r) => r.map(String)) };
+}
+
 /**
  * Exact-match column resolver. Deliberately NOT fuzzy: a loose matcher such
  * as /TO.*DATE/ can silently bind to BOM DATE instead of TO DATE.

@@ -6,6 +6,8 @@ import {
   CONTRACT_REVIEW_HEADER_TO_DB_FIELD,
   dbContractReviewToRow,
   isNotCurrentReqt,
+  isDataIncomplete,
+  INCOMPLETE_HEADER,
   N_BATCH_HEADER,
   N_BATCH_VALUE,
 } from '../lib/gmd_lib/contract-review-columns.js'
@@ -203,15 +205,25 @@ test('inline-editable headers all exist and point at a DB field', () => {
   }
 })
 
-test('N BATCH is the last hidden carrier and serialized last', () => {
+test('N BATCH is a hidden carrier serialized in header order', () => {
   const headers = CONTRACT_REVIEW_HEADERS as readonly string[]
-  assert.equal(headers[headers.length - 1], N_BATCH_HEADER)
-  assert.equal(headers[headers.length - 2], 'C BATCH')
+  assert.equal(headers[headers.length - 1], INCOMPLETE_HEADER)
+  assert.equal(headers[headers.length - 2], N_BATCH_HEADER)
+  assert.equal(headers[headers.length - 3], 'C BATCH')
 
   // The serializer must emit one cell per header, in order, so nBatch lands on
   // the N BATCH index (the fixture proxy echoes the property name back).
   const row = dbContractReviewToRow(makeRow())
-  assert.equal(row[headers.length - 1], 'nBatch')
+  assert.equal(row[headers.length - 2], 'nBatch')
+})
+
+test('isDataIncomplete flags blank date, blank party, or rate 0', () => {
+  const ok = { dateOfContract: '01/01/2026', partyNameDump: 'ACME', rate: '12.5' }
+  assert.equal(isDataIncomplete(ok), false)
+  assert.equal(isDataIncomplete({ ...ok, dateOfContract: ' ' }), true)
+  assert.equal(isDataIncomplete({ ...ok, partyNameDump: null }), true)
+  assert.equal(isDataIncomplete({ ...ok, rate: '0' }), true)
+  assert.equal(isDataIncomplete({ ...ok, rate: '0.00' }), true)
 })
 
 test('isNotCurrentReqt only flags an explicit NO', () => {

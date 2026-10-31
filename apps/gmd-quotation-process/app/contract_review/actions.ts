@@ -2,6 +2,7 @@
 import { requireAccess } from "@/lib/access";
 
 import {
+  addContractMailDoc,
   applyColumnFlags,
   backfillClearanceMcPending,
   backfillInspection,
@@ -25,6 +26,7 @@ import { POST } from "@/app/api/contract-review/sync/route";
 // @gmd/contract-review. Add an auth() check here to restrict it.
 
 const DRAWING = "Upload Drawing";
+const MAIL_DOCS = "Mails / Documents";
 const NOT_ALLOWED: ActionResult = { success: false, error: "Not allowed in this app." };
 
 // Flags are evaluated again inside every action: the UI hiding a column is
@@ -123,4 +125,12 @@ export async function backfillContractReviewPnRatingBatchAction(ids: string[]) {
   await requireAccess();
   if (!(await access()).isEnabled("PN RATING")) return NOT_ALLOWED;
   return backfillPnRating(ids);
+}
+
+export async function addContractMailDocAction(contractNo: string, category: string, url: string) {
+  await requireAccess();
+  if (!(await access()).isEditable(MAIL_DOCS)) return NOT_ALLOWED;
+  const res = await addContractMailDoc(contractNo, category, url);
+  invalidateContractReviewCache();
+  return res;
 }

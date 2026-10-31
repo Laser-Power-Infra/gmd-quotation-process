@@ -1,48 +1,28 @@
 import { pnRatingBucket } from "./pnRatingMatcher";
+import { VALVE_TYPES_BY_INDENT_ITEM } from "./indentItemValveTypes";
 
 /**
  * Links Indent Listing rows to the raw material master (GMDUpdateItem) and
- * records the matching ERP item code — which is the RM code everywhere else in
- * this codebase — against each V1..V4 variant column.
+ * records the matching ERP item code (the RM code) against each V1..V4 column.
+ * Rules come from Puja's "Mapping Logic" sheet:
  *
- * SLV, SLV METAL and TPAV+SLV sit under L8 "TRADING VALVES" with L2
- * "SLUICE VALVE", and the item name only decides the L4 component:
- *
- *   SLV       -> L4 = METAL TO RUBBER
- *   TPAV+SLV  -> L4 = METAL TO RUBBER  (its sluice-valve body is a plain SLV)
- *   SLV METAL -> L4 = METAL TO METAL
- *
- * TPAV+SLV shares SLV's L4 so it resolves to the same raw material code as the
- * matching SLV row (same size / PN rating / V slot); it is a distinct base item
- * only for the indent family totals, not for the raw-material lookup.
- *
- * NRV sits under L8 "TRADING VALVES" with L2 "CHECK VALVE". The indent side has
- * no L4 component for it, so the raw material is matched on size / PN rating /
- * L6 alone (L4 is not constrained):
- *
- *   NRV       -> L2 = CHECK VALVE
- *
- * Each V column is one variant, which is exactly the L6 standard on the raw
- * material side. The standards differ per valve type:
- *
- *   SLUICE VALVE: V1 -> NON-RISING        V2 -> NON-RISING-9523
- *                 V3 -> RISING            V4 -> RISING-9523
- *   CHECK VALVE:  V1 -> SWING TYPE        V2 -> SWING TYPE 9523
- *                 (V3/V4 have no standard, so those slots never resolve)
- *
- * Size is compared after stripping the unit suffix ("200MM" -> "200") and the
- * PN rating is compared through `pnRatingBucket` on both sides, so a raw
- * material "PN-16" matches an indent "PN-10/16".
- *
- * Material is taken from the stored category rather than the item name, because
- * a completed recompute collapses `item` to the base item. A "CS" category
- * ("Rising CS" = cast/carbon steel) requires a CARBON STEEL/CAST STEEL raw
- * material, so those slots resolve to nothing rather than to a ductile iron
- * code of the wrong material. See `RM_CODE_CARBON_STEEL`.
- *
- * Only live raw materials (`newItemStatus` is null) are considered. CLOSED
- * history rows carry identical L-values and would match almost every indent
- * row, so they are ignored entirely — there is deliberately no fallback.
+ *  - Item -> L2 VALVE TYPE (see RM_CODE_CONFIG_BY_ITEM); SLV / SLV METAL also
+ *    pin L4 (METAL TO RUBBER / METAL TO METAL); NRV is SWING TYPE only.
+ *  - Size -> L3 exact; PN -> L7 through `pnRatingBucket`.
+ *  - The slot's stored CATEGORY (Base / 9523 / Rising / Rising 9523 / CS /
+ *    Wafer, comma separated for several) drives the attributes, not the slot
+ *    number. A blank category falls back to the slot's usual one. 9523, rising,
+ *    wafer and DI-vs-CS must match exactly. Base is ductile iron.
+ *  - L8 must be TRADING VALVES; L4 SAMPLE FOR BIS / BONNET / DISC / COVER is
+ *    never the indent item; only live rows (the caller filters newItemStatus).
+ *  - ONE code is picked per (slot, category): TV- named first, item preference
+ *    (BFV BLANK BASE, DPCV metal-to-rubber, PRV control-diaphragm), exact PN
+ *    before alternate PN, stock > 0, then code order.
+ *  - TPAV is one model for every PN / variant (size only; 20/25 mm use the
+ *    12.5 small-orifice master) and also gets the isolating sluice valve of the
+ *    same size / PN / category appended: "<tpav>, <slv>".
+ *  - BFV 700 / 800 and every CS BFV are GMD production items: left blank.
+ *  - Air cushion has no PN-16 master, so it reuses the CLASS 150# codes.
  */
 
 /** L2-VALVE TYPE the sluice valve raw materials carry. */
@@ -51,67 +31,127 @@ export const RM_CODE_VALVE_TYPE = "SLUICE VALVE";
 /** L2-VALVE TYPE the non-return (check) valve raw materials carry. */
 export const RM_CODE_CHECK_VALVE_TYPE = "CHECK VALVE";
 
-/** Every L2-VALVE TYPE the resolver understands. */
-export const RM_CODE_VALVE_TYPES = [
-  RM_CODE_VALVE_TYPE,
-  RM_CODE_CHECK_VALVE_TYPE,
-] as const;
+/** Every L2-VALVE TYPE the resolver understands (the shared item map's values). */
+export const RM_CODE_VALVE_TYPES: readonly string[] = [
+  ...new Set(Object.values(VALVE_TYPES_BY_INDENT_ITEM).flat()),
+];
+
+/** A raw material is live when its status is blank or "Updated" (CLOSED / TO BE CLOSED are not). */
+export const LIVE_RM_WHERE = {
+  OR: [{ newItemStatus: null }, { newItemStatus: "Updated" }],
+};
 
 /** Substring of the L8 -ITEM CATEGORY value, which is "TRADING VALVES". */
 export const RM_CODE_ITEM_CATEGORY = "TRADING VALVE";
 
-/**
- * L6 standard per V slot, keyed by the raw material's L2-VALVE TYPE. A null
- * entry means the valve type has no variant in that slot, so a populated V
- * column there is never matched.
- */
-export const RM_CODE_STD_BY_SLOT_BY_VALVE_TYPE: Record<
-  string,
-  readonly (string | null)[]
-> = {
-  [RM_CODE_VALVE_TYPE]: ["NON-RISING", "NON-RISING-9523", "RISING", "RISING-9523"],
-  [RM_CODE_CHECK_VALVE_TYPE]: ["SWING TYPE", "SWING TYPE 9523", null, null],
-};
-
-/** Sluice-valve standards, kept for callers that only deal with the SLV family. */
-export const RM_CODE_STD_BY_SLOT =
-  RM_CODE_STD_BY_SLOT_BY_VALVE_TYPE[RM_CODE_VALVE_TYPE];
-
-/**
- * Indent item -> raw-material lookup. `component` is the required L4 value, or
- * null when the raw material is matched on size / PN / L6 alone (NRV has no
- * component on the indent side).
- */
-export const RM_CODE_MATCH_BY_ITEM: Record<
-  string,
-  { valveType: string; component: string | null }
-> = {
-  SLV: { valveType: RM_CODE_VALVE_TYPE, component: "METAL TO RUBBER" },
-  "TPAV+SLV": { valveType: RM_CODE_VALVE_TYPE, component: "METAL TO RUBBER" },
-  "SLV METAL": { valveType: RM_CODE_VALVE_TYPE, component: "METAL TO METAL" },
-  NRV: { valveType: RM_CODE_CHECK_VALVE_TYPE, component: null },
-};
-
-/** L4 component per indent item, kept for callers of the sluice-valve family. */
-export const RM_CODE_COMPONENT_BY_ITEM: Record<string, string> = {
-  SLV: "METAL TO RUBBER",
-  "TPAV+SLV": "METAL TO RUBBER",
-  "SLV METAL": "METAL TO METAL",
-};
-
-/**
- * L5- MATERIAL required by a "CS" category. The raw material master has no
- * carbon-steel METAL TO RUBBER valve and its carbon-steel rising sluice valves
- * are CLASS-rated only, so PN-rated "Rising CS" indents correctly resolve to
- * nothing instead of picking up a ductile iron code.
- */
+/** L5- MATERIAL required by a "CS" category; everything else needs ductile iron. */
 export const RM_CODE_CARBON_STEEL = "CARBON STEEL/CAST STEEL";
+const DUCTILE_IRON = "DUCTILE IRON";
 
-/** Component key used when an item does not constrain the L4 component. */
-const WILDCARD_COMPONENT = "*";
+interface PreparedRm {
+  code: string;
+  isTv: boolean;
+  valveType: string;
+  size: string;
+  component: string;
+  material: string;
+  stdNorm: string;
+  rising: boolean;
+  nine: boolean;
+  wafer: boolean;
+  pnBucket: string;
+  /** False for the "alternate" PN of a bucket (PN-10 of PN-10/16, PN-20/30 of PN-25). */
+  pnExact: boolean;
+  inStock: boolean;
+}
+
+interface ItemConfig {
+  valveType: string;
+  /** Required L4, or null to leave L4 unconstrained. */
+  component: string | null;
+  /** L6 must match this (NRV is swing type only). */
+  stdPattern?: RegExp;
+  /** Match on size alone: TPAV is one model for every PN / variant. */
+  commonModel?: boolean;
+  /** Skip the DI-vs-CS filter (air cushion masters are CS / MS only). */
+  anyMaterial?: boolean;
+  /** Allow CLASS 150# codes for a PN-16 indent. */
+  allowClass150?: boolean;
+  /** Ranking hint: lower is better. */
+  prefer?: (row: PreparedRm) => number;
+  /** TPAV rows also get the isolating sluice valve appended. */
+  isolatingSlv?: boolean;
+}
+
+const SLV_CONFIG: ItemConfig = {
+  valveType: RM_CODE_VALVE_TYPE,
+  component: "METAL TO RUBBER",
+};
+
+export const RM_CODE_CONFIG_BY_ITEM: Record<string, ItemConfig> = {
+  SLV: SLV_CONFIG,
+  "SLV METAL": { valveType: RM_CODE_VALVE_TYPE, component: "METAL TO METAL" },
+  NRV: {
+    valveType: RM_CODE_CHECK_VALVE_TYPE,
+    component: null,
+    stdPattern: /^SWING TYPE/,
+  },
+  BFV: {
+    valveType: "BUTTERFLY VALVE",
+    component: null,
+    prefer: (r) => (r.component === "BLANK BASE" ? 0 : 1),
+  },
+  DPCV: {
+    valveType: "DPCV",
+    component: null,
+    prefer: (r) => (r.component === "METAL TO RUBBER" ? 0 : 1),
+  },
+  PRV: {
+    valveType: "PRESSURE REDUCING VALVE",
+    component: null,
+    prefer: (r) => (r.stdNorm.startsWith("CONTROL DIAPHRAGM") ? 0 : 1),
+  },
+  TPAV: {
+    valveType: "TPAV",
+    component: null,
+    commonModel: true,
+    isolatingSlv: true,
+  },
+  "TPAV+SLV": {
+    valveType: "TPAV",
+    component: null,
+    commonModel: true,
+    isolatingSlv: true,
+  },
+  "AIR CUSHION": {
+    valveType: "AIR CUSHION VALVE",
+    component: null,
+    anyMaterial: true,
+    allowClass150: true,
+  },
+  "SLUICE GATE": { valveType: "SLUICE GATE", component: null },
+};
+
+/** Indent items the resolver handles (the Indent Listing table reads the keys). */
+export const RM_CODE_MATCH_BY_ITEM = RM_CODE_CONFIG_BY_ITEM;
+
+/** TPAV 20 / 25 mm run on the small-orifice master (RZR030019, 12.5MM). */
+const TPAV_SMALL_ORIFICE_SIZES = new Set(["20", "25"]);
+const TPAV_SMALL_ORIFICE_KEY = "12.5";
+
+/** BFV sizes that are GMD production (FG code, not a trading RM code). */
+const BFV_PRODUCTION_SIZES = new Set(["700", "800"]);
+
+/** L4 values that are spares / BIS samples, never the indent item. */
+const EXCLUDED_COMPONENT = /\b(?:SAMPLE FOR BIS|BONNET|DISC|COVER)\b/;
+
+/** Category a blank slot falls back to; null = the item has no such variant. */
+const DEFAULT_CATEGORY_BY_SLOT = ["Base", "9523", "Rising", "Rising 9523"];
+const NRV_DEFAULT_CATEGORY_BY_SLOT = ["Base", "9523", null, null];
 
 export interface RawMaterialMatchRow {
   erpItemCode: string | null;
+  itemNameAuto?: string | null;
   l2ValveType: string | null;
   l3Dia: string | null;
   l4Component: string | null;
@@ -119,6 +159,7 @@ export interface RawMaterialMatchRow {
   l6Std: string | null;
   l7Dimension: string | null;
   l8ItemCategory: string | null;
+  availableStock?: string | null;
 }
 
 export interface IndentRmCodeInput {
@@ -146,12 +187,19 @@ export interface IndentRmCodeUpdate {
 
 export interface IndentRmCodePlan {
   updates: IndentRmCodeUpdate[];
-  /** Populated V slots that matched exactly one raw material. */
+  /** Populated V slots (per category) that had exactly one candidate. */
   resolved: number;
-  /** Populated V slots that matched more than one raw material. */
+  /** Populated V slots that had several candidates (the best one was picked). */
   ambiguous: number;
   /** Populated V slots with no live raw material at all. */
   unmatched: number;
+}
+
+interface Attrs {
+  cs: boolean;
+  rising: boolean;
+  nine: boolean;
+  wafer: boolean;
 }
 
 function normalizeKeyPart(value: unknown): string {
@@ -166,29 +214,9 @@ export function rmCodeSizeKey(value: string | null | undefined): string {
   return normalizeKeyPart(value).replace(/\s*(?:MM|IN|INCH)$/, "");
 }
 
-/**
- * Standards are compared with hyphen/space separators collapsed, so a raw
- * material "NON-RISING-9523" meets an indent "Non Rising 9523" and a
- * "SWING TYPE-9523" meets "Swing type 9523".
- */
+/** Hyphen/space/slash separators collapse, so "NON-RISING-9523" == "Non Rising 9523". */
 function normalizeStd(value: unknown): string {
   return normalizeKeyPart(value).replace(/[-\/]+/g, " ");
-}
-
-function rmCodeKey(
-  valveType: string,
-  size: string,
-  component: string,
-  std: string,
-  pnBucket: string,
-): string {
-  return [
-    normalizeKeyPart(valveType),
-    size,
-    normalizeKeyPart(component),
-    normalizeStd(std),
-    pnBucket,
-  ].join("||");
 }
 
 function isTradingValve(value: string | null | undefined): boolean {
@@ -197,8 +225,7 @@ function isTradingValve(value: string | null | undefined): boolean {
 
 /**
  * The L5- MATERIAL a slot requires, derived from its stored category. Only a
- * "CS" category constrains the material; everything else matches any material,
- * which is what keeps a plain SLV / SLV METAL slot behaving as before.
+ * "CS" category constrains the material to carbon steel; null means "not CS".
  */
 export function rmCodeRequiredMaterial(
   category: string | null | undefined,
@@ -208,81 +235,138 @@ export function rmCodeRequiredMaterial(
   return /\bCS\b/.test(raw.toUpperCase()) ? RM_CODE_CARBON_STEEL : null;
 }
 
-/**
- * Indexes raw materials by the key the indent side is matched on, then by
- * L5- MATERIAL. A Set is used per material because `GMDUpdateItem.erpItemCode`
- * has no unique index and duplicate rows do exist in the sheet.
- */
-function isKnownValveType(value: string): boolean {
-  return (RM_CODE_VALVE_TYPES as readonly string[]).includes(value);
+function parseToken(token: string): Attrs {
+  const t = token.toUpperCase();
+  return {
+    cs: /\bCS\b/.test(t),
+    rising: t.includes("RISING"),
+    nine: t.includes("9523"),
+    wafer: t.includes("WAFER"),
+  };
 }
 
-function buildRmCodeIndex(
-  rows: RawMaterialMatchRow[],
-): Map<string, Map<string, Set<string>>> {
-  const index = new Map<string, Map<string, Set<string>>>();
+/** One Attrs per comma-separated category ("Rising, Rising CS" -> two). */
+function parseCategory(
+  category: string | null,
+  fallback: string | null,
+): Attrs[] {
+  const text = String(category ?? "").trim() || fallback;
+  if (!text) return [];
+  return text
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .map(parseToken);
+}
 
+function prepare(rows: RawMaterialMatchRow[]): PreparedRm[] {
+  const out: PreparedRm[] = [];
   for (const row of rows) {
-    const erpItemCode = (row.erpItemCode ?? "").trim();
-    if (!erpItemCode) continue;
-    if (!isTradingValve(row.l8ItemCategory)) continue;
+    const code = (row.erpItemCode ?? "").trim();
+    if (!code || !isTradingValve(row.l8ItemCategory)) continue;
 
     const valveType = normalizeKeyPart(row.l2ValveType);
-    if (!isKnownValveType(valveType)) continue;
+    if (!RM_CODE_VALVE_TYPES.includes(valveType)) continue;
 
     const size = rmCodeSizeKey(row.l3Dia);
-    // Sluice valves are separated by L4 (METAL TO RUBBER vs METAL TO METAL);
-    // check valves are matched without constraining L4.
-    const component =
-      valveType === RM_CODE_VALVE_TYPE
-        ? normalizeKeyPart(row.l4Component)
-        : WILDCARD_COMPONENT;
-    const std = normalizeStd(row.l6Std);
+    const stdNorm = normalizeStd(row.l6Std);
     const pnBucket = pnRatingBucket(row.l7Dimension);
-    if (!size || !component || !std || !pnBucket) continue;
+    if (!size || !stdNorm || !pnBucket) continue;
 
-    const key = rmCodeKey(valveType, size, component, std, pnBucket);
-    const material = normalizeKeyPart(row.l5Material);
-    let byMaterial = index.get(key);
-    if (!byMaterial) {
-      byMaterial = new Map();
-      index.set(key, byMaterial);
-    }
-    const codes = byMaterial.get(material);
-    if (codes) {
-      codes.add(erpItemCode);
-    } else {
-      byMaterial.set(material, new Set([erpItemCode]));
-    }
+    const component = normalizeKeyPart(row.l4Component);
+    // Sluice valves are told apart by L4; other types sometimes leave it blank
+    // (TPAV 80), so only the sluice valve needs one.
+    if (valveType === RM_CODE_VALVE_TYPE && !component) continue;
+    if (EXCLUDED_COMPONENT.test(component)) continue;
+
+    out.push({
+      code,
+      isTv: normalizeKeyPart(row.itemNameAuto).startsWith("TV-"),
+      valveType,
+      size,
+      component,
+      material: normalizeKeyPart(row.l5Material),
+      stdNorm,
+      rising: stdNorm.startsWith("RISING"),
+      nine: stdNorm.includes("9523"),
+      wafer: stdNorm.includes("WAFER"),
+      pnBucket,
+      pnExact: !/PN[\s-]*(?:10|20|30)(?!\d)/i.test(
+        String(row.l7Dimension ?? ""),
+      ),
+      inStock: Number(row.availableStock) > 0,
+    });
   }
-
-  return index;
+  return out;
 }
 
-function collectCodes(
-  index: Map<string, Map<string, Set<string>>>,
-  key: string,
-  material: string | null,
-): string[] {
-  const byMaterial = index.get(key);
-  if (!byMaterial) return [];
+function compare(
+  a: PreparedRm,
+  b: PreparedRm,
+  prefer: ((r: PreparedRm) => number) | undefined,
+): number {
+  return (
+    Number(b.isTv) - Number(a.isTv) ||
+    (prefer ? prefer(a) - prefer(b) : 0) ||
+    Number(b.pnExact) - Number(a.pnExact) ||
+    Number(b.inStock) - Number(a.inStock) ||
+    a.code.localeCompare(b.code)
+  );
+}
 
-  const codes = new Set<string>();
-  if (material === null) {
-    for (const bucket of byMaterial.values()) {
-      for (const code of bucket) codes.add(code);
+interface Pick {
+  code: string;
+  candidates: number;
+}
+
+function pickCode(
+  rows: PreparedRm[],
+  config: ItemConfig,
+  size: string,
+  pnBucket: string,
+  attrs: Attrs,
+): Pick | null {
+  const sizeKey =
+    config.commonModel && TPAV_SMALL_ORIFICE_SIZES.has(size)
+      ? TPAV_SMALL_ORIFICE_KEY
+      : size;
+  const component = config.component
+    ? normalizeKeyPart(config.component)
+    : null;
+  const wantMaterial = attrs.cs ? RM_CODE_CARBON_STEEL : DUCTILE_IRON;
+
+  const fits = rows.filter((r) => {
+    if (r.valveType !== config.valveType || r.size !== sizeKey) return false;
+    if (config.commonModel) return true;
+    if (component && r.component !== component) return false;
+    if (config.stdPattern && !config.stdPattern.test(r.stdNorm)) return false;
+    if (
+      r.rising !== attrs.rising ||
+      r.nine !== attrs.nine ||
+      r.wafer !== attrs.wafer
+    ) {
+      return false;
     }
-  } else {
-    const bucket = byMaterial.get(normalizeKeyPart(material));
-    if (bucket) for (const code of bucket) codes.add(code);
-  }
-  return [...codes].sort();
+    if (!config.anyMaterial && r.material !== wantMaterial) return false;
+    return (
+      r.pnBucket === pnBucket ||
+      (config.allowClass150 &&
+        pnBucket === "PN-10/16" &&
+        r.pnBucket === "CLASS-150#")
+    );
+  });
+  if (fits.length === 0) return null;
+  fits.sort((a, b) => compare(a, b, config.prefer));
+  return {
+    code: fits[0].code,
+    candidates: new Set(fits.map((r) => r.code)).size,
+  };
 }
 
 /**
- * Resolves the RM code for every populated V1..V4 slot of every SLV / SLV METAL
- * / TPAV+SLV / NRV indent row. Rows for any other item (BFV, DPCV, ...) produce
- * no update.
+ * Resolves one RM code per populated V1..V4 slot (and per comma-separated
+ * category inside it) for every item the resolver knows. Rows for any other
+ * item (CF, DV, GV, blank) produce no update.
  *
  * `rawMaterials` must already be restricted to live rows by the caller; this
  * function never falls back to CLOSED history.
@@ -291,22 +375,16 @@ export function planIndentRmCodes(
   indentRows: IndentRmCodeInput[],
   rawMaterials: RawMaterialMatchRow[],
 ): IndentRmCodePlan {
-  const index = buildRmCodeIndex(rawMaterials);
+  const rows = prepare(rawMaterials);
   const updates: IndentRmCodeUpdate[] = [];
   let resolved = 0;
   let ambiguous = 0;
   let unmatched = 0;
 
   for (const row of indentRows) {
-    const config = RM_CODE_MATCH_BY_ITEM[normalizeKeyPart(row.item)];
+    const itemKey = normalizeKeyPart(row.item);
+    const config = RM_CODE_CONFIG_BY_ITEM[itemKey];
     if (!config) continue;
-
-    const stdBySlot =
-      RM_CODE_STD_BY_SLOT_BY_VALVE_TYPE[config.valveType] ?? [];
-    const component =
-      config.component === null
-        ? WILDCARD_COMPONENT
-        : normalizeKeyPart(config.component);
 
     const size = rmCodeSizeKey(row.size);
     const pnBucket = pnRatingBucket(row.pnRating);
@@ -319,38 +397,47 @@ export function planIndentRmCodes(
       row.v3Category,
       row.v4Category,
     ];
+    const defaults =
+      config.valveType === RM_CODE_CHECK_VALVE_TYPE
+        ? NRV_DEFAULT_CATEGORY_BY_SLOT
+        : DEFAULT_CATEGORY_BY_SLOT;
     const codes: string[] = [];
 
     for (let slot = 0; slot < 4; slot++) {
-      const std = stdBySlot[slot];
-      // An empty V column has no variant, and a slot with no standard for this
-      // valve type has no raw material, so neither gets an RM code.
-      if (String(balances[slot] ?? "").trim() === "" || !std) {
+      if (String(balances[slot] ?? "").trim() === "") {
         codes.push("");
         continue;
       }
 
-      const key = rmCodeKey(
-        config.valveType,
-        size,
-        component,
-        std,
-        pnBucket,
-      );
-      const matches = collectCodes(
-        index,
-        key,
-        rmCodeRequiredMaterial(categories[slot]),
-      );
+      const slotCodes: string[] = [];
+      for (const attrs of parseCategory(categories[slot], defaults[slot])) {
+        // GMD builds these in-house: the FG code applies, not a trading RM code.
+        if (
+          itemKey === "BFV" &&
+          (attrs.cs || BFV_PRODUCTION_SIZES.has(size))
+        ) {
+          continue;
+        }
 
-      if (matches.length === 0) {
-        unmatched++;
-        codes.push("");
-      } else {
-        if (matches.length === 1) resolved++;
+        const parts: Pick[] = [];
+        const main = pickCode(rows, config, size, pnBucket, attrs);
+        if (main) parts.push(main);
+        if (config.isolatingSlv) {
+          const iso = pickCode(rows, SLV_CONFIG, size, pnBucket, attrs);
+          if (iso) parts.push(iso);
+        }
+
+        if (parts.length === 0) {
+          unmatched++;
+          continue;
+        }
+        if (parts.every((p) => p.candidates === 1)) resolved++;
         else ambiguous++;
-        codes.push(matches.join(", "));
+        for (const p of parts) {
+          if (!slotCodes.includes(p.code)) slotCodes.push(p.code);
+        }
       }
+      codes.push(slotCodes.join(", "));
     }
 
     updates.push({
@@ -387,10 +474,10 @@ export interface RmCodeWrite {
 }
 
 /**
- * Narrows planned RM-code updates to the slots that actually need a write: a
- * slot is written only when the plan is non-blank AND differs from the stored
- * value. A blank plan is never written, so a hand-picked code survives a sync
- * that failed to resolve that slot. Rows with no qualifying slot are dropped.
+ * Narrows planned RM-code updates to the slots that need a write: a slot is
+ * written only when the plan is non-blank AND the stored value is blank, so
+ * curated / hand-picked codes are never overwritten. Rows with no qualifying
+ * slot are dropped.
  */
 export function planRmCodeWrites(
   planned: IndentRmCodeUpdate[],
@@ -409,7 +496,8 @@ export function planRmCodeWrites(
     for (const key of RM_CODE_SLOT_KEYS) {
       const next = update[key];
       if (next.trim() === "") continue;
-      if (String(current[key] ?? "") === next) continue;
+      // Curated codes are never overwritten: only blank slots are filled.
+      if (String(current[key] ?? "").trim() !== "") continue;
       write[key] = next;
       changed = true;
     }

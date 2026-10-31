@@ -68,6 +68,7 @@ async function hydrateBisRows(ids: string[]): Promise<unknown[][]> {
   if (ids.length === 0) return [];
   const records = await prisma.bisStatus.findMany({
     where: { id: { in: ids } },
+    include: { updates: { orderBy: { createdAt: "desc" }, take: 1 } },
   });
   const byId = new Map(records.map((record) => [record.id, record]));
   const rows: unknown[][] = [];

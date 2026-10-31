@@ -1,7 +1,7 @@
 // Single source of truth for the top nav.
 // An entry with `items` renders as a dropdown; otherwise it's a plain tab.
 // To move a page, cut/paste its line between groups or to the top level.
-export type NavLink = { label: string; href: string; external?: boolean };
+export type NavLink = { label: string; href: string; external?: boolean; adminOnly?: boolean };
 export type NavGroup = { label: string; items: NavLink[] };
 export type NavEntry = NavLink | NavGroup;
 
@@ -21,7 +21,7 @@ export const NAV: NavEntry[] = [
       { label: "Raw Material", href: "/raw_material" },
       { label: "Physical Stock", href: "/physical_stock" },
       { label: "FG BOM", href: "/bom" },
-      { label: "Auto BOM", href: "/bom/auto" },
+      { label: "Auto BOM", href: "/bom/auto", adminOnly: true },
       { label: "Supply History", href: "/supply_history" },
       { label: "PBG", href: "/pbg" },
     ],

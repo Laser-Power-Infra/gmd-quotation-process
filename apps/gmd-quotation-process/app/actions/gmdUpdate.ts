@@ -902,8 +902,8 @@ export async function getUsdInrRateAction(refresh = false) {
   "use server";
   await requireAccess();
   try {
-    const { rate, fetchedAt } = await getUsdInrRate(refresh);
-    return { success: true, data: { rate, fetchedAt } };
+    const { rate, source, fetchedAt } = await getUsdInrRate(refresh);
+    return { success: true, data: { rate, source, fetchedAt } };
   } catch (error: any) {
     console.error("Error fetching USD/INR rate:", error);
     return { success: false, error: error.message || "Failed to fetch USD/INR rate." };
