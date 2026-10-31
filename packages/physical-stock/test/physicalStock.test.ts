@@ -8,6 +8,7 @@ import {
   FIELDS,
   addQty,
   buildSerial,
+  cascadedOptions,
   computeAvailableQty,
   computeItemWiseValue,
   fieldOf,
@@ -39,10 +40,25 @@ test("mergeRows adds qty and joins text fields", () => {
     received_qty: "7",
     dispatch_qty: "1",
     available_qty: "6",
-    item_wise_value: "60.00",
+    item_wise_value: "42.00",
     remarks: "a, b",
     cost: "7",
   });
+});
+
+test("L dropdowns cascade on the row's other levels", () => {
+  const at = (h: string) => COLUMNS.indexOf(h as (typeof COLUMNS)[number]);
+  const mk = (l5: string, l8: string) => {
+    const r: unknown[] = COLUMNS.map(() => "");
+    r[at("L5- MATERIAL")] = l5;
+    r[at("L8 -ITEM CATEGORY")] = l8;
+    return r;
+  };
+  const rows = [mk("CAST IRON", "PATTERN"), mk("PLASTIC", "PATTERN"), mk("STAINLESS STEEL", "SPARES")];
+  assert.deepEqual(cascadedOptions("L5- MATERIAL", mk("", "pattern"), rows), ["CAST IRON", "PLASTIC"]);
+  // the edited level never narrows itself; an unseen combination gets the full list
+  assert.equal(cascadedOptions("L5- MATERIAL", mk("PVC", ""), rows).length, DROPDOWN_OPTIONS["L5- MATERIAL"]!.length);
+  assert.equal(cascadedOptions("L5- MATERIAL", mk("", "SCRAP"), rows).length, DROPDOWN_OPTIONS["L5- MATERIAL"]!.length);
 });
 
 test("qty and value math", () => {

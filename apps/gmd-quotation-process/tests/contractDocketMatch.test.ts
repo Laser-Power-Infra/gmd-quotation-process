@@ -7,6 +7,7 @@ import {
   mergeContractNos,
   normalizeParty,
   rankDocketsForContracts,
+  skippedRateLines,
   type ContractLine,
   type DocketForMatch,
 } from '../lib/contractDocketMatch.js'
@@ -74,6 +75,23 @@ test('contract rate per code: one rate only, commas parsed', () => {
   const rates = contractRateByCode([line('A', 'X', '80', '1', '2,750.00'), line('B', 'X', '80', '2', '2750'), line('A', 'Y', '80', '1', '10'), line('B', 'Y', '80', '1', '11')])
   assert.equal(rates.get('X'), 2750)
   assert.equal(rates.has('Y'), false)
+})
+
+test('skipped lines: wrong docket code is reported, not silently left without a rate', () => {
+  const skipped = skippedRateLines(d306, c58, new Set(['FSD040001']))
+  assert.deepEqual(skipped.map((s) => s.itemId).sort(), ['air', 'dpcv', 'sluice250', 'sluice80'])
+  const sluice80 = skipped.find((s) => s.itemId === 'sluice80')!
+  assert.equal(sluice80.code, 'FSD040004')
+  assert.match(sluice80.reason, /not on contract.*FSD040044/)
+})
+
+test('skipped lines: a matched code with several contract rates is reported, no rate picked', () => {
+  const lines = [line('A', 'X', '80', '1', '100'), line('B', 'X', '80', '1', '120'), line('A', 'Y', '50', '2', '50')]
+  const items = [item('x1', 'X', '80', 1), item('x2', 'X', '80', 1), item('y', 'Y', '50', 2)]
+  const skipped = skippedRateLines(items, lines, new Set(['X', 'Y']))
+  assert.deepEqual(skipped.map((s) => s.itemId), ['x1', 'x2'])
+  assert.match(skipped[0].reason, /2 different contract rates \(100, 120\)/)
+  assert.equal(contractRateByCode(lines).has('X'), false)
 })
 
 test('helpers', () => {

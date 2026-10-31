@@ -19,9 +19,6 @@ export const COLUMNS = [
   "REMARKS",
   "sum of PHYSICAL stock",
   "stock as per erp",
-  "rate/unit",
-  "rate per pc*qty*weight",
-  "weight per pc",
   "item wise-value",
   "MOVING WITHIN 3 MONTHS",
   "Order Ag Approval recvd",
@@ -63,9 +60,6 @@ export const FIELDS = [
   "remarks",
   "sum_of_physical_stock",
   "stock_as_per_erp",
-  "rate_unit",
-  "rate_per_pc_qty_weight",
-  "weight_per_pc",
   "item_wise_value",
   "moving_within_3_months",
   "order_ag_approval_recvd",
@@ -97,9 +91,6 @@ export const NUMERIC_COLUMNS: ReadonlySet<string> = new Set([
   "AVAILABLE QTY.",
   "sum of PHYSICAL stock",
   "stock as per erp",
-  "rate/unit",
-  "rate per pc*qty*weight",
-  "weight per pc",
   "item wise-value",
   "PURCHASE IN 26-27",
   "dispatched in 26-27",
@@ -395,7 +386,10 @@ export const BLANK_ONLY_HEADERS = [
 ] as const satisfies readonly EditableHeader[];
 
 export function rowToArray(row: PhysicalStockRow): unknown[] {
-  return FIELDS.map((field) => row[field] ?? "");
+  // item wise-value is shown from the current cost, which the BOM job refreshes hourly.
+  return FIELDS.map((field) =>
+    field === "item_wise_value" ? computeItemWiseValue(row.cost, row.available_qty) : row[field] ?? "",
+  );
 }
 
 function parseNum(value: unknown): number | null {
@@ -405,9 +399,33 @@ function parseNum(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** `rate/unit * available qty`, two decimals; a blank operand counts as 0. */
-export function computeItemWiseValue(rateUnit: unknown, availableQty: unknown): string {
-  return ((parseNum(rateUnit) ?? 0) * (parseNum(availableQty) ?? 0)).toFixed(2);
+/** `cost (BOM master) * available qty`, two decimals; a blank operand counts as 0. */
+export function computeItemWiseValue(cost: unknown, availableQty: unknown): string {
+  return ((parseNum(cost) ?? 0) * (parseNum(availableQty) ?? 0)).toFixed(2);
+}
+
+// L levels a row's dropdowns cascade on (L7-PN has no fixed list but still narrows the others).
+const CASCADE_IDX = (
+  ["L2-VALVE TYPE", "Dia", "L4-COMPONENT", "L5- MATERIAL", "L6-STD", "L7-PN", "L8 -ITEM CATEGORY"] as const
+).map((h) => COLUMNS.indexOf(h));
+const normCell = (v: unknown) => String(v ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+
+/**
+ * Options of L dropdown `header` on `row`: only values that occur in some stock
+ * row together with every other L level already filled on `row`. The level
+ * being edited never narrows itself; no match (a new combination) gives the full list.
+ */
+export function cascadedOptions(header: string, row: readonly unknown[], rows: readonly (readonly unknown[])[]): string[] {
+  const all = DROPDOWN_OPTIONS[header as PhysicalStockHeader] ?? [];
+  const self = COLUMNS.indexOf(header as PhysicalStockHeader);
+  const picked = CASCADE_IDX.filter((i) => i !== self && normCell(row[i])).map((i) => [i, normCell(row[i])] as const);
+  if (!picked.length) return [...all];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (picked.every(([i, v]) => normCell(r[i]) === v)) seen.add(normCell(r[self]));
+  }
+  const out = all.filter((o) => seen.has(normCell(o)));
+  return out.length ? out : [...all];
 }
 
 /** erp_code-l8_item_category-heat_no-heat_seq; null until the row has a heat no and number. */
@@ -474,8 +492,8 @@ const FILLED_FIELDS = [
  * text fields joined with ", " (distinct values only), the rest filled if blank.
  */
 export function mergeRows(
-  target: Partial<Record<PhysicalStockField, unknown>>,
-  source: Partial<Record<PhysicalStockField, unknown>>,
+  target: Partial<Record<keyof PhysicalStockRow, unknown>>,
+  source: Partial<Record<keyof PhysicalStockRow, unknown>>,
 ): Record<string, string | null> {
   const blank = (v: unknown) => String(v ?? "").trim() === "";
   const changes: Record<string, string | null> = {
@@ -486,7 +504,7 @@ export function mergeRows(
   if (available !== null) {
     changes.available_qty = available;
     changes.item_wise_value = computeItemWiseValue(
-      blank(target.rate_unit) ? source.rate_unit : target.rate_unit,
+      blank(target.cost) ? source.cost : target.cost,
       available,
     );
   }

@@ -145,7 +145,8 @@ export function planSupplierRateUpload(master: MasterRate[], incoming: SupplierR
     if (!old) {
       if (VALID_ERP_CODE.test(next.erpItemCode)) adds.push(next);
       else notMatched.push({ rate: next, reason: "Not in the master and not a valid ERP code (3 capital letters + 6 digits)" });
-    } else if (old.category && old.category.trim().toUpperCase() !== "TRADING VALVE") {
+    } else if (old.category && !/^TRADING VALVES?$/.test(old.category.trim().toUpperCase())) {
+      // The master stores the plural "TRADING VALVES"; accept both spellings.
       notMatched.push({ rate: next, reason: `Item category is ${old.category}, not TRADING VALVE` });
     } else if (old.usd === next.rateUsd && (old.vendorReference ?? "") === vendorReferenceOf(next)) unchanged.push(next);
     else updates.push({ old, next });

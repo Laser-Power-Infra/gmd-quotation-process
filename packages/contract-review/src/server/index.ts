@@ -57,7 +57,7 @@ const errorMessage = (error: unknown, fallback: string) =>
 
 /** `where` scopes the rows to what the host app may see; omit it for every row. */
 export function loadContractReviewItems(where?: Prisma.ContractReviewWhereInput): Promise<ContractReview[]> {
-  return tenderPrisma.contractReview.findMany({ where, orderBy: { syncedAt: "desc" } });
+  return tenderPrisma.contractReview.findMany({ where, orderBy: [{ syncedAt: "desc" }, { id: "asc" }] });
 }
 
 /** Keeps only the ids that match `where`, so writes cannot reach rows outside the app's scope. */

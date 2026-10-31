@@ -73,7 +73,7 @@ export function summarise(rows: DebtorRow[], today: Date): AgeingSummary {
     if (b !== "Not due") p.overdue += bal;
     if (b === "91-180" || b === "180+") p.over90 += bal;
   }
-  const parties = [...map.values()].sort((a, b) => b.overdue - a.overdue || b.totalDues - a.totalDues);
+  const parties = [...map.values()].sort((a, b) => b.overdue - a.overdue || b.totalDues - a.totalDues || a.accCode.localeCompare(b.accCode));
   const sum = (f: (p: PartyAgeing) => number) => parties.reduce((s, p) => s + f(p), 0);
   for (const p of parties) p.net = p.totalDues - p.credits;
   const totalDues = sum((p) => p.totalDues);

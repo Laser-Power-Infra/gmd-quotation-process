@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isShortageRow, summarizeIndentRows } from '../lib/indentListingSummary.js'
+import { isShortageRow, missingInputs, summarizeIndentRows } from '../lib/indentListingSummary.js'
 import type { VariantMetrics } from '../lib/indentListingMetrics.js'
 
 const m = (stock: string | null): VariantMetrics => ({
@@ -44,5 +44,29 @@ test('summary counts rows by status and shortage', () => {
     received: 2,
     pending: 1,
     shortage: 2,
+    inputsMissing: 4, // every row has total 0
   })
+})
+
+// item, size, pn, status, total, v1..v4, cat1..cat4, rm1..rm4
+const full = (item: string, pn: string, total: string, v: string[], rm: string[]): unknown[] =>
+  [item, '100', pn, 'Pending', total, ...v, '', '', '', '', ...rm]
+
+test('missingInputs flags each incomplete input', () => {
+  assert.deepEqual(missingInputs(full('SLV', 'PN-10', '10', ['6', '4', '', ''], ['A', 'B', '', ''])), [])
+  assert.deepEqual(missingInputs(full('SLV', '', '0', ['', '', '', ''], ['', '', '', ''])), [
+    'PN rating blank',
+    'Total qty 0',
+    'No V1–V4 breakdown',
+  ])
+  assert.deepEqual(missingInputs(full('SLV', 'PN-10', '721', ['63', '', '', ''], ['', '', '', ''])), [
+    'Only 63 of 721 split into V1–V4',
+    'No RM code on V1',
+  ])
+  assert.deepEqual(missingInputs(full('SLV', 'PN-10', '-1', ['-1', '', '', ''], ['A', '', '', ''])), [
+    'Total qty -1',
+    'Negative V qty',
+  ])
+  // Items with no RM master type (e.g. Ball Valve) are not flagged for a missing code.
+  assert.deepEqual(missingInputs(full('BALL VALVE', 'PN-10', '5', ['5', '', '', ''], ['', '', '', ''])), [])
 })
