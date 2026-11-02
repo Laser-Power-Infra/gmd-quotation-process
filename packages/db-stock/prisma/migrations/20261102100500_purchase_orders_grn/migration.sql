@@ -1,7 +1,8 @@
--- AlterTable
-ALTER TABLE "PurchaseOrderLine" ADD COLUMN     "lastPoDate" TEXT,
-ADD COLUMN     "lastPoRate" TEXT,
-ADD COLUMN     "minPoRate" TEXT;
+-- AlterTable (IF NOT EXISTS: some databases got these columns from an earlier
+-- unmerged migration, 20261102090000_purchase_order_line_rates)
+ALTER TABLE "PurchaseOrderLine" ADD COLUMN IF NOT EXISTS "lastPoDate" TEXT,
+ADD COLUMN IF NOT EXISTS "lastPoRate" TEXT,
+ADD COLUMN IF NOT EXISTS "minPoRate" TEXT;
 
 -- CreateTable
 CREATE TABLE "GrnLine" (
