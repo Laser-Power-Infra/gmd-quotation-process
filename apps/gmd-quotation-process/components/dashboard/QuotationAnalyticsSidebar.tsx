@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useAppSelector } from "@/lib/hooks";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@gmd/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@gmd/ui/components/card";
 import MultiSelectFilter from "@/components/table/MultiSelectFilter";
 import { X, Filter } from "lucide-react";
 import { squish } from "@/lib/squish";
@@ -81,7 +81,7 @@ export default function QuotationAnalyticsSidebar({
 
   return (
     <aside
-      className={`shrink-0 flex flex-col gap-2.5 overflow-y-auto max-h-full pr-1 transition-all duration-300 ease-in-out ${
+      className={`shrink-0 flex flex-col gap-2.5 overflow-y-auto max-h-full px-1 py-0.5 transition-all duration-300 ease-in-out ${
         isCollapsed
           ? "lg:w-0 lg:max-w-0 lg:opacity-0 lg:-ml-4 lg:overflow-hidden lg:pointer-events-none hidden lg:flex"
           : "w-full lg:w-75 xl:w-[320px] opacity-100"
@@ -106,10 +106,9 @@ export default function QuotationAnalyticsSidebar({
       </div>
 
       {/* Party Name */}
-      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-[12px] font-semibold">Party Name</CardTitle>
-          <CardDescription className="text-[11px]">Filter by customer</CardDescription>
+      <Card size="sm" className="gap-1.5 rounded-lg border border-border py-2 shadow-none ring-0 [--card-spacing:--spacing(2.5)] overflow-visible overflow-visible!">
+        <CardHeader className="pb-0">
+          <CardTitle className="text-[11px] font-semibold">Party Name</CardTitle>
         </CardHeader>
         <CardContent>
           <MultiSelectFilter
@@ -127,10 +126,9 @@ export default function QuotationAnalyticsSidebar({
       </Card>
 
       {/* Utility */}
-      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-[12px] font-semibold">Utility</CardTitle>
-          <CardDescription className="text-[11px]">Filter by utility</CardDescription>
+      <Card size="sm" className="gap-1.5 rounded-lg border border-border py-2 shadow-none ring-0 [--card-spacing:--spacing(2.5)] overflow-visible overflow-visible!">
+        <CardHeader className="pb-0">
+          <CardTitle className="text-[11px] font-semibold">Utility</CardTitle>
         </CardHeader>
         <CardContent>
           <MultiSelectFilter
@@ -148,10 +146,9 @@ export default function QuotationAnalyticsSidebar({
       </Card>
 
       {/* Enquiry Type */}
-      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-[12px] font-semibold">Enquiry Type</CardTitle>
-          <CardDescription className="text-[11px]">Filter by enquiry type</CardDescription>
+      <Card size="sm" className="gap-1.5 rounded-lg border border-border py-2 shadow-none ring-0 [--card-spacing:--spacing(2.5)] overflow-visible overflow-visible!">
+        <CardHeader className="pb-0">
+          <CardTitle className="text-[11px] font-semibold">Enquiry Type</CardTitle>
         </CardHeader>
         <CardContent>
           <MultiSelectFilter
@@ -169,10 +166,9 @@ export default function QuotationAnalyticsSidebar({
       </Card>
 
       {/* Item Type */}
-      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-[12px] font-semibold">Item Type</CardTitle>
-          <CardDescription className="text-[11px]">Filter by item type</CardDescription>
+      <Card size="sm" className="gap-1.5 rounded-lg border border-border py-2 shadow-none ring-0 [--card-spacing:--spacing(2.5)] overflow-visible overflow-visible!">
+        <CardHeader className="pb-0">
+          <CardTitle className="text-[11px] font-semibold">Item Type</CardTitle>
         </CardHeader>
         <CardContent>
           <MultiSelectFilter
@@ -191,10 +187,9 @@ export default function QuotationAnalyticsSidebar({
       </Card>
 
       {/* Size */}
-      <Card size="sm" className="shadow-sm overflow-visible overflow-visible!">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-[12px] font-semibold">Size</CardTitle>
-          <CardDescription className="text-[11px]">Filter by size</CardDescription>
+      <Card size="sm" className="gap-1.5 rounded-lg border border-border py-2 shadow-none ring-0 [--card-spacing:--spacing(2.5)] overflow-visible overflow-visible!">
+        <CardHeader className="pb-0">
+          <CardTitle className="text-[11px] font-semibold">Size</CardTitle>
         </CardHeader>
         <CardContent>
           <MultiSelectFilter
@@ -213,10 +208,10 @@ export default function QuotationAnalyticsSidebar({
       </Card>
 
       {/* State Cards Grid */}
-      <Card size="sm" className="shadow-sm overflow-hidden">
-        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+      <Card size="sm" className="gap-1.5 rounded-lg border border-border py-2 shadow-none ring-0 [--card-spacing:--spacing(2.5)] overflow-hidden">
+        <CardHeader className="pb-0 flex flex-row items-center justify-between space-y-0">
           <div>
-            <CardTitle className="text-[12px] font-semibold flex items-center gap-1.5">
+            <CardTitle className="text-[11px] font-semibold flex items-center gap-1.5">
               <span>State</span>
               {selectedStates.length > 0 && (
                 <span className="inline-flex items-center justify-center rounded-full bg-[#0f62fe] dark:bg-blue-500/80 px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -224,7 +219,6 @@ export default function QuotationAnalyticsSidebar({
                 </span>
               )}
             </CardTitle>
-            <CardDescription className="text-[11px]">Filter by state</CardDescription>
           </div>
           {selectedStates.length > 0 && (
             <button

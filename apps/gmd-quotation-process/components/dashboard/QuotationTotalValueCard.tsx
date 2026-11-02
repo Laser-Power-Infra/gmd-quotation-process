@@ -1,7 +1,6 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@gmd/ui/components/card";
-import { Hash, IndianRupee, Percent } from "lucide-react";
 
 interface QuotationTotalValueCardProps {
   formattedSum: string;
@@ -16,6 +15,33 @@ interface QuotationTotalValueCardProps {
   className?: string;
 }
 
+// Uniform tile: label on one line, figure under it. The tiles share the row equally
+// (flex-1 off a common basis) so the band spans the full width instead of bunching
+// at the left; the label never wraps, which is what used to make the row ragged.
+// Card 1 carries the scope pills on their own line underneath.
+function Stat({ label, value, children }: { label: string; value: string; children?: React.ReactNode }) {
+  return (
+    // A real border, not the base Card's ring: rings paint outside the box and get
+    // clipped by the dashboard's overflow-hidden columns.
+    <Card
+      size="sm"
+      className="w-full sm:w-auto sm:flex-1 sm:basis-44 gap-0 rounded-lg border border-border bg-card py-2 shadow-none ring-0 [--card-spacing:--spacing(3)]"
+    >
+      <CardHeader className="py-0">
+        <CardTitle className="truncate text-[10px] font-medium text-muted-foreground">
+          {label}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="py-0">
+        <div className="truncate text-[15px] font-semibold tabular-nums tracking-tight text-foreground">
+          {value}
+        </div>
+        {children}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function QuotationTotalValueCard({
   formattedSum,
   formattedExclSum,
@@ -28,106 +54,27 @@ export default function QuotationTotalValueCard({
   activeFilterCount,
   className,
 }: QuotationTotalValueCardProps) {
-  const cardClassName =
-    "shadow-sm bg-linear-to-br from-muted/50 to-card border-border shrink-0 w-full sm:w-72 py-1";
+  const pill =
+    "inline-flex items-center rounded-full bg-muted px-1.5 py-px text-[9.5px] font-medium text-muted-foreground whitespace-nowrap";
 
   return (
-    <div
-      className={`flex flex-wrap items-center gap-2 ${className ?? ""}`}
-    >
-      {/* 1. Total Value (incl. GST) */}
-      <Card size="sm" className={cardClassName}>
-        <CardHeader className="py-1 pb-0.5">
-          <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
-            <IndianRupee className="h-3 w-3 text-emerald-600 dark:text-emerald-300" />
-            Total Value (incl. GST)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-row items-center gap-1.5 py-0.5">
-          <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
-            ₹ {formattedSum}
-          </span>
-          <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[9.5px] font-medium text-muted-foreground whitespace-nowrap">
-            {filteredEnquiriesCount} dockets
-          </span>
-          <span className="inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[9.5px] font-medium text-muted-foreground whitespace-nowrap">
-            {analyticsItemsCount} items
-          </span>
+    <div className={`flex flex-wrap items-stretch gap-2 ${className ?? ""}`}>
+      <Stat label="Total Value (incl. GST)" value={`₹ ${formattedSum}`}>
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          <span className={pill}>{filteredEnquiriesCount.toLocaleString()} dockets</span>
+          <span className={pill}>{analyticsItemsCount.toLocaleString()} items</span>
           {hasActiveAnalyticsFilters && (
-            <span className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 text-[9.5px] font-medium whitespace-nowrap">
+            <span className="inline-flex items-center rounded-full bg-blue-50 px-1.5 py-px text-[9.5px] font-medium whitespace-nowrap text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
               {activeFilterCount} filters
             </span>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </Stat>
 
-      {/* 2. Total Value (excl. GST) */}
-      <Card size="sm" className={cardClassName}>
-        <CardHeader className="py-1 pb-0.5">
-          <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
-            <IndianRupee className="h-3 w-3 text-muted-foreground" />
-            Total Value (excl. GST)
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-row items-center gap-2 py-0.5">
-          <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
-            ₹ {formattedExclSum}
-          </span>
-        </CardContent>
-      </Card>
-
-      {/* 3. Total Cost */}
-      <Card size="sm" className={cardClassName}>
-        <CardHeader className="py-1 pb-0.5">
-          <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
-            <IndianRupee className="h-3 w-3 text-amber-600 dark:text-amber-300" />
-            Total Cost
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-row items-center gap-2 py-0.5">
-          <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
-            ₹ {formattedTotalCost}
-          </span>
-        </CardContent>
-      </Card>
-
-      {/* 4. Total VA% */}
-      <Card size="sm" className={cardClassName}>
-        <CardHeader className="py-1 pb-0.5">
-          <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
-            <Percent className="h-3 w-3 text-indigo-600 dark:text-indigo-300" />
-            Total VA%
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-row items-center gap-2 py-0.5">
-          <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
-            {formattedTotalVa}
-          </span>
-        </CardContent>
-      </Card>
-
-      {/* 5. Total Quantity */}
-      <Card size="sm" className={cardClassName}>
-        <CardHeader className="py-1 pb-0.5">
-          <CardTitle className="text-[11px] font-semibold flex items-center gap-1">
-            <Hash className="h-3 w-3 text-teal-600 dark:text-teal-300" />
-            Total Quantity
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-row items-center gap-2 py-0.5">
-          <span className="text-[15px] font-bold tracking-tight text-foreground whitespace-nowrap">
-            {formattedTotalQuantity}
-          </span>
-        </CardContent>
-      </Card>
-
-      {/* <div className="hidden xl:flex items-center text-[10px] text-muted-foreground italic ml-auto pr-2">
-        {!hasActiveAnalyticsFilters ? (
-          <span>All dockets — apply filters to narrow.</span>
-        ) : analyticsItemsCount === 0 ? (
-          <span className="text-amber-600 dark:text-amber-300">No items match.</span>
-        ) : null}
-      </div> */}
+      <Stat label="Total Value (excl. GST)" value={`₹ ${formattedExclSum}`} />
+      <Stat label="Total Cost" value={`₹ ${formattedTotalCost}`} />
+      <Stat label="Total VA%" value={formattedTotalVa} />
+      <Stat label="Total Quantity" value={formattedTotalQuantity} />
     </div>
   );
 }

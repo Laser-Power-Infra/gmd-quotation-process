@@ -3,7 +3,7 @@ export interface VaValidationResult {
   maxVaPercent: number | null;
 }
 
-function parseSize(size: string | null | undefined): number | null {
+export function parseSize(size: string | null | undefined): number | null {
   if (!size) return null;
   const cleaned = size.replace(/[^0-9]/g, "");
   if (!cleaned) return null;
