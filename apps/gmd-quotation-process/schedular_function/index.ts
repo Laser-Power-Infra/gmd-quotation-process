@@ -238,6 +238,14 @@ export {
 } from "./ledger-sync";
 
 export {
+  runServiceOrdersSync,
+  runScheduledServiceOrders,
+  type ServiceOrdersSyncReport,
+  type ServiceOrdersPartReport,
+  type ScheduledServiceOrdersResult,
+} from "./service-orders-sync";
+
+export {
   runScheduledPurchaseOrders,
   type RunPurchaseOrdersOptions,
   type ScheduledPurchaseResult,
