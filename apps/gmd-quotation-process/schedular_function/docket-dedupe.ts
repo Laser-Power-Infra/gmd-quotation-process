@@ -68,6 +68,8 @@ export async function runPendingDocketDedupe(
         emailSentBy: true,
         duplicate: true,
         duplicateOfDocket: true,
+        closureStatus: true,
+        orderStatus: true,
         _count: { select: { items: true } },
       },
     }),
@@ -123,6 +125,8 @@ export async function runPendingDocketDedupe(
     emailSentBy: docket.emailSentBy,
     duplicate: docket.duplicate,
     duplicateOfDocket: docket.duplicateOfDocket,
+    closureStatus: docket.closureStatus,
+    orderStatus: docket.orderStatus,
     attachmentUrls: urlsByEnquiry.get(docket.id) ?? [],
   }));
   const threads: ThreadFacts[] = threadRows;
@@ -171,7 +175,18 @@ export async function runPendingDocketDedupe(
         ? null
         : (group.deletes.find((docket) => docket.sourceThreadId)?.sourceThreadId ?? null);
 
+      const keeperData = {
+        ...(keeperLink ? { sourceThreadId: keeperLink } : {}),
+        ...(group.inherit.closureStatus ? { closureStatus: group.inherit.closureStatus } : {}),
+        ...(group.inherit.orderStatus ? { orderStatus: group.inherit.orderStatus } : {}),
+      };
+
       await prisma.$transaction([
+        // Attachments cascade-delete with the docket; move them first.
+        prisma.attachment.updateMany({
+          where: { enquiryId: { in: group.deletes.map((docket) => docket.id) } },
+          data: { enquiryId: group.keeper.id },
+        }),
         prisma.docketQuotationThread.updateMany({
           where: { threadId: { in: group.threadIds } },
           data: {
@@ -184,13 +199,8 @@ export async function runPendingDocketDedupe(
         ...group.deletes.map((docket) =>
           prisma.enquiry.delete({ where: { id: docket.id } }),
         ),
-        ...(keeperLink
-          ? [
-              prisma.enquiry.update({
-                where: { id: group.keeper.id },
-                data: { sourceThreadId: keeperLink },
-              }),
-            ]
+        ...(Object.keys(keeperData).length
+          ? [prisma.enquiry.update({ where: { id: group.keeper.id }, data: keeperData })]
           : []),
       ]);
 

@@ -5,6 +5,7 @@ import {
   snapshotFingerprint,
   uniqueWork,
   planPendingDocketDedupe,
+  inheritStatus,
   type DocketFacts,
   type ThreadFacts,
 } from '../lib/docketDedupe.js'
@@ -218,4 +219,32 @@ test('duplicate flags count as work', () => {
   assert.deepEqual(uniqueWork(docket({ duplicateOfDocket: 'GMD/2026-27/9' })), [
     'duplicateOf=GMD/2026-27/9',
   ])
+})
+
+test('merge: duplicate threads are all folded onto the keeper, none orphaned', () => {
+  const keeper = docket({ id: 'd1', sourceThreadId: 't1' })
+  const dup = docket({ id: 'd2', docketNumber: 'GMD/2026-27/2', sourceThreadId: 't2', createdAt: at('2026-10-02T00:00:00Z') })
+  const threads = [thread({ threadId: 't1' }), thread({ threadId: 't2' })]
+
+  const [group] = planPendingDocketDedupe([keeper, dup], threads).groups
+
+  assert.deepEqual([...group.threadIds].sort(), ['t1', 't2'])
+})
+
+test('merge: keeper inherits Sent from the duplicate, but never overwrites its own status', () => {
+  const dup = docket({ id: 'd2', closureStatus: 'Sent', orderStatus: 'Won' })
+  assert.deepEqual(inheritStatus(docket({ id: 'd1' }), [dup]), { closureStatus: 'Sent', orderStatus: 'Won' })
+  assert.deepEqual(inheritStatus(docket({ id: 'd1', closureStatus: 'Pending', orderStatus: 'Lost' }), [dup]), {
+    closureStatus: null,
+    orderStatus: null,
+  })
+  const pending = docket({ id: 'd3', closureStatus: 'Pending' })
+  assert.equal(inheritStatus(docket(), [pending, dup]).closureStatus, 'Sent')
+})
+
+test('merge: no-op when the duplicate carries nothing', () => {
+  assert.deepEqual(inheritStatus(docket({ id: 'd1' }), [docket({ id: 'd2' })]), {
+    closureStatus: null,
+    orderStatus: null,
+  })
 })

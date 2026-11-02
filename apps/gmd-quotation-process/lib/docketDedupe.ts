@@ -35,6 +35,8 @@ export interface DocketFacts {
   emailSentBy: string | null;
   duplicate: string | null;
   duplicateOfDocket: string | null;
+  closureStatus?: string | null;
+  orderStatus?: string | null;
   /** Mail attachment URLs (snapshot PDFs excluded), used to find the thread. */
   attachmentUrls: string[];
 }
@@ -58,6 +60,8 @@ export interface DedupeGroup {
   /** Every thread in the group, folded onto the keeper. */
   threadIds: string[];
   evidence: Evidence[];
+  /** Status the keeper inherits from the deleted duplicates (fill-blanks-only). */
+  inherit: { closureStatus: string | null; orderStatus: string | null };
 }
 
 export interface DedupePlan {
@@ -198,6 +202,31 @@ export function uniqueWork(docket: DocketFacts): string[] {
   if (docket.duplicateOfDocket) out.push(`duplicateOf=${docket.duplicateOfDocket}`);
   if (String(docket.duplicate ?? "").trim()) out.push(`duplicate=${docket.duplicate}`);
   return out;
+}
+
+const filled = (v: string | null | undefined) => (v ?? "").trim();
+const closureRank = (v: string) => (/^sent$/i.test(v) ? 2 : /^pending$/i.test(v) ? 0 : 1);
+
+/**
+ * Status merge. Threads are folded onto the keeper, so the derived Sent/Pending
+ * follows by itself; this carries a status already stored on a deleted duplicate
+ * (closureStatus is fill-blanks-only, so it would otherwise be lost). The keeper's
+ * own value always wins; among duplicates Sent beats a manual value beats Pending.
+ */
+export function inheritStatus(
+  keeper: DocketFacts,
+  deletes: DocketFacts[],
+): { closureStatus: string | null; orderStatus: string | null } {
+  const closure = filled(keeper.closureStatus)
+    ? null
+    : (deletes
+        .map((d) => filled(d.closureStatus))
+        .filter(Boolean)
+        .sort((a, b) => closureRank(b) - closureRank(a))[0] ?? null);
+  const order = filled(keeper.orderStatus)
+    ? null
+    : (deletes.map((d) => filled(d.orderStatus)).find(Boolean) ?? null);
+  return { closureStatus: closure, orderStatus: order };
 }
 
 function makeUnionFind() {
@@ -358,6 +387,7 @@ export function planPendingDocketDedupe(
       deletes,
       threadIds: [...threadIds],
       evidence: evidenceFor(members, resolved),
+      inherit: inheritStatus(keeper, deletes),
     });
   }
 

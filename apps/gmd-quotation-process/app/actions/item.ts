@@ -186,6 +186,19 @@ export async function updateItemFieldAction(
       };
     }
 
+    // Validation = Yes needs payment terms, inspection and PBG: blank terms load 0% and distort VA%.
+    if (field === "validation" && String(value ?? "").trim() === "Yes") {
+      const { missingValidationTerms, validationBlockedMessage } = await import("@/lib/commercialTerms");
+      const parent = await prisma.enquiry.findUnique({
+        where: { id: prevFull.enquiryId },
+        select: { docketNumber: true, paymentTerms: true, inspection: true, pbg: true },
+      });
+      const missing = parent ? missingValidationTerms(parent) : [];
+      if (parent && missing.length > 0) {
+        return { success: false, error: validationBlockedMessage(parent.docketNumber, missing) };
+      }
+    }
+
     let parsedVal: any = value;
     if (field === "others") {
       if (value === null || value === "") parsedVal = [];

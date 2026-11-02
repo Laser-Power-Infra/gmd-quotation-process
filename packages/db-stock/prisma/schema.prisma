@@ -86,6 +86,19 @@ model HeatEntry {
   @@index([physical_stock_id])
 }
 
+// Dimensional details of one assigned serial no (one row per PhysicalStock row).
+// values = the confirmed/measured fields, standard = the pre-fill snapshot they
+// were checked against, flags = keys outside tolerance when saved.
+model SerialDimension {
+  id                String   @id @default(cuid())
+  physical_stock_id String   @unique
+  values            Json
+  standard          Json?
+  flags             String[]
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+}
+
 model User {
   id            String        @id @default(cuid())
   name          String?
@@ -168,4 +181,28 @@ model GrnLine {
   syncedAt      DateTime @default(now())
 
   @@index([orderVrNo, orderSlNo])
+}
+
+// Snapshot of the quotation DB's RawMaterial.erpItemCode list, replaced hourly by
+// the quotation app's `physical-stock-cost-bom` job. Feeds the New Item ERP-code
+// picker in both hosts (the stock app cannot reach the quotation DB).
+model RmCodeOption {
+  id          String  @id @default(cuid())
+  erpItemCode String  @unique
+  itemName    String?
+  l8Category  String?
+}
+
+// Snapshot of CREATE BOM boms, one row per (bom, raw-material code): the owning
+// FullItem's itemType / size / pnGmd and the Bom.bomIdType. Same sync as above.
+model BomCodeOption {
+  id          String  @id @default(cuid())
+  bomId       String
+  valveType   String?
+  size        String?
+  pn          String?
+  bomType     String
+  erpItemCode String
+
+  @@index([valveType, size, pn])
 }

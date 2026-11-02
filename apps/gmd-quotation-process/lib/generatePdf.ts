@@ -1,6 +1,7 @@
 import fs from "fs";
 import Handlebars from "handlebars";
 import puppeteer, { PDFOptions } from "puppeteer";
+import { MSME_CLAUSE } from "@/lib/msmeStatement";
 import type { OfferLetterItem, OfferLetterTemplateData } from "@/types/offer-lettter";
 
 // --- Handlebars helpers (registered at module load time) ---
@@ -84,7 +85,7 @@ export async function generateOfferLetterPdf(
 ): Promise<Buffer> {
   // 1. Compile the Handlebars template with the dynamic data into a final HTML string.
   const template = Handlebars.compile<OfferLetterTemplateData>(templateSource);
-  const html = template(data);
+  const html = template({ ...data, msmeClause: MSME_CLAUSE } as OfferLetterTemplateData); // clause shown in the offer footer
 
   // 2. Launch a headless browser and render that HTML.
   const chromePath = resolveChromePath(options.executablePath);

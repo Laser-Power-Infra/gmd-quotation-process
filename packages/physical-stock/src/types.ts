@@ -1,3 +1,5 @@
+import type { CodeOptions } from "./codeOptions";
+
 export interface PhysicalStockRow {
   id: string;
   /** ISO string; the server converts the DB Date. */
@@ -80,6 +82,8 @@ export type ActionResult<T> =
 
 export interface PhysicalStockData {
   items: PhysicalStockRow[];
+  /** ERP-code options for the New Item picker (synced RM / CREATE BOM snapshot). */
+  codeOptions?: CodeOptions;
   /** Per-row BOM ID dropdown options; only apps with updateBomId send them. */
   bomIdOptions?: Record<string, string[]>;
 }
@@ -97,7 +101,8 @@ export const NEW_ITEM_FIELDS = [
   "dispatch_qty",
 ] as const;
 
-export type NewItemInput = Partial<Record<(typeof NEW_ITEM_FIELDS)[number], string>>;
+/** `erp_code` is a picked RM / BOM code; absent means generate one. */
+export type NewItemInput = Partial<Record<(typeof NEW_ITEM_FIELDS)[number], string>> & { erp_code?: string };
 
 /** Set when editing a blank-ERP row folded it into an existing item (the edited row is deleted). */
 export interface MergeInfo {
