@@ -23,6 +23,10 @@
  * rows this step reads, and before `supply-history` (:15). It writes only the stock DB,
  * so it contends with no other job for the local database.
  *
+ * After the derive step it also snapshots RM codes and CREATE BOM -> RM codes into the stock
+ * DB (`RmCodeOption` / `BomCodeOption`, schedular_function/physical-stock-code-sync.ts) for the
+ * New Item ERP-code picker; the stock app cannot read the quotation DB.
+ *
  * A single-step job still owns an in-flight latch: ofelia's `no-overlap = true`
  * cannot see a manual `POST /api/scheduler/physical-stock-cost-bom` (or a second
  * app instance) overlapping the same run.
@@ -30,6 +34,7 @@
 
 import { applyPhysicalStockDerivations } from "@/lib/gmd_lib/physical-stock-derive";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { syncPhysicalStockCodeOptions, type CodeOptionsSyncResult } from "./physical-stock-code-sync";
 
 export type JobName = "physical-stock-cost-bom";
 
@@ -49,6 +54,8 @@ export type ScheduledPhysicalStockCostBomResult = {
   elapsedMs: number;
   steps: {
     derive?: PhysicalStockDeriveResult;
+    /** Quotation RM / CREATE BOM codes copied to the stock DB for the New Item picker. */
+    codeOptions?: CodeOptionsSyncResult;
   };
 };
 
@@ -70,6 +77,13 @@ export async function runScheduledPhysicalStockCostBom(): Promise<ScheduledPhysi
     console.log(`\n########## [SCHEDULER] ${job} start ${startedAt} ##########`);
 
     steps.derive = await applyPhysicalStockDerivations();
+
+    // Second step: its own failure (e.g. migration not deployed yet) must not fail the derive step above.
+    try {
+      steps.codeOptions = await syncPhysicalStockCodeOptions();
+    } catch (err) {
+      console.error(`[scheduler] ${job} code-options sync failed`, err);
+    }
 
     const elapsedMs = Date.now() - startedAtMs;
 

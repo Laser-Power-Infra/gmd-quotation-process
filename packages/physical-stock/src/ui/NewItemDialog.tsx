@@ -15,6 +15,7 @@ import {
 import { Input } from "@gmd/ui/components/input";
 import { Label } from "@gmd/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@gmd/ui/components/select";
+import { bomIdsOf, codesOf, isFinishedValve, matchBoms, type CodeOptions } from "../codeOptions";
 import type { NewItemInput, PhysicalStockActions, PhysicalStockRow } from "../types";
 
 // Cascading selects: each level only offers values found in rows that match
@@ -44,14 +45,51 @@ interface NewItemDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   rows: PhysicalStockRow[];
+  /** Synced RM / CREATE BOM codes; without any, the dialog falls back to generating a code. */
+  codeOptions?: CodeOptions;
   create: NonNullable<PhysicalStockActions["create"]>;
   onCreated: () => void;
 }
 
-function NewItemForm({ rows, create, onCreated }: Omit<NewItemDialogProps, "open" | "onOpenChange">) {
+function NewItemForm({ rows, codeOptions, create, onCreated }: Omit<NewItemDialogProps, "open" | "onOpenChange">) {
   const [values, setValues] = useState<NewItemInput>({});
   const [qtyType, setQtyType] = useState<QtyField>("received_qty");
   const [saving, setSaving] = useState(false);
+  const [bomId, setBomId] = useState("");
+  // Explicit fallback: mint a code like before. On by default while no options are synced yet.
+  const [generate, setGenerate] = useState(() => !codeOptions?.rm.length && !codeOptions?.bom.length);
+
+  // Finished valve: only the RM codes inside the CREATE BOM(s) matching valve type + Dia + PN.
+  // Anything else: every Raw Material code.
+  const finished = isFinishedValve(values.l8_item_category);
+  const bomIds = useMemo(
+    () =>
+      finished
+        ? bomIdsOf(
+            matchBoms(codeOptions?.bom ?? [], {
+              valveType: values.l2_valve_type,
+              size: values.dimension,
+              pn: values.l7_dimension,
+            }),
+          )
+        : [],
+    [finished, codeOptions, values.l2_valve_type, values.dimension, values.l7_dimension],
+  );
+  const activeBomId = bomIds.includes(bomId) ? bomId : "";
+  const codes = useMemo(
+    () =>
+      finished
+        ? codesOf(
+            matchBoms(codeOptions?.bom ?? [], {
+              valveType: values.l2_valve_type,
+              size: values.dimension,
+              pn: values.l7_dimension,
+            }),
+            activeBomId,
+          )
+        : (codeOptions?.rm ?? []).map((r) => r.erpItemCode),
+    [finished, codeOptions, values.l2_valve_type, values.dimension, values.l7_dimension, activeBomId],
+  );
 
   const options = useMemo(() => {
     const out = {} as Record<CascadeField, string[]>;
@@ -79,8 +117,17 @@ function NewItemForm({ rows, create, onCreated }: Omit<NewItemDialogProps, "open
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (saving) return; // double-click guard: each submit creates a row
+    let erp_code: string | undefined;
+    if (!generate) {
+      const typed = (values.erp_code ?? "").trim().toUpperCase();
+      erp_code = codes.find((c) => c.toUpperCase() === typed);
+      if (!erp_code) {
+        toast.error(typed ? "Pick an ERP code from the list." : "Pick an ERP code, or choose Generate a code.");
+        return;
+      }
+    }
     setSaving(true);
-    const res = await create(values);
+    const res = await create({ ...values, erp_code });
     setSaving(false);
     if (!res.success) {
       toast.error(res.error || "Failed to create item.");
@@ -157,6 +204,57 @@ function NewItemForm({ rows, create, onCreated }: Omit<NewItemDialogProps, "open
           </div>
         </div>
       ))}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="ps-erp_code">ERP Code</Label>
+        {finished && bomIds.length > 1 && !generate && (
+          // shortcut: no BOM-type column is stored; several CREATE BOMs can match one valve, so pick one
+          // BOM or leave blank to list the codes of all of them.
+          <Select value={activeBomId || null} onValueChange={(v) => setBomId((v as string | null) ?? "")}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder={`BOM (${bomIds.length} match) - all codes shown`} />
+            </SelectTrigger>
+            <SelectContent>
+              {bomIds.map((b) => (
+                <SelectItem key={b} value={b}>
+                  {b}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {!generate && (
+          <>
+            {/* shortcut: native datalist as the searchable dropdown; swap for a combobox if the list gets unwieldy. */}
+            <Input
+              id="ps-erp_code"
+              list="ps-erp-codes"
+              className="uppercase"
+              placeholder={finished ? "Code from the matching BOM" : "Search Raw Material code"}
+              value={values.erp_code ?? ""}
+              onChange={(e) => setValues((prev) => ({ ...prev, erp_code: e.target.value }))}
+            />
+            <datalist id="ps-erp-codes">
+              {codes.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+            {finished && codes.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No CREATE BOM matches this valve type / Dia / PN. Adjust the picks, or generate a code.
+              </p>
+            )}
+          </>
+        )}
+        <Label className="font-normal">
+          <input
+            type="checkbox"
+            className="accent-primary size-4"
+            checked={generate}
+            onChange={(e) => setGenerate(e.target.checked)}
+          />
+          Generate a code (new item, not in Raw Materials)
+        </Label>
+      </div>
     </form>
   );
 }
@@ -168,7 +266,7 @@ export default function NewItemDialog({ open, onOpenChange, onCreated, ...rest }
         <DialogHeader>
           <DialogTitle>New Physical Stock Item</DialogTitle>
           <DialogDescription>
-            ERP code is auto-generated and unique. Fields are optional and are saved in capitals.
+            ERP code comes from Raw Materials (finished valves: from the matching CREATE BOM), or can be generated. Fields are optional and are saved in capitals.
           </DialogDescription>
         </DialogHeader>
         {open && (

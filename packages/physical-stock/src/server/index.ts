@@ -15,6 +15,7 @@ import {
 import { outOfTolerance } from "../dimensions";
 import type { DimensionStandard, DimensionValues } from "../dimensions";
 import { NEW_ITEM_FIELDS } from "../types";
+import type { CodeOptions } from "../codeOptions";
 import type { ActionResult, FieldUpdate, HeatEntryRow, HeatQueueItem, HeatSerial, NewItemInput, PhysicalStockRow } from "../types";
 
 // Pure operations on the PhysicalStock table (stock DB). No auth, no flags
@@ -62,6 +63,20 @@ export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
       incoming_from: null,
     };
   });
+}
+
+/** Synced ERP-code options for the New Item picker (empty until the first hourly sync after the migration). */
+export async function listCodeOptions(): Promise<CodeOptions> {
+  const [rm, bom] = await Promise.all([
+    stockPrisma.rmCodeOption.findMany({
+      select: { erpItemCode: true, itemName: true, l8Category: true },
+      orderBy: { erpItemCode: "asc" },
+    }),
+    stockPrisma.bomCodeOption.findMany({
+      select: { bomId: true, valveType: true, size: true, pn: true, bomType: true, erpItemCode: true },
+    }),
+  ]);
+  return { rm, bom };
 }
 
 /**
@@ -284,11 +299,22 @@ export async function createPhysicalStock(
 
     // A row with heat entries is its own serialised item: never added into.
     const key = itemKey(data);
+    // A picked code must be one of the synced RM / BOM options; none picked = generate one.
+    const picked = input.erp_code?.trim() || null;
+    if (picked) {
+      const [rm, bom] = await Promise.all([
+        stockPrisma.rmCodeOption.findUnique({ where: { erpItemCode: picked }, select: { id: true } }),
+        stockPrisma.bomCodeOption.findFirst({ where: { erpItemCode: picked }, select: { id: true } }),
+      ]);
+      if (!rm && !bom) throw new Error(`ERP code ${picked} is not in the Raw Material list.`);
+    }
     const generated = await stockPrisma.physicalStock.findMany({
       where: { erp_code: { not: null }, heat_entries: { none: {} } },
       orderBy: { created_at: "asc" },
     });
-    const match = generated.find((r) => isGeneratedErpCode(r.erp_code) && itemKey(r) === key);
+    const match = generated.find(
+      (r) => (picked ? r.erp_code === picked : isGeneratedErpCode(r.erp_code)) && itemKey(r) === key,
+    );
     if (match) {
       const received_qty = addQty(match.received_qty, data.received_qty);
       const dispatch_qty = addQty(match.dispatch_qty, data.dispatch_qty);
@@ -302,7 +328,7 @@ export async function createPhysicalStock(
       return { erp_code: match.erp_code!, merged: true };
     }
 
-    const erp_code = await generateUniqueErpCode();
+    const erp_code = picked ?? (await generateUniqueErpCode());
     data.erp_code = erp_code;
     const available = computeAvailableQty(data.received_qty, data.dispatch_qty);
     if (available !== null) data.available_qty = available;
