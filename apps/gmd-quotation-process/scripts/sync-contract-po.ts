@@ -5,6 +5,7 @@ import { PrismaClient } from "@gmd/db-quotation";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { getOAuthClient } from "../lib/googleAuth";
+import { findPoPaymentTermsColumn, cleanPoPaymentTerms, pickPoPaymentTerms } from "../lib/contractPoPaymentTerms";
 
 const SPREADSHEET_ID = "1sf-uCfCSAUovNAWJSiSyojTPFvUSzmp23keF0ymkjIE";
 const TAB_TITLE = "CONTRACTS copy";
@@ -80,6 +81,13 @@ async function main() {
   const contractNoIdx = findCol("ERP CONTRACT NO");
   const poNoIdx = findCol("PO NO");
   const attachIdx = findCol("ATTACHTMENT");
+  // Optional: payment terms from the PO. Used only to fill a blank ContractReview.paymentTerms.
+  const paymentTermsIdx = findPoPaymentTermsColumn(headers);
+  console.log(
+    paymentTermsIdx >= 0
+      ? `PO payment terms column: "${headers[paymentTermsIdx]}"`
+      : "PO payment terms column: not found in the sheet (paymentTerms left as is)",
+  );
 
   const missing = [
     contractNoIdx < 0 ? "ERP CONTRACT NO" : null,
@@ -91,7 +99,7 @@ async function main() {
   }
 
   // Map contractNo -> { poNo, attachments[] }, merging multiple rows per contract
-  const byContract = new Map<string, { poNo: string; attachments: string[] }>();
+  const byContract = new Map<string, { poNo: string; attachments: string[]; paymentTerms: string | null }>();
   const dataRows = allRows
     .slice(1)
     .filter((r) => r.some((c) => c !== null && c !== ""));
@@ -102,13 +110,15 @@ async function main() {
 
     const poNo = String(row[poNoIdx] ?? "").trim();
     const attachments = splitCell(row[attachIdx]);
+    const paymentTerms = paymentTermsIdx >= 0 ? cleanPoPaymentTerms(row[paymentTermsIdx]) : null;
 
     const existing = byContract.get(contractNo);
     if (existing) {
       for (const v of attachments)
         if (!existing.attachments.includes(v)) existing.attachments.push(v);
+      if (!existing.paymentTerms && paymentTerms) existing.paymentTerms = paymentTerms;
     } else {
-      byContract.set(contractNo, { poNo, attachments });
+      byContract.set(contractNo, { poNo, attachments, paymentTerms });
     }
   }
 
@@ -122,6 +132,7 @@ async function main() {
       contractNo: true,
       poNo: true,
       orderList: true,
+      paymentTerms: true,
     },
   });
 
@@ -133,7 +144,9 @@ async function main() {
     id: string;
     poNo?: string;
     orderList: string[];
+    paymentTerms?: string;
   }[] = [];
+  let paymentTermsFills = 0;
 
   for (const row of crRows) {
     const key = normalizeKey(row.contractNo);
@@ -156,16 +169,20 @@ async function main() {
       }
     }
 
-    if (poNo !== undefined || appended) {
+    const paymentTerms = pickPoPaymentTerms(row.paymentTerms, sheet.paymentTerms);
+    if (paymentTerms !== undefined) paymentTermsFills++;
+
+    if (poNo !== undefined || appended || paymentTerms !== undefined) {
       toUpdate++;
       updates.push({
         id: row.id,
         ...(poNo !== undefined ? { poNo } : {}),
         orderList,
+        ...(paymentTerms !== undefined ? { paymentTerms } : {}),
       });
       if (samples.length < 5) {
         samples.push(
-          `${row.contractNo} | po=${poNo ?? "(keep)"} | orderList append=${sheet.attachments.join(",") || "(none)"}`,
+          `${row.contractNo} | po=${poNo ?? "(keep)"} | orderList append=${sheet.attachments.join(",") || "(none)"} | paymentTerms=${paymentTerms ?? "(keep)"}`,
         );
       }
     }
@@ -174,6 +191,7 @@ async function main() {
   console.log(`ContractReview rows: ${crRows.length}`);
   console.log(`Matched by contractNo: ${matched}`);
   console.log(`Rows to update: ${toUpdate}`);
+  console.log(`Blank paymentTerms filled from PO: ${paymentTermsFills}`);
 
   if (samples.length > 0) {
     console.log("\n--- Sample diffs ---");
@@ -192,7 +210,7 @@ async function main() {
       batch.map((u) =>
         tenderPrisma.contractReview.update({
           where: { id: u.id },
-          data: { poNo: u.poNo, orderList: u.orderList },
+          data: { poNo: u.poNo, orderList: u.orderList, paymentTerms: u.paymentTerms },
         }),
       ),
     );

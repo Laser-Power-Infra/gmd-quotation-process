@@ -15,7 +15,7 @@ import {
 import { Input } from "@gmd/ui/components/input";
 import { Label } from "@gmd/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@gmd/ui/components/select";
-import { bomIdsOf, codesOf, isFinishedValve, matchBoms, type CodeOptions } from "../codeOptions";
+import { bomIdsOf, codesOf, isFinishedValve, matchBoms, rmCodesFor, type CodeOptions } from "../codeOptions";
 import type { NewItemInput, PhysicalStockActions, PhysicalStockRow } from "../types";
 
 // Cascading selects: each level only offers values found in rows that match
@@ -60,7 +60,7 @@ function NewItemForm({ rows, codeOptions, create, onCreated }: Omit<NewItemDialo
   const [generate, setGenerate] = useState(() => !codeOptions?.rm.length && !codeOptions?.bom.length);
 
   // Finished valve: only the RM codes inside the CREATE BOM(s) matching valve type + Dia + PN.
-  // Anything else: every Raw Material code.
+  // Anything else: the Raw Material codes of the picked L8 item category (all when none picked).
   const finished = isFinishedValve(values.l8_item_category);
   const bomIds = useMemo(
     () =>
@@ -87,8 +87,8 @@ function NewItemForm({ rows, codeOptions, create, onCreated }: Omit<NewItemDialo
             }),
             activeBomId,
           )
-        : (codeOptions?.rm ?? []).map((r) => r.erpItemCode),
-    [finished, codeOptions, values.l2_valve_type, values.dimension, values.l7_dimension, activeBomId],
+        : rmCodesFor(codeOptions?.rm ?? [], values.l8_item_category),
+    [finished, codeOptions, values.l2_valve_type, values.dimension, values.l7_dimension, values.l8_item_category, activeBomId],
   );
 
   const options = useMemo(() => {
@@ -229,7 +229,7 @@ function NewItemForm({ rows, codeOptions, create, onCreated }: Omit<NewItemDialo
               id="ps-erp_code"
               list="ps-erp-codes"
               className="uppercase"
-              placeholder={finished ? "Code from the matching BOM" : "Search Raw Material code"}
+              placeholder={finished ? "Code from the matching BOM" : values.l8_item_category ? `Code in ${values.l8_item_category}` : "Search Raw Material code"}
               value={values.erp_code ?? ""}
               onChange={(e) => setValues((prev) => ({ ...prev, erp_code: e.target.value }))}
             />
@@ -241,6 +241,11 @@ function NewItemForm({ rows, codeOptions, create, onCreated }: Omit<NewItemDialo
             {finished && codes.length === 0 && (
               <p className="text-xs text-muted-foreground">
                 No CREATE BOM matches this valve type / Dia / PN. Adjust the picks, or generate a code.
+              </p>
+            )}
+            {!finished && Boolean(values.l8_item_category) && codes.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No Raw Material code in this item category. Clear the category to see all codes, or generate a code.
               </p>
             )}
           </>

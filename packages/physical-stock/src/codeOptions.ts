@@ -65,6 +65,13 @@ const typeMatches = (bomType: string | null | undefined, pickedType: string | nu
 
 export const isFinishedValve = (l8: string | null | undefined) => norm(l8) === "FINISHED VALVES";
 
+/** Raw Material codes in the picked L8 item category (all codes when none is picked), distinct and sorted. */
+export function rmCodesFor(rm: RmCodeOptionRow[], l8: string | null | undefined): string[] {
+  const want = norm(l8);
+  const codes = rm.filter((r) => !want || norm(r.l8Category) === want).map((r) => r.erpItemCode);
+  return [...new Set(codes)].sort((a, b) => a.localeCompare(b));
+}
+
 export interface ValveChoice {
   valveType?: string;
   size?: string;

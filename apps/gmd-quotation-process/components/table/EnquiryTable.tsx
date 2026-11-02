@@ -44,6 +44,8 @@ import { Button } from "@gmd/ui/components/button";
 import { cn } from "@/lib/utils";
 import { formatIndianNumber, cleanNumberInput, hasNumberChanged } from "@/lib/formatCurrency";
 import { looseIncludes } from "@/lib/squish";
+import { missingValidationTerms, validationBlockedMessage } from "@/lib/commercialTerms";
+import { computeCostLoading, describeCostLoading, formatLoadingPct } from "@/lib/costLoading";
 
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
@@ -462,6 +464,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const [confirmState, setConfirmState] = useState<{ msg: string; resolve: (ok: boolean) => void } | null>(null);
   const ask = (msg: string) => new Promise<boolean>((resolve) => setConfirmState({ msg, resolve }));
   const confirmValidation = async (item: EnquiryItemData, next: "Yes" | "No" | "") => {
+    if (next === "Yes") {
+      const parent = enquiries.find((e) => e.id === item.enquiryId);
+      const missing = parent ? missingValidationTerms(parent) : [];
+      if (parent && missing.length > 0) {
+        toast.error(validationBlockedMessage(parent.docketNumber, missing), { duration: 6000 });
+        return;
+      }
+    }
     if (!(await ask(`Set validation to "${next || "Blank"}" for ${item.itemName || "this item"}?`))) return;
     await handleItemFieldChange(item.id, "validation", next);
   };
@@ -477,6 +487,26 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
         Unlock
       </button>
     ) : null;
+  // Cost loading % the engine applies over product cost, shown under Cost. Amber when terms are blank.
+  const costLoadingBadge = (enquiry: EnquiryData, item: EnquiryItemData) => {
+    const tables = dropdownOptions.costLoading;
+    const pc = item.productCost !== null && item.productCost !== undefined ? Number(item.productCost) : null;
+    if (!tables || pc === null || !(pc > 0)) return null;
+    const loading = computeCostLoading(enquiry, pc, tables);
+    const missing = missingValidationTerms(enquiry);
+    const title = describeCostLoading(loading) + (missing.length ? ` Blank on this docket: ${missing.join(", ")} (counted as 0%).` : "");
+    return (
+      <div
+        title={title}
+        className={cn(
+          "text-[9px] leading-tight text-right px-1 whitespace-nowrap",
+          missing.length ? "text-amber-700 dark:text-amber-300 font-semibold" : "text-muted-foreground",
+        )}
+      >
+        Loading {formatLoadingPct(loading.loadingPct)}{missing.length ? " · terms blank" : ""}
+      </div>
+    );
+  };
   type ChangeRow = { id: string; field: string; oldValue: string | null; newValue: string | null; changedBy: string; createdAt: string };
   const [history, setHistory] = useState<{ itemName: string; rows: ChangeRow[] } | null>(null);
   const historyButton = (item: EnquiryItemData) => (
@@ -658,6 +688,12 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     try {
       const result: any = await dispatch(bulkUpdateValidation({ itemIds, validation: val === "" ? null : val })).unwrap();
       toast.success(`Validation set to "${label}" for ${result.updated} item(s).`, { id: toastId });
+      const skipped: { docketNumber: string; missing: string[]; items: number }[] = result.skipped ?? [];
+      if (skipped.length > 0) {
+        const list = skipped.slice(0, 5).map((s) => `${s.docketNumber} (${s.missing.join(", ")})`).join("; ");
+        const more = skipped.length > 5 ? ` and ${skipped.length - 5} more` : "";
+        toast.warning(`Skipped ${skipped.length} docket(s) with blank payment terms / inspection / PBG: ${list}${more}.`, { duration: 10000 });
+      }
     } catch (err: any) {
       const msg = typeof err === "string" ? err : err?.message || "Failed to update validation.";
       toast.error(msg, { id: toastId });
@@ -4418,7 +4454,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
                     {/* First Item Cost */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
-                      {firstItem ? (
+                      {firstItem ? (<>
                         <input
                           key={firstItem.id + "-cost-" + (firstItem.cost !== null && firstItem.cost !== undefined ? Number(firstItem.cost).toString() : "")}
                           type="text"
@@ -4438,6 +4474,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
+                        {costLoadingBadge(enquiry, firstItem)}</>
                       ) : "-"}
                     </td>
 
@@ -4988,6 +5025,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
+                        {costLoadingBadge(enquiry, item)}
                       </td>
 
                       {/* Stock Status */}

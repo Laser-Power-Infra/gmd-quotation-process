@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { matchItemType, matchMoc } from "./itemTypePatterns";
 import { roundUp } from "./rounding";
 import { resolveCostChangeAnchor, isOfferRevision } from "./rateAnchor";
+import { BASE_COST_FACTOR, FULL_LOAD_THRESHOLD, normalizeStateName } from "./costLoading";
 
 export function serializeItem(item: any) {
   return {
@@ -65,27 +66,7 @@ export function getItemNameMerge(item: any) {
   return parts.join("-");
 }
 
-export function normalizeStateName(raw: string | null | undefined): string | null {
-  if (!raw || raw.trim() === "" || raw.trim() === "-") return null;
-  let s = raw.trim().toUpperCase().replace(/\s+/g, " ");
-
-  // Strip "FOR (SITE IN ...)" prefix if present
-  const prefixMatch = s.match(/^FOR\s*\(\s*SITE\s+IN\s+(.+?)\s*\)$/i);
-  if (prefixMatch) {
-    s = prefixMatch[1].trim();
-  } else if (s === "FOR (SITE)") {
-    return "FOR (Site)";
-  }
-
-  // Common spelling variants / aliases
-  if (s === "CHATTISGARH") return "CHHATTISGARH";
-  if (s === "UTTRAKHAND") return "UTTARAKHAND";
-  if (s === "PONDICHERRY") return "PUDUCHERRY";
-  if (s === "JAMMU & KASHMIR" || s === "JAMMU AND KASHMIR") return "J&K";
-  if (s === "ANDAMAN & NICOBAR" || s === "ANDAMAN AND NICOBAR") return "ANDAMAN";
-
-  return s;
-}
+export { normalizeStateName };
 
 export async function recalculateItem(
   itemId: string,
@@ -180,14 +161,14 @@ export async function recalculateItem(
       }
 
       if (transMapping) {
-        const isFullLoad = productCost >= 5000000;
+        const isFullLoad = productCost >= FULL_LOAD_THRESHOLD;
         const pctStr = (isFullLoad ? transMapping.fullLoad : transMapping.partLoad).replace(/%/g, "").trim();
         transPct = parseFloat(pctStr) / 100 || 0;
       }
     }
 
     const pctMultiplier = ptPct + inspPct + pbgPct + transPct;
-    const baseProductCost = productCost * 1.08;
+    const baseProductCost = productCost * BASE_COST_FACTOR;
     cost = baseProductCost + extCost + bpCost + baseProductCost * pctMultiplier;
     cost = parseFloat(cost.toFixed(2));
   }

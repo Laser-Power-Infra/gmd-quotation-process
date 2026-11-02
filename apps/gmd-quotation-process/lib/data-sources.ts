@@ -1392,7 +1392,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     file: "scripts/sync-contract-po.ts",
     line: "8-198",
     purpose:
-      "The only live path that populates ContractReview.poNo and orderList now that the page's own backfill is commented out.",
+      "The only live path that populates ContractReview.poNo and orderList now that the page's own backfill is commented out. Also fills a blank paymentTerms from the PO sheet's PAYMENT TERMS column when present.",
     direction: "sheet-to-db",
     trigger: "manual-script",
     triggerLabel: "npx tsx scripts/sync-contract-po.ts --apply",
@@ -1403,10 +1403,11 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
       ["ERP CONTRACT NO", "(join key)"],
       ["PO NO", "poNo", "only written when non-empty and different"],
       ["ATTACHTMENT", "orderList[]", "sic — the misspelling is in the sheet"],
+      ["PAYMENT TERMS (optional)", "paymentTerms", "fills a blank value only; skipped when the column is absent"],
     ),
     dbModels: ["ContractReview"],
     writePolicy:
-      "Single-key join on ERP CONTRACT NO. Multiple rows per contract are unioned. poNo overwrites when it differs; orderList is append-only union.",
+      "Single-key join on ERP CONTRACT NO. Multiple rows per contract are unioned. poNo overwrites when it differs; orderList is append-only union; paymentTerms is gap-fill only (never overwrites a typed value).",
     cadence: "manual",
     npmCommand: "npx tsx scripts/sync-contract-po.ts",
     dryRunDefault: true,
