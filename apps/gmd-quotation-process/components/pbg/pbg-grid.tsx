@@ -1,6 +1,5 @@
 "use client";
 
-import { validityStatus } from "@/lib/pbg/validity";
 import {
   Fragment,
   useEffect,
@@ -12,6 +11,11 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { formatAmount, formatDate } from "@/lib/pbg/format";
+import {
+  daysBetweenDateOnly,
+  getExpiryHighlight,
+} from "@/lib/pbg/expiry-status";
+import { describeDaysUntilExpiry } from "@/lib/pbg/reminder-rules";
 import type { ColumnDef, ColumnKey } from "@/lib/pbg/pbg-columns";
 import type { PbgFile, PbgRecord } from "@/lib/pbg/pbg-data";
 import { toEditValue } from "@/lib/pbg/pbg-cell";
@@ -396,6 +400,7 @@ export function PbgGrid({
   distinctMap,
   statusOptions,
   saving,
+  todayIso,
   onCommit,
   onUploadBankGuarantee,
   onRemoveBankGuarantee,
@@ -407,6 +412,7 @@ export function PbgGrid({
   distinctMap: Map<ColumnKey, string[]>;
   statusOptions: string[];
   saving: Set<string>;
+  todayIso: string;
   onCommit: (id: string, key: ColumnKey, raw: string) => void;
   onUploadBankGuarantee: (id: string, files: File[]) => Promise<void>;
   onRemoveBankGuarantee: (id: string, url: string) => Promise<void>;
@@ -728,31 +734,45 @@ export function PbgGrid({
 
         <tbody>
           {sortedRows.map((row, r) => {
-            // Past its contract validity date, or inside the 30-day window.
-            const status = validityStatus(row.extendedValidity);
-            const expiryTone =
-              status === "expired"
-                ? "bg-red-100"
-                : status === "expiring"
-                  ? "bg-amber-100"
-                  : null;
+            const expiry = getExpiryHighlight(row.expiryDate, todayIso, row.status);
+            const expiryDays = daysBetweenDateOnly(row.expiryDate, todayIso);
+            const expiryRowBg =
+              expiry === "expired"
+                ? "bg-rose-50"
+                : expiry === "expiring"
+                  ? "bg-amber-50"
+                  : "";
+            const expiryAccent =
+              expiry === "expired"
+                ? "border-l-4 border-l-rose-500"
+                : expiry === "expiring"
+                  ? "border-l-4 border-l-amber-500"
+                  : "";
+            const expiryHover =
+              expiry === "expired"
+                ? "group-hover:bg-rose-100"
+                : expiry === "expiring"
+                  ? "group-hover:bg-amber-100"
+                  : "";
             return (
             <Fragment key={row.id}>
             <tr
               className="group"
               title={
-                status === "expired"
-                  ? `PBG validity expired on ${row.extendedValidity}`
-                  : status === "expiring"
-                    ? `PBG validity expires on ${row.extendedValidity}`
+                expiry === "expired"
+                  ? `PBG expired on ${formatDate(row.expiryDate)}`
+                  : expiry === "expiring"
+                    ? `PBG expires on ${formatDate(row.expiryDate)}`
                     : undefined
               }
             >
               <th
-                className={`sticky left-0 z-20 border-b border-r border-slate-300 px-1 text-center text-xs font-medium tabular-nums ${
+                className={`sticky left-0 z-20 border-b border-r border-slate-300 px-1 text-center text-xs font-medium tabular-nums ${expiryAccent} ${
                   active.r === r
                     ? "bg-indigo-100 text-indigo-700"
-                    : "bg-slate-100 text-black"
+                    : expiryRowBg
+                      ? `${expiryRowBg} text-black`
+                      : "bg-slate-100 text-black"
                 }`}
               >
                 {r + 1}
@@ -774,23 +794,42 @@ export function PbgGrid({
                 const rowBg =
                   inRange && !isActive
                     ? "bg-indigo-50"
-                    : (expiryTone ?? (zebra ? "bg-slate-50/70" : "bg-white"));
+                    : expiryRowBg
+                      ? expiryRowBg
+                      : zebra
+                        ? "bg-slate-50/70"
+                        : "bg-white";
                 // Sticky cells must stay fully opaque, otherwise the columns
                 // scrolling behind them bleed through.
                 const stickyBg = isActive
                   ? "bg-indigo-100"
                   : inRange
                     ? "bg-indigo-50"
-                    : zebra
-                      ? "bg-slate-50"
-                      : "bg-white";
-                const hoverBg = sticky
-                  ? "group-hover:bg-indigo-100"
-                  : "group-hover:bg-indigo-50/60";
+                    : expiryRowBg
+                      ? expiryRowBg
+                      : zebra
+                        ? "bg-slate-50"
+                        : "bg-white";
+                const hoverBg =
+                  inRange || isActive
+                    ? sticky
+                      ? "group-hover:bg-indigo-100"
+                      : "group-hover:bg-indigo-50/60"
+                    : expiryHover ||
+                      (sticky
+                        ? "group-hover:bg-indigo-100"
+                        : "group-hover:bg-indigo-50/60");
+                const cellTitle =
+                  col.key === "expiryDate" && expiry && expiryDays !== null
+                    ? expiry === "expired"
+                      ? `Expired ${describeDaysUntilExpiry(expiryDays)}`
+                      : `Expires ${describeDaysUntilExpiry(expiryDays)}`
+                    : undefined;
 
                 return (
                   <td
                     key={col.key}
+                    title={cellTitle}
                     onMouseDown={(event) => {
                       if (editingHere) return;
                       moveTo(r, c, event.shiftKey);
