@@ -4,13 +4,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { updateIndentRmCodeAction } from "@/app/actions/contractReview";
-import { RM_CODE_MATCH_BY_ITEM } from "@/lib/indentRmCodeResolver";
 import MultiSelectFilter, { BLANK } from "@/components/table/MultiSelectFilter";
 import Pagination from "@/components/table/Pagination";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import type { VariantMetrics } from "@/lib/indentListingMetrics";
-import { summarizeIndentRows } from "@/lib/indentListingSummary";
-import { valveTypesForIndentItem } from "@/lib/indentItemValveTypes";
+import {
+  canPickRmCode,
+  isShortageRow,
+  missingInputs,
+  summarizeIndentRows,
+} from "@/lib/indentListingSummary";
 import { rmOptionFitsIndentRow, type RmCodeOption } from "@/lib/indentRmCodeOptions";
 
 // Which item variant each V column holds (rules in lib/itemVersionResolver.ts).
@@ -128,17 +131,6 @@ function cellText(row: unknown[], idx: number): string {
   return String(row[idx] ?? "").trim();
 }
 
-// Only SLV / SLV METAL / TPAV+SLV / NRV have an RM-code resolver, so only those
-// rows may be hand-picked. Other items (BFV, air valve, ...) never resolve and
-// their raw materials are not in the option list, so a picker there offers the
-// wrong valve family.
-function canPickRmCode(row: unknown[]): boolean {
-  return (
-    cellText(row, 0).toUpperCase() in RM_CODE_MATCH_BY_ITEM ||
-    valveTypesForIndentItem(cellText(row, 0)).length > 0
-  );
-}
-
 // The value shown (and sorted) in a leaf column. Variant metrics come from the
 // per-row `VariantMetrics`; `catValue` falls back to the balance in the row.
 function leafValue(
@@ -162,6 +154,18 @@ function leafFilterText(
   if (col.kind === "variant" && col.metric === "catValue")
     return col.categoryIdx === undefined ? "" : cellText(row, col.categoryIdx);
   return leafValue(row, col, metrics);
+}
+
+type CardFilter = "received" | "pending" | "shortage" | "inputsMissing" | null;
+
+// Default order (Item -> Size -> PN, then id) so a refresh after an edit never moves rows:
+// the API only orders by item, and Postgres returns tied rows in a different order after an update.
+function compareDefault(a: unknown[], b: unknown[], aId: string, bId: string): number {
+  for (const idx of [0, 1, 2]) {
+    const cmp = cellText(a, idx).localeCompare(cellText(b, idx), undefined, { numeric: true });
+    if (cmp !== 0) return cmp;
+  }
+  return aId.localeCompare(bId);
 }
 
 function compareCell(a: string, b: string, numeric: boolean): number {
@@ -249,6 +253,7 @@ export default function IndentListingTable({
   const [sortIdx, setSortIdx] = useState<number | null>(null);
   const [sortAsc, setSortAsc] = useState(true);
   const [filters, setFilters] = useState<Record<number, string[]>>({});
+  const [cardFilter, setCardFilter] = useState<CardFilter>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [columnWidths, setColumnWidths] = useState<Record<number, number>>(
@@ -298,8 +303,10 @@ export default function IndentListingTable({
         slot: (slot + 1) as 1 | 2 | 3 | 4,
         value,
       });
-      if (res.success) onRefresh();
-      else toast.error(res.error ?? "Failed to update the RM code.");
+      if (res.success) {
+        toast.success("RM code saved", { duration: 1500 });
+        onRefresh();
+      } else toast.error(res.error ?? "Failed to update the RM code.");
     },
     [sourceIdsByRow, onRefresh],
   );
@@ -359,16 +366,29 @@ export default function IndentListingTable({
     [filters, getMetrics],
   );
 
-  const filtered = useMemo(
+  const columnFiltered = useMemo(
     () => applyFilters(-1, rows),
     [applyFilters, rows],
   );
 
-  // Tiles follow the table's filters so their counts always match the rows shown.
+  // Tiles follow the column filters (not the card filter), so picking a card keeps
+  // the other cards' counts visible.
   const summary = useMemo(
-    () => summarizeIndentRows(filtered, getMetrics),
-    [filtered, getMetrics],
+    () => summarizeIndentRows(columnFiltered, getMetrics),
+    [columnFiltered, getMetrics],
   );
+
+  const filtered = useMemo(() => {
+    if (cardFilter === null) return columnFiltered;
+    if (cardFilter === "shortage")
+      return columnFiltered.filter((row) => isShortageRow(row, getMetrics(row)));
+    if (cardFilter === "inputsMissing")
+      return columnFiltered.filter((row) => missingInputs(row).length > 0);
+    const status = cardFilter.toUpperCase();
+    return columnFiltered.filter(
+      (row) => cellText(row, STATUS_IDX).toUpperCase() === status,
+    );
+  }, [columnFiltered, cardFilter, getMetrics]);
 
   // Cascading options/counts: each column offers only the values present among
   // rows matching all other active filters (plus its own current selection, so
@@ -396,33 +416,28 @@ export default function IndentListingTable({
     return { cascadedOptions: options, cascadedCounts: counts };
   }, [applyFilters, rows, filters, getMetrics]);
 
+  const idByRow = useMemo(() => {
+    const map = new Map<unknown[], string>();
+    rows.forEach((r, i) => map.set(r, ids[i] ?? ""));
+    return map;
+  }, [rows, ids]);
+
   const sorted = useMemo(() => {
-    const out = [...filtered];
-    if (sortIdx !== null) {
-      const col = LEAF_COLUMNS[sortIdx];
-      out.sort((a, b) => {
-        const av = leafValue(a, col, getMetrics(a)).toLowerCase();
-        const bv = leafValue(b, col, getMetrics(b)).toLowerCase();
-        const cmp = compareCell(av, bv, col.numeric);
-        return sortAsc ? cmp : -cmp;
-      });
-    }
-    return out;
-  }, [filtered, sortIdx, sortAsc, getMetrics]);
+    const col = sortIdx === null ? null : LEAF_COLUMNS[sortIdx];
+    return [...filtered].sort((a, b) => {
+      const tie = compareDefault(a, b, idByRow.get(a) ?? "", idByRow.get(b) ?? "");
+      if (!col) return tie;
+      const av = leafValue(a, col, getMetrics(a)).toLowerCase();
+      const bv = leafValue(b, col, getMetrics(b)).toLowerCase();
+      const cmp = compareCell(av, bv, col.numeric);
+      return (sortAsc ? cmp : -cmp) || tie;
+    });
+  }, [filtered, sortIdx, sortAsc, getMetrics, idByRow]);
 
   const paginated = useMemo(() => {
     const start = (page - 1) * pageSize;
     return sorted.slice(start, start + pageSize);
   }, [sorted, page, pageSize]);
-
-  const sortedIds = useMemo(() => {
-    if (sorted.length === 0) return [];
-    const idByRow = new Map<unknown[], string>();
-    rows.forEach((r, i) => idByRow.set(r, ids[i]));
-    const out: string[] = [];
-    for (const r of sorted) out.push(idByRow.get(r) ?? "");
-    return out;
-  }, [sorted, rows, ids]);
 
   const handleSort = (idx: number) => {
     if (sortIdx === idx) {
@@ -438,7 +453,8 @@ export default function IndentListingTable({
       <span className="text-[#0f62fe] dark:text-primary">{sortAsc ? "↑" : "↓"}</span>
     ) : null;
 
-  const hasActiveFilters = Object.values(filters).some((v) => v.length > 0);
+  const hasActiveFilters =
+    cardFilter !== null || Object.values(filters).some((v) => v.length > 0);
 
   // Base and variant cells. The `catValue` subcolumn stacks three lines: the
   // balance, the variant category, and the RM code resolved for that variant.
@@ -478,7 +494,7 @@ export default function IndentListingTable({
               </span>
             )}
           </span>
-          {targets.length > 0 && canPickRmCode(row) ? (
+          {targets.length > 0 && canPickRmCode(cellText(row, 0)) ? (
             // Stored rows exist behind this line, so the code is hand-pickable.
             <RmCodeCell
               label={`${col.slotLabel} RM code`}
@@ -545,30 +561,44 @@ export default function IndentListingTable({
   };
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0">
+    // Font pilot from the 31 Oct UI review: shown on this page only until Puja approves it app-wide.
+    <div
+      className="flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0"
+      style={{ fontFamily: '"Segoe UI", "Noto Sans", system-ui, sans-serif' }}
+    >
       {/* Summary tiles + V1..V4 legend */}
       <div className="flex flex-wrap items-start gap-2 px-4 py-2 border-b border-slate-300 dark:border-slate-600">
         {(
           [
-            ["Total", summary.total, "Rows shown in the table"],
-            ["Received", summary.received, "MC RECEIVED/PENDING = Received"],
-            ["Pending", summary.pending, "MC RECEIVED/PENDING = Pending"],
-            ["Shortage", summary.shortage, "Rows where a V1..V4 balance is above that variant's stock"],
+            ["Total", null, summary.total, "Show all rows (clears the card filter)"],
+            ["Received", "received", summary.received, "MC RECEIVED/PENDING = Received"],
+            ["Pending", "pending", summary.pending, "MC RECEIVED/PENDING = Pending"],
+            ["Shortage", "shortage", summary.shortage, "Rows where a V1..V4 balance is above that variant's stock"],
+            ["Inputs missing", "inputsMissing", summary.inputsMissing, "Rows with a blank PN, zero/negative qty, no or partial V1..V4 split, or no RM code"],
           ] as const
-        ).map(([label, value, hint]) => (
-          <div
-            key={label}
-            title={hint}
-            className={`flex flex-col items-start rounded-md border px-3 py-1.5 min-w-28 ${
-              label === "Shortage" && value > 0
-                ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300"
-                : "border-border bg-background text-foreground"
-            }`}
-          >
-            <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">{label}</span>
-            <span className="text-lg font-bold leading-tight tabular-nums">{value}</span>
-          </div>
-        ))}
+        ).map(([label, card, value, hint]) => {
+          const active = card !== null && cardFilter === card;
+          return (
+            <button
+              type="button"
+              key={label}
+              title={hint}
+              aria-pressed={card === null ? undefined : active}
+              onClick={() => {
+                setCardFilter(card === null || active ? null : card);
+                setPage(1);
+              }}
+              className={`flex flex-col items-start rounded-md border px-3 py-1.5 min-w-28 cursor-pointer text-left transition-colors hover:bg-muted/60 ${
+                (label === "Shortage" || label === "Inputs missing") && value > 0
+                  ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300"
+                  : "border-border bg-background text-foreground"
+              } ${active ? "ring-2 ring-[#0f62fe] dark:ring-primary" : ""}`}
+            >
+              <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">{label}</span>
+              <span className="text-lg font-bold leading-tight tabular-nums">{value}</span>
+            </button>
+          );
+        })}
         <details className="ml-auto max-w-md text-[11px] text-muted-foreground">
           <summary className="cursor-pointer font-semibold select-none">What are V1–V4?</summary>
           <p className="mt-1">
@@ -595,7 +625,10 @@ export default function IndentListingTable({
         {hasActiveFilters && (
           <button
             type="button"
-            onClick={() => setFilters({})}
+            onClick={() => {
+              setFilters({});
+              setCardFilter(null);
+            }}
             className="inline-flex shrink-0 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/12 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all"
           >
             Reset Filters
@@ -686,11 +719,17 @@ export default function IndentListingTable({
               </tr>
             ) : (
               paginated.map((row, rowIdx) => {
-                const id = sortedIds[(page - 1) * pageSize + rowIdx];
+                const id = idByRow.get(row);
+                const missing = missingInputs(row);
                 return (
                   <tr
                     key={id || rowIdx}
-                    className="hover:bg-muted/20 transition-colors"
+                    title={missing.length > 0 ? `Inputs missing: ${missing.join("; ")}` : undefined}
+                    className={`transition-colors ${
+                      missing.length > 0
+                        ? "bg-rose-50 hover:bg-rose-100/70 dark:bg-rose-500/10 dark:hover:bg-rose-500/15"
+                        : "hover:bg-muted/20"
+                    }`}
                   >
                     {LEAF_COLUMNS.map((col, idx) => {
                       const isCatValue =

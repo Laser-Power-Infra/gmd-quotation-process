@@ -19,12 +19,12 @@ import {
   type LiveContractRow,
   type MatchedItemResult,
 } from "@/app/actions/contractMatch";
-import type { DocketSuggestion } from "@/lib/contractDocketMatch";
+import type { DocketSuggestion, SkippedRateLine } from "@/lib/contractDocketMatch";
 import { useAppDispatch } from "@/lib/hooks";
 import { markEnquiryPageStale } from "@/lib/enquiriesSlice";
 import { looseIncludes } from "@/lib/squish";
 
-type Applied = { docketNumber: string; selectedContractNo: string[]; matchedCodes: number; items: MatchedItemResult[] };
+type Applied = { docketNumber: string; selectedContractNo: string[]; matchedCodes: number; items: MatchedItemResult[]; skipped: SkippedRateLine[] };
 
 /**
  * Contract -> docket match. Pick live contract(s), get the top 3 dockets of the
@@ -94,10 +94,12 @@ export default function ContractMatchButton() {
     dispatch(markEnquiryPageStale());
     const negative = res.data.negativeVaCount;
     const failed = res.data.items.length - res.data.updated;
+    const skipped = res.data.skippedCount;
     toast.success(
       `${res.data.docketNumber} linked to ${res.data.selectedContractNo.join(", ")}. ${res.data.updated} item(s) updated to contract rate.` +
         (negative ? ` ${negative} with negative VA% - review.` : "") +
-        (failed ? ` ${failed} not updated.` : ""),
+        (failed ? ` ${failed} not updated.` : "") +
+        (skipped ? ` ${skipped} line(s) got no contract rate - review.` : ""),
     );
     await reload();
   };
@@ -219,6 +221,21 @@ export default function ContractMatchButton() {
                     </span>
                   </div>
                 ))
+              )}
+              {applied.skipped.length > 0 && (
+                <>
+                  <div className="mt-1 font-semibold text-red-600">
+                    {applied.skipped.length} line(s) got no contract rate - fix and re-apply:
+                  </div>
+                  {applied.skipped.map((s, i) => (
+                    <div key={`${s.itemId}-${i}`} className="flex justify-between gap-3 rounded bg-red-500/10 px-2 py-1 text-red-600">
+                      <span className="truncate">
+                        <span className="font-mono">{s.code ?? "-"}</span> {s.itemName}
+                      </span>
+                      <span className="shrink-0">{s.reason}</span>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
           )}

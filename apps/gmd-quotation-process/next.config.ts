@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   // `unpdf` bundles PDF.js and relies on Node-specific loading; keep it out of
   // the server bundle so the docket-creation route can `require` it natively.
   serverExternalPackages: ["unpdf"],
+  // Old bookmarks: the Indent Checking page lives at /indent_listing.
+  async redirects() {
+    return [{ source: "/indent_checking", destination: "/indent_listing", permanent: true }];
+  },
   experimental: {
     serverActions: {
       bodySizeLimit: '100mb',

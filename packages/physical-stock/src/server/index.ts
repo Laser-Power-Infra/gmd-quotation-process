@@ -32,7 +32,7 @@ async function run<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
 
 export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
   const items = await stockPrisma.physicalStock.findMany({
-    orderBy: [{ form_date: "desc" }, { created_at: "desc" }],
+    orderBy: [{ form_date: "desc" }, { created_at: "desc" }, { id: "asc" }],
   });
   return items.map(({ created_at: _c, updated_at: _u, form_date, ...rest }) => ({
     ...rest,
