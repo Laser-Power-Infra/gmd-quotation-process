@@ -3,13 +3,15 @@
  *
  * Copies the `PURCHASE ORD AND GRN` tab of the GMD EXECUTION TRACKING workbook
  * into `PurchaseOrderLine` (stock DB), which is what the Purchase dashboard and
- * the physical stock page's in-transit column read.
+ * the physical stock page's in-transit column read; then replaces `GrnLine`
+ * from the `GRN` tab, the receipts the dashboard shows under each PO line.
  *
- * All logic is in `lib/purchaseOrderSync.ts`; this file adds the in-flight
- * latch and the shape the route returns.
+ * All logic is in `lib/purchaseOrderSync.ts` and `lib/grnSync.ts`; this file
+ * adds the in-flight latch and the shape the route returns.
  */
 
 import { syncPurchaseOrders, type PurchaseSyncResult } from "@/lib/purchaseOrderSync";
+import { syncGrnLines, type GrnSyncResult } from "@/lib/grnSync";
 import { JobAlreadyRunningError } from "./run-gmd-update";
 
 const JOB = "purchase-orders";
@@ -30,6 +32,7 @@ export interface ScheduledPurchaseResult {
   success: true;
   job: typeof JOB;
   result: PurchaseSyncResult;
+  grn: GrnSyncResult;
 }
 
 export async function runScheduledPurchaseOrders(
@@ -44,7 +47,10 @@ export async function runScheduledPurchaseOrders(
         `${result.inserted} new, ${result.updated} updated, ${result.unchanged} unchanged, ` +
         `${result.openLines} open (${result.untaggedOpenLines} untagged) in ${result.durationMs}ms`,
     );
-    return { success: true, job: JOB, result };
+    // `limit` is a PO smoke-test knob; the GRN copy is a full replace, so a limited run skips it.
+    const grn = await syncGrnLines({ dryRun: result.dryRun || options.limit !== undefined });
+    console.info(`[scheduler-${JOB}] GRN: ${grn.written} written of ${grn.sheetRows} rows, ${grn.linkedToPo} linked to a PO`);
+    return { success: true, job: JOB, result, grn };
   } finally {
     inFlight = false;
   }

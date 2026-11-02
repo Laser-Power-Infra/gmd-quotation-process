@@ -1,7 +1,7 @@
 import "server-only";
 import { stockPrisma } from "@gmd/db-stock";
 import type { PurchaseRow } from "../columns";
-import type { ActionResult, PurchasePage, PurchaseSummary, PurchaseView } from "../types";
+import type { ActionResult, GrnReceipt, PurchasePage, PurchaseSummary, PurchaseView } from "../types";
 import { balanceDisagrees } from "../lib/inTransit";
 
 // Reads of the PurchaseOrderLine table (stock DB). No auth and no flags lookup:
@@ -70,6 +70,9 @@ function toRow(line: {
   salesContract: string | null;
   partyRefNo: string | null;
   partyRefDate: string | null;
+  lastPoRate: string | null;
+  minPoRate: string | null;
+  lastPoDate: string | null;
   inTransit: number | null;
   lineValue: number | null;
 }): PurchaseRow {
@@ -242,4 +245,14 @@ export async function purchaseFacets(): Promise<{ suppliers: string[]; contracts
     suppliers: suppliers.map((s) => s.supplierName).filter((s): s is string => Boolean(s)),
     contracts: contracts.map((c) => c.salesContract).filter((c): c is string => Boolean(c)),
   };
+}
+
+/** GRN receipts booked against one PO line, oldest first as the sheet lists them. */
+export async function loadGrnReceipts(poNo: string, poLineNo: string): Promise<ActionResult<GrnReceipt[]>> {
+  return run(() =>
+    stockPrisma.grnLine.findMany({
+      where: { orderVrNo: poNo, orderSlNo: poLineNo },
+      select: { id: true, vrNo: true, vrDate: true, partyBillNo: true, partyBillDate: true, qtyRecd: true, purValue: true },
+    }),
+  );
 }

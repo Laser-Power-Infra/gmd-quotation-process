@@ -87,14 +87,19 @@ function derive(values: {
   netQtyOrder?: string | null;
   qtyExecuted?: string | null;
   basicAmount?: string | null;
+  rate?: string | null;
 }): { inTransit: number; lineValue: number | null } {
+  // The live tab formats BASIC_AMT as a date on most rows ("08-14-2116"), so the
+  // formatted cell is unparseable; ordered qty x rate is the same figure.
+  const ordered = parseQty(values.netQtyOrder ?? null);
+  const rate = parseQty(values.rate ?? null);
   return {
     inTransit: inTransitQty({
       balanceQty: values.balanceQty ?? null,
       netQtyOrder: values.netQtyOrder ?? null,
       qtyExecuted: values.qtyExecuted ?? null,
     }),
-    lineValue: parseQty(values.basicAmount ?? null),
+    lineValue: parseQty(values.basicAmount ?? null) ?? (ordered !== null && rate !== null ? ordered * rate : null),
   };
 }
 
@@ -181,6 +186,7 @@ export async function syncPurchaseOrders(
       netQtyOrder: values.netQtyOrder ?? current.netQtyOrder,
       qtyExecuted: values.qtyExecuted ?? current.qtyExecuted,
       basicAmount: values.basicAmount ?? current.basicAmount,
+      rate: values.rate ?? current.rate,
     };
     const derived = derive(merged);
     if (current.inTransit !== derived.inTransit) changes.inTransit = derived.inTransit;

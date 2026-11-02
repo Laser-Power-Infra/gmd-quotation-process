@@ -128,6 +128,9 @@ model PurchaseOrderLine {
   salesContract String? // SALES_CONT
   partyRefNo    String? // PARTYREFNO
   partyRefDate  String? // PARTYREFDATE
+  lastPoRate    String? // LAST_PO_RATE
+  minPoRate     String? // MIN_PO_RATE — lowest rate this item was ever bought at
+  lastPoDate    String? // LAST_PO_DATE
 
   // Derived by the sync with `@gmd/purchase/in-transit`, so every filter and
   // total is one Prisma query instead of parsing 13k strings per request.
@@ -144,4 +147,25 @@ model PurchaseOrderLine {
   @@index([itemCode])
   @@index([salesContract])
   @@index([inTransit])
+}
+
+// One receipt line of the `GRN` tab (GMD EXECUTION TRACKING). Joined to the PO
+// line it was received against on (orderVrNo, orderSlNo) = (poNo, poLineNo).
+// The tab has no unique key, so the sync replaces the whole table each run.
+model GrnLine {
+  id            String   @id @default(cuid())
+  mainPostName  String? // MAIN_POST_NAME
+  accCode       String? // ACC_CODE (supplier)
+  vrNo          String // VRNO — GRN number
+  vrDate        String? // VRDATE
+  itemCode      String? // ITEM_CODE
+  partyBillNo   String? // PARTYBILLNO
+  partyBillDate String? // PARTYBILLDATE
+  orderVrNo     String? // ORDER_VRNO -> PurchaseOrderLine.poNo
+  orderSlNo     String? // ORDER_SLNO -> PurchaseOrderLine.poLineNo
+  qtyRecd       Float? // QTYRECD
+  purValue      Float? // PUR_VALUE
+  syncedAt      DateTime @default(now())
+
+  @@index([orderVrNo, orderSlNo])
 }

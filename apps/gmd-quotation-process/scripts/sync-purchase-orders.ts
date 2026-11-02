@@ -11,6 +11,7 @@
 
 import "dotenv/config";
 import { syncPurchaseOrders } from "@/lib/purchaseOrderSync";
+import { syncGrnLines } from "@/lib/grnSync";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -35,6 +36,11 @@ async function main() {
   console.log(`Open lines    : ${result.openLines} (material still to come)`);
   console.log(`  untagged    : ${result.untaggedOpenLines} (no SALES_CONT, cannot be tied to an order)`);
   console.log(`Took          : ${result.durationMs}ms\n`);
+
+  // A limited run is a PO smoke test; the GRN copy is a full replace, so it only reports.
+  const grn = await syncGrnLines({ dryRun: !apply || limit !== undefined });
+  console.log(`GRN tab       : ${grn.tabTitle}, ${grn.sheetRows} rows, ${grn.skippedRows} skipped`);
+  console.log(`  written     : ${grn.written} (${grn.linkedToPo} carry an ORDER_VRNO)\n`);
 }
 
 main().catch((err) => {
