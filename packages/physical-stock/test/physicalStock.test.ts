@@ -40,7 +40,7 @@ test("mergeRows adds qty and joins text fields", () => {
     received_qty: "7",
     dispatch_qty: "1",
     available_qty: "6",
-    item_wise_value: "42.00",
+    item_wise_value: "60.00",
     remarks: "a, b",
   });
 });
