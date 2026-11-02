@@ -36,6 +36,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | Closure Status sync *(every 10m)* | `POST /api/scheduler/closure-status` | `closure-status-sync` | `docket_quotation_threads`, `enquiries` |
 | Ledger sync *(daily, 01:55)* | `POST /api/scheduler/ledger` | `ledger-sync` | `DEBTORS`, `CREDITORS`, `ADVANCE TO CREDITORS` -> `Debtor`, `Creditor`, `CreditorAdvance` |
 | Purchase Order / GRN sync | `POST /api/scheduler/purchase-orders` | `purchase-orders-sync` | `PURCHASE ORD AND GRN` -> stock DB `PurchaseOrderLine` |
+| Service / Work Orders sync *(daily, 02:10)* | `POST /api/scheduler/service-orders` | `service-orders-sync` | `ITEM MASTER ERP`, `GRN` -> `ServiceItem`, `GrnLine` |
 
 The stagger is deliberate. `raw-material`, `supply-history` and
 `contract-review` each full-table-read the tables the others write. `bom-mast`
@@ -786,6 +787,25 @@ also call (dry-run default, `--apply`, `--dump-headers` unchanged).
 - Report: `{ debtors, creditors, advances }`, each `{ read, mapped, skipped,
   skippedRows, written, inDb, error? }`.
 - The latch is in-process only; see the `shortcut:` comment in `ledger-sync.ts`.
+
+## `service-orders`
+
+Daily at **02:10** (`0 10 2 * * *`), after `ledger`. Entry:
+`runScheduledServiceOrders()` -> `runServiceOrdersSync()` in
+`service-orders-sync.ts`; mapping and joins in `lib/serviceOrders.ts`. Feeds
+`/service_orders`.
+
+- `ServiceItem`: `ITEM MASTER ERP` (gid 253020709) codes whose `LEVEL_1_NAME` is
+  `SERVICES` or `ITEM_NATURE` is `SR`.
+- `GrnLine`: the `GRN` tab (gid 372231442), every column, camel-cased
+  (`ORDER_VRNO` -> `orderVrno`), kept as strings.
+- PO lines are **not** copied here: the page reads the stock DB's
+  `PurchaseOrderLine`, which the `purchase-orders` job already mirrors, and joins
+  `GrnLine` on `ORDER_VRNO + ORDER_SLNO = VRNO + SLNO`. Pending = `BALANCE`
+  (the same `inTransitQty` the Purchase dashboard uses).
+- Snapshot copy, each table in its own transaction, same failure rules as
+  `ledger`. Report: `{ serviceItems, grn }`, each `{ read, written, skipped, inDb, error? }`.
+  `?dryRun=1` reads and counts without writing.
 
 ## `execution-tracking`
 
