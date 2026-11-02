@@ -27,9 +27,9 @@ export default async function Page() {
       })
     : [];
   const grn = po.length
-    ? await prisma.grnLine.findMany({
-        where: { orderVrno: { in: [...new Set(po.map((p) => p.poNo))], mode: "insensitive" } },
-        select: { vrno: true, vrdate: true, partybillno: true, orderVrno: true, orderSlno: true },
+    ? await stockPrisma.grnLine.findMany({
+        where: { orderVrNo: { in: [...new Set(po.map((p) => p.poNo))], mode: "insensitive" } },
+        select: { vrNo: true, vrDate: true, partyBillNo: true, orderVrNo: true, orderSlNo: true },
       })
     : [];
 

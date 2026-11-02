@@ -1403,29 +1403,6 @@ model InspectionReport {
   updatedAt DateTime        @updatedAt
 }
 
-/// GRN tab (gid 372231442), one row per receipt line. Snapshot-replaced by the
-/// service-orders job; joins a stock-DB `PurchaseOrderLine` on
-/// (orderVrno, orderSlno) = (poNo, poLineNo). Strings, like that table, because
-/// the export's cells are not clean enough to trust a typed column.
-model GrnLine {
-  id            String   @id @default(cuid())
-  mainPostName  String?
-  accCode       String?
-  vrno          String
-  vrdate        String?
-  itemCode      String?
-  partybillno   String?
-  partybilldate String?
-  orderVrno     String?
-  orderSlno     String?
-  qtyrecd       String?
-  purValue      String?
-  syncedAt      DateTime @default(now())
-
-  @@index([itemCode])
-  @@index([orderVrno, orderSlno])
-}
-
 /// Service / job-work codes from ITEM MASTER ERP: LEVEL_1_NAME = "SERVICES" or
 /// ITEM_NATURE = "SR". Snapshot-replaced by the service-orders job.
 model ServiceItem {

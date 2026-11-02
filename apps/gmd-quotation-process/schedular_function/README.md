@@ -796,15 +796,13 @@ Daily at **02:10** (`0 10 2 * * *`), after `ledger`. Entry:
 `/service_orders`.
 
 - `ServiceItem`: `ITEM MASTER ERP` (gid 253020709) codes whose `LEVEL_1_NAME` is
-  `SERVICES` or `ITEM_NATURE` is `SR`.
-- `GrnLine`: the `GRN` tab (gid 372231442), every column, camel-cased
-  (`ORDER_VRNO` -> `orderVrno`), kept as strings.
-- PO lines are **not** copied here: the page reads the stock DB's
-  `PurchaseOrderLine`, which the `purchase-orders` job already mirrors, and joins
-  `GrnLine` on `ORDER_VRNO + ORDER_SLNO = VRNO + SLNO`. Pending = `BALANCE`
-  (the same `inTransitQty` the Purchase dashboard uses).
-- Snapshot copy, each table in its own transaction, same failure rules as
-  `ledger`. Report: `{ serviceItems, grn }`, each `{ read, written, skipped, inDb, error? }`.
+  `SERVICES` or `ITEM_NATURE` is `SR`. The only table this job writes.
+- PO lines and receipts are **not** copied here: the page reads the stock DB's
+  `PurchaseOrderLine` and `GrnLine`, which the `purchase-orders` job (02:05)
+  already mirrors, and joins them on `ORDER_VRNO + ORDER_SLNO = VRNO + SLNO`.
+  Pending = `BALANCE` (the same `inTransitQty` the Purchase dashboard uses).
+- Snapshot copy in one transaction, same failure rules as `ledger`. Report:
+  `{ serviceItems: { read, written, skipped, inDb, error? } }`.
   `?dryRun=1` reads and counts without writing.
 
 ## `execution-tracking`

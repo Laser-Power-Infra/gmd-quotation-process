@@ -1,8 +1,8 @@
 /**
  * Ofelia entry point for the daily Service / Work Orders refresh.
  *
- * Replaces `ServiceItem` and `GrnLine` from the ITEM MASTER ERP and GRN tabs of
- * `GMD_EXECUTION_TRACKING_SPREADSHEET_ID`. PO lines come from the purchase-orders job.
+ * Replaces `ServiceItem` from the ITEM MASTER ERP tab of
+ * `GMD_EXECUTION_TRACKING_SPREADSHEET_ID`. PO and GRN lines come from the purchase-orders job.
  *
  * Deliberately thin: all logic lives in `@/schedular_function`.
  */
@@ -50,6 +50,6 @@ export async function GET(request: Request) {
     success: true,
     job: "service-orders",
     auth: "ok",
-    note: "POST to refresh service items and GRN lines from the sheet.",
+    note: "POST to refresh service items from the sheet.",
   });
 }
