@@ -547,6 +547,36 @@ export async function updateIndentRmCodeAction(input: {
     }
 
     const value = String(input.value ?? "").trim();
+    if (value !== "") {
+      const { LIVE_RM_WHERE } = await import("@/lib/indentRmCodeResolver");
+      const { rmOptionFitsIndentRow } = await import("@/lib/indentRmCodeOptions");
+      const codes = [...new Set(value.split(",").map((c) => c.trim()).filter(Boolean))];
+      const [masters, targets] = await Promise.all([
+        prisma.rawMaterial.findMany({
+          where: { erpItemCode: { in: codes }, ...LIVE_RM_WHERE },
+          select: { erpItemCode: true, l2ValveType: true, l3Dia: true },
+        }),
+        prisma.indentListing.findMany({
+          where: { id: { in: sourceIds } },
+          select: { item: true, size: true },
+        }),
+      ]);
+      const byCode = new Map(masters.map((m) => [m.erpItemCode, m]));
+      for (const code of codes) {
+        const m = byCode.get(code);
+        if (!m) {
+          return { success: false, error: `RM code ${code} is not a live raw material.` };
+        }
+        const option = { valveType: m.l2ValveType ?? "", size: m.l3Dia ?? "" };
+        const bad = targets.find((t) => !rmOptionFitsIndentRow(option, t.item, t.size));
+        if (bad) {
+          return {
+            success: false,
+            error: `RM code ${code} (${option.valveType || "no type"} ${option.size}) does not fit ${bad.item ?? "this item"} ${bad.size ?? ""}.`,
+          };
+        }
+      }
+    }
     // Every stored row behind the displayed line gets the same value: a
     // TPAV+SLV compound is folded into the SLV/TPAV rows it contributes to.
     const result = await prisma.indentListing.updateMany({
@@ -691,6 +721,7 @@ export async function recomputeIndentListingVersionsAction() {
     const {
       planIndentRmCodes,
       planRmCodeWrites,
+      LIVE_RM_WHERE,
       RM_CODE_ITEM_CATEGORY,
       RM_CODE_VALVE_TYPES,
     } = await import("@/lib/indentRmCodeResolver");
@@ -728,10 +759,12 @@ export async function recomputeIndentListingVersionsAction() {
             in: [...RM_CODE_VALVE_TYPES],
             mode: "insensitive",
           },
-          newItemStatus: null,
+          ...LIVE_RM_WHERE,
         },
         select: {
           erpItemCode: true,
+          itemNameAuto: true,
+          availableStock: true,
           l2ValveType: true,
           l3Dia: true,
           l4Component: true,
@@ -745,8 +778,7 @@ export async function recomputeIndentListingVersionsAction() {
 
     const rmCodePlan = planIndentRmCodes(rmCodeSourceRows, rawMaterials);
     const rmCodeCurrentById = new Map(rmCodeSourceRows.map((r) => [r.id, r]));
-    // A blank planned value is never written, so a hand-picked code survives a
-    // sync that resolved nothing for that slot.
+    // Only blank slots are filled: curated / hand-picked codes are never overwritten.
     const rmCodeWrites = planRmCodeWrites(
       rmCodePlan.updates,
       rmCodeCurrentById,

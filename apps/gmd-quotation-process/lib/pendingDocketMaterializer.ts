@@ -29,7 +29,7 @@ export type {
   ThreadEmailSplit,
 } from "./enquiryEmailParty";
 
-export type PartyNameSource = "email" | "partyName" | "subCategory" | "unknown";
+export type PartyNameSource = "email" | "partyName" | "subCategory" | "mailText" | "unknown";
 
 export interface ThreadPartyFields {
   subCategory: string | null;
@@ -137,6 +137,7 @@ export function isDeletableDuplicate(input: DuplicateGuardInput): boolean {
 export function resolvePartyForThread(
   thread: ThreadPartyFields,
   emailPartyMap: Map<string, string>,
+  matchMailText?: () => string | null,
 ): { partyName: string; source: PartyNameSource } {
   for (const email of threadExternalEmails(thread)) {
     const found = emailPartyMap.get(email);
@@ -152,6 +153,10 @@ export function resolvePartyForThread(
   if (isRealPartyName(subCategory)) {
     return { partyName: subCategory, source: "subCategory" };
   }
+
+  // Last resort before "Unknown": a known party named in the mail subject/body.
+  const fromText = matchMailText?.();
+  if (fromText) return { partyName: fromText, source: "mailText" };
 
   return { partyName: "Unknown", source: "unknown" };
 }

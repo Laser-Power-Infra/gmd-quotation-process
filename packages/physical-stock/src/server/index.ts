@@ -51,7 +51,13 @@ export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
   });
   return items.map((item) => {
     const { created_at: _c, updated_at: _u, form_date, heat_entries: _h, ...rest } = item;
-    return { ...rest, form_date: form_date ? form_date.toISOString() : null, ...heatColumns(item) };
+    return {
+      ...rest,
+      form_date: form_date ? form_date.toISOString() : null,
+      ...heatColumns(item),
+      // Filled by the host app's load() from @gmd/purchase; null = not looked up.
+      in_transit: null,
+    };
   });
 }
 
@@ -168,7 +174,7 @@ export async function setHeatDone(stockId: string): Promise<ActionResult<null>> 
  * Writes one field. `allowed` comes from editableFieldsFor(flags) and is
  * checked before any DB access. Side effects:
  *   - received/dispatch qty recompute available_qty (when both are present)
- *   - rate/unit or available qty recompute item_wise_value
+ *   - cost or available qty recompute item_wise_value
  *   - erp_code may only fill a blank code
  * Returns every field that changed so the page can merge it.
  */
@@ -202,8 +208,8 @@ export async function updatePhysicalStockField(
       const available = computeAvailableQty(next.received_qty, next.dispatch_qty);
       if (available !== null) changes.available_qty = next.available_qty = available;
     }
-    if ("rate_unit" in changes || "available_qty" in changes) {
-      changes.item_wise_value = computeItemWiseValue(next.rate_unit, next.available_qty);
+    if ("cost" in changes || "available_qty" in changes) {
+      changes.item_wise_value = computeItemWiseValue(next.cost, next.available_qty);
     }
 
     await stockPrisma.physicalStock.update({ where: { id }, data: changes });
@@ -276,7 +282,7 @@ export async function createPhysicalStock(
       const available = computeAvailableQty(received_qty, dispatch_qty);
       if (available !== null) {
         changes.available_qty = available;
-        changes.item_wise_value = computeItemWiseValue(match.rate_unit, available);
+        changes.item_wise_value = computeItemWiseValue(match.cost, available);
       }
       await stockPrisma.physicalStock.update({ where: { id: match.id }, data: changes });
       return { erp_code: match.erp_code!, merged: true };

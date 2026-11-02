@@ -15,11 +15,17 @@ export interface EnquiryQuery {
   pendingOnly: boolean;
   closedBomOnly: boolean;
   incompleteOnly: boolean;
+  /** Only items with a cost sanity warning (lib/costSanity.ts). */
+  costWarningOnly: boolean;
+  /** Status-tile filter; "" = all stages. */
+  stage: EnquiryStage;
   selectedEnquiryIds: string[];
   sort: EnquirySort;
   page: number;
   pageSize: number;
 }
+
+export type EnquiryStage = "" | "details" | "cost" | "validation" | "ready" | "sent";
 
 export interface ClosureCounts {
   [status: string]: number;
@@ -35,6 +41,13 @@ export interface EnquirySummary {
   closureCounts: ClosureCounts;
   notSentCount: number;
   totalEnquiries: number;
+  stageCounts: Record<string, number>;
+  /** stage → age bucket (days since enquiry) → docket count. */
+  stageAgeing: Record<string, Record<string, number>>;
+  /** Open dockets per owner of their current stage; userId null = unassigned. */
+  assigneePending: { userId: string | null; name: string; stage: string; count: number }[];
+  /** Sidebar field → value → docket count over the full filtered set (own filter skipped). */
+  facetCounts: Record<string, Record<string, number>>;
 }
 
 export interface EnquiryPageResult {
@@ -54,6 +67,10 @@ export const EMPTY_ENQUIRY_SUMMARY: EnquirySummary = {
   closureCounts: {},
   notSentCount: 0,
   totalEnquiries: 0,
+  stageCounts: {},
+  stageAgeing: {},
+  assigneePending: [],
+  facetCounts: {},
 };
 
 export interface EnquiryFacetResult {
@@ -74,10 +91,12 @@ export function emptyEnquiryQuery(): EnquiryQuery {
     pendingOnly: false,
     closedBomOnly: false,
     incompleteOnly: false,
+    costWarningOnly: false,
+    stage: "",
     selectedEnquiryIds: [],
     sort: null,
     page: 1,
-    pageSize: 10,
+    pageSize: 50,
   };
 }
 
@@ -91,6 +110,8 @@ export function emptyEnquiryQuery(): EnquiryQuery {
     pendingOnly: q.pendingOnly,
     closedBomOnly: q.closedBomOnly,
     incompleteOnly: q.incompleteOnly,
+    costWarningOnly: q.costWarningOnly,
+    stage: q.stage,
     selectedEnquiryIds: [...q.selectedEnquiryIds].sort(),
     sort: q.sort,
     page: q.page,

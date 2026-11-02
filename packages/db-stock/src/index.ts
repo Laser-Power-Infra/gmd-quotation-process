@@ -6,7 +6,7 @@ export * from "./generated/client";
 const globalForPrisma = globalThis as unknown as { stockPrisma?: PrismaClient };
 
 function create() {
-  const adapter = new PrismaPg({ connectionString: process.env.STOCK_DATABASE_URL });
+  const adapter = new PrismaPg({ connectionString: process.env.STOCK_DATABASE_URL, connectionTimeoutMillis: 10_000 });
   return new PrismaClient({ adapter });
 }
 

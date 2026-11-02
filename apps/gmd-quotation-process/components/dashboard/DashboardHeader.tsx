@@ -13,6 +13,8 @@ import { BLANK } from "@/lib/filterUtils";
 import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import AddItemsDialog from "./AddItemsDialog";
 import NewEnquiryDialog from "./NewEnquiryDialog";
+import ContractMatchButton from "./ContractMatchButton";
+import CodeCheckButton from "./CodeCheckButton";
 
 const NOT_SENT = "Not Sent";
 
@@ -166,6 +168,9 @@ export default function DashboardHeader({
           <RefreshCw className={`h-4 w-4 ${syncingEmails ? "animate-spin" : ""}`} />
           {syncingEmails ? "Syncing..." : "Sync Emails"}
         </Button>
+
+        <CodeCheckButton />
+        <ContractMatchButton />
 
         <Button
           onClick={() => dispatch(openAddItemsDialog())}

@@ -1,5 +1,7 @@
 export interface UsdInrRate {
   rate: number;
+  /** Host of the API that supplied the rate, e.g. "open.er-api.com". */
+  source: string;
   fetchedAt: string;
 }
 
@@ -35,17 +37,16 @@ async function fetchFromFallback(): Promise<number> {
 }
 
 export async function fetchUsdInrRate(): Promise<UsdInrRate> {
-  let rate: number;
+  const fetchedAt = new Date().toISOString();
   try {
-    rate = await fetchFromPrimary();
+    return { rate: await fetchFromPrimary(), source: "open.er-api.com", fetchedAt };
   } catch (primaryErr) {
     try {
-      rate = await fetchFromFallback();
+      return { rate: await fetchFromFallback(), source: "api.frankfurter.app", fetchedAt };
     } catch {
       throw primaryErr;
     }
   }
-  return { rate, fetchedAt: new Date().toISOString() };
 }
 
 export async function getUsdInrRate(refresh = false): Promise<UsdInrRate> {

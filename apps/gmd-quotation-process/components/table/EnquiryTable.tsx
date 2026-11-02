@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X, PackageCheck, ExternalLink, ImageIcon, Check, Mail, Loader2 } from "lucide-react";
+import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X, PackageCheck, ExternalLink, ImageIcon, Check, Mail, Loader2, History, AlertTriangle } from "lucide-react";
 import { shallowEqual } from "react-redux";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
@@ -11,8 +11,8 @@ import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
 import CellSelect, { optionsWithCurrent } from "./CellSelect";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly } from "@/lib/enquiriesSlice";
-import { enquiryFilterKey } from "@/lib/enquiryQuery";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
+import { enquiryFilterKey, type EnquiryStage } from "@/lib/enquiryQuery";
 import { fetchDocketNumbers, fetchFilteredEnquiryExport } from "@/app/actions/enquiryQuery";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { itemDeletedStatus, DELETED_STATUS_OPTIONS } from "@/lib/filterUtils";
@@ -32,8 +32,12 @@ import { C_BATCH_VALUE } from "@/lib/gmd_lib/verify-bom-columns";
 import { N_BATCH_VALUE } from "@/lib/gmd_lib/contract-review-columns";
 import { correctItemType } from "@/lib/itemTypePatterns";
 import { missingDetails, sizeFromName, type AutoFillChange } from "@/lib/detailsCheck";
-import { previewAutoFillAction } from "@/app/actions/item";
+import { previewAutoFillAction, getItemChangeLogAction } from "@/app/actions/item";
 import AutoFillReviewDialog from "./AutoFillReviewDialog";
+import StageAssignPopover from "./StageAssignPopover";
+import AssigneePendingStrip from "./AssigneePendingStrip";
+import { AGE_BUCKETS, istDaysSince } from "@/lib/stageAgeing";
+import { ConfirmDialog } from "@/components/chat/ConfirmDialog";
 import { isInternalEmail } from "@/lib/enquiryEmailParty";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@gmd/ui/components/dialog";
 import { Button } from "@gmd/ui/components/button";
@@ -45,6 +49,17 @@ interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
   autoSentDockets?: string[];
   autoPendingDockets?: string[];
+}
+
+// Red warning icon beside Product Cost; the reasons come from lib/costSanity.ts.
+function CostWarningIcon({ warnings }: { warnings?: string[] | null }) {
+  if (!warnings?.length) return null;
+  const text = `Cost warning: ${warnings.join("; ")}`;
+  return (
+    <span title={text} aria-label={text} role="img" className="shrink-0 text-red-600 dark:text-red-400">
+      <AlertTriangle className="h-3.5 w-3.5" />
+    </span>
+  );
 }
 
 // Helper to extract company name and branch
@@ -85,6 +100,14 @@ const fileToBase64 = (file: File): Promise<string> => {
     reader.onerror = (error) => reject(error);
   });
 };
+
+const STAGE_TILES: [Exclude<EnquiryStage, "">, string][] = [
+  ["details", "Details pending"],
+  ["cost", "Cost pending"],
+  ["validation", "Validation pending"],
+  ["ready", "Ready to send"],
+  ["sent", "Sent, awaiting reply"],
+];
 
 function isBlankValue(value: unknown): boolean {
   return value === null || value === undefined || value === "" || value === "-";
@@ -435,6 +458,42 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const [autoFillStatus, setAutoFillStatus] = useState<"idle" | "running">("idle");
   const [autoFillChanges, setAutoFillChanges] = useState<AutoFillChange[] | null>(null);
   const [autoFillApplying, setAutoFillApplying] = useState(false);
+  // In-app replacement for window.confirm(): `if (!(await ask("..."))) return;`
+  const [confirmState, setConfirmState] = useState<{ msg: string; resolve: (ok: boolean) => void } | null>(null);
+  const ask = (msg: string) => new Promise<boolean>((resolve) => setConfirmState({ msg, resolve }));
+  const confirmValidation = async (item: EnquiryItemData, next: "Yes" | "No" | "") => {
+    if (!(await ask(`Set validation to "${next || "Blank"}" for ${item.itemName || "this item"}?`))) return;
+    await handleItemFieldChange(item.id, "validation", next);
+  };
+  // Validation=Yes locks Rate & VA%; say so in the cell and offer the way out.
+  const unlockButton = (item: EnquiryItemData) =>
+    item.validation === "Yes" ? (
+      <button
+        type="button"
+        onClick={() => confirmValidation(item, "")}
+        title="Validated: Rate & VA% are locked. Click to clear validation and edit."
+        className="shrink-0 px-1 py-0.5 text-[9px] font-bold rounded border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-500/10 cursor-pointer"
+      >
+        Unlock
+      </button>
+    ) : null;
+  type ChangeRow = { id: string; field: string; oldValue: string | null; newValue: string | null; changedBy: string; createdAt: string };
+  const [history, setHistory] = useState<{ itemName: string; rows: ChangeRow[] } | null>(null);
+  const historyButton = (item: EnquiryItemData) => (
+    <button
+      type="button"
+      onClick={async () => {
+        const r = await getItemChangeLogAction(item.id);
+        if (!r.success) { toast.error(r.error || "Failed to load history."); return; }
+        setHistory({ itemName: item.itemName || "Item", rows: r.data ?? [] });
+      }}
+      title="Who changed VA%, rate or validation, and when"
+      aria-label="Change history"
+      className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted cursor-pointer"
+    >
+      <History className="h-3 w-3" />
+    </button>
+  );
   const [vaStatus, setVaStatus] = useState<"idle" | "running">("idle");
   const [fetchCodesStatus, setFetchCodesStatus] = useState<"idle" | "running">("idle");
   const [updateCostStatus, setUpdateCostStatus] = useState<"idle" | "running">("idle");
@@ -457,6 +516,9 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   // Details header filter: only items missing Type, MOC, Size, PN or Op Type.
   const incompleteOnly = pageState.incompleteOnly;
   const setIncompleteOnly = (value: boolean) => dispatch(setEnquiryIncompleteOnly(value));
+  // Product Cost header filter: only items with a cost sanity warning (lib/costSanity.ts).
+  const costWarningOnly = pageState.costWarningOnly;
+  const setCostWarningOnly = (value: boolean) => dispatch(setEnquiryCostWarningOnly(value));
   const [addingContractFor, setAddingContractFor] = useState<string | null>(null);
 
   // Image lookup: GeneratedImage rows keyed by imageKey (itemType__operationType__rmType).
@@ -575,10 +637,11 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const [bulkValidationRunning, setBulkValidationRunning] = useState<"Yes" | "No" | "Clear" | null>(null);
   const handleBulkValidation = async (val: "Yes" | "No" | "") => {
     let itemIds: string[];
+    let docketCount: number;
     try {
-      itemIds = (
-        await dispatch(loadFilteredEnquiryIds({ query: query })).unwrap()
-      ).itemIds;
+      const ids = await dispatch(loadFilteredEnquiryIds({ query: query })).unwrap();
+      itemIds = ids.itemIds;
+      docketCount = ids.enquiryIds.length;
     } catch {
       toast.error("Failed to load filtered items.");
       return;
@@ -588,7 +651,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       return;
     }
     const label = val === "" ? "Blank" : val;
-    if (!confirm(`Set validation to "${label}" for ${itemIds.length} filtered item(s) across all pages?`)) return;
+    if (!(await ask(`Set validation to "${label}": this will change ${itemIds.length} item(s) in ${docketCount} docket(s) across all pages. Continue?`))) return;
     const runKey = val === "" ? "Clear" : val;
     setBulkValidationRunning(runKey as any);
     const toastId = toast.loading(`Setting validation to "${label}"...`);
@@ -620,7 +683,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       return;
     }
     const label = val === "" ? "Blank" : val;
-    if (!confirm(`Set APM to "${label}" for ${enquiryIds.length} filtered enquir${enquiryIds.length === 1 ? "y" : "ies"} across all pages?`)) return;
+    if (!(await ask(`Set APM to "${label}": this will change ${enquiryIds.length} docket(s) across all pages. Continue?`))) return;
     const runKey = val === "" ? "Clear" : val;
     setBulkApmRunning(runKey as any);
     const toastId = toast.loading(`Setting APM to "${label}"...`);
@@ -713,6 +776,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     setPendingOnly(false);
     setClosedBomOnly(false);
     setIncompleteOnly(false);
+    setCostWarningOnly(false);
+    dispatch(setEnquiryStage(""));
     setProjectReferenceInput("");
     dispatch(setEnquiryProjectReference(""));
     toast.success("All filters reset successfully.");
@@ -967,13 +1032,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       if (!itemDeletedStatus(item, filters.deletedStatus)) return false;
       if (incompleteOnly && missingDetails(item).length === 0) return false;
+      if (costWarningOnly && !item.costWarnings?.length) return false;
       if (closedBomOnly) {
         const bomId = (item as unknown as Record<string, unknown>).bomId as string | null | undefined;
         if (!bomId || !closedBomIdSet.has(bomId)) return false;
       }
       return true;
     });
-  }, [filters, getItemImage, closedBomOnly, closedBomIdSet, incompleteOnly]);
+  }, [filters, getItemImage, closedBomOnly, closedBomIdSet, incompleteOnly, costWarningOnly]);
 
   const toggleExpand = (id: string, currentExpanded: boolean) => {
     dispatch(setRowExpanded({ id, expanded: !currentExpanded }));
@@ -1062,7 +1128,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     if (!enquiry.duplicateOfDocket) return;
     const itemCount = enquiry.items?.length ?? 0;
     if (
-      !confirm(
+      !await ask(
         `Delete docket ${enquiry.docketNumber} as a duplicate of ${enquiry.duplicateOfDocket}?` +
           (itemCount > 0 ? `\n\nIts ${itemCount} item(s) will also be deleted.` : "") +
           `\nIts source mail will be re-linked to ${enquiry.duplicateOfDocket}.`,
@@ -1598,7 +1664,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       return
     }
     if (
-      !confirm(
+      !await ask(
         `Re-check ERP item codes for ${matchedItems.length} item(s) against the live master sheet? ` +
           `${alreadyCoded} already coded (updated if the sheet mapping changed), ${missingCodeItems.length} missing.`
       )
@@ -1715,7 +1781,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       }
       return
     }
-    if (!confirm(`Update costs (BOM DIRECT M2M & 2:1, plus Indent Listing fallback) for ${targetItems.length} item(s)?`)) return
+    if (!await ask(`Update costs (BOM DIRECT M2M & 2:1, plus Indent Listing fallback) for ${targetItems.length} item(s)?`)) return
 
     setUpdateCostStatus("running")
     const toastId = toast.loading(`Updating BOM costs for ${targetItems.length} item(s)...`)
@@ -1757,7 +1823,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       toast.info("No blank VA% fields to fill.")
       return
     }
-    if (!confirm(`Auto-fill VA% for ${blankVaItems.length} items (based on item type + size defaults)?`)) return
+    if (!await ask(`Auto-fill VA% for ${blankVaItems.length} items (based on item type + size defaults)?`)) return
 
     setVaStatus("running")
     try {
@@ -1784,7 +1850,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       return
     }
     if (
-      !confirm(
+      !await ask(
         `Fetch Contract Review rates for ${itemsWithCode.length} item(s) with ERP item codes?\n\n` +
           `Any BLANK Cost Ref Code will also be filled from the Contract Review cost code ref. ` +
           `Items that already have a Cost Ref Code are left untouched, and a cost code ref ` +
@@ -1828,7 +1894,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       toast.info("No items with both Contract Review Rate and Product Cost found on this page.")
       return
     }
-    if (!confirm(`Populate PD Cost Validation % for ${matchedItems.length} item(s)?`)) return
+    if (!await ask(`Populate PD Cost Validation % for ${matchedItems.length} item(s)?`)) return
 
     setPdCostValStatus("running")
     const toastId = toast.loading(`Populating PD Cost Validation % for ${matchedItems.length} item(s)...`)
@@ -1844,7 +1910,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   }
 
   const handleSyncAvailableStock = async () => {
-    if (!confirm("Sync available stock and RM Type for ALL items with a raw material code from Raw Materials dashboard (GMDUpdateItem)? This will backfill availableStock and rmType wherever rmItemCode matches.")) return
+    if (!await ask("Sync available stock and RM Type for ALL items with a raw material code from Raw Materials dashboard (GMDUpdateItem)? This will backfill availableStock and rmType wherever rmItemCode matches.")) return
 
     setSyncStockStatus("running")
     const toastId = toast.loading("Syncing available stock and RM Type for all items with an RM code...")
@@ -1870,12 +1936,87 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const totalTableWidth =
     Array.from({ length: TOTAL_COLUMNS }, (_, idx) => getColWidth(idx)).reduce((a, b) => a + b, 0) +
     SELECT_COL_WIDTH;
+  // Docket No, Item Name and Details (holds Size) pin to the left; columns between them scroll underneath.
+  const frozenLeft: Record<number, number> = {
+    1: 0,
+    14: getColWidth(1),
+    15: getColWidth(1) + getColWidth(14),
+  };
+  // Collapsed table borders don't travel with sticky cells, so draw the divider as a shadow.
+  const FROZEN_TD = "sticky z-20 bg-background shadow-[inset_-1px_0_0_var(--border)]";
+  // Yes/No toggle: only the saved side is coloured (with a tick), so the stored value reads at a glance.
+  const renderYesNo = (
+    enquiryId: string,
+    field: "technicalEvaluation" | "reverseAuctionStatus",
+    label: string,
+    raw: string | null | undefined,
+  ) => {
+    const saved = (raw ?? "").trim().toLowerCase();
+    return (
+      <div className="flex items-center justify-center gap-1">
+        {(["Yes", "No"] as const).map((opt) => {
+          const on = saved === opt.toLowerCase();
+          return (
+            <button
+              key={opt}
+              type="button"
+              aria-pressed={on}
+              title={on ? `${label}: ${opt} (saved). Click to clear.` : `Set ${label} ${opt}`}
+              onClick={() => handleEnquiryFieldChange(enquiryId, field, on ? "" : opt)}
+              className={`inline-flex items-center gap-0.5 px-2 py-1 text-[10px] font-bold rounded border cursor-pointer transition-all ${
+                on
+                  ? opt === "Yes"
+                    ? "bg-emerald-500 border-emerald-500 text-white dark:bg-emerald-500/80"
+                    : "bg-rose-500 border-rose-500 text-white dark:bg-rose-500/80"
+                  : "bg-background border-border text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              {on && <Check className="h-2.5 w-2.5" />}
+              {opt}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+  const allExpanded =
+    paginatedEnquiries.length > 0 &&
+    paginatedEnquiries.every((e) => expandedRows[e.id] ?? hasActiveFilters);
+  const toggleExpandAll = () =>
+    dispatch(setExpandedRows(Object.fromEntries(paginatedEnquiries.map((e) => [e.id, !allExpanded]))));
 
   const inputClass =
     "mt-1.5 w-full h-7 rounded border border-input bg-background px-2 py-0.5 text-[10px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 normal-case";
 
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0">
+      {/* Status tiles: one stage per docket, counted server-side; click to filter */}
+      <div className="flex flex-wrap gap-2 px-4 py-2 border-b border-border">
+        {STAGE_TILES.map(([stage, label]) => {
+          const active = pageState.stage === stage;
+          return (
+            <button
+              key={stage}
+              type="button"
+              onClick={() => dispatch(setEnquiryStage(active ? "" : stage))}
+              aria-pressed={active}
+              className={`flex flex-col items-start rounded-md border px-3 py-1.5 min-w-32 cursor-pointer transition-colors ${
+                active
+                  ? "border-[#0f62fe] bg-[#0f62fe] text-white dark:border-blue-500/80 dark:bg-blue-500/80"
+                  : "border-border bg-background text-foreground hover:bg-accent"
+              }`}
+            >
+              <span className={`text-[10px] font-semibold uppercase tracking-wider ${active ? "text-white/80" : "text-muted-foreground"}`}>{label}</span>
+              <span className="text-lg font-bold leading-tight">{pageState.summary?.stageCounts?.[stage] ?? 0}</span>
+              {/* Ageing: days since enquiry */}
+              <span className={`text-[9px] tabular-nums ${active ? "text-white/80" : "text-muted-foreground"}`}>
+                {AGE_BUCKETS.map((b) => `${b}d ${pageState.summary?.stageAgeing?.[stage]?.[b] ?? 0}`).join(" · ")}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <AssigneePendingStrip rows={pageState.summary?.assigneePending ?? []} />
       {/* Table Toolbar */}
       <div className="flex justify-between items-center px-4 py-2.5 bg-muted/50 border-b border-border">
         <span className="text-[11px] font-semibold text-muted-foreground">
@@ -1907,8 +2048,19 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               · {validSelectedEnquiryIds.length} selected
             </span>
           )}
+          {/* Row colour legend (red = invalidVaItemIds, blue = isSelected) */}
+          <span className="ml-3 inline-flex items-center gap-3 font-normal text-muted-foreground/80">
+            <span className="inline-flex items-center gap-1" title="Red row = VA% above allowed limit for this type/size">
+              <span className="h-2.5 w-2.5 rounded-sm border border-red-300 bg-red-100 dark:border-red-500/40 dark:bg-red-500/15" />
+              Red row = VA% above allowed limit for this type/size
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded-sm border border-blue-300 bg-blue-50 dark:border-blue-500/40 dark:bg-blue-500/10" />
+              Selected
+            </span>
+          </span>
         </span>
-        
+
         <div className="flex items-center gap-2 shrink-0">
           {hasActiveFilters && (
             <button
@@ -2033,10 +2185,11 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             <col key={idx} style={{ width: getColWidth(idx) }} />
           ))}
         </colgroup>
-        <thead>
-          <tr className="bg-muted/80 select-none">
+        {/* Opaque sticky layer: collapsed borders leave gaps between sticky <th>s that rows showed through. */}
+        <thead className="sticky top-0 z-30 bg-muted">
+          <tr className="bg-muted select-none">
             {/* Select checkbox column — scope: cascading-filtered dockets */}
-            <th className="py-2.5 px-2 sticky top-0 z-30 bg-muted/90 border-r border-b border-border text-center align-top">
+            <th className="py-2.5 px-2 sticky top-0 z-30 bg-muted border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] text-center align-top">
               <div className="flex flex-col items-center justify-center gap-1">
                 <span className="text-[9px] font-bold tracking-wider text-muted-foreground uppercase">Sel</span>
                 <input
@@ -2061,7 +2214,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               </div>
             </th>
             {/* 0. Enquiry Date */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Enquiry Date</span>
                 {renderSortArrow("enquiryDate")}
@@ -2092,9 +2245,21 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 1. Docket No */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th style={{ left: frozenLeft[1] }} className="relative py-2.5 px-3 sticky top-0 z-40 bg-muted shadow-[inset_-1px_0_0_var(--border),inset_0_-1px_0_var(--border)] text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
-                <span>Docket No</span>
+                <span className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={toggleExpandAll}
+                    disabled={paginatedEnquiries.length === 0}
+                    title={allExpanded ? "Collapse all dockets" : "Expand all dockets"}
+                    aria-label={allExpanded ? "Collapse all dockets" : "Expand all dockets"}
+                    className="inline-flex items-center justify-center p-0.5 hover:bg-background rounded cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {allExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  </button>
+                  Docket No
+                </span>
                 {renderSortArrow("docketNumber")}
               </div>
               <FilterTextInput
@@ -2125,7 +2290,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 2. Party Name */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Party Name</span>
                 {renderSortArrow("partyName")}
@@ -2152,7 +2317,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 3. Contract Review (matched from ContractReview by party name) */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Contract Number</span>
                 {renderSortArrow("contractNo")}
@@ -2181,7 +2346,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 4. Enquiry Type Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Enquiry Type</span>
                 {renderSortArrow("enquiryType")}
@@ -2209,7 +2374,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* State/Utility */}
-            <th className="relative py-2.5 px-2.5 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-2.5 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between gap-1">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="truncate">State / Utility</span>
@@ -2284,7 +2449,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 6. Payment Terms / PBG / Inspection */}
-            <th className="relative py-2.5 px-2.5 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-2.5 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between gap-1">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span className="truncate">Payment / PBG / Insp</span>
@@ -2386,7 +2551,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
 
             {/* Email Address */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Email Address</span>
               </div>
@@ -2406,7 +2571,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* Contact No */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Contact No</span>
               </div>
@@ -2426,7 +2591,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 10. Order Status Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Order Status</span>
                 {renderSortArrow("orderStatus")}
@@ -2454,7 +2619,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* Closure Status / Duplicate */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Closure Status/Duplicate</span>
                 {renderSortArrow("closureStatus")}
@@ -2500,7 +2665,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 11. Project Reference */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Project Reference</span>
                 {renderSortArrow("projectReference")}
@@ -2523,7 +2688,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 12. Technical Evaluation */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Technical Evaluation</span>
               </div>
@@ -2538,7 +2703,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 13. Reverse Auction */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Reverse Auction</span>
               </div>
@@ -2553,7 +2718,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 14. Item Name As Per Party */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th style={{ left: frozenLeft[14] }} className="relative py-2.5 px-3 sticky top-0 z-40 bg-muted shadow-[inset_-1px_0_0_var(--border),inset_0_-1px_0_var(--border)] text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Item Name</span>
                 {renderSortArrow("itemName")}
@@ -2574,7 +2739,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* Details */}
-            <th className="relative py-2.5 px-2.5 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th style={{ left: frozenLeft[15] }} className="relative py-2.5 px-2.5 sticky top-0 z-40 bg-muted shadow-[inset_-1px_0_0_var(--border),inset_0_-1px_0_var(--border)] text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between gap-1">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span>Details</span>
@@ -2795,7 +2960,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 12. Quantity */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Quantity</span>
                 {renderSortArrow("quantity")}
@@ -2816,7 +2981,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 17. Item Code (read-only) */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Item Code</span>
                 {renderSortArrow("erpItemCode")}
@@ -2861,7 +3026,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 18a. BOM ID (beside Item Code) */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>BOM ID</span>
                 {renderSortArrow("bomId")}
@@ -2907,7 +3072,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 22. Product Cost */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Product Cost</span>
                 {renderSortArrow("productCost")}
@@ -2924,6 +3089,18 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                   includeBlank
                 />
               </div>
+              <label
+                className="mt-1 flex items-center gap-1.5 text-[9px] font-semibold text-muted-foreground cursor-pointer select-none normal-case"
+                title="Show only items with a cost warning: smaller size costs more than a larger size, motorised item without actuator cost, or VA% below 0"
+              >
+                <input
+                  type="checkbox"
+                  checked={costWarningOnly}
+                  onChange={(e) => setCostWarningOnly(e.target.checked)}
+                  className="h-3 w-3 rounded border-border cursor-pointer"
+                />
+                Cost warnings
+              </label>
               <div
                 onMouseDown={(e) => handleMouseDown(19, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -2935,7 +3112,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 23. Cost Ref Code */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Cost Ref Code</span>
                 {renderSortArrow("costRefCode")}
@@ -2969,7 +3146,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 23. Cost */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Cost</span>
                 {renderSortArrow("cost")}
@@ -2997,7 +3174,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 27. Stock Status */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Stock Status</span>
                 {renderSortArrow("stockStatus")}
@@ -3018,7 +3195,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 28. Stock Quantity */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Stock Quantity</span>
                 {renderSortArrow("stockQuantity")}
@@ -3039,7 +3216,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 29. Available Stock */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Available Stock</span>
                 {renderSortArrow("availableStock")}
@@ -3067,7 +3244,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* View Image */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>View Image</span>
                 {renderSortArrow("image")}
@@ -3094,7 +3271,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 30. Stock Against Contract */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Stock Against Contract</span>
                 {renderSortArrow("stockAgainstContract")}
@@ -3115,7 +3292,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 31. Discount */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Discount</span>
                 {renderSortArrow("discount")}
@@ -3136,7 +3313,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 32. VA% (Moved here next to Quotation Rate) */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>VA%</span>
                 {renderSortArrow("vaPercent")}
@@ -3164,7 +3341,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 33. Quoted Rate */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Quotation Rate</span>
                 {renderSortArrow("quotedRate")}
@@ -3196,7 +3373,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 34. CR Rate (Contract Review Rate — read-only) */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Rate(Contract Review)</span>
                 {renderSortArrow("contractReviewRate")}
@@ -3230,7 +3407,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 35. PD Cost Validation (read-only) */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>PD Cost Val</span>
                 {renderSortArrow("pdcostValidation")}
@@ -3264,7 +3441,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 36. QR incl. GST */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>QR incl. GST</span>
                 {renderSortArrow("quotedRateGst")}
@@ -3285,7 +3462,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 37. Item Name (Merge) */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Item Name (Merge)</span>
                 {renderSortArrow("itemNameMerge")}
@@ -3319,7 +3496,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 38. Total Value */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Total Value incl. GST</span>
                 {renderSortArrow("totalValue")}
@@ -3340,7 +3517,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 39. Itemwise Total Value */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Itemwise Total Value</span>
                 {renderSortArrow("itemWiseTotalValue")}
@@ -3361,7 +3538,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 40. Validation */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Validation</span>
                 {renderSortArrow("validation")}
@@ -3418,7 +3595,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 43. Delivery Schedule */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Delivery Schedule</span>
                 {renderSortArrow("deliverySchedule")}
@@ -3446,7 +3623,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 44. APM - beside Offer PDF (enquiry-based) */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>APM</span>
                 {renderSortArrow("apm")}
@@ -3503,7 +3680,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 45. Offer PDF */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Offer PDF</span>
               </div>
@@ -3519,7 +3696,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 46. Send Email */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted/90 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Send Email</span>
               </div>
@@ -3535,7 +3712,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             </th>
 
             {/* 47. Actions */}
-            <th className="relative sticky top-0 z-30 bg-muted/90 py-2.5 px-3 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-b border-border text-right">
+            <th className="relative sticky top-0 z-30 bg-muted py-2.5 px-3 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-b border-border shadow-[inset_0_-1px_0_var(--border)] text-right">
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
               <div
@@ -3600,7 +3777,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 <React.Fragment key={enquiry.id}>
                   {/* Main Docket / First Item Row */}
                   <tr
-                    className={`transition-colors ${firstItem && invalidVaItemIds.has(firstItem.id) ? "bg-red-100 dark:bg-red-500/15" : isSelected ? "bg-blue-50/70 hover:bg-blue-50 dark:bg-blue-500/10 dark:hover:bg-blue-500/20" : "hover:bg-muted/20"}`}>
+                    title={firstItem && invalidVaItemIds.has(firstItem.id) ? "Red row = VA% above allowed limit for this type/size" : undefined} className={`transition-colors ${firstItem && invalidVaItemIds.has(firstItem.id) ? "bg-red-100 dark:bg-red-500/15" : isSelected ? "bg-blue-50/70 hover:bg-blue-50 dark:bg-blue-500/10 dark:hover:bg-blue-500/20" : "hover:bg-muted/20"}`}>
                     {/* Select checkbox for this docket */}
                     <td className="py-3.5 px-2 text-center border-r border-b border-border">
                       <input
@@ -3618,10 +3795,13 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         day: "numeric",
                         year: "numeric",
                       })}
+                      <span className="ml-1 text-[9px] font-semibold" title="Days since enquiry">
+                        {istDaysSince(enquiry.enquiryDate)}d
+                      </span>
                     </td>
 
                     {/* Docket No with expand arrow if applicable */}
-                    <td className="py-3.5 px-4 text-xs font-semibold text-[#0f62fe] dark:text-blue-300 border-r border-b border-border last:border-r-0">
+                    <td style={{ left: frozenLeft[1] }} className={`${FROZEN_TD} py-3.5 px-4 text-xs font-semibold text-[#0f62fe] dark:text-blue-300 border-r border-b border-border last:border-r-0`}>
                       <div className="flex items-center flex-wrap gap-1">
                         {hasMultiple && (
                           <button
@@ -3652,6 +3832,10 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             </button>
                           ) : null;
                         })()}
+                        <StageAssignPopover
+                          enquiry={enquiry}
+                          onChange={(field, value) => handleEnquiryFieldChange(enquiry.id, field, value)}
+                        />
                         <DocketAttachmentsCell
                           docketNumber={enquiry.docketNumber}
                           attachments={enquiry.attachments}
@@ -4053,64 +4237,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
                     {/* Technical Evaluation / Reverse Auction */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          title="Set Technical Evaluation Yes"
-                          onClick={() => handleEnquiryFieldChange(enquiry.id, "technicalEvaluation", enquiry.technicalEvaluation === "Yes" ? "" : "Yes")}
-                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
-                            enquiry.technicalEvaluation === "Yes"
-                              ? "bg-emerald-500 dark:bg-emerald-500/80 text-white "
-                              : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/25 dark:hover:bg-emerald-500/20"
-                          }`}
-                        >
-                          Yes
-                        </button>
-                        <button
-                          type="button"
-                          title="Set Technical Evaluation No"
-                          onClick={() => handleEnquiryFieldChange(enquiry.id, "technicalEvaluation", enquiry.technicalEvaluation === "No" ? "" : "No")}
-                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
-                            enquiry.technicalEvaluation === "No"
-                              ? "bg-rose-500 dark:bg-rose-500/80 text-white "
-                              : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/25 dark:hover:bg-rose-500/20"
-                          }`}
-                        >
-                          No
-                        </button>
-                      </div>
+                      {renderYesNo(enquiry.id, "technicalEvaluation", "Technical Evaluation", enquiry.technicalEvaluation)}
                     </td>
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          type="button"
-                          title="Set Reverse Auction Yes"
-                          onClick={() => handleEnquiryFieldChange(enquiry.id, "reverseAuctionStatus", enquiry.reverseAuctionStatus === "Yes" ? "" : "Yes")}
-                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
-                            enquiry.reverseAuctionStatus === "Yes"
-                              ? "bg-emerald-500 dark:bg-emerald-500/80 text-white "
-                              : "bg-emerald-50 text-emerald-600 border border-emerald-200 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/25 dark:hover:bg-emerald-500/20"
-                          }`}
-                        >
-                          Yes
-                        </button>
-                        <button
-                          type="button"
-                          title="Set Reverse Auction No"
-                          onClick={() => handleEnquiryFieldChange(enquiry.id, "reverseAuctionStatus", enquiry.reverseAuctionStatus === "No" ? "" : "No")}
-                          className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
-                            enquiry.reverseAuctionStatus === "No"
-                              ? "bg-rose-500 dark:bg-rose-500/80 text-white "
-                              : "bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:border-rose-500/25 dark:hover:bg-rose-500/20"
-                          }`}
-                        >
-                          No
-                        </button>
-                      </div>
+                      {renderYesNo(enquiry.id, "reverseAuctionStatus", "Reverse Auction", enquiry.reverseAuctionStatus)}
                     </td>
 
                     {/* First Item Name */}
-                    <td className="py-2 px-2 text-xs text-muted-foreground font-medium border-r border-b border-border last:border-r-0 align-top">
+                    <td style={{ left: frozenLeft[14] }} className={`${FROZEN_TD} py-2 px-2 text-xs text-muted-foreground font-medium border-r border-b border-border last:border-r-0 align-top`}>
                       {firstItem ? (
                         editingItemNameId === firstItem.id ? (
                           <input
@@ -4134,7 +4268,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           />
                         ) : (
                           <div className="flex items-center justify-between w-full group truncate">
-                            <div className="w-full pr-1 wrap-break-word whitespace-normal leading-normal">
+                            <div title={firstItem.itemName} className="w-full pr-1 wrap-break-word whitespace-normal leading-normal line-clamp-2">
                               {firstItem.itemName}
                             </div>
                             <button
@@ -4153,7 +4287,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                     </td>
 
                     {/* Details */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0 align-top">
+                    <td style={{ left: frozenLeft[15] }} className={`${FROZEN_TD} py-2 px-2 border-r border-b border-border last:border-r-0 align-top`}>
                       {firstItem ? (
                         <ItemDetailFields
                           item={firstItem}
@@ -4235,6 +4369,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                     {/* First Item Product Cost */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (
+                        <div className="flex items-center gap-1">
+                        <CostWarningIcon warnings={firstItem.costWarnings} />
                         <input
                           key={firstItem.id + "-productCost-" + (firstItem.productCost !== null && firstItem.productCost !== undefined ? Number(firstItem.productCost).toString() : "")}
                           type="text"
@@ -4253,6 +4389,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
+                        </div>
                       ) : "-"}
                     </td>
 
@@ -4417,11 +4554,13 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                     {/* First Item VA% */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (
+                        <div className="flex items-center gap-1">
                         <input
                           key={firstItem.id + "-vaPercent-" + (firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : "")}
                           type="text"
                           defaultValue={firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : ""}
                           disabled={isFrozen}
+                          readOnly={firstItem.validation === "Yes"}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             const val = e.target.value.trim();
@@ -4434,8 +4573,10 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                          className={`w-full bg-transparent border-none text-xs ${(firstItem.vaPercent ?? 0) < 0 ? "text-red-600 dark:text-red-400" : "text-foreground"} outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed`}
                         />
+                        {unlockButton(firstItem)}
+                        </div>
                       ) : "-"}
                     </td>
 
@@ -4447,6 +4588,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           type="text"
                           defaultValue={formatIndianNumber(firstItem.quotedRate)}
                           disabled={isFrozen}
+                          readOnly={firstItem.validation === "Yes"}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             const next = cleanNumberInput(e.target.value);
@@ -4546,7 +4688,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
-                            onClick={() => handleItemFieldChange(firstItem.id, "validation", firstItem.validation === "Yes" ? "" : "Yes")}
+                            onClick={() => confirmValidation(firstItem, firstItem.validation === "Yes" ? "" : "Yes")}
                             className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                               firstItem.validation === "Yes"
                                 ? "bg-emerald-500 dark:bg-emerald-500/80 text-white "
@@ -4557,7 +4699,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleItemFieldChange(firstItem.id, "validation", firstItem.validation === "No" ? "" : "No")}
+                            onClick={() => confirmValidation(firstItem, firstItem.validation === "No" ? "" : "No")}
                             className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                               firstItem.validation === "No"
                                 ? "bg-rose-500 dark:bg-rose-500/80 text-white "
@@ -4566,6 +4708,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           >
                             No
                           </button>
+                          {historyButton(firstItem)}
                         </div>
                       ) : (
                         <span className="text-muted-foreground">-</span>
@@ -4646,12 +4789,12 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                     displayItems.slice(1).map((item: EnquiryItemData, idx: number) => (
                       <tr
                         key={item.id}
-                        className={`transition-colors ${invalidVaItemIds.has(item.id) ? "bg-red-100 dark:bg-red-500/15" : "bg-muted/10 hover:bg-muted/20"}`}
+                        title={invalidVaItemIds.has(item.id) ? "Red row = VA% above allowed limit for this type/size" : undefined} className={`transition-colors ${invalidVaItemIds.has(item.id) ? "bg-red-100 dark:bg-red-500/15" : "bg-muted/10 hover:bg-muted/20"}`}
                       >
                         {/* Empty selection cell — selection is per docket */}
                         <td className="py-3 px-2 text-center border-r border-b border-border"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
-                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
+                        <td style={{ left: frozenLeft[1] }} className={`${FROZEN_TD} py-3 px-4 border-r border-b border-border last:border-r-0`}></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
@@ -4666,7 +4809,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
 
                         {/* Additional Item Name */}
-                        <td className="py-2 px-2 text-xs text-muted-foreground font-medium border-r border-b border-border last:border-r-0 align-top">
+                        <td style={{ left: frozenLeft[14] }} className={`${FROZEN_TD} py-2 px-2 text-xs text-muted-foreground font-medium border-r border-b border-border last:border-r-0 align-top`}>
                           {editingItemNameId === item.id ? (
                             <input
                               type="text"
@@ -4689,7 +4832,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             />
                           ) : (
                             <div className="flex items-center justify-between w-full group truncate">
-                              <div className="w-full pr-1 wrap-break-word whitespace-normal leading-normal">
+                              <div title={item.itemName} className="w-full pr-1 wrap-break-word whitespace-normal leading-normal line-clamp-2">
                                 {item.itemName}
                               </div>
                               <button
@@ -4705,7 +4848,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         </td>
                         
                         {/* Details */}
-                        <td className="py-2 px-2 border-r border-b border-border last:border-r-0 align-top">
+                        <td style={{ left: frozenLeft[15] }} className={`${FROZEN_TD} py-2 px-2 border-r border-b border-border last:border-r-0 align-top`}>
                           <ItemDetailFields
                             item={item}
                             dropdownOptions={dropdownOptions}
@@ -4780,6 +4923,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
                         {/* Product Cost */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
+                          <div className="flex items-center gap-1">
+                          <CostWarningIcon warnings={item.costWarnings} />
                           <input
                             key={item.id + "-productCost-" + (item.productCost !== null && item.productCost !== undefined ? Number(item.productCost).toString() : "")}
                             type="text"
@@ -4798,6 +4943,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
+                          </div>
                       </td>
 
                       {/* Cost Ref Code */}
@@ -4946,11 +5092,13 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
                       {/* VA% */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-muted" : ""}`}>
+                          <div className="flex items-center gap-1">
                           <input
                             key={item.id + "-vaPercent-" + (item.vaPercent !== null ? `${item.vaPercent}%` : "")}
                             type="text"
                             defaultValue={item.vaPercent !== null ? `${item.vaPercent}%` : ""}
                             disabled={isFrozen}
+                            readOnly={item.validation === "Yes"}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             const val = e.target.value.trim();
@@ -4963,8 +5111,10 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
                           }}
                           placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                          className={`w-full bg-transparent border-none text-xs ${(item.vaPercent ?? 0) < 0 ? "text-red-600 dark:text-red-400" : "text-foreground"} outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed`}
                         />
+                          {unlockButton(item)}
+                          </div>
                       </td>
 
                       {/* Quoted Rate */}
@@ -4974,6 +5124,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             type="text"
                             defaultValue={formatIndianNumber(item.quotedRate)}
                             disabled={isFrozen}
+                            readOnly={item.validation === "Yes"}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
                           onBlur={(e) => {
                             const next = cleanNumberInput(e.target.value);
@@ -5065,7 +5216,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           <div className="flex items-center justify-center gap-1">
                             <button
                               type="button"
-                              onClick={() => handleItemFieldChange(item.id, "validation", item.validation === "Yes" ? "" : "Yes")}
+                              onClick={() => confirmValidation(item, item.validation === "Yes" ? "" : "Yes")}
                               className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                                 item.validation === "Yes"
                                   ? "bg-emerald-500 dark:bg-emerald-500/80 text-white "
@@ -5076,7 +5227,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleItemFieldChange(item.id, "validation", item.validation === "No" ? "" : "No")}
+                              onClick={() => confirmValidation(item, item.validation === "No" ? "" : "No")}
                               className={`px-2.5 py-1 text-[10px] font-bold rounded cursor-pointer transition-all ${
                                 item.validation === "No"
                                   ? "bg-rose-500 dark:bg-rose-500/80 text-white "
@@ -5085,6 +5236,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             >
                               No
                             </button>
+                            {historyButton(item)}
                           </div>
                         </td>
 
@@ -5146,6 +5298,39 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       applying={autoFillApplying}
       onApply={handleApplyAutoFill}
       onClose={() => setAutoFillChanges(null)}
+    />
+
+    <Dialog open={history !== null} onOpenChange={(open) => { if (!open) setHistory(null); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="text-sm">History: {history?.itemName}</DialogTitle>
+        </DialogHeader>
+        {history?.rows.length ? (
+          <ul className="max-h-80 overflow-y-auto divide-y divide-border text-xs">
+            {history.rows.map((r) => (
+              <li key={r.id} className="py-1.5">
+                <span className="text-muted-foreground">{new Date(r.createdAt).toLocaleString()} · {r.changedBy}</span>
+                <div>
+                  <b>{r.field}</b>: {r.oldValue ?? "blank"} → {r.newValue ?? "blank"}
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground">No recorded changes yet.</p>
+        )}
+      </DialogContent>
+    </Dialog>
+
+    {/* Promise settles once, so Confirm's trailing onOpenChange(false) is a no-op. */}
+    <ConfirmDialog
+      open={confirmState !== null}
+      onOpenChange={(open) => { if (!open) { confirmState?.resolve(false); setConfirmState(null); } }}
+      title="Please confirm"
+      description={confirmState?.msg ?? ""}
+      confirmLabel="Continue"
+      confirmVariant="default"
+      onConfirm={() => confirmState?.resolve(true)}
     />
 
     {/* Clear Quoted Rate Confirm Dialog — filtered scope, VA% preserved */}
@@ -5347,6 +5532,9 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
   const [sending, setSending] = useState(false);
   const [busy, setBusy] = useState(false);
   const [noThreadOpen, setNoThreadOpen] = useState(false);
+  // A rate changed after the last send: default the next mail to "Revised".
+  const [revised, setRevised] = useState(!!enquiry.offerRevised);
+  useEffect(() => { if (enquiry.offerRevised) setRevised(true); }, [enquiry.offerRevised]);
 
   const approved = !!enquiry.emailApproved;
   const sentBy = enquiry.emailSentBy ?? null;
@@ -5381,9 +5569,10 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
     setSending(true);
     const toastId = toast.loading("Sending email...");
     try {
-      await dispatch(sendDocketEmail({ enquiryId: enquiry.id, allowNoThread })).unwrap();
+      await dispatch(sendDocketEmail({ enquiryId: enquiry.id, allowNoThread, revised })).unwrap();
       toast.success("Email sent.", { id: toastId });
       setNoThreadOpen(false);
+      setRevised(false);
     } catch (e) {
       // No linked thread: let the user decide to send it as a new mail instead.
       if (e && typeof e === "object" && (e as { code?: string }).code === "NO_THREAD") {
@@ -5416,6 +5605,14 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
         <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300">
           <Check className="h-3 w-3 stroke-[3]" /> Sent
         </span>
+        {enquiry.offerRevised && (
+          <span
+            className="px-2 py-0.5 text-[9px] font-bold rounded-full border border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+            title="A quoted rate changed after this offer was sent. Reset, then send it again as Revised."
+          >
+            Revised: re-send
+          </span>
+        )}
         <button
           type="button"
           onClick={handleReset}
@@ -5461,6 +5658,16 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
           <X className="h-3 w-3 stroke-[3]" />
         </button>
       </div>
+      <label className="flex items-center gap-1 text-[9px] text-muted-foreground cursor-pointer">
+        <input
+          type="checkbox"
+          checked={revised}
+          onChange={(e) => setRevised(e.target.checked)}
+          disabled={sending}
+          className="h-3 w-3"
+        />
+        Revised
+      </label>
       <button
         type="button"
         onClick={handleSend}

@@ -120,8 +120,14 @@ export const SUPPLY_COLUMNS: ColumnMap = {
   "C BATCH": { text: text("cBatch"), kind: "text" },
 };
 
-const DEFAULT_ORDER_SQL = sql`s."syncedAt" DESC, s.id ASC`;
+// Latest invoice first; unparseable dates sink to the bottom.
+const DEFAULT_ORDER_SQL = sql`${dateValue(text("date"))} DESC NULLS LAST, s.id ASC`;
 const PRIMARY_KEY_SQL = sql`s.id`;
+
+export const SUPPLY_NO_BOM_SQL = sql`NOT EXISTS (
+  SELECT 1 FROM "SupplyHistoryBomLink" nbl WHERE nbl."supplyHistoryItemId" = s.id
+)`;
+export const SUPPLY_NO_ERP_SQL = sql`btrim(coalesce(s."erpItemCode", '')) = ''`;
 
 export function buildSupplyWhere(
   query: SupplyQuery,
@@ -132,6 +138,8 @@ export function buildSupplyWhere(
     dateFilterHeader: "Date",
     batchPredicates: {
       cBatch: sql`btrim(s."cBatch") = 'C'`,
+      noBom: SUPPLY_NO_BOM_SQL,
+      noErpCode: SUPPLY_NO_ERP_SQL,
     },
   });
 }

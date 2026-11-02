@@ -1,6 +1,7 @@
 import { Prisma } from "@gmd/db-quotation";
 import { squish } from "./squish";
 import { hasActiveItemFilters } from "./enquiryFilterScope";
+import { hasCostWarningSql } from "./costSanity";
 import type { EnquiryQuery } from "./enquiryQuery";
 
 /**
@@ -179,6 +180,19 @@ const DETAILS_INCOMPLETE_SQL = (alias: Prisma.Sql) => sql`(
   OR btrim(${alias}."size") IN (${Prisma.join(SIZE_BLANK_VALUES)})
 )`;
 
+/**
+ * Status-tile stage of a docket (`e` alias): the first unmet step wins.
+ * NULL for dockets without items, and for sent offers that already got a reply.
+ */
+export const STAGE_SQL = sql`(CASE
+  WHEN NOT EXISTS (SELECT 1 FROM "EnquiryItem" s WHERE s."enquiryId" = e.id) THEN NULL
+  WHEN EXISTS (SELECT 1 FROM "EnquiryItem" s WHERE s."enquiryId" = e.id AND ${DETAILS_INCOMPLETE_SQL(sql`s`)}) THEN 'details'
+  WHEN EXISTS (SELECT 1 FROM "EnquiryItem" s WHERE s."enquiryId" = e.id AND (s."cost" IS NULL OR s."cost" = 0)) THEN 'cost'
+  WHEN EXISTS (SELECT 1 FROM "EnquiryItem" s WHERE s."enquiryId" = e.id AND btrim(coalesce(s."validation", '')) <> 'Yes') THEN 'validation'
+  WHEN e."emailSentBy" IS NULL OR e."offerRevised" THEN 'ready'
+  WHEN btrim(coalesce(e."orderStatus", '')) = '' THEN 'sent'
+END)`;
+
 const CLOSED_BOM_SQL = (alias: Prisma.Sql) => sql`${alias}."bomId" IS NOT NULL AND EXISTS (
   SELECT 1 FROM "Bom" b JOIN "BomItem" bi ON bi."bomId" = b.id
   WHERE b."bomId" = ${alias}."bomId" AND bi."cBatch" = ${C_BATCH_VALUE}
@@ -276,6 +290,8 @@ export function buildItemWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): Pri
 
   if (q.closedBomOnly && "closedBomOnly" !== skip) parts.push(CLOSED_BOM_SQL(sql`i`));
   if (q.incompleteOnly && "incompleteOnly" !== skip) parts.push(DETAILS_INCOMPLETE_SQL(sql`i`));
+  // shortcut: ~4s over all items without an EnquiryItem(enquiryId) index; add that index to speed it up.
+  if (q.costWarningOnly && "costWarningOnly" !== skip) parts.push(hasCostWarningSql(sql`i`));
 
   if (parts.length === 0) return sql`TRUE`;
   return Prisma.join(parts, " AND ");
@@ -369,6 +385,7 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
   if (q.selectedEnquiryIds.length > 0) {
     parts.push(sql`e.id = ANY(${[...q.selectedEnquiryIds]}::text[])`);
   }
+  if (q.stage && skip !== "stage") parts.push(sql`${STAGE_SQL} = ${q.stage}`);
 
   // Pending = auto-created, still no items, closure status blank/Pending. Once
   // items exist or closure moves (Sent, Rejected, …) the docket leaves the list.
@@ -380,13 +397,13 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
     parts.push(
       sql`(e."closureStatus" IS NULL OR btrim(e."closureStatus") = '' OR lower(btrim(e."closureStatus")) = 'pending')`,
     );
-    if (hasActiveItemFilters(f, q.closedBomOnly || q.incompleteOnly)) {
+    if (hasActiveItemFilters(f, q.closedBomOnly || q.incompleteOnly || q.costWarningOnly)) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,
       );
     }
   } else {
-    const needsItem = hasActiveFilters(q) || q.closedBomOnly || q.incompleteOnly;
+    const needsItem = hasActiveFilters(q) || q.closedBomOnly || q.incompleteOnly || q.costWarningOnly;
     if (needsItem) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,
@@ -523,6 +540,23 @@ export const FIRST_ITEM_JOIN_SQL = sql`LEFT JOIN LATERAL (
 export interface FacetExpression {
   level: "enquiry" | "item";
   expr: Prisma.Sql;
+}
+
+/** Analytics-sidebar fields whose option counts span every filtered docket, not one page. */
+export const SIDEBAR_COUNT_FIELDS = ["partyNames", "utility", "enquiryType", "state", "itemType", "size"];
+
+/** Docket count per value of `field` under every filter except its own (so counts cascade). */
+export function facetCountSql(q: EnquiryQuery, field: string): Prisma.Sql | null {
+  const facet = facetExpression(field);
+  if (!facet) return null;
+  const where = buildEnquiryWhereSql(q, { skipField: field });
+  if (facet.level === "enquiry") {
+    return sql`SELECT ${facet.expr} AS value, count(*)::int AS count
+      FROM "Enquiry" e WHERE ${where} GROUP BY 1`;
+  }
+  return sql`SELECT ${facet.expr} AS value, count(DISTINCT e.id)::int AS count
+    FROM "EnquiryItem" i JOIN "Enquiry" e ON e.id = i."enquiryId"
+    WHERE ${where} AND ${buildItemWhereSql(q, { skipField: field })} GROUP BY 1`;
 }
 
 /** Distinct-value expression for a cascading dropdown, or null when unknown. */

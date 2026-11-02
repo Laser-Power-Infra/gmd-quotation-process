@@ -1,5 +1,5 @@
 "use server";
-import { requireAccess } from "@/lib/access";
+import { requireAccess, loginRequired } from "@/lib/access";
 import { ERP_CLOSED_STATUSES, C_BATCH_VALUE } from "@/lib/erpItemStatus";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { prisma } from "@/lib/prisma";
@@ -141,7 +141,7 @@ export async function updateBisStatusFieldAction(
 ) {
   "use server";
   await requireAccess();
-  const allowed = ["remark", "licenseNo", "itemName", "bisNo", "expiryDate", "applicationStatus", "reachedLab"];
+  const allowed = ["remark", "licenseNo", "itemName", "bisNo", "expiryDate", "applicationStatus", "reachedLab", "bisDocs"];
   if (!allowed.includes(field)) {
     return { success: false, error: `Field ${field} is not editable.` } as any;
   }
@@ -165,6 +165,86 @@ export async function getUtilityDefaultStatesAction() {
   "use server";
   await requireAccess();
   return getUtilityDefaultStates();
+}
+
+export async function addBisStatusUpdateAction(input: {
+  bisStatusId: string;
+  status?: string | null;
+  nextStep?: string | null;
+  nextDate?: string | null;
+  remark?: string | null;
+  updatedBy?: string | null;
+}) {
+  "use server";
+  await requireAccess();
+  const clean = (v?: string | null) => (v?.trim() ? v.trim() : null);
+  const status = clean(input.status);
+  const remark = clean(input.remark);
+  if (!status && !remark) {
+    return { success: false, error: "Enter a status or a remark." } as any;
+  }
+  let nextDate: Date | null = null;
+  if (clean(input.nextDate)) {
+    nextDate = new Date(input.nextDate as string);
+    if (isNaN(nextDate.getTime())) {
+      return { success: false, error: "Next follow-up date is not a valid date." } as any;
+    }
+  }
+  try {
+    const { auth } = await import("@/auth");
+    const user = (await auth())?.user as { name?: string | null } | undefined;
+    const updatedBy = user?.name ?? clean(input.updatedBy);
+    const [update] = await prisma.$transaction([
+      prisma.bisStatusUpdate.create({
+        data: { bisStatusId: input.bisStatusId, status, nextStep: clean(input.nextStep), nextDate, remark, updatedBy },
+      }),
+      prisma.bisStatus.update({
+        where: { id: input.bisStatusId },
+        data: { ...(status && { applicationStatus: status }), ...(remark && { remark }) },
+      }),
+    ]);
+    return { success: true, data: update } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || "Failed to add update." } as any;
+  }
+}
+
+export async function getBisStatusHistoryAction(bisStatusId: string) {
+  "use server";
+  await requireAccess();
+  try {
+    const data = await prisma.bisStatusUpdate.findMany({
+      where: { bisStatusId },
+      orderBy: { createdAt: "desc" },
+    });
+    return { success: true, data } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || "Failed to load history." } as any;
+  }
+}
+
+/** BisStatus ids with no update in the last 3 calendar days (or never updated). */
+export async function getBisStaleIdsAction() {
+  "use server";
+  await requireAccess();
+  try {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - 3);
+    const fresh = await prisma.bisStatusUpdate.findMany({
+      where: { createdAt: { gte: cutoff } },
+      select: { bisStatusId: true },
+      distinct: ["bisStatusId"],
+    });
+    const freshIds = fresh.map((f) => f.bisStatusId);
+    const stale = await prisma.bisStatus.findMany({
+      where: { id: { notIn: freshIds } },
+      select: { id: true },
+    });
+    return { success: true, data: stale.map((s) => s.id) } as any;
+  } catch (error: any) {
+    return { success: false, error: error.message || "Failed to load stale rows." } as any;
+  }
 }
 
 export async function getGMDCastingRatesAction() {
@@ -325,6 +405,7 @@ export async function updateFlangeBoltWeightAction(id: string, material: string)
 // handling. A cell that already has a value is never touched.
 export async function fetchContractReviewRatesAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     // 1. Fetch the items we care about
     const items = await prisma.enquiryItem.findMany({
@@ -510,6 +591,7 @@ export async function fetchContractReviewRatesAction(itemIds: string[]) {
 // Calculate and populate pdcostValidation % for selected items that have contractReviewRate and productCost
 export async function populatePdCostValidationAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
@@ -555,6 +637,7 @@ export async function populatePdCostValidationAction(itemIds: string[]) {
 // Clear Quoted Rate (and derived columns: GST, totalValue, itemWiseTotalValue) for filtered items. VA% is preserved.
 export async function clearQuotedRatesAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     if (!itemIds || itemIds.length === 0) {
       return { success: false, error: "No items selected." };
@@ -614,6 +697,7 @@ export async function clearQuotedRatesAction(itemIds: string[]) {
 // Now enquiry-based after migration add_apm_in_enquiry. Gated to admin/developer.
 export async function bulkUpdateApmAction(enquiryIds: string[], apm: string | null) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const { auth } = await import("@/auth")
     const session = await auth()
@@ -665,6 +749,7 @@ export async function bulkUpdateApmAction(enquiryIds: string[], apm: string | nu
 // Bulk update validation for many items (all pages, filtered scope). Allowed values: "Yes", "No", null/"" for clear.
 export async function bulkUpdateValidationAction(itemIds: string[], validation: string | null) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     if (!itemIds || itemIds.length === 0) {
       return { success: false, error: "No items selected." };
@@ -677,7 +762,7 @@ export async function bulkUpdateValidationAction(itemIds: string[], validation: 
 
     const existing = await prisma.enquiryItem.findMany({
       where: { id: { in: uniqueIds } },
-      select: { id: true },
+      select: { id: true, enquiryId: true, validation: true },
     });
     if (existing.length !== uniqueIds.length) {
       return { success: false, error: "Some items not found. Please refresh and try again." };
@@ -689,6 +774,10 @@ export async function bulkUpdateValidationAction(itemIds: string[], validation: 
       where: { id: { in: uniqueIds } },
       data: { validation: normalized },
     });
+    const { logItemChanges } = await import("@/lib/itemChangeLog");
+    await logItemChanges(
+      existing.map((e) => ({ itemId: e.id, enquiryId: e.enquiryId, field: "validation", oldValue: e.validation, newValue: normalized })),
+    );
 
     const updatedItems = await prisma.enquiryItem.findMany({
       where: { id: { in: uniqueIds } },

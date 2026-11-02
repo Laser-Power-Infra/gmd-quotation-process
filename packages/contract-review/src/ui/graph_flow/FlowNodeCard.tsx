@@ -86,7 +86,7 @@ export function FlowNodeCard({
         </>
       ) : (
         <>
-          <span className="min-w-0 flex-1 truncate text-[9.5px] font-semibold uppercase leading-tight tracking-wider text-white/55">
+          <span className="min-w-0 flex-1 line-clamp-2 break-words text-[9.5px] font-semibold uppercase leading-[1.1] tracking-wider text-white/55">
             {node.label}
           </span>
           <span className="flex shrink-0 items-baseline gap-1.5">

@@ -1,8 +1,13 @@
-import NextAuth from "next-auth"
+import NextAuth, { CredentialsSignin } from "next-auth"
 import Credentials from "next-auth/providers/credentials"
 import { prisma } from "@/lib/prisma"
 import bcrypt from "bcrypt"
 import { z } from "zod"
+import { PENDING_ROLE } from "@/lib/registration"
+
+class PendingApproval extends CredentialsSignin {
+  code = "pending_approval"
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   secret: process.env.AUTH_SECRET,
@@ -17,16 +22,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       authorize: async (credentials) => {
         const parsed = z
           .object({
-            email: z.string().email(),
+            email: z.string().trim().toLowerCase().email(),
             password: z.string().min(1),
           })
           .safeParse(credentials)
         if (!parsed.success) return null
         const { email, password } = parsed.data
-        const user = await prisma.user.findUnique({ where: { email } })
+        // Case-insensitive so accounts stored before lower-casing can still sign in.
+        const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" } } })
         if (!user || !user.password) return null
         const ok = await bcrypt.compare(password, user.password)
         if (!ok) return null
+        if (user.role === PENDING_ROLE) throw new PendingApproval()
         return {
           id: user.id,
           email: user.email,

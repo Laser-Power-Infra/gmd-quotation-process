@@ -14,8 +14,10 @@
  *                   FullItem.itemCode (sub-assembly)
  *
  * Missing owning FullItems and Bom/BomItem rows are created; existing links are
- * left as-is; BomItem rows the sheet no longer backs are kept but unlinked
- * (component pointers set to null). Quantity and cost are deliberately not
+ * left as-is; BomItem rows the sheet no longer backs (including every link of a
+ * BOM the sheet no longer lists) are kept but unlinked (component pointers set
+ * to null). Hand-picked links (BomItem.manualLink) and auto-BOM drafts
+ * (NEW-BOM-*) are never unlinked. Quantity and cost are deliberately not
  * synced, so `BomItem.cost` edits are preserved.
  */
 
@@ -27,6 +29,7 @@ import {
   requireColumns,
   cell,
 } from "@/lib/gmd_lib/bomMastErp";
+import { staleBomItemIds } from "@/lib/bomMastStale";
 
 const BATCH = 200;
 
@@ -154,14 +157,20 @@ export async function runBomMastErpSync(): Promise<BomMastSyncResult> {
     else if (existing.fullItemId !== fullItemId) bomOwnerUpdated++;
   }
 
-  // 3. BomItem per (bom, component).
+  // 3. BomItem per (bom, component). Every linked row in the DB, so links of
+  //    BOMs the sheet no longer lists are cleaned too; already-unlinked rows
+  //    are left alone.
   const existingItems = await prisma.bomItem.findMany({
-    where: { bomId: { in: [...bomDbIdByCode.values()] } },
+    where: {
+      OR: [{ rawMaterialId: { not: null } }, { fullItemId: { not: null } }],
+    },
     select: {
       id: true,
       bomId: true,
       rawMaterialId: true,
       fullItemId: true,
+      manualLink: true,
+      bom: { select: { bomId: true } },
     },
   });
   const itemKey = (
@@ -203,10 +212,20 @@ export async function runBomMastErpSync(): Promise<BomMastSyncResult> {
   }
 
   // DB links the sheet no longer backs — the row is kept but its component
-  // pointers are cleared, so the sheet stays the source of truth.
-  const staleIds = [...existingByKey.entries()]
-    .filter(([k]) => !desiredKeys.has(k))
-    .map(([, i]) => i.id);
+  // pointers are cleared, so the sheet stays the source of truth. An empty
+  // sheet read would unlink everything, so skip cleanup then.
+  const staleIds =
+    mapped.length === 0
+      ? []
+      : staleBomItemIds(
+          existingItems.map((i) => ({
+            id: i.id,
+            key: itemKey(i.bomId, i.rawMaterialId, i.fullItemId),
+            bomCode: i.bom.bomId,
+            manualLink: i.manualLink,
+          })),
+          desiredKeys,
+        );
 
   for (let i = 0; i < creates.length; i += BATCH) {
     await prisma.$transaction(

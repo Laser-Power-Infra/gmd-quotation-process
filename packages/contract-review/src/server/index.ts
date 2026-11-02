@@ -2,6 +2,7 @@ import "server-only";
 import { prisma as tenderPrisma, type ContractReview, type Prisma } from "@gmd/db-tender";
 import {
   CONTRACT_REVIEW_HEADERS,
+  appendMailDoc,
   dbContractReviewToRow,
 } from "../lib/columns";
 import { parseAndValidateProdOrderNumber } from "../lib/contractValidation";
@@ -411,5 +412,41 @@ export async function backfillPnRating(ids: string[]): Promise<ActionResult> {
   } catch (error) {
     console.error("Error backfilling ContractReview PN RATING:", error);
     return { success: false, error: errorMessage(error, "Failed to backfill PN RATING.") };
+  }
+}
+
+/**
+ * Appends a mail/document link to a contract. Rows are per item, but the links
+ * belong to the contract, so every row of that contractNo gets the same list.
+ * Returns the new cell value.
+ */
+export async function addContractMailDoc(
+  contractNo: string,
+  category: string,
+  url: string,
+): Promise<ActionResult<{ contractNo: string; mailDocs: string }>> {
+  try {
+    const no = contractNo.trim();
+    if (!no) return { success: false, error: "Contract no is required." };
+    // Case-insensitive, like the rest of the contract lookups: the external mail
+    // agent posts the contract no as it appears in the mail, which is often a
+    // different case from the stored value, and an exact match 404'd every time.
+    const match = { contractNo: { equals: no, mode: "insensitive" as const } };
+    const existing = await tenderPrisma.contractReview.findFirst({
+      where: match,
+      select: { contractNo: true, mailDocs: true },
+    });
+    if (!existing) return { success: false, error: "Contract not found." };
+    const res = appendMailDoc(existing.mailDocs, category, url);
+    if (!res.ok) return { success: false, error: res.error };
+    await tenderPrisma.contractReview.updateMany({
+      where: match,
+      data: { mailDocs: res.json },
+    });
+    // Return the stored spelling, not the caller's.
+    return { success: true, data: { contractNo: existing.contractNo ?? no, mailDocs: res.json } };
+  } catch (error) {
+    console.error("Error adding contract mail doc:", error);
+    return { success: false, error: errorMessage(error, "Failed to add the link.") };
   }
 }

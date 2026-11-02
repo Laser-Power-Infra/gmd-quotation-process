@@ -8,6 +8,7 @@ import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkel
 import IndentListingTable from "@/components/indent_listing/IndentListingTable";
 import { recomputeIndentListingVersionsAction } from "@/app/actions/contractReview";
 import type { VariantMetrics } from "@/lib/indentListingMetrics";
+import type { RmCodeOption } from "@/lib/indentRmCodeOptions";
 
 interface IndentListingData {
   headers: string[];
@@ -15,7 +16,7 @@ interface IndentListingData {
   ids: string[];
   sourceIds: string[][];
   metrics: VariantMetrics[][];
-  rmOptions: { code: string; name: string }[];
+  rmOptions: RmCodeOption[];
   totalRows: number;
   syncedAt: string | null;
 }
@@ -156,6 +157,7 @@ export default function IndentListingPage() {
         title="INDENT CHECKING"
         totalRows={data?.totalRows ?? 0}
         syncedAt={data?.syncedAt ?? undefined}
+        warnIfStale
       />
       <div className="px-6 py-4 flex items-center gap-3">
         <button

@@ -41,7 +41,13 @@ import { buildPartyEmailMap } from "@/lib/enquiryEmailSync";
 import { parseThreadAttachments } from "@/lib/docketSnapshot";
 import { buildSnapshotAttachment } from "@/lib/docketSnapshotPdf";
 import { extractEmailsFromValue, mergeMandatoryCc } from "@/lib/enquiryEmailParty";
-import { buildPartyMatcher, buildPartySearchText, istDayWindow } from "@/lib/docketPending";
+import {
+  buildPartyMatcher,
+  buildPartySearchText,
+  hasDocketCreationKeyword,
+  isPurchaseOrderMail,
+  istDayWindow,
+} from "@/lib/docketPending";
 import { extractDocketItems } from "./docket-item-extraction";
 import type { ParsedDocketItem } from "./docket-item-parser";
 import pLimit from "p-limit";
@@ -165,7 +171,15 @@ export async function runPendingDocketCreation(
       })
     : [];
   const docketed = new Set(alreadyLinked.map((e) => e.sourceThreadId));
-  const pending = candidates.filter((t) => !docketed.has(t.threadId));
+  const pending = candidates.filter(
+    (t) =>
+      !docketed.has(t.threadId) &&
+      // A customer PO is not a docket request (see docket-followup-sync).
+      !(
+        isPurchaseOrderMail(t) &&
+        !hasDocketCreationKeyword(`${t.subject || ""} ${t.body || ""} ${t.bodyPreview || ""}`)
+      ),
+  );
   let skippedAlreadyDocketed = candidates.length - pending.length;
 
   if (pending.length === 0) {
@@ -222,9 +236,14 @@ export async function runPendingDocketCreation(
     }),
   );
 
+  // Existing docket parties, tried against the mail text only when nothing else names the party.
+  const matchKnownParty = buildPartyMatcher(
+    enquiries.map((e) => e.partyName ?? "").filter((n) => n.trim() && n.trim().toLowerCase() !== "unknown"),
+  );
+
   const plan = pending.map((thread, index) => {
-    const resolved = resolvePartyForThread(thread, emailPartyMap);
     const searchText = buildPartySearchText(thread);
+    const resolved = resolvePartyForThread(thread, emailPartyMap, () => matchKnownParty(searchText));
     // Single sender (future "To"); the rest go to cc. When the thread has only
     // internal mailboxes, fall back to the party's most recent docket emails.
     const partyExternal = partyEmailMap.byPartyKey.get(partyKey(resolved.partyName));

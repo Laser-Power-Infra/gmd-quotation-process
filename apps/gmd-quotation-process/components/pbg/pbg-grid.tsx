@@ -1,5 +1,6 @@
 "use client";
 
+import { validityStatus } from "@/lib/pbg/validity";
 import {
   Fragment,
   useEffect,
@@ -51,6 +52,23 @@ function StatusBadge({ status }: { status: string | null }) {
   );
 }
 
+function MailTriggerBadge({ value }: { value: string | null }) {
+  const current = (value ?? "HOLD").trim().toUpperCase();
+  const isContinue = current === "CONTINUE";
+
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ring-inset ${
+        isContinue
+          ? "bg-emerald-100 text-emerald-700 ring-emerald-200"
+          : "bg-slate-100 text-slate-600 ring-slate-200"
+      }`}
+    >
+      {current || "HOLD"}
+    </span>
+  );
+}
+
 function renderCell(
   def: ColumnDef,
   record: PbgRecord,
@@ -78,6 +96,8 @@ function renderCell(
       return record.marginPct ?? "—";
     case "status":
       return <StatusBadge status={record.status} />;
+    case "mailTrigger":
+      return <MailTriggerBadge value={record.mailTrigger} />;
     case "poNumber": {
       const value = record.poNumber;
       if (!value) return "—";
@@ -121,7 +141,7 @@ function renderCell(
 }
 
 function editorKind(def: ColumnDef): "status" | "date" | "number" | "text" {
-  if (def.key === "status") return "status";
+  if (def.key === "status" || def.key === "mailTrigger") return "status";
   if (def.type === "date") return "date";
   if (def.type === "number" || def.key === "marginPct") return "number";
   return "text";
@@ -184,19 +204,21 @@ function CellEditor({
     "absolute inset-0 z-30 h-full w-full border-2 border-indigo-500 bg-white px-2 text-sm text-black outline-none";
 
   if (kind === "status") {
+    const options =
+      def.options && def.options.length > 0 ? def.options : statusOptions;
     return (
       <select
         ref={selectRef}
-        value={statusOptions.includes(value) ? value : statusOptions[0]}
+        value={options.includes(value) ? value : options[0]}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={onKeyDown}
         onBlur={() => finish(null)}
         className={baseClass}
       >
-        {value && !statusOptions.includes(value) && (
+        {value && !options.includes(value) && (
           <option value={value}>{value}</option>
         )}
-        {statusOptions.map((option) => (
+        {options.map((option) => (
           <option key={option} value={option}>
             {option}
           </option>
@@ -705,9 +727,27 @@ export function PbgGrid({
         </thead>
 
         <tbody>
-          {sortedRows.map((row, r) => (
+          {sortedRows.map((row, r) => {
+            // Past its contract validity date, or inside the 30-day window.
+            const status = validityStatus(row.extendedValidity);
+            const expiryTone =
+              status === "expired"
+                ? "bg-red-100"
+                : status === "expiring"
+                  ? "bg-amber-100"
+                  : null;
+            return (
             <Fragment key={row.id}>
-            <tr className="group">
+            <tr
+              className="group"
+              title={
+                status === "expired"
+                  ? `PBG validity expired on ${row.extendedValidity}`
+                  : status === "expiring"
+                    ? `PBG validity expires on ${row.extendedValidity}`
+                    : undefined
+              }
+            >
               <th
                 className={`sticky left-0 z-20 border-b border-r border-slate-300 px-1 text-center text-xs font-medium tabular-nums ${
                   active.r === r
@@ -729,12 +769,12 @@ export function PbgGrid({
                 const savingHere = isSaving(row.id, col.key);
                 const sticky = c === 0;
                 const zebra = r % 2 === 1;
+                // Selection still wins: a tint that hid the current range would
+                // make the grid harder to drive than the warning is worth.
                 const rowBg =
                   inRange && !isActive
                     ? "bg-indigo-50"
-                    : zebra
-                      ? "bg-slate-50/70"
-                      : "bg-white";
+                    : (expiryTone ?? (zebra ? "bg-slate-50/70" : "bg-white"));
                 // Sticky cells must stay fully opaque, otherwise the columns
                 // scrolling behind them bleed through.
                 const stickyBg = isActive
@@ -814,7 +854,8 @@ export function PbgGrid({
               </tr>
             )}
             </Fragment>
-          ))}
+            );
+          })}
         </tbody>
       </table>
 

@@ -1,5 +1,5 @@
 "use server";
-import { requireAccess } from "@/lib/access";
+import { requireAccess, loginRequired } from "@/lib/access";
 import { syncAvailableBomIds, maybeUpdateProductCostFromNewCode } from "@/lib/itemBomSync";
 import { prisma } from "@/lib/prisma";
 import { recalculateItem, serializeItem, autoDetectItemType, getItemNameMerge } from "@/lib/costCalculator";
@@ -117,6 +117,17 @@ async function maybeBackCalculateBomFromRmType(itemId: string, selectedRmType: s
   return updated ? serializeItem(updated) : null;
 }
 
+// Latest VA% / quoted rate / validation changes for one item (History dialog).
+export async function getItemChangeLogAction(itemId: string) {
+  await requireAccess();
+  try {
+    const rows = await prisma.itemChangeLog.findMany({ where: { itemId }, orderBy: { createdAt: "desc" }, take: 50 });
+    return { success: true, data: rows.map((r) => ({ ...r, createdAt: r.createdAt.toISOString() })) };
+  } catch (error: any) {
+    return { success: false, error: error.message || "Failed to load history." };
+  }
+}
+
 // Update a specific field of an enquiry item directly (for inline cell editing)
 export async function updateItemFieldAction(
   itemId: string,
@@ -124,6 +135,7 @@ export async function updateItemFieldAction(
   value: any
 ) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const prevFull = await prisma.enquiryItem.findUnique({
       where: { id: itemId },
@@ -139,6 +151,8 @@ export async function updateItemFieldAction(
         productCost: true,
         bomId: true,
         validation: true,
+        vaPercent: true,
+        quotedRate: true,
         [field]: true,
       },
     });
@@ -290,6 +304,20 @@ export async function updateItemFieldAction(
           updatedItem = await recalculateItem(itemId, { vaPercent: defaultVa });
         }
       }
+    }
+
+    const after: Record<string, unknown> | null = updatedItem;
+    if (after) {
+      const { logItemChanges } = await import("@/lib/itemChangeLog");
+      await logItemChanges(
+        (["vaPercent", "quotedRate", "validation"] as const).map((f) => ({
+          itemId,
+          enquiryId: prevFull.enquiryId,
+          field: f,
+          oldValue: (prevFull as any)[f],
+          newValue: after[f],
+        })),
+      );
     }
 
     if (["vaPercent", "quotedRate", "productCost", "extension", "bypass"].includes(field) && updatedItem) {
@@ -487,6 +515,7 @@ export async function updateItemFieldAction(
 // User selects a single bomId from availableBomIds dropdown â†’ persist to bomId/rmItemCode/bomType + optional cost
 export async function selectBomIdAction(itemId: string, bomId: string | null) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const item = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { enquiryId: true, erpItemCode: true, productCost: true, availableBomIds: true } });
     if (!item) return { success: false, error: "Item not found." };
@@ -572,6 +601,7 @@ export type ItemCodeChange = {
 // the item is reported as a failure.
 export async function fetchErpItemCodesAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   const updatedItems: ReturnType<typeof serializeItem>[] = [];
   const failures: ItemCodeFetchFailure[] = [];
   const changes: ItemCodeChange[] = [];
@@ -702,6 +732,7 @@ export async function fetchErpItemCodesAction(itemIds: string[]) {
 // PRIORITY: Raw Materials (GMDUpdateItem.cost) wins; SupplyHistory is fallback. Fixes FSD040002 -> RSD110023 (4900)
 export async function updateProductCostFromBomAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     // Guard frozen enquiries: productCost is a frozen column after one-time PDF
     {
@@ -949,6 +980,7 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
 // Fill null or "-" cost column from Raw Materials table (2:1 BOM), triggered via UI button or API
 export async function update2to1CostAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     // Guard frozen enquiries: cost is a frozen column after one-time PDF
     {
@@ -985,6 +1017,7 @@ export async function update2to1CostAction(itemIds: string[]) {
 // Unified action to update both DIRECT M2M product costs and 2:1 BOM costs for target items
 export async function updateAllBomCostsAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const updatedItemsMap = new Map<string, ReturnType<typeof serializeItem>>();
     let totalUpdated = 0;
@@ -1052,6 +1085,7 @@ export async function updateAllBomCostsAction(itemIds: string[]) {
 // Global backfill: call with no itemIds to sync all DIRECT M2M items from raw materials (GMDUpdateItem)
 export async function syncDirectM2MAvailableStockAction(itemIds?: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const res = await syncDirectM2MAvailableStock(itemIds);
     let items: ReturnType<typeof serializeItem>[] = [];
@@ -1069,6 +1103,7 @@ export async function syncDirectM2MAvailableStockAction(itemIds?: string[]) {
 
 export async function importExcelDataAction(rows: any[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     let matchedCount = 0;
     let updatedCount = 0;
@@ -1183,6 +1218,7 @@ export async function previewAutoFillAction(itemIds: string[]) {
 /** Auto-Fill step 2: save only the changes the user accepted. */
 export async function applyAutoFillAction(changes: AutoFillChange[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     const FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass"]
     const byItem = new Map<string, AutoFillChange[]>()
@@ -1233,6 +1269,7 @@ export async function applyAutoFillAction(changes: AutoFillChange[]) {
 // Fill blank VA% values from the default VA% table (type + size based) using keyword item-type detection only
 export async function updateVaPercentAction(itemIds: string[]) {
   await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
   try {
     // Guard frozen enquiries: vaPercent/quotedRate are frozen after one-time PDF
     {

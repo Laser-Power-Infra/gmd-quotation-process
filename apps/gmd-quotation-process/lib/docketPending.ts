@@ -24,9 +24,60 @@ export const DOCKET_CREATION_PATTERNS = [
   /requesting\s+for\s+docket\s+creation/i,
 ];
 
+/**
+ * Context that suggests the mail is about a new docket / enquiry. Used with the
+ * GMD-client and Laser-Entry checks; the AI is the final filter, so this list is
+ * intentionally broad.
+ */
+export const DOCKET_CONTEXT_PATTERNS = [
+  /\bdocket\b/i,
+  /\brfq\b/i,
+  /\benquir(?:y|ies)\b/i,
+  /\binquir(?:y|ies)\b/i,
+  /\brate\s+required\b/i,
+  /\bbudgetary\b/i,
+  /\bquotation\b/i,
+  /\bquote\b/i,
+  /\btender\b/i,
+  /\boffer\b/i,
+  /\bspares?\b/i,
+  /\bpurchase\s+order\b/i,
+];
+
 export function hasDocketCreationKeyword(text: string): boolean {
   if (!text) return false;
   return DOCKET_CREATION_PATTERNS.some((p) => p.test(text));
+}
+
+export function hasDocketContext(text: string): boolean {
+  if (!text) return false;
+  return DOCKET_CONTEXT_PATTERNS.some((p) => p.test(text));
+}
+
+const PO_NEGATIVE = [
+  /\bP\.?\s?O\.?\s*box\b/i,
+  /\bpost\s+office\b/i,
+  /\brfq\b/i,
+  /\brequest\s+for\s+(?:quotation|quote|proposal)\b/i,
+  /\b(?:enquiry|inquiry)\b/i,
+  /\bquotation\s+(?:for|request)\b/i,
+];
+const PO_POSITIVE = [
+  /\bpurchase[\s_-]+orders?\b/i,
+  // [_-] separators and a non-letter lookbehind so filenames like "PO_114.pdf" match
+  /(?<![a-z])P\.?\s?O\.?[\s_-]*(?:no\.?|number|#)?[\s_:.#-]*[A-Z0-9\/-]*\d[A-Z0-9\/-]{2,}/i,
+  /(?<![a-z])P\.?O\.?[\s_]+(?:copy|attached|issued|released)\b/i,
+  /\bwork\s+order\b/i,
+  /\bsupply\s+order\b/i,
+  /\bletter\s+of\s+(?:award|acceptance|intent)\b/i,
+];
+
+// Subject + attachment names only: bodies quote old POs in genuine docket requests.
+export function isPurchaseOrderMail(t: { subject?: string | null; attachNames?: unknown }): boolean {
+  const names = Array.isArray(t.attachNames) ? t.attachNames.join(" ") : JSON.stringify(t.attachNames ?? "");
+  const head = `${t.subject || ""}\n${names}`;
+  if (PO_NEGATIVE.some((p) => p.test(head))) return false;
+  return PO_POSITIVE.some((p) => p.test(head));
 }
 
 export function extractEmailsFromValue(val: unknown): string[] {
@@ -100,8 +151,8 @@ export function isPendingDocketCandidate(input: {
   text: string;
 }): boolean {
   if (!isGenuineGmdClientThread(input)) return false;
-  return isSentToLaserEntry(input.toDetails, input.ccDetails, input.text) ||
-    hasDocketCreationKeyword(input.text);
+  if (!isSentToLaserEntry(input.toDetails, input.ccDetails, input.text)) return false;
+  return hasDocketContext(input.text);
 }
 
 export function buildPartySearchText(input: {

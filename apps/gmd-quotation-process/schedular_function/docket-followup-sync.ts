@@ -3,7 +3,9 @@ import {
   PARTY_LOOKUP_TYPE,
   buildPartyMatcher,
   buildPartySearchText,
+  hasDocketCreationKeyword,
   isPendingDocketCandidate,
+  isPurchaseOrderMail,
 } from "@/lib/docketPending";
 import {
   isDocketAiEligible,
@@ -130,12 +132,12 @@ async function runDocketFollowupSyncInternal(
   const startTime = Date.now();
   const { fullScan = false } = options;
 
-  // Lookback threshold: explicit since, last sync, or the past 6 hours. The job
-  // runs hourly, so a 24h fallback needlessly re-read large text columns.
+  // Lookback threshold: explicit since, last sync, or the past 48 hours. The
+  // job runs hourly; 48h covers ingestion lag without touching older backlog.
   const lookbackSince =
     options.since ||
     lastSyncTimestamp ||
-    new Date(Date.now() - 6 * 60 * 60 * 1000);
+    new Date(Date.now() - 48 * 60 * 60 * 1000);
 
   // 1. Load active PARTY lookup options
   const partyRows = await prisma.lookupOption.findMany({
@@ -221,6 +223,14 @@ async function runDocketFollowupSyncInternal(
     });
 
     if (!isCandidate) continue;
+
+    // Customer PO, not a docket request: clear any earlier flag and skip.
+    if (isPurchaseOrderMail(t) && !hasDocketCreationKeyword(text)) {
+      if (t.pendingDocket || t.aiIsNewDocket !== false) {
+        updates.push({ id: t.id, pendingDocket: false, aiIsNewDocket: false });
+      }
+      continue;
+    }
     candidatesCount++;
 
     const detectedDocket = detectDocketNumber(t);

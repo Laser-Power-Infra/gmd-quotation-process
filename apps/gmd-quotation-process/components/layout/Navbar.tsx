@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Bell } from "lucide-react";
 import Link from "next/link";
 import { auth } from "@/auth";
+import { canEditApm } from "@/lib/auth-helpers";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import NavMenu from "./NavMenu";
 import { UserMenu } from "./UserMenu";
@@ -25,7 +26,7 @@ export default async function Navbar() {
               className="h-8 w-auto rounded bg-background object-contain p-0.5"
             />
           </Link>
-          <NavMenu />
+          <NavMenu showAdminOnly={canEditApm(role)} />
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">

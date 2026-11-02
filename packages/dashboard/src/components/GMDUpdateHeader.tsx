@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
+import SyncStaleBanner from "./SyncStaleBanner";
 
 interface GMDUpdateHeaderProps {
   totalRows: number;
@@ -8,9 +9,10 @@ interface GMDUpdateHeaderProps {
   syncing?: boolean;
   title?: string;
   actions?: ReactNode;
+  warnIfStale?: boolean;
 }
 
-function formatSyncTime(dateStr: string | null): string {
+export function formatSyncTime(dateStr: string | Date | null): string {
   if (!dateStr) return "Never";
   try {
     const d = new Date(dateStr);
@@ -33,8 +35,10 @@ export default function GMDUpdateHeader({
   syncing,
   title = "GMD UPDATE",
   actions,
+  warnIfStale,
 }: GMDUpdateHeaderProps) {
   return (
+    <>
     <div className="bg-[#0a2540] dark:bg-card px-6 py-3 border-b border-[#1e3d59] dark:border-border flex items-center justify-between">
       <div className="flex items-center gap-3">
         <h2 className="text-sm font-bold uppercase tracking-wider text-white dark:text-foreground">{title}</h2>
@@ -67,5 +71,7 @@ export default function GMDUpdateHeader({
         </div>
       )}
     </div>
+    {warnIfStale && <SyncStaleBanner syncedAt={syncedAt} />}
+    </>
   );
 }

@@ -4,8 +4,9 @@ export const ITEM_TYPE_PATTERNS = [
   // "with isolation sluice valve" variants. Word boundaries keep "repair valve"
   // from matching, and the order (TPAV is first) makes these win over the
   // generic sluice catch-all below. "Air cushion valve" is a distinct category
-  // and does not contain "air valve", so it is unaffected.
-  { category: "TPAV",             patterns: [/tpav/i, /\btamper\s*proof\s*air\s*valve\b/i, /\bair\s*release\s*valve\b/i, /\bkinetic[^,]*air\s*(?:release\s*)?valve\b/i, /\bair\s*valve\b/i] },
+  // and does not contain "air valve", so it is unaffected. "TPV" is an alias
+  // some items use for TPAV and gets the same type.
+  { category: "TPAV",             patterns: [/tpav/i, /\btpv\b/i,/\btamper\s*proof\s*air\s*valve\b/i, /\bair\s*release\s*valve\b/i, /\bkinetic[^,]*air\s*(?:release\s*)?valve\b/i, /\bair\s*valve\b/i] },
   { category: "KNIFE GATE VALVE", patterns: [/knife\s*gate\s*valve/i, /knife\s*gate/i, /knee\s*gate\s*valve/i, /knee\s*gate/i] },
   { category: "BUTTERFLY VALVE",  patterns: [/butter\s?fly\s*(valve)?/i, /butterfly\s*valve/i, /\bbfv/i] },
   { category: "SLUICE VALVE-RESILIENT-RISING",    patterns: [/sluice.*resilient.*rising/i, /resilient.*rising.*sluice/i, /gate\s*valve/i, /\bgv/i] },

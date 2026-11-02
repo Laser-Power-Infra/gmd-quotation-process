@@ -11,5 +11,7 @@ export const proxy = auth((req) => {
 })
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|login|register).*)"],
+  // logo.jpg must be public: the image optimizer fetches it without cookies, and the
+  // login rewrite would hand it HTML instead (broken navbar logo).
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico|logo.jpg|login|register).*)"],
 }

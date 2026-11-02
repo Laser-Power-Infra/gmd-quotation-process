@@ -4,6 +4,8 @@ import { requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import {
   SUPPLY_LATERAL_SQL,
+  SUPPLY_NO_BOM_SQL,
+  SUPPLY_NO_ERP_SQL,
   buildSupplyOrderBy,
   buildSupplyWhere,
   supplyFacetExpression,
@@ -31,6 +33,7 @@ export interface SupplyPageResult {
   syncedAt: string | null;
   bomIdOptions: Record<string, string[]>;
   utilityOptions: string[];
+  batchCounts: { noBom: number; noErp: number };
 }
 
 const SUPPLY_INCLUDE = {
@@ -74,7 +77,7 @@ export async function fetchSupplyPage(
   const where = buildSupplyWhere(query);
   const orderBy = buildSupplyOrderBy(query);
 
-  const [idRows, countRows, lastRun, utilityRows] = await Promise.all([
+  const [idRows, countRows, lastRun, utilityRows, batchRows] = await Promise.all([
     prisma.$queryRaw<{ id: string }[]>`
       SELECT s.id FROM "SupplyHistoryItem" s
       ${SUPPLY_LATERAL_SQL}
@@ -99,6 +102,13 @@ export async function fetchSupplyPage(
       orderBy: [{ sortOrder: "asc" }],
       select: { value: true },
     }),
+    prisma.$queryRaw<{ no_bom: number; no_erp: number }[]>`
+      SELECT count(*) FILTER (WHERE ${SUPPLY_NO_BOM_SQL})::int AS no_bom,
+             count(*) FILTER (WHERE ${SUPPLY_NO_ERP_SQL})::int AS no_erp
+      FROM "SupplyHistoryItem" s
+      ${SUPPLY_LATERAL_SQL}
+      WHERE ${where}
+    `,
   ]);
 
   const ids = idRows.map((row) => row.id);
@@ -123,6 +133,10 @@ export async function fetchSupplyPage(
     syncedAt: lastRun?.syncedAt.toISOString() ?? null,
     bomIdOptions,
     utilityOptions,
+    batchCounts: {
+      noBom: Number(batchRows[0]?.no_bom ?? 0),
+      noErp: Number(batchRows[0]?.no_erp ?? 0),
+    },
   };
 }
 

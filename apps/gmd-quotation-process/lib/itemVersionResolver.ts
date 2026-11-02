@@ -183,7 +183,11 @@ export function parseItem(item: string | null | undefined): ItemVersionResult {
   };
   if (!item) return empty;
 
-  const normalized = normalize(item);
+  // "TPV" is an alias for TPAV: rewrite it so every TPAV rule applies.
+  // Spaces around "+" are dropped so "TPAV + SLV" matches the "TPAV+SLV" rule.
+  const normalized = normalize(item)
+    .replace(/\bTPV\b/g, "TPAV")
+    .replace(/\s*\+\s*/g, "+");
   if (!normalized) return empty;
 
   const baseItem = findBaseItem(normalized);

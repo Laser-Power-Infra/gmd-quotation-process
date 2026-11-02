@@ -9,6 +9,19 @@ import MultiSelectFilter, { BLANK } from "@/components/table/MultiSelectFilter";
 import Pagination from "@/components/table/Pagination";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import type { VariantMetrics } from "@/lib/indentListingMetrics";
+import { summarizeIndentRows } from "@/lib/indentListingSummary";
+import { valveTypesForIndentItem } from "@/lib/indentItemValveTypes";
+import { rmOptionFitsIndentRow, type RmCodeOption } from "@/lib/indentRmCodeOptions";
+
+// Which item variant each V column holds (rules in lib/itemVersionResolver.ts).
+const VARIANT_LEGEND: [string, string][] = [
+  ["SLV / TPAV+SLV / SLV METAL", "V1 plain · V2 9523 · V3 rising · V4 rising + 9523"],
+  ["BFV", "V1 plain/DI · V2 CS · V3 wafer · V4 9523"],
+  ["DPCV", "V1 plain/DI · V2 CS · V3 other · V4 9523"],
+  ["NRV", "V1 plain (swing)/DI · V2 9523"],
+  ["TPAV", "V1 plain/DI · V2 other · V4 9523"],
+  ["CF / DV / GV / PRV", "V1 plain · V2 other"],
+];
 
 interface IndentListingTableProps {
   title: string;
@@ -19,7 +32,7 @@ interface IndentListingTableProps {
   /** Stored-row ids behind each displayed row, aligned with `rows`. */
   sourceIds: string[][];
   /** Raw materials offered by the hand-pick RM code dropdown. */
-  rmOptions: { code: string; name: string }[];
+  rmOptions: RmCodeOption[];
   /** Re-fetch the listing after a hand-picked RM code is saved. */
   onRefresh: () => void;
 }
@@ -120,7 +133,10 @@ function cellText(row: unknown[], idx: number): string {
 // their raw materials are not in the option list, so a picker there offers the
 // wrong valve family.
 function canPickRmCode(row: unknown[]): boolean {
-  return cellText(row, 0).toUpperCase() in RM_CODE_MATCH_BY_ITEM;
+  return (
+    cellText(row, 0).toUpperCase() in RM_CODE_MATCH_BY_ITEM ||
+    valveTypesForIndentItem(cellText(row, 0)).length > 0
+  );
 }
 
 // The value shown (and sorted) in a leaf column. Variant metrics come from the
@@ -268,7 +284,6 @@ export default function IndentListingTable({
     return map;
   }, [rows, sourceIds]);
 
-  const rmCodes = useMemo(() => rmOptions.map((o) => o.code), [rmOptions]);
   const rmOptionLabels = useMemo(
     () => Object.fromEntries(rmOptions.map((o) => [o.code, `${o.code} — ${o.name}`])),
     [rmOptions],
@@ -347,6 +362,12 @@ export default function IndentListingTable({
   const filtered = useMemo(
     () => applyFilters(-1, rows),
     [applyFilters, rows],
+  );
+
+  // Tiles follow the table's filters so their counts always match the rows shown.
+  const summary = useMemo(
+    () => summarizeIndentRows(filtered, getMetrics),
+    [filtered, getMetrics],
   );
 
   // Cascading options/counts: each column offers only the values present among
@@ -434,6 +455,15 @@ export default function IndentListingTable({
       const rmCode =
         col.rmCodeIdx === undefined ? "" : cellText(row, col.rmCodeIdx);
       const targets = sourceIdsByRow.get(row) ?? [];
+      const selectedCodes = rmCode
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      // Only same valve type + size; an already-saved code stays listed so it can be removed.
+      const rowCodes = rmOptions
+        .filter((o) => rmOptionFitsIndentRow(o, cellText(row, 0), cellText(row, 1)))
+        .map((o) => o.code);
+      const options = [...new Set([...rowCodes, ...selectedCodes])];
 
       if (value === "") return "—";
       if (category === "" && rmCode === "" && targets.length === 0) return value;
@@ -452,16 +482,9 @@ export default function IndentListingTable({
             // Stored rows exist behind this line, so the code is hand-pickable.
             <RmCodeCell
               label={`${col.slotLabel} RM code`}
-              options={rmCodes}
+              options={options}
               optionLabels={rmOptionLabels}
-              selected={
-                rmCode === ""
-                  ? []
-                  : rmCode
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean)
-              }
+              selected={selectedCodes}
               onChange={(vals) => handleRmCodeChange(row, col.slot, vals.join(", "))}
             />
           ) : rmCode !== "" ? (
@@ -523,6 +546,47 @@ export default function IndentListingTable({
 
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0">
+      {/* Summary tiles + V1..V4 legend */}
+      <div className="flex flex-wrap items-start gap-2 px-4 py-2 border-b border-slate-300 dark:border-slate-600">
+        {(
+          [
+            ["Total", summary.total, "Rows shown in the table"],
+            ["Received", summary.received, "MC RECEIVED/PENDING = Received"],
+            ["Pending", summary.pending, "MC RECEIVED/PENDING = Pending"],
+            ["Shortage", summary.shortage, "Rows where a V1..V4 balance is above that variant's stock"],
+          ] as const
+        ).map(([label, value, hint]) => (
+          <div
+            key={label}
+            title={hint}
+            className={`flex flex-col items-start rounded-md border px-3 py-1.5 min-w-28 ${
+              label === "Shortage" && value > 0
+                ? "border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300"
+                : "border-border bg-background text-foreground"
+            }`}
+          >
+            <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70">{label}</span>
+            <span className="text-lg font-bold leading-tight tabular-nums">{value}</span>
+          </div>
+        ))}
+        <details className="ml-auto max-w-md text-[11px] text-muted-foreground">
+          <summary className="cursor-pointer font-semibold select-none">What are V1–V4?</summary>
+          <p className="mt-1">
+            Each item&apos;s balance (bill against contract) is split by variant. Per V block: stock, the
+            balance with its variant label and RM code, ordered qty and pending order qty.
+          </p>
+          <ul className="mt-1 space-y-0.5">
+            {VARIANT_LEGEND.map(([item, rule]) => (
+              <li key={item}>
+                <span className="font-semibold text-foreground">{item}:</span> {rule}
+              </li>
+            ))}
+          </ul>
+        </details>
+      </div>
+      <p className="px-4 py-1 text-[11px] text-muted-foreground border-b border-border">
+        {VARIANT_LEGEND.map(([item, rule]) => `${item}: ${rule}`).join("; ")}
+      </p>
       {/* Toolbar */}
       <div className="flex justify-between items-center px-4 py-2.5 bg-muted/50 border-b border-slate-300 dark:border-slate-600">
         <span className="text-[11px] font-semibold text-muted-foreground">

@@ -34,7 +34,20 @@ export const BIS_COLUMNS: ColumnMap = {
   },
   remark: { text: sql`coalesce(b."remark", '')`, kind: "text" },
   reachedLab: { text: sql`coalesce(b."reachedLab", '')`, kind: "text" },
+  "BIS Documents (Link)": { text: sql`coalesce(b."bisDocs", '')`, kind: "text" },
+  "Last Update": {
+    text: sql`coalesce(to_char(${lastUpdate(sql`u."createdAt"`)} AT TIME ZONE 'UTC', 'DD-Mon-YYYY'), '')`,
+    raw: lastUpdate(sql`u."createdAt"`),
+    kind: "date",
+  },
+  "Updated By": { text: sql`coalesce(${lastUpdate(sql`u."updatedBy"`)}, '')`, kind: "text" },
+  "Next Action": { text: sql`coalesce(${lastUpdate(sql`u."nextStep"`)}, '')`, kind: "text" },
 };
+
+/** One field of the row's most recent BisStatusUpdate. */
+function lastUpdate(field: Prisma.Sql): Prisma.Sql {
+  return sql`(SELECT ${field} FROM "BisStatusUpdate" u WHERE u."bisStatusId" = b.id ORDER BY u."createdAt" DESC LIMIT 1)`;
+}
 
 const DEFAULT_ORDER_SQL = sql`b."updatedAt" DESC, b.id ASC`;
 const PRIMARY_KEY_SQL = sql`b.id`;

@@ -8,12 +8,14 @@
     "start": "next start --port 4150",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
     "marking": "tsx scripts/backfill-physical-stock-marking.ts",
     "marking:apply": "tsx scripts/backfill-physical-stock-marking.ts --apply"
   },
   "dependencies": {
     "@gmd/db-stock": "workspace:*",
     "@gmd/physical-stock": "workspace:*",
+    "@gmd/purchase": "workspace:*",
     "@gmd/ui": "workspace:*",
     "@googleapis/drive": "^26.0.2",
     "bcrypt": "^6.0.0",

@@ -30,9 +30,12 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | ACC Master refresh | `POST /api/scheduler/acc-master` | `acc-master-sync` | `ACC_MASTER` |
 | Execution Tracking sync | `POST /api/scheduler/execution-tracking` | `execution-tracking-sync` | `SALE_BILL` (+ the local `acc_master`) |
 | PBG sheet sync *(every 1.2h)* | `POST /api/scheduler/pbg` | `pbg-sync` | PBG sheet tab → `PbgData` |
+| PBG reminder emails *(daily, 09:00 IST)* | `POST /api/scheduler/pbg-reminders` | `pbg-reminders` | `PbgData`, `PbgReminderLog` -> direct SMTP |
 | C Batch marks | `POST /api/scheduler/c-batch` | `c-batch-sync` | `ITEM MASTER ERP` |
 | ERP Contract No sync | `POST /api/scheduler/erp-contract-no` | `erp-contract-no-sync` | `SALE_BILL`, `MC` |
 | Closure Status sync *(every 10m)* | `POST /api/scheduler/closure-status` | `closure-status-sync` | `docket_quotation_threads`, `enquiries` |
+| Ledger sync *(daily, 01:55)* | `POST /api/scheduler/ledger` | `ledger-sync` | `DEBTORS`, `CREDITORS`, `ADVANCE TO CREDITORS` -> `Debtor`, `Creditor`, `CreditorAdvance` |
+| Purchase Order / GRN sync | `POST /api/scheduler/purchase-orders` | `purchase-orders-sync` | `PURCHASE ORD AND GRN` -> stock DB `PurchaseOrderLine` |
 
 The stagger is deliberate. `raw-material`, `supply-history` and
 `contract-review` each full-table-read the tables the others write. `bom-mast`
@@ -751,6 +754,24 @@ Notes:
 - `execution-tracking` refreshes this table before it runs, so the manual path
   does not depend on the :35 job having fired.
 
+## `ledger`
+
+Daily at **01:55** (`0 55 1 * * *`, ofelia 6-field cron): after the hourly block and
+before the working day, so the debtors and creditors pages open on that
+morning's ledger. Entry: `runScheduledLedgerSync()` -> `runLedgerSync()` in
+`ledger-sync.ts`, which `scripts/sync-debtors.ts` and `scripts/sync-creditors.ts`
+also call (dry-run default, `--apply`, `--dump-headers` unchanged).
+
+- Snapshot copy: each of `Debtor`, `Creditor`, `CreditorAdvance` is deleted and
+  refilled **in its own transaction**. A renamed tab or column fails that ledger
+  (`report.<ledger>.error`), leaves its table as it was, and does not stop the
+  others. The route then returns `success:false` (HTTP 200) and the Ofelia script
+  exits 1.
+- Skipped rows (blank ACC_CODE, bad number/date) are counted, not fatal.
+- Report: `{ debtors, creditors, advances }`, each `{ read, mapped, skipped,
+  skippedRows, written, inDb, error? }`.
+- The latch is in-process only; see the `shortcut:` comment in `ledger-sync.ts`.
+
 ## `execution-tracking`
 
 Single step: `runExecutionTrackingStep()` in `execution-tracking-sync.ts` — the
@@ -1312,6 +1333,92 @@ Prefer calling existing `lib/` helpers over copying logic — check whether the
 button you are wrapping is already a thin wrapper over a lib.
 6. Add any new env vars to `documentation/10-glossary-appendix.md`.
 
+## `pbg-reminders`
+
+`runScheduledPbgReminders()` in `pbg-reminders.ts` sends the PBG reminder mails
+directly over SMTP (no n8n). It reads only rows whose `mail_trigger` is
+`CONTINUE` and whose status is `OPEN`, `Running` or `Expired`.
+
+- **Consolidated mail:** one mail per **party + contact** with two sections:
+  - **A. Expired (Return Requested):** every currently expired, non-closed BG
+    for that party across all its POs, oldest expiry first, with a
+    **Days since expiry** column and the MSME/GFR paragraph.
+  - **B. Expiring in Next 30 Days (For Information):** upcoming BGs, soonest
+    expiry first. No legal paragraph and no MSEFC wording.
+- **Cadence:** Section A repeats every 7 days. The expiry-day mail is
+  **reminder 1**; later cycles auto-increase to 2, 3, … A B-only info mail is
+  sent at the 30-day mark only when the party has no expired BGs. When expired
+  BGs exist, Section B rides along on the next Section A cycle.
+- **MSEFC:** the Section 18 provision and MSEFC escalation sentence appear only
+  from **reminder 2** onward.
+- **Returned BGs:** `CLOSED`/`Closed` rows are never eligible, so reminders stop
+  as soon as the BG is marked returned/closed.
+- **Recipients:** parsed from the `contact_person` column; one mail per party +
+  contact group.
+- **Mail body:** one table per PO with PO number, project, BG details, invoice
+  numbers and **Total BG Amount**; multiple POs also show **Total BG Amount
+  Pending Return** in Section A.
+- **Branding:** the GMD logo is embedded inline at the top of every HTML mail.
+- **Signature:** all PBG mails close with Ms. Puja Agarwal, Director, followed
+  by the company address, both phone numbers and both email addresses.
+- **Invoice numbers:** matched from `SupplyHistoryItem` by BG number first, then
+  by PO number. All distinct invoices are shown; SR-series invoices are ignored.
+- **Udyam number:** Section A reads `PBG_UDYAM_NO`; when unset it shows
+  `[UDYAM-XX-00-0000000]`.
+- **No party / invalid PO:** rows with a blank party or an unusable PO number
+  are skipped and counted in the job result (`skippedNoParty`, `skippedNoPo`,
+  `skippedNoPoBgNos`) for manual cleanup. A PO is unusable when it is blank, a
+  placeholder (`-`, `--`, `—`, `N/A`, `NA`, `NULL`, `NIL`, `0`, `.`) or has no
+  digit at all (for example `GANJAM`); such BGs never enter Section A or B.
+- **Audit:** every attempt writes `pbg_reminder_log` (`SENT`/`FAILED`) with the
+  PO number and recipient key. Failed sends retry on the next daily run.
+- **Env:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`,
+  `MAIL_FROM`, `MAIL_FROM_NAME`, optional `PBG_REMINDER_CC`,
+  `PBG_UDYAM_NO`, `PBG_REMINDER_BATCH_SIZE`, `PBG_REMINDER_DELAY_MS`.
+  `puja.agarwal@laserpowerinfra.com` is always added to CC in code, even when
+  `PBG_REMINDER_CC` is empty.
+
+Dry-run (prints recipients and rows without sending):
+
+```sh
+pnpm --filter gmd-quotation-process pbg:reminders:dry
+```
+
+Test SMTP credentials without sending:
+
+```sh
+pnpm --filter gmd-quotation-process pbg:reminders:verify
+```
+
+Send one live pass:
+
+```sh
+pnpm --filter gmd-quotation-process pbg:reminders:send
+```
+
+Send a test mail for one party (defaults to `MAIL_FROM` when `--to` is omitted):
+
+```sh
+pnpm --filter gmd-quotation-process pbg:test-mail -- --party="G V P R ENGINEERS LIMITED" --template=before
+pnpm --filter gmd-quotation-process pbg:test-mail -- --party="G V P R ENGINEERS LIMITED" --template=consolidated --reminder-no=1 --earlier-dates=2026-10-26
+pnpm --filter gmd-quotation-process pbg:test-mail -- --party="KALPATARU PROJECTS INTERNATIONAL LIMITED" --template=expired --to=ops@example.com --dry
+```
+
+Backfill the PO number / recipient key on older log rows (dry-run, then apply):
+
+```sh
+pnpm --filter gmd-quotation-process pbg:reminder-log:backfill
+pnpm --filter gmd-quotation-process pbg:reminder-log:backfill:apply
+```
+
+Ofelia wiring is provided at the repo root:
+
+- `infra/pbg-reminders.sh`
+- `infra/pbg-reminders.ofelia.ini`
+- `infra/README.md`
+
+Schedule it **daily** at 09:00 IST. The 7-day cadence is internal to the app.
+
 ## Manual testing
 
 `BASE=http://localhost:4570/api/scheduler`
@@ -1341,6 +1448,8 @@ curl -i -X POST -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/pbg"
 
 # run the Closure Status sync
 curl -i -X POST -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/closure-status"
+# run the PBG reminder pass (direct SMTP)
+curl -i -X POST -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/pbg-reminders"
 ```
 
 Inspect the container logs for the `[SCHEDULER]` blocks, which print the full
@@ -1349,3 +1458,56 @@ per-step diff:
 ```
 docker logs -f gmd-quotation-process | grep SCHEDULER
 ```
+## `purchase-orders`
+
+`POST /api/scheduler/purchase-orders` → `runScheduledPurchaseOrders` →
+`lib/purchaseOrderSync.ts`.
+
+Copies the `PURCHASE ORD AND GRN` tab of the GMD EXECUTION TRACKING workbook
+(gid from `PURCHASE_ORD_GRN_GID`, defaulting to the live tab) into the stock
+DB's `PurchaseOrderLine`. That table is what the Purchase dashboard reads, and
+what fills the `IN TRANSIT` column on Physical Stock.
+
+Not yet staggered into the hourly rota: it is cheap (one tab read, ~3.4k rows)
+and nothing else writes the table, so it can take any free slot.
+
+### Why it copies instead of computing
+
+The ERP already works out what is still to come, in the tab's `BALANCE` column.
+The sync stores it, and `@gmd/purchase/in-transit` only falls back to
+`NET_QTYORDER - QTYEXECUTE` when the balance cell is blank or junk. Measured on
+the live tab on 2026-10-31: **0 of 3,439 rows** had the two disagree, so the
+fallback is a safety net, not a second opinion.
+
+### What the live tab actually looks like
+
+Measured the same day, before the first run:
+
+| | |
+|---|---|
+| Data rows | 3,439 (plus 1 repeated header row, dropped) |
+| Duplicate `(VRNO, SLNO)` | 0 — the unique key holds |
+| Open lines (material to come) | 385 |
+| …of those, no `SALES_CONT` | 236 (61%) |
+| Over-received lines (negative balance) | 7 |
+| Items with stock on the way | 263 |
+| Items with mixed units | 0 |
+
+Two of those matter when reading the dashboard:
+
+- **61% of open lines carry no sales contract.** Order-level tagging is real but
+  partial — the summary counts them separately as "untagged" rather than
+  pretending every in-transit item belongs to an order.
+- **7 lines have been received over the order quantity** (e.g. `PE24Y-00065/11`,
+  ordered 3, received 25). Their in-transit is floored at 0, never allowed to
+  subtract from another line's, and the row is tinted red.
+
+### Manual runs
+
+```
+pnpm --filter gmd-quotation-process po:sync             # dry run
+pnpm --filter gmd-quotation-process po:sync -- --limit 500
+pnpm --filter gmd-quotation-process po:sync:apply       # writes
+```
+
+`?dryRun=1` and `?limit=` do the same on the endpoint.

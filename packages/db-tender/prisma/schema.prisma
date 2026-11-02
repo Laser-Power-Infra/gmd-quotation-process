@@ -1265,6 +1265,8 @@ model ContractReview {
   productionOrderNumber            String?
   diagramUrl                       String?
   diagramVerdict                   String?
+  // JSON array of {c: category, u: url, at: ISO} mail/doc links; per contract, copied onto every row of that contractNo.
+  mailDocs                         String?
   rmPhysicalStock                  String?
 
   poNo      String? //sync from sheetid = 1sf-uCfCSAUovNAWJSiSyojTPFvUSzmp23keF0ymkjIE

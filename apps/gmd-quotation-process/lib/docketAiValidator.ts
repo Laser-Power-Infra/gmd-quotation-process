@@ -104,6 +104,7 @@ Return isNewDocket = false when:
 - It is logistics, accounts, payment, dispatch, tender-alert, or ERP mail with no new-docket request.
 - It is spam, a newsletter, an auto-notification, or a bounce.
 - The mail is forwarded for information only and does not ask to create a docket.
+- It is a purchase order (PO / work order / supply order / letter of award) issued BY a customer. A PO is not a request to create a docket.
 
 Pay attention to the SUBJECT, the BODY and any ATTACHMENT OCR. Ignore quoted history. When evidence is mixed or weak, prefer false.
 

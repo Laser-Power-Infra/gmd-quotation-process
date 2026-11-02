@@ -9,6 +9,15 @@ export async function requireAccess() {
   await requireAdminOrDeveloper();
 }
 
+/**
+ * Dashboard edits need a signed-in user on every server (any role).
+ * Returns the error result to send back, or null. Returned, not thrown: Next hides thrown messages in production.
+ */
+export async function loginRequired() {
+  const { auth } = await import("@/auth");
+  return (await auth())?.user ? null : { success: false as const, error: "Please log in to edit." };
+}
+
 /** Route-handler form: a 401 Response to return, or null when allowed. */
 export async function denyIfNoAccess(): Promise<Response | null> {
   try {

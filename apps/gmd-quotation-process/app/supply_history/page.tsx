@@ -41,9 +41,6 @@ import { useServerTable } from "@/lib/useServerTable";
 import type { SupplyQuery } from "@/lib/supplyQuery";
 import type { TableSort } from "@/lib/tableQuery";
 
-// Stable descriptor so the shared table's row predicate keeps a stable dep.
-const SUPPLY_HISTORY_BATCH_FILTERS = [cBatchFilter()];
-
 export default function SupplyHistoryPage() {
   const dispatch = useAppDispatch();
   const filterState = useAppSelector((s) => s.supplyHistoryFilters);
@@ -103,6 +100,17 @@ export default function SupplyHistoryPage() {
   const utilityOptions = useMemo(
     () => data?.utilityOptions ?? [],
     [data],
+  );
+  const noBomCount = data?.batchCounts.noBom ?? 0;
+  const noErpCount = data?.batchCounts.noErp ?? 0;
+  // shortcut: column/value are unused in server mode (the server predicate keys on `key`).
+  const batchFilters = useMemo(
+    () => [
+      cBatchFilter(),
+      { key: "noBom", label: `No BOM exists (${noBomCount})`, column: "BOM ID", value: "", title: "Rows with no BOM candidates" },
+      { key: "noErpCode", label: `Blank ERP ITEM CODE (${noErpCount})`, column: "ERP ITEM CODE", value: "", title: "Rows with no ERP item code" },
+    ],
+    [noBomCount, noErpCount],
   );
 
   const changePage = useCallback(
@@ -302,6 +310,7 @@ export default function SupplyHistoryPage() {
           title="SUPPLY HISTORY"
           totalRows={total}
           syncedAt={syncedAt}
+          warnIfStale
           onSync={handleSync}
           syncing={syncing}
         />
@@ -331,7 +340,7 @@ export default function SupplyHistoryPage() {
               hiddenColumns={[C_BATCH_HEADER]}
               cellBadges={cBatchBadges("ERP ITEM CODE")}
               batchFilterHeader="ERP ITEM CODE"
-              batchPresenceFilters={SUPPLY_HISTORY_BATCH_FILTERS}
+              batchPresenceFilters={batchFilters}
               bomIdOptionsById={bomIdOptionsById}
               onSelectBomId={handleSelectBomId}
               filterState={filterState}

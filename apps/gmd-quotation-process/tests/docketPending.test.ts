@@ -1,6 +1,20 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { istDayWindow } from '../lib/docketPending.js'
+import { istDayWindow, isPurchaseOrderMail } from '../lib/docketPending.js'
+
+test('isPurchaseOrderMail detects POs from subject or attachment names', () => {
+  assert.equal(isPurchaseOrderMail({ subject: 'Purchase Order No. 4500123 - RWSS Khordha' }), true)
+  assert.equal(isPurchaseOrderMail({ subject: 'PO-2025/114', attachNames: ['PO_114.pdf'] }), true)
+  assert.equal(isPurchaseOrderMail({ subject: 'Documents', attachNames: ['Purchase Order.pdf'] }), true)
+})
+
+test('isPurchaseOrderMail rejects enquiries and non-PO mails', () => {
+  assert.equal(isPurchaseOrderMail({ subject: 'PO Box 12, Bhubaneswar' }), false)
+  assert.equal(isPurchaseOrderMail({ subject: 'RFQ for pumps' }), false)
+  assert.equal(isPurchaseOrderMail({ subject: 'Enquiry - rates; ref previous PO 4500123' }), false)
+  assert.equal(isPurchaseOrderMail({ subject: '', attachNames: null }), false)
+  assert.equal(isPurchaseOrderMail({ subject: 'Request for quotation', attachNames: ['PO_old.pdf'] }), false)
+})
 
 const at = (iso: string) => new Date(iso)
 const inside = (win: { start: Date; end: Date }, iso: string) => {

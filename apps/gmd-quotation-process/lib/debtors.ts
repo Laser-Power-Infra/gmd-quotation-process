@@ -6,6 +6,9 @@
  * here (same as `lib/pbg/pbg-data.ts`) before it reaches the table.
  */
 import { squish } from "@gmd/dashboard/lib/squish";
+import type { BgRow, BillInfo, FollowUp } from "./debtorJoins";
+import type { LegalCaseView } from "./legalStatus";
+import type { MsmeSettings } from "./msme";
 
 export type DebtorRow = {
   id: string;
@@ -36,6 +39,13 @@ export type DebtorsResult = {
   rows: DebtorRow[];
   totals: DebtorTotals;
   syncedAt: string | null;
+  /** Optional joins; empty when the tables / tabs are empty. */
+  billInfo: Record<string, BillInfo>;
+  bgs: BgRow[];
+  followUps: Record<string, FollowUp>;
+  /** Legal case per accCode (debtor ledger). */
+  legalCases: Record<string, LegalCaseView>;
+  msme: MsmeSettings;
 };
 
 /** Sums the four money columns, treating a missing value as zero. */

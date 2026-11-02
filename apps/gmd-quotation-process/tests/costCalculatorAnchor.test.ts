@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveCostChangeAnchor } from '../lib/rateAnchor.js'
+import { resolveCostChangeAnchor, isOfferRevision } from '../lib/rateAnchor.js'
 
 test('default row: VA% is held, Quoted Rate is derived', () => {
   const out = resolveCostChangeAnchor({ cost: 1000, quotedRate: 9999, vaPercent: 20, validation: null })
@@ -29,6 +29,13 @@ test('validation Yes with no rate: nothing is derived', () => {
   const out = resolveCostChangeAnchor({ cost: 1000, quotedRate: null, vaPercent: 20, validation: 'Yes' })
   assert.equal(out.quotedRate, null)
   assert.equal(out.vaPercent, 20)
+})
+
+test('offer revision: only a sent docket whose rate actually moved', () => {
+  assert.equal(isOfferRevision('u1', 1200, 1250), true)
+  assert.equal(isOfferRevision('u1', 1200, null), true)
+  assert.equal(isOfferRevision('u1', 1200, 1200.001), false) // same at stored precision
+  assert.equal(isOfferRevision(null, 1200, 1250), false) // not sent yet
 })
 
 test('zero or negative cost is a no-op', () => {

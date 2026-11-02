@@ -37,11 +37,20 @@ import {
   resolveGMDUpdateField,
   withHardcodedL7Options,
 } from "@/lib/gmd_lib/sheet-columns";
+import { buildLCascade } from "@gmd/dashboard/lib/lCascade";
 import { C_BATCH_HEADER, cBatchBadges, cBatchFilter } from "@/lib/gmd_lib/verify-bom-columns";
-import { getUsdInrRateAction, setGMDUpdateTransferredAction, addTransferredBlankItemsAction, importTransferredExcelAction, transferFilteredByCodeAction, getTradingValveOptionsAction, getTransferCostMatchProposalsAction, applyTransferCostMatchAction, type TransferCostMatchProposal } from "@/app/actions/gmdUpdate";
+import { getUsdInrRateAction, setGMDUpdateTransferredAction, addTransferredBlankItemsAction, importTransferredExcelAction, transferFilteredByCodeAction, getTradingValveOptionsAction, getTransferCostMatchProposalsAction, applyTransferCostMatchAction, uploadSupplierRatesAction, type TransferCostMatchProposal } from "@/app/actions/gmdUpdate";
 import { getGMDCastingRatesAction, saveGMDCastingRateAction } from "@/app/actions/misc";
 import TransferCostMatchDialog from "../../components/gmd_dashboard/TransferCostMatchDialog";
 import { toast } from "sonner";
+import { Button } from "@gmd/ui/components/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@gmd/ui/components/dialog";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -123,6 +132,13 @@ const PROCESSED_ITEMS_HIDDEN_COLUMNS = [
   C_BATCH_HEADER,
 ];
 const TRANSFERRED_ITEMS_HIDDEN_COLUMNS = ["BOM ID", C_BATCH_HEADER];
+
+const RAW_MATERIAL_TABS = [
+  { key: "new-items", label: "New Items (Blank Status)" },
+  { key: "filtered-items", label: "Filtered Items" },
+  { key: "transferred-items", label: "Transferred Items" },
+] as const;
+type RawMaterialTab = (typeof RAW_MATERIAL_TABS)[number]["key"];
 
 function rowToGMDUpdateItem(
   id: string,
@@ -235,6 +251,8 @@ export default function Home() {
     Record<string, string[]>
   >({});
   const [usdInrRate, setUsdInrRate] = useState<number | null>(null);
+  const [usdRateNote, setUsdRateNote] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<RawMaterialTab>("new-items");
   const [bomIdOptionsById, setBomIdOptionsById] = useState<
     Record<string, string[]>
   >({});
@@ -259,14 +277,6 @@ export default function Home() {
     onLayoutChanged: onHorizontalLayoutChanged,
   } = useDefaultLayout({
     id: "raw-material-horizontal",
-    storage: layoutStorage,
-  });
-  const {
-    defaultLayout: verticalLayout,
-    onLayoutChanged: onVerticalLayoutChanged,
-  } = useDefaultLayout({
-    id: "raw-material-vertical",
-    panelIds: ["new-items", "filtered-items", "transferred-items"],
     storage: layoutStorage,
   });
 
@@ -319,16 +329,28 @@ export default function Home() {
     [castingRates, handleCastingRateChange],
   );
 
+  const applyUsdRate = useCallback(
+    (data: { rate: number; source: string; fetchedAt: string }) => {
+      setUsdInrRate(data.rate);
+      const asOf = new Date(data.fetchedAt).toLocaleString("en-IN", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+      setUsdRateNote(`${data.source} · as of ${asOf}`);
+    },
+    [],
+  );
+
   const refreshRate = useCallback(async () => {
     const res = await getUsdInrRateAction(true);
-    if (res.success && res.data) setUsdInrRate(res.data.rate);
-  }, []);
+    if (res.success && res.data) applyUsdRate(res.data);
+  }, [applyUsdRate]);
 
   useEffect(() => {
     getUsdInrRateAction(false).then((res) => {
-      if (res.success && res.data) setUsdInrRate(res.data.rate);
+      if (res.success && res.data) applyUsdRate(res.data);
     });
-  }, []);
+  }, [applyUsdRate]);
 
   const enhancedCategoryOptions = useMemo(
     () =>
@@ -456,6 +478,15 @@ export default function Home() {
   }, [data, dispatch]);
 
   const headers = data?.headers ?? EMPTY_HEADERS;
+
+  // L1-L8 cascade, built from the whole catalogue so a half-filled row offers
+  // only the levels that actually go together. Rebuilt when the catalogue or
+  // the sheet lists change; the fallback keeps a brand-new combination usable.
+  const lCascade = useMemo(
+    () => buildLCascade(allItems.map(itemToRow), headers, enhancedCategoryOptions),
+    [allItems, headers, enhancedCategoryOptions],
+  );
+
   const syncedAt = data?.syncedAt ?? null;
 
   const transferredSet = useMemo(
@@ -897,6 +928,60 @@ export default function Home() {
     fetchData();
   }, [fetchData]);
 
+  const [supplierSummary, setSupplierSummary] = useState<{
+    rate: number;
+    updated: { code: string; oldUsd: number | null; newUsd: number; oldCost: number | null; newCost: number }[];
+    added: { code: string; newUsd: number; newCost: number }[];
+    notMatched: { code: string; reason: string }[];
+    unchanged: number;
+  } | null>(null);
+  const supplierFileRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadSupplierTemplate = useCallback(async () => {
+    const XLSX = await import("xlsx");
+    const { SUPPLIER_RATE_HEADERS } = await import("@/lib/supplierRateUpload");
+    const ws = XLSX.utils.aoa_to_sheet([[...SUPPLIER_RATE_HEADERS]]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Supplier prices");
+    XLSX.writeFile(wb, "supplier-price-template.xlsx");
+  }, []);
+
+  const handleUploadSupplierPrices = useCallback(
+    async (file: File) => {
+      const toastId = toast.loading("Reading supplier prices...");
+      try {
+        const { parseSupplierRateFile } = await import("@/lib/supplierRateUpload");
+        const { rates, errors } = parseSupplierRateFile(await file.arrayBuffer());
+        if (!rates.length && !errors.length) {
+          toast.error("No data rows found in the sheet.", { id: toastId });
+          return;
+        }
+        const res = rates.length ? await uploadSupplierRatesAction(rates) : null;
+        if (res && !res.success) {
+          toast.error(res.error || "Failed to upload supplier prices.", { id: toastId });
+          return;
+        }
+        toast.dismiss(toastId);
+        const d = res?.data;
+        setSupplierSummary({
+          rate: d?.rate ?? 0,
+          updated: d?.updated ?? [],
+          added: d?.added ?? [],
+          // Rows rejected while reading the sheet (no code, bad rate/date, repeated) are not matched too.
+          notMatched: [
+            ...errors.map((e) => ({ code: `Row ${e.row}`, reason: e.message })),
+            ...(d?.notMatched ?? []),
+          ],
+          unchanged: d?.unchanged ?? 0,
+        });
+        void fetchData();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to read Excel file.", { id: toastId });
+      }
+    },
+    [fetchData],
+  );
+
   // Table filter lift (controlled like contract_review) for true cascading
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>(
     {},
@@ -1100,16 +1185,18 @@ export default function Home() {
                 STOCK VALUE
               </span>
 
-              <div className="w-full text-left bg-white/5 border border-white/10 rounded-lg p-3">
+              {/* Not a toggle: the total of whatever the current filters leave
+                  on screen, so it moves with them instead of filtering again. */}
+              <div className="w-full bg-white/10 border border-white/25 rounded-lg p-3">
                 <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
-                  Total Stock Value
+                  Total
                 </span>
-                <span className="block text-lg font-bold text-white dark:text-foreground mt-1">
-                  {fmt(totalSum)}
+                <span className="block text-xl font-bold text-white dark:text-foreground mt-1">
+                  {fmt(cardStats.total.sum)}
                 </span>
                 <span className="block text-[10px] font-medium text-white/50 mt-0.5">
-                  {totalCount} item
-                  {totalCount === 1 ? "" : "s"}
+                  {cardStats.total.count} item
+                  {cardStats.total.count === 1 ? "" : "s"}
                 </span>
                 {Math.abs(totalDiff) > 0.005 && (
                   <span className="block text-[10px] font-medium text-amber-300 mt-0.5">
@@ -1218,20 +1305,66 @@ export default function Home() {
 
           <ResizablePanel id="content" minSize="40%">
             <div className="flex h-full flex-col min-h-0 min-w-0">
+              <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+                <Button type="button" size="sm" variant="outline" onClick={handleDownloadSupplierTemplate}>
+                  Download supplier price template
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => supplierFileRef.current?.click()}>
+                  Upload supplier prices
+                </Button>
+                <input
+                  ref={supplierFileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) void handleUploadSupplierPrices(f);
+                  }}
+                />
+              </div>
               <GMDUpdateHeader
                 totalRows={totalRows}
                 syncedAt={syncedAt}
+                warnIfStale
                 onSync={handleSync}
                 syncing={syncing}
               />
-              <ResizablePanelGroup
-                orientation="vertical"
-                id="raw-material-vertical"
-                defaultLayout={verticalLayout}
-                onLayoutChanged={onVerticalLayoutChanged}
-                className="flex-1 min-h-0 mt-4"
+              <div
+                role="tablist"
+                aria-label="Raw material tables"
+                className="mt-4 flex gap-1 overflow-x-auto border-b border-border"
               >
-                <ResizablePanel id="new-items" defaultSize="50" minSize="12">
+                {RAW_MATERIAL_TABS.map((tab) => {
+                  const isActive = tab.key === activeTab;
+                  return (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      role="tab"
+                      id={`tab-${tab.key}`}
+                      aria-selected={isActive}
+                      aria-controls={`panel-${tab.key}`}
+                      onClick={() => setActiveTab(tab.key)}
+                      className={`shrink-0 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+                        isActive
+                          ? "border-primary text-primary"
+                          : "border-transparent text-muted-foreground hover:border-border hover:text-foreground"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Panels stay mounted so each table keeps its filters and scroll when switching tabs. */}
+              <div
+                id="panel-new-items"
+                role="tabpanel"
+                aria-labelledby="tab-new-items"
+                className={`mt-4 min-h-0 flex-1 flex-col ${activeTab === "new-items" ? "flex" : "hidden"}`}
+              >
                   <GMDUpdateTable
                     headers={headers}
                     rows={scopedNewItemRows}
@@ -1241,6 +1374,7 @@ export default function Home() {
                     title={`New Items (Blank Status)`}
                     // hiddenFilters={["NEW ITEM STATUS"]}
                     categoryOptions={enhancedCategoryOptions}
+                    cascadeOptionsFor={lCascade}
                     editable
                     fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
                     editableColumns={NEW_ITEMS_EDITABLE_COLUMNS}
@@ -1257,6 +1391,7 @@ export default function Home() {
                     bomIdOptionsById={bomIdOptionsById}
                     onSelectBomId={handleSelectBomId}
                     usdInrRate={usdInrRate}
+                    usdRateNote={usdRateNote}
                     onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
                     hiddenColumns={NEW_ITEMS_HIDDEN_COLUMNS}
@@ -1267,15 +1402,14 @@ export default function Home() {
                     warningColumn="ITEM NAME (derived)"
                     fullHeight
                   />
-                </ResizablePanel>
+              </div>
 
-                <ResizableHandle withHandle className="my-2 bg-border" />
-
-                <ResizablePanel
-                  id="filtered-items"
-                  defaultSize="25"
-                  minSize="12"
-                >
+              <div
+                id="panel-filtered-items"
+                role="tabpanel"
+                aria-labelledby="tab-filtered-items"
+                className={`mt-4 min-h-0 flex-1 flex-col ${activeTab === "filtered-items" ? "flex" : "hidden"}`}
+              >
                   <GMDUpdateTable
                     headers={headers}
                     rows={processedItemRows}
@@ -1285,12 +1419,14 @@ export default function Home() {
                     title="Filtered Items"
                     editable
                     categoryOptions={enhancedCategoryOptions}
+                    cascadeOptionsFor={lCascade}
                     uniqueKeyColumns={UNIQUE_KEY_COLUMNS}
                     onCellUpdate={handleCellUpdate}
                     lockedCostIds={lockedCostIds}
                     bomIdOptionsById={bomIdOptionsById}
                     onSelectBomId={handleSelectBomId}
                     usdInrRate={usdInrRate}
+                    usdRateNote={usdRateNote}
                     onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
                     hiddenColumns={PROCESSED_ITEMS_HIDDEN_COLUMNS}
@@ -1301,15 +1437,14 @@ export default function Home() {
                     warningColumn="ITEM NAME (derived)"
                     fullHeight
                   />
-                </ResizablePanel>
+              </div>
 
-                <ResizableHandle withHandle className="my-2 bg-border" />
-
-                <ResizablePanel
-                  id="transferred-items"
-                  defaultSize="25"
-                  minSize="12"
-                >
+              <div
+                id="panel-transferred-items"
+                role="tabpanel"
+                aria-labelledby="tab-transferred-items"
+                className={`mt-4 min-h-0 flex-1 flex-col ${activeTab === "transferred-items" ? "flex" : "hidden"}`}
+              >
                   <GMDUpdateTable
                     headers={transferredHeaders}
                     rows={transferredRows}
@@ -1326,6 +1461,7 @@ export default function Home() {
                     bomIdOptionsById={bomIdOptionsById}
                     onSelectBomId={handleSelectBomId}
                     usdInrRate={usdInrRate}
+                    usdRateNote={usdRateNote}
                     onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
                     hiddenColumns={TRANSFERRED_ITEMS_HIDDEN_COLUMNS}
@@ -1357,8 +1493,7 @@ export default function Home() {
                     onMatchCosts={handleStartMatchCosts}
                     fullHeight
                   />
-                </ResizablePanel>
-              </ResizablePanelGroup>
+              </div>
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -1369,6 +1504,46 @@ export default function Home() {
         onApply={handleApplyMatch}
         onClose={handleMatchClose}
       />
+      <Dialog open={!!supplierSummary} onOpenChange={(o) => !o && setSupplierSummary(null)}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Supplier price upload</DialogTitle>
+            <DialogDescription>
+              {supplierSummary?.rate ? `INR at live rate 1 USD = ₹${supplierSummary.rate}. ` : ""}
+              Existing quotes are not re-costed.
+            </DialogDescription>
+          </DialogHeader>
+          {supplierSummary && (
+            <div className="space-y-3 text-sm">
+              <section>
+                <h4 className="font-semibold">Updated ({supplierSummary.updated.length})</h4>
+                {supplierSummary.updated.map((u) => (
+                  <p key={u.code}>
+                    {u.code}: ${u.oldUsd ?? "-"} → ${u.newUsd} (₹{u.oldCost ?? "-"} → ₹{u.newCost})
+                  </p>
+                ))}
+              </section>
+              <section>
+                <h4 className="font-semibold">Added ({supplierSummary.added.length})</h4>
+                {supplierSummary.added.map((a) => (
+                  <p key={a.code}>
+                    {a.code}: ${a.newUsd} (₹{a.newCost})
+                  </p>
+                ))}
+              </section>
+              <section>
+                <h4 className="font-semibold">Not matched ({supplierSummary.notMatched.length})</h4>
+                {supplierSummary.notMatched.map((n, i) => (
+                  <p key={i}>
+                    {n.code}: {n.reason}
+                  </p>
+                ))}
+              </section>
+              <p>Unchanged: {supplierSummary.unchanged}</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }

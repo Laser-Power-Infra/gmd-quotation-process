@@ -1,4 +1,5 @@
 import test from 'node:test'
+import { buildPartyMatcher } from '../lib/docketPending.js'
 import assert from 'node:assert/strict'
 import {
   isRealPartyName,
@@ -230,6 +231,19 @@ test('resolvePartyForThread falls back to Unknown for sentinels / no data', () =
   )
   assert.deepEqual(
     resolvePartyForThread({ subCategory: null, sender: null, toDetails: null, ccDetails: null }, new Map()),
+    { partyName: 'Unknown', source: 'unknown' },
+  )
+})
+
+test('resolvePartyForThread matches a known party named in the mail text before Unknown', () => {
+  const thread = { subCategory: null, sender: null, toDetails: null, ccDetails: null }
+  const match = buildPartyMatcher(['ACME VALVES LTD'])
+  assert.deepEqual(
+    resolvePartyForThread(thread, new Map(), () => match('Please quote\nfor Acme Valves Ltd, Pune')),
+    { partyName: 'ACME VALVES LTD', source: 'mailText' },
+  )
+  assert.deepEqual(
+    resolvePartyForThread(thread, new Map(), () => match('no known party here')),
     { partyName: 'Unknown', source: 'unknown' },
   )
 })

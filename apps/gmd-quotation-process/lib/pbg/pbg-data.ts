@@ -10,6 +10,10 @@ import {
 } from "@/lib/pbg/supply-history";
 import { computeExtendedValidity } from "@/lib/pbg/validity";
 import { splitCsvLinks } from "@/lib/gmd_lib/contract-order-links";
+import {
+  canonicalPbgClientName,
+  canonicalProjectName,
+} from "@/lib/pbg/project-names";
 import type { CellValue } from "@/lib/pbg/pbg-cell";
 import type { ColumnKey } from "@/lib/pbg/pbg-columns";
 
@@ -55,6 +59,8 @@ export type PbgRecord = {
   contactNumber: string | null;
   remark: string | null;
   status: string | null;
+  /** HOLD (or null) blocks reminders; CONTINUE allows the daily job to mail. */
+  mailTrigger: string | null;
   bankGuarantee: PbgFile[] | null;
   /** Order-list attachment links from the matched supply-history row. */
   orderList: string[] | null;
@@ -133,8 +139,8 @@ export async function getPbgData(
 
     return {
       id: row.id.toString(),
-      clientName: row.clientName,
-      project: row.project,
+      clientName: canonicalPbgClientName(row.clientName),
+      project: canonicalProjectName(row.project, row.poNumber),
       poNumber: match?.poNumber ?? row.poNumber,
       poDate: toDateOnly(matchPoDate) ?? toDateOnly(row.poDate),
       bgNo: row.bgNo,
@@ -148,6 +154,7 @@ export async function getPbgData(
       contactNumber: row.contactNumber,
       remark: row.remark,
       status: row.status,
+      mailTrigger: row.mailTrigger,
       bankGuarantee: parsePbgFiles(row.bankGuarantee),
       orderList,
       validityOn: row.validityOn,
@@ -282,6 +289,10 @@ export async function syncPbgData(): Promise<PbgSyncResult> {
   const startedAt = Date.now();
   const sheetRows = await fetchSheetRows();
   const { data } = mapRows(sheetRows);
+
+  for (const row of data) {
+    row.clientName = canonicalPbgClientName(row.clientName);
+  }
 
   const seen = new Set<string>();
   const candidates: typeof data = [];

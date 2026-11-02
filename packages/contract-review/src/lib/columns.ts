@@ -68,16 +68,104 @@ export const CONTRACT_REVIEW_HEADERS = [
   "ORDER LIST",
   "PROD ORDER NO",
   "Upload Drawing",
+  "Mails / Documents",
   // Hidden data carrier. Never rendered: listed in the page's hiddenColumns and
   // only used to drive the "C" chip inside the ITEM_CODE cell.
   "C BATCH",
   // Hidden data carrier for the "N" chip (item code is NOT in CURRENT REQT).
   // Appended after C BATCH so existing column indices/widths stay stable.
   "N BATCH",
+  // Hidden, derived on read (no DB column): "!" when date / party is blank or rate is 0.
+  "DATA INCOMPLETE",
 ] as const;
 
 export const N_BATCH_HEADER = "N BATCH";
 export const N_BATCH_VALUE = "N";
+export const MAIL_DOCS_COLUMN = "Mails / Documents";
+export const MAIL_DOC_CATEGORIES = [
+  "PO",
+  "Amendment",
+  "MC",
+  "Drawing approval",
+  "Inspection",
+  "DI",
+  "Dispatch",
+] as const;
+export type MailDocCategory = (typeof MAIL_DOC_CATEGORIES)[number];
+export interface MailDoc {
+  /** category */
+  c: MailDocCategory;
+  /** url (Gmail thread or a saved attachment) */
+  u: string;
+  /** added at, ISO */
+  at: string;
+}
+
+/** The cell holds a JSON array; anything unreadable counts as empty. */
+export function parseMailDocs(cell: unknown): MailDoc[] {
+  try {
+    const v = JSON.parse(String(cell ?? "") || "[]");
+    return Array.isArray(v)
+      ? v.filter((d) => d && typeof d.u === "string" && (MAIL_DOC_CATEGORIES as readonly string[]).includes(d.c))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Validates and appends; a repeat of the same category + url is a no-op. */
+export function appendMailDoc(
+  cell: unknown,
+  category: string,
+  url: string,
+): { ok: true; json: string } | { ok: false; error: string } {
+  if (!(MAIL_DOC_CATEGORIES as readonly string[]).includes(category))
+    return { ok: false, error: "Unknown category." };
+  const u = url.trim();
+  if (!/^https?:\/\/\S+$/i.test(u) || u.length > 2000)
+    return { ok: false, error: "Enter a valid http(s) link." };
+  const docs = parseMailDocs(cell);
+  if (!docs.some((d) => d.c === category && d.u === u))
+    docs.push({ c: category as MailDocCategory, u, at: new Date().toISOString() });
+  return { ok: true, json: JSON.stringify(docs) };
+}
+
+export const INCOMPLETE_HEADER = "DATA INCOMPLETE";
+export const INCOMPLETE_VALUE = "!";
+
+/** Blank date of contract, blank party, or rate exactly 0. */
+export function isDataIncomplete(row: {
+  dateOfContract: string | null;
+  partyNameDump: string | null;
+  rate: string | null;
+}): boolean {
+  const blank = (v: string | null) => !String(v ?? "").trim();
+  const rate = parseFloat(String(row.rate ?? "").replace(/,/g, ""));
+  return blank(row.dateOfContract) || blank(row.partyNameDump) || rate === 0;
+}
+
+export function incompleteBadges(onColumn: string) {
+  return [
+    {
+      onColumn,
+      fromColumn: INCOMPLETE_HEADER,
+      value: INCOMPLETE_VALUE,
+      label: "Data incomplete",
+      tone: "rose" as const,
+      title: "Blank date, blank party, or rate is 0",
+    },
+  ];
+}
+
+export function incompleteFilter() {
+  return {
+    key: "incomplete",
+    label: "Data incomplete",
+    column: INCOMPLETE_HEADER,
+    value: INCOMPLETE_VALUE,
+    title: "Show only rows with blank date, blank party, or rate 0",
+  };
+}
 
 /**
  * Only an explicit "NO" (case-insensitive, trimmed) means the item code is not
@@ -196,6 +284,7 @@ export const CONTRACT_REVIEW_COLUMN_WIDTHS: Partial<
   "PAYMENT TERMS": 180,
   "PROJECT REFERENCE": 200,
   "Upload Drawing": 180,
+  "Mails / Documents": 260,
   Remarks: 220,
 
   // Long free text.
@@ -557,6 +646,7 @@ export function dbContractReviewToRow(item: {
   vaPercentfromcost: string | null;
   productionOrderNumber: string | null;
   diagramUrl: string | null;
+  mailDocs: string | null;
   cBatch: string | null;
   nBatch: string | null;
 }): unknown[] {
@@ -605,8 +695,10 @@ export function dbContractReviewToRow(item: {
     (item.orderList ?? []).join(", "),
     item.productionOrderNumber,
     item.diagramUrl,
+    item.mailDocs,
     item.cBatch,
     item.nBatch,
+    isDataIncomplete(item) ? INCOMPLETE_VALUE : "",
   ];
 }
 
