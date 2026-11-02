@@ -13,6 +13,7 @@ export const NAV: NavEntry[] = [
       { label: "Contract Review", href: "/contract_review" },
       { label: "Indent Checking", href: "/indent_listing" },
       { label: "BIS Status", href: "/bis-status" },
+      { label: "Inspection Reports", href: "/inspection_reports" },
     ],
   },
   {

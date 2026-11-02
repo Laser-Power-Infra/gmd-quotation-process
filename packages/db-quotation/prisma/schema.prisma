@@ -1311,3 +1311,34 @@ model BankGuarantee {
 
   @@index([beneficiaryName])
 }
+
+/// One row per offer VRNO of the ERP "INSPECTION OFFER DUMP" tab
+/// (BOM MAST ERP workbook, gid 148043829). Synced by step 5 of the
+/// `contract-review` scheduler job. `lines` keeps one entry per sheet row
+/// (item line) with every dump column, as text.
+model InspectionOffer {
+  id           String            @id @default(cuid())
+  vrno         String            @unique
+  vrDate       String?
+  accCode      String?
+  contractVrno String?
+  lines        Json              @default("[]")
+  report       InspectionReport?
+  syncedAt     DateTime          @default(now())
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+/// Draft inspection report, auto-created by the sync when a new offer VRNO
+/// appears. `data` holds the JIR-style body (header / items / qap / tolerance /
+/// mtc / observations); JSON because the final report format is not fixed yet.
+/// `status`: draft | readings_entered | reviewed | final.
+model InspectionReport {
+  id        String          @id @default(cuid())
+  offerId   String          @unique
+  offer     InspectionOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  status    String          @default("draft")
+  data      Json
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
