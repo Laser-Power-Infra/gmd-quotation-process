@@ -1363,6 +1363,7 @@ model InspectionReport {
   data      Json
   createdAt DateTime        @default(now())
   updatedAt DateTime        @updatedAt
+}
 
 /// GRN tab (gid 372231442), one row per receipt line. Snapshot-replaced by the
 /// service-orders job; joins a stock-DB `PurchaseOrderLine` on
