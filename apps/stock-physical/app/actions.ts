@@ -2,6 +2,7 @@
 
 import {
   createPhysicalStock,
+  listCodeOptions,
   listPhysicalStock,
   updatePhysicalStockField,
 } from "@gmd/physical-stock/server";
@@ -38,6 +39,11 @@ export async function load() {
     return {
       success: true as const,
       data: {
+        codeOptions: await listCodeOptions().catch((err) => {
+          // Table missing until the db-stock migration is deployed: the dialog falls back to generating.
+          console.error("[physical-stock] code options lookup failed", err);
+          return undefined;
+        }),
         items: items.map((item) => ({
           ...item,
           in_transit: inTransit.get((item.erp_code ?? "").trim()) ?? null,

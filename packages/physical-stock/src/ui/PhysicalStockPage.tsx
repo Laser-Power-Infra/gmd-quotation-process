@@ -18,6 +18,7 @@ import type { PhysicalStockFlags, SidebarSection } from "../flags";
 import type { PhysicalStockActions, PhysicalStockRow } from "../types";
 import StockAnalyticsSidebar, { type MajorMinorKind, type StockCardKind } from "./StockAnalyticsSidebar";
 import NewItemDialog from "./NewItemDialog";
+import type { CodeOptions } from "../codeOptions";
 
 const HEADERS = [...COLUMNS] as string[];
 const BLANK_ONLY = new Set<string>(BLANK_ONLY_HEADERS);
@@ -43,6 +44,7 @@ export interface PhysicalStockPageProps {
 export function PhysicalStockPage({ flags, actions, showHeader = true }: PhysicalStockPageProps) {
   const [items, setItems] = useState<PhysicalStockRow[]>([]);
   const [bomIdOptions, setBomIdOptions] = useState<Record<string, string[]>>({});
+  const [codeOptions, setCodeOptions] = useState<CodeOptions | undefined>();
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [showNewDialog, setShowNewDialog] = useState(false);
@@ -79,6 +81,7 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
       if (res.success) {
         setItems(res.data.items);
         setBomIdOptions(res.data.bomIdOptions ?? {});
+        setCodeOptions(res.data.codeOptions);
       } else {
         toast.error(res.error || "Failed to load physical stock data.");
       }
@@ -241,6 +244,7 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
             open={showNewDialog}
             onOpenChange={setShowNewDialog}
             rows={items}
+            codeOptions={codeOptions}
             create={create}
             onCreated={loadData}
           />

@@ -1,7 +1,7 @@
 "use server";
 import { requireAccess } from "@/lib/access";
 
-import { getSerialDimension, listPhysicalStock, saveSerialDimension, updatePhysicalStockField } from "@gmd/physical-stock/server";
+import { getSerialDimension, listCodeOptions, listPhysicalStock, saveSerialDimension, updatePhysicalStockField } from "@gmd/physical-stock/server";
 import { pickFlange, standardFromFlange, type DimensionValues } from "@gmd/physical-stock/dimensions";
 import { prisma } from "@/lib/prisma";
 import { incomingFromForItems, inTransitForItems } from "@gmd/purchase/server";
@@ -45,7 +45,12 @@ export async function load() {
       incoming_from: incomingFrom.get((item.erp_code ?? "").trim()) ?? null,
     }));
 
-    return { success: true as const, data: { items: withInTransit, bomIdOptions } };
+    // Table missing until the db-stock migration is deployed: the dialog falls back to generating.
+    const codeOptions = await listCodeOptions().catch((err) => {
+      console.error("[physical-stock] code options lookup failed", err);
+      return undefined;
+    });
+    return { success: true as const, data: { items: withInTransit, bomIdOptions, codeOptions } };
   } catch (err) {
     return { success: false as const, error: err instanceof Error ? err.message : String(err) };
   }

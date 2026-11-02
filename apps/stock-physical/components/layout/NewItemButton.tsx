@@ -4,16 +4,21 @@ import { useState } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import NewItemDialog from "@gmd/physical-stock/new-item-dialog";
+import type { CodeOptions } from "@gmd/physical-stock/code-options";
 import type { PhysicalStockRow } from "@gmd/physical-stock/types";
 import { create, load } from "@/app/actions";
 
 export function NewItemButton() {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState<PhysicalStockRow[]>([]);
+  const [codeOptions, setCodeOptions] = useState<CodeOptions>();
 
   const openDialog = async () => {
     const res = await load();
-    if (res.success) setRows(res.data.items);
+    if (res.success) {
+      setRows(res.data.items);
+      setCodeOptions(res.data.codeOptions);
+    }
     else toast.error(res.error || "Failed to load stock data.");
     setOpen(true);
   };
@@ -32,6 +37,7 @@ export function NewItemButton() {
         open={open}
         onOpenChange={setOpen}
         rows={rows}
+        codeOptions={codeOptions}
         create={create}
         onCreated={() => window.dispatchEvent(new Event("physical-stock:created"))}
       />

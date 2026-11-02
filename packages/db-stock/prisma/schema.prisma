@@ -182,3 +182,27 @@ model GrnLine {
 
   @@index([orderVrNo, orderSlNo])
 }
+
+// Snapshot of the quotation DB's RawMaterial.erpItemCode list, replaced hourly by
+// the quotation app's `physical-stock-cost-bom` job. Feeds the New Item ERP-code
+// picker in both hosts (the stock app cannot reach the quotation DB).
+model RmCodeOption {
+  id          String  @id @default(cuid())
+  erpItemCode String  @unique
+  itemName    String?
+  l8Category  String?
+}
+
+// Snapshot of CREATE BOM boms, one row per (bom, raw-material code): the owning
+// FullItem's itemType / size / pnGmd and the Bom.bomIdType. Same sync as above.
+model BomCodeOption {
+  id          String  @id @default(cuid())
+  bomId       String
+  valveType   String?
+  size        String?
+  pn          String?
+  bomType     String
+  erpItemCode String
+
+  @@index([valveType, size, pn])
+}
