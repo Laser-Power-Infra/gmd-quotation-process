@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useSmartsheetTenders } from "@/hooks/useSmartsheetTenders";
 import { SmartsheetTender } from "@/types/smartsheetTender";
+import { utilityMasterNames } from "@gmd/contract-review/utility-master";
 import { ClipboardList, RefreshCw, Eraser, FileSpreadsheet, AlertTriangle, Search, ChevronUp, ChevronDown, ArrowUpDown, X, Inbox, Paperclip } from "lucide-react";
 import {
   Select,
@@ -491,12 +492,8 @@ export const TenderDashboardPage: React.FC = () => {
     cuMax
   ]);
 
-  // Unique utilities for dropdown filter
-  const utilitiesList = useMemo(() => {
-    const set = new Set<string>();
-    data.forEach(r => { if (r.utility) set.add(r.utility.trim()); });
-    return ["All", ...Array.from(set).sort()];
-  }, [data]);
+  // Utility filter options come from the utility master only, never from row text.
+  const utilitiesList = useMemo(() => ["All", ...utilityMasterNames().sort()], []);
 
   // Sort
   const sorted = useMemo<SmartsheetTender[]>(() => {

@@ -5,7 +5,7 @@ import { istDateOnly } from "@/lib/pbg/reminder-rules";
 import { PbgTable } from "@/components/pbg/pbg-table";
 
 export const metadata: Metadata = {
-  title: "PBG | GMD Quotation Process",
+  title: "PBG | GMD One Person Lead Framework",
   description: "Performance Bank Guarantee records synced from the sheet.",
 };
 

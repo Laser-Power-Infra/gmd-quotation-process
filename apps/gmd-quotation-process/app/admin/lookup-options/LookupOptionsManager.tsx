@@ -49,6 +49,8 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [editSort, setEditSort] = useState("");
+  const [editCode, setEditCode] = useState("");
+  const [editDefaultState, setEditDefaultState] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const filtered = useMemo(() => {
@@ -116,6 +118,10 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
     fd.set("type", selectedType);
     fd.set("value", editValue);
     fd.set("sortOrder", editSort);
+    if (selectedType === "UTILITY") {
+      fd.set("code", editCode);
+      fd.set("defaultState", editDefaultState);
+    }
     runAction(() => updateLookupOptionAction(fd), "Option updated.");
     setEditingId(null);
   };
@@ -125,6 +131,8 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
     setEditingId(o.id);
     setEditValue(o.value);
     setEditSort(String(o.sortOrder));
+    setEditCode(o.code ?? "");
+    setEditDefaultState(o.defaultState ?? "");
   };
 
   return (
@@ -211,6 +219,26 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
                       className="w-20"
                       title="Sort order"
                     />
+                    {selectedType === "UTILITY" && (
+                      <>
+                        <Input
+                          type="text"
+                          value={editCode}
+                          onChange={(e) => setEditCode(e.target.value)}
+                          placeholder="Code (UTL-...)"
+                          className="w-36"
+                          title="Utility code"
+                        />
+                        <Input
+                          type="text"
+                          value={editDefaultState}
+                          onChange={(e) => setEditDefaultState(e.target.value)}
+                          placeholder="Default state"
+                          className="w-40"
+                          title="Default state"
+                        />
+                      </>
+                    )}
                     <Button type="submit" size="sm" disabled={isPending}>
                       Save
                     </Button>
@@ -236,6 +264,11 @@ export default function LookupOptionsManager({ options, types, canEdit }: Lookup
                       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                         #{o.sortOrder}
                       </span>
+                      {(o.code || o.defaultState) && (
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
+                          {[o.code, o.defaultState].filter(Boolean).join(" · ")}
+                        </span>
+                      )}
                     </div>
                     {canEdit && (
                       <div className="flex shrink-0 items-center gap-1">

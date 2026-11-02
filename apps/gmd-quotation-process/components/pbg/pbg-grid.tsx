@@ -754,10 +754,18 @@ export function PbgGrid({
                 : expiry === "expiring"
                   ? "group-hover:bg-amber-100"
                   : "";
-
             return (
             <Fragment key={row.id}>
-            <tr className="group">
+            <tr
+              className="group"
+              title={
+                expiry === "expired"
+                  ? `PBG expired on ${formatDate(row.expiryDate)}`
+                  : expiry === "expiring"
+                    ? `PBG expires on ${formatDate(row.expiryDate)}`
+                    : undefined
+              }
+            >
               <th
                 className={`sticky left-0 z-20 border-b border-r border-slate-300 px-1 text-center text-xs font-medium tabular-nums ${expiryAccent} ${
                   active.r === r
@@ -781,6 +789,8 @@ export function PbgGrid({
                 const savingHere = isSaving(row.id, col.key);
                 const sticky = c === 0;
                 const zebra = r % 2 === 1;
+                // Selection still wins: a tint that hid the current range would
+                // make the grid harder to drive than the warning is worth.
                 const rowBg =
                   inRange && !isActive
                     ? "bg-indigo-50"

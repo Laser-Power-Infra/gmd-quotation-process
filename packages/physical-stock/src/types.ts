@@ -17,9 +17,6 @@ export interface PhysicalStockRow {
   remarks: string | null;
   sum_of_physical_stock: string | null;
   stock_as_per_erp: string | null;
-  rate_unit: string | null;
-  rate_per_pc_qty_weight: string | null;
-  weight_per_pc: string | null;
   item_wise_value: string | null;
   moving_within_3_months: string | null;
   order_ag_approval_recvd: string | null;
@@ -36,10 +33,35 @@ export interface PhysicalStockRow {
   cost: string | null;
   bom_id: string | null;
   majorminor_marking: boolean | null;
+  heat_done: boolean;
+  /** Derived from heat_entries: distinct heat nos, comma-joined; null without entries. */
   heat_no: string | null;
-  heat_seq: number | null;
-  /** Derived (erp_code-l8_item_category-heat_no-heat_seq); blank without a heat no. */
+  /** Derived from heat_entries: every serial (erp_code-l8_item_category-heat_no-heat_seq), comma-joined. */
   serial_no: string | null;
+  /**
+   * Ordered but not yet received against a GRN, summed over this item's open
+   * purchase order lines (`@gmd/purchase`). Not stored on PhysicalStock: the
+   * host app's `load()` fills it by ERP code, and leaves it null when it does
+   * not read purchase data — blank means "unknown", never "none on the way".
+   */
+  in_transit: number | null;
+}
+
+export interface HeatEntryRow {
+  id: string;
+  heat_no: string;
+  heat_seq: number;
+  serial_no: string;
+  sheet_file_id: string | null;
+}
+
+/** One ERP code in the mobile heat-entry queue. */
+export interface HeatQueueItem {
+  id: string;
+  erp_code: string | null;
+  location: string | null;
+  description: string;
+  entries: HeatEntryRow[];
 }
 
 export type ActionResult<T> =
@@ -63,7 +85,6 @@ export const NEW_ITEM_FIELDS = [
   "l8_item_category",
   "received_qty",
   "dispatch_qty",
-  "heat_no",
 ] as const;
 
 export type NewItemInput = Partial<Record<(typeof NEW_ITEM_FIELDS)[number], string>>;

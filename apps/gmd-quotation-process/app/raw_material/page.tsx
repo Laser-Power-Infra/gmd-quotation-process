@@ -37,6 +37,7 @@ import {
   resolveGMDUpdateField,
   withHardcodedL7Options,
 } from "@/lib/gmd_lib/sheet-columns";
+import { buildLCascade } from "@gmd/dashboard/lib/lCascade";
 import { C_BATCH_HEADER, cBatchBadges, cBatchFilter } from "@/lib/gmd_lib/verify-bom-columns";
 import { getUsdInrRateAction, setGMDUpdateTransferredAction, addTransferredBlankItemsAction, importTransferredExcelAction, transferFilteredByCodeAction, getTradingValveOptionsAction, getTransferCostMatchProposalsAction, applyTransferCostMatchAction, uploadSupplierRatesAction, type TransferCostMatchProposal } from "@/app/actions/gmdUpdate";
 import { getGMDCastingRatesAction, saveGMDCastingRateAction } from "@/app/actions/misc";
@@ -477,6 +478,15 @@ export default function Home() {
   }, [data, dispatch]);
 
   const headers = data?.headers ?? EMPTY_HEADERS;
+
+  // L1-L8 cascade, built from the whole catalogue so a half-filled row offers
+  // only the levels that actually go together. Rebuilt when the catalogue or
+  // the sheet lists change; the fallback keeps a brand-new combination usable.
+  const lCascade = useMemo(
+    () => buildLCascade(allItems.map(itemToRow), headers, enhancedCategoryOptions),
+    [allItems, headers, enhancedCategoryOptions],
+  );
+
   const syncedAt = data?.syncedAt ?? null;
 
   const transferredSet = useMemo(
@@ -1100,7 +1110,17 @@ export default function Home() {
   );
 
   const fmt = (n: number) =>
-    n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+    n.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  const totalSum = cardStats.indian.sum + cardStats.imported.sum;
+  const totalCount = cardStats.indian.count + cardStats.imported.count;
+  // Pairs cover the same scope only when both toggles are off.
+  const totalDiff =
+    indianImported === "all" && majorFilter === "all"
+      ? totalSum - (cardStats.major.sum + cardStats.minor.sum)
+      : 0;
 
   const handleUsdCostUpdate = useCallback(
     (id: string, usdCost: string) =>
@@ -1164,6 +1184,26 @@ export default function Home() {
               <span className="text-xs font-bold uppercase tracking-wider text-white dark:text-foreground">
                 STOCK VALUE
               </span>
+
+              {/* Not a toggle: the total of whatever the current filters leave
+                  on screen, so it moves with them instead of filtering again. */}
+              <div className="w-full bg-white/10 border border-white/25 rounded-lg p-3">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60">
+                  Total
+                </span>
+                <span className="block text-xl font-bold text-white dark:text-foreground mt-1">
+                  {fmt(cardStats.total.sum)}
+                </span>
+                <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+                  {cardStats.total.count} item
+                  {cardStats.total.count === 1 ? "" : "s"}
+                </span>
+                {Math.abs(totalDiff) > 0.005 && (
+                  <span className="block text-[10px] font-medium text-amber-300 mt-0.5">
+                    ≠ Major+Minor by ₹{fmt(Math.abs(totalDiff))}
+                  </span>
+                )}
+              </div>
 
               <button
                 type="button"
@@ -1334,6 +1374,7 @@ export default function Home() {
                     title={`New Items (Blank Status)`}
                     // hiddenFilters={["NEW ITEM STATUS"]}
                     categoryOptions={enhancedCategoryOptions}
+                    cascadeOptionsFor={lCascade}
                     editable
                     fixedDropdownOptions={FIXED_DROPDOWN_OPTIONS}
                     editableColumns={NEW_ITEMS_EDITABLE_COLUMNS}
@@ -1378,6 +1419,7 @@ export default function Home() {
                     title="Filtered Items"
                     editable
                     categoryOptions={enhancedCategoryOptions}
+                    cascadeOptionsFor={lCascade}
                     uniqueKeyColumns={UNIQUE_KEY_COLUMNS}
                     onCellUpdate={handleCellUpdate}
                     lockedCostIds={lockedCostIds}

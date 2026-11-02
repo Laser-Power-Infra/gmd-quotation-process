@@ -33,6 +33,9 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | PBG reminder emails *(daily, 09:00 IST)* | `POST /api/scheduler/pbg-reminders` | `pbg-reminders` | `PbgData`, `PbgReminderLog` -> direct SMTP |
 | C Batch marks | `POST /api/scheduler/c-batch` | `c-batch-sync` | `ITEM MASTER ERP` |
 | ERP Contract No sync | `POST /api/scheduler/erp-contract-no` | `erp-contract-no-sync` | `SALE_BILL`, `MC` |
+| Closure Status sync *(every 10m)* | `POST /api/scheduler/closure-status` | `closure-status-sync` | `docket_quotation_threads`, `enquiries` |
+| Ledger sync *(daily, 01:55)* | `POST /api/scheduler/ledger` | `ledger-sync` | `DEBTORS`, `CREDITORS`, `ADVANCE TO CREDITORS` -> `Debtor`, `Creditor`, `CreditorAdvance` |
+| Purchase Order / GRN sync | `POST /api/scheduler/purchase-orders` | `purchase-orders-sync` | `PURCHASE ORD AND GRN` -> stock DB `PurchaseOrderLine` |
 
 The stagger is deliberate. `raw-material`, `supply-history` and
 `contract-review` each full-table-read the tables the others write. `bom-mast`
@@ -61,6 +64,10 @@ creates.
 because a plain cron cannot express "every 72 minutes". The interval counts from
 when ofelia starts, not wall-clock. It writes only `PbgData`, which no other
 scheduled job touches, so overlap with any other job is harmless.
+
+`closure-status` is also off the grid, on `@every 10m`. It writes only
+`enquiries.closureStatus`, each write guarded on the value it read, so overlap
+with `docket-creation` is harmless.
 
 ## `bom-mast`
 
@@ -490,6 +497,39 @@ Verify: `GET $GMD_APP_SERVER/api/scheduler/pbg` with `x-api-key` returns
 `auth:"ok"`; `docker logs <ofelia> | grep pbg` shows the run; the app logs a
 `[SCHEDULER] pbg ... done` block.
 
+## `closure-status`
+
+Single step in `run-closure-status.ts`, delegating to `syncClosureStatuses()`
+(`lib/closureStatusSync.ts`). It used to run on every dashboard render; the
+full thread scan (regex over OCR text and mail bodies) starved the DB pool and
+caused 503s, so the dashboard now only reads the last run's result for styling.
+
+Every write goes through `decideClosureStatus`:
+
+| Current value | Mail evidence | No thread references the docket |
+|---|---|---|
+| blank / `-` | `Sent` (`-` stays without evidence) | `Pending` (blank only) |
+| `Pending` | `Sent` | unchanged |
+| `Not Sent` (the manual "-" marker) | `Sent` | unchanged |
+| `Sent`, `Rejected`, anything else | unchanged | unchanged |
+
+Writes are one `updateMany` per (target, value read), guarded on the value
+read, so a manual save made during the run is kept.
+
+### Deployment (infra repo)
+
+1. Add the `[job-local "closure-status-sync"]` block from
+   `infra/closure-status.conf` to the ofelia config the daemon loads.
+2. Place `infra/closure-status-sync.sh` at `/scripts/api/closure-status-sync.sh`
+   and `chmod +x`.
+3. No new secret: `GMD_APP_SERVER` and `GMD_SYNC_API_KEY` are already set.
+4. Reload or restart ofelia.
+
+Until ofelia runs it, closure status is not auto-filled at all.
+
+Verify: `GET $GMD_APP_SERVER/api/scheduler/closure-status` with `x-api-key`
+returns `auth:"ok"`; the app logs a `[SCHEDULER] closure-status ... done` block.
+
 ## `docket-creation`
 
 Two steps in `run-docket-creation.ts`:
@@ -713,6 +753,24 @@ Notes:
   complete, never wrong, which keeps the sync that reads it safe.
 - `execution-tracking` refreshes this table before it runs, so the manual path
   does not depend on the :35 job having fired.
+
+## `ledger`
+
+Daily at **01:55** (`0 55 1 * * *`, ofelia 6-field cron): after the hourly block and
+before the working day, so the debtors and creditors pages open on that
+morning's ledger. Entry: `runScheduledLedgerSync()` -> `runLedgerSync()` in
+`ledger-sync.ts`, which `scripts/sync-debtors.ts` and `scripts/sync-creditors.ts`
+also call (dry-run default, `--apply`, `--dump-headers` unchanged).
+
+- Snapshot copy: each of `Debtor`, `Creditor`, `CreditorAdvance` is deleted and
+  refilled **in its own transaction**. A renamed tab or column fails that ledger
+  (`report.<ledger>.error`), leaves its table as it was, and does not stop the
+  others. The route then returns `success:false` (HTTP 200) and the Ofelia script
+  exits 1.
+- Skipped rows (blank ACC_CODE, bad number/date) are counted, not fatal.
+- Report: `{ debtors, creditors, advances }`, each `{ read, mapped, skipped,
+  skippedRows, written, inDb, error? }`.
+- The latch is in-process only; see the `shortcut:` comment in `ledger-sync.ts`.
 
 ## `execution-tracking`
 
@@ -1388,6 +1446,8 @@ curl -i -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/pbg"
 # run the PBG sheet sync
 curl -i -X POST -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/pbg"
 
+# run the Closure Status sync
+curl -i -X POST -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/closure-status"
 # run the PBG reminder pass (direct SMTP)
 curl -i -X POST -H "x-api-key: $GMD_SYNC_API_KEY" "$BASE/pbg-reminders"
 ```
@@ -1398,3 +1458,56 @@ per-step diff:
 ```
 docker logs -f gmd-quotation-process | grep SCHEDULER
 ```
+## `purchase-orders`
+
+`POST /api/scheduler/purchase-orders` → `runScheduledPurchaseOrders` →
+`lib/purchaseOrderSync.ts`.
+
+Copies the `PURCHASE ORD AND GRN` tab of the GMD EXECUTION TRACKING workbook
+(gid from `PURCHASE_ORD_GRN_GID`, defaulting to the live tab) into the stock
+DB's `PurchaseOrderLine`. That table is what the Purchase dashboard reads, and
+what fills the `IN TRANSIT` column on Physical Stock.
+
+Not yet staggered into the hourly rota: it is cheap (one tab read, ~3.4k rows)
+and nothing else writes the table, so it can take any free slot.
+
+### Why it copies instead of computing
+
+The ERP already works out what is still to come, in the tab's `BALANCE` column.
+The sync stores it, and `@gmd/purchase/in-transit` only falls back to
+`NET_QTYORDER - QTYEXECUTE` when the balance cell is blank or junk. Measured on
+the live tab on 2026-10-31: **0 of 3,439 rows** had the two disagree, so the
+fallback is a safety net, not a second opinion.
+
+### What the live tab actually looks like
+
+Measured the same day, before the first run:
+
+| | |
+|---|---|
+| Data rows | 3,439 (plus 1 repeated header row, dropped) |
+| Duplicate `(VRNO, SLNO)` | 0 — the unique key holds |
+| Open lines (material to come) | 385 |
+| …of those, no `SALES_CONT` | 236 (61%) |
+| Over-received lines (negative balance) | 7 |
+| Items with stock on the way | 263 |
+| Items with mixed units | 0 |
+
+Two of those matter when reading the dashboard:
+
+- **61% of open lines carry no sales contract.** Order-level tagging is real but
+  partial — the summary counts them separately as "untagged" rather than
+  pretending every in-transit item belongs to an order.
+- **7 lines have been received over the order quantity** (e.g. `PE24Y-00065/11`,
+  ordered 3, received 25). Their in-transit is floored at 0, never allowed to
+  subtract from another line's, and the row is tinted red.
+
+### Manual runs
+
+```
+pnpm --filter gmd-quotation-process po:sync             # dry run
+pnpm --filter gmd-quotation-process po:sync -- --limit 500
+pnpm --filter gmd-quotation-process po:sync:apply       # writes
+```
+
+`?dryRun=1` and `?limit=` do the same on the endpoint.

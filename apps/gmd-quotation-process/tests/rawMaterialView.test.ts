@@ -75,10 +75,18 @@ test("card stats cascade on the opposite toggle", () => {
     return r;
   };
   // Indices 24/20 fallbacks are unused because headers resolve the columns.
-  const rows = [mk("Indian", "TRUE"), mk("Imported", "FALSE"), mk("Indian", "FALSE")];
+  const rows = [
+    mk("Indian", "TRUE"),
+    mk("Imported", "FALSE"),
+    mk("Indian", "FALSE"),
+    mk("", "TRUE"), // untagged: counted in major, not in Indian/Imported total
+  ];
   const all = computeCardStats(rows, hdrs, "all", "all");
   assert.deepEqual(all.indian, { count: 2, sum: 40 });
   assert.deepEqual(all.minor, { count: 2, sum: 40 });
+  assert.deepEqual(all.major, { count: 2, sum: 40 });
+  assert.equal(all.indian.sum + all.imported.sum, 60);
+  assert.equal(all.major.sum + all.minor.sum, 80);
   const indianOnly = computeCardStats(rows, hdrs, "indian", "all");
   assert.deepEqual(indianOnly.major, { count: 1, sum: 20 });
   assert.deepEqual(indianOnly.indian, { count: 2, sum: 40 });

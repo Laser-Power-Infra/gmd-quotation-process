@@ -16,6 +16,8 @@ export type LookupOptionData = {
   value: string;
   sortOrder: number;
   isActive: boolean;
+  code: string | null;
+  defaultState: string | null;
 };
 
 export async function getLookupOptions(): Promise<LookupOptionData[]> {
@@ -28,6 +30,8 @@ export async function getLookupOptions(): Promise<LookupOptionData[]> {
     value: r.value,
     sortOrder: r.sortOrder,
     isActive: r.isActive,
+    code: r.code,
+    defaultState: r.defaultState,
   }));
 }
 
@@ -90,6 +94,11 @@ export async function updateLookupOptionAction(formData: FormData) {
   const value = (formData.get("value") as string)?.trim();
   const type = (formData.get("type") as string)?.trim();
   const sortOrderRaw = formData.get("sortOrder") as string;
+  // Only sent for UTILITY rows; absent keys leave the columns untouched.
+  const code = formData.has("code") ? String(formData.get("code")).trim() || null : undefined;
+  const defaultState = formData.has("defaultState")
+    ? String(formData.get("defaultState")).trim() || null
+    : undefined;
 
   if (!id || !value || !type) {
     return { success: false, error: "id, type and value are required." };
@@ -112,9 +121,16 @@ export async function updateLookupOptionAction(formData: FormData) {
     return { success: false, error: `"${value}" already exists for ${type}.` };
   }
 
+  if (code) {
+    const codeOwner = await prisma.lookupOption.findUnique({ where: { code } });
+    if (codeOwner && codeOwner.id !== id) {
+      return { success: false, error: `Code "${code}" is already used by "${codeOwner.value}".` };
+    }
+  }
+
   await prisma.lookupOption.update({
     where: { id },
-    data: { type, value, sortOrder },
+    data: { type, value, sortOrder, code, defaultState },
   });
 
   revalidatePath("/admin/lookup-options");

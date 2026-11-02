@@ -19,9 +19,6 @@ export const COLUMNS = [
   "REMARKS",
   "sum of PHYSICAL stock",
   "stock as per erp",
-  "rate/unit",
-  "rate per pc*qty*weight",
-  "weight per pc",
   "item wise-value",
   "MOVING WITHIN 3 MONTHS",
   "Order Ag Approval recvd",
@@ -40,6 +37,9 @@ export const COLUMNS = [
   "MAJOR/MINOR MARKING",
   "HEAT NO",
   "SERIAL NO",
+  // Derived from the purchase order lines, not from the stock sheet. Last, so
+  // every existing column keeps its index (edits look fields up by index).
+  "IN TRANSIT",
 ] as const;
 
 export type PhysicalStockHeader = (typeof COLUMNS)[number];
@@ -63,9 +63,6 @@ export const FIELDS = [
   "remarks",
   "sum_of_physical_stock",
   "stock_as_per_erp",
-  "rate_unit",
-  "rate_per_pc_qty_weight",
-  "weight_per_pc",
   "item_wise_value",
   "moving_within_3_months",
   "order_ag_approval_recvd",
@@ -84,6 +81,7 @@ export const FIELDS = [
   "majorminor_marking",
   "heat_no",
   "serial_no",
+  "in_transit",
 ] as const satisfies readonly (keyof PhysicalStockRow)[];
 
 export type PhysicalStockField = (typeof FIELDS)[number];
@@ -92,14 +90,12 @@ export const fieldOf = (header: string): PhysicalStockField | undefined =>
   FIELDS[COLUMNS.indexOf(header as PhysicalStockHeader)];
 
 export const NUMERIC_COLUMNS: ReadonlySet<string> = new Set([
+  "IN TRANSIT",
   "RECEIVED QTY.",
   "DISPATCH QTY.",
   "AVAILABLE QTY.",
   "sum of PHYSICAL stock",
   "stock as per erp",
-  "rate/unit",
-  "rate per pc*qty*weight",
-  "weight per pc",
   "item wise-value",
   "PURCHASE IN 26-27",
   "dispatched in 26-27",
@@ -116,7 +112,6 @@ export const NUMERIC_COLUMNS: ReadonlySet<string> = new Set([
  */
 export const EDITABLE_CANDIDATES = [
   "ERP CODE",
-  "HEAT NO",
   "DISPATCH QTY.",
   "REMARKS",
   "item type",
@@ -395,7 +390,10 @@ export const BLANK_ONLY_HEADERS = [
 ] as const satisfies readonly EditableHeader[];
 
 export function rowToArray(row: PhysicalStockRow): unknown[] {
-  return FIELDS.map((field) => row[field] ?? "");
+  // item wise-value is shown from the current cost, which the BOM job refreshes hourly.
+  return FIELDS.map((field) =>
+    field === "item_wise_value" ? computeItemWiseValue(row.cost, row.available_qty) : row[field] ?? "",
+  );
 }
 
 function parseNum(value: unknown): number | null {
@@ -405,20 +403,41 @@ function parseNum(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** `rate/unit * available qty`, two decimals; a blank operand counts as 0. */
-export function computeItemWiseValue(rateUnit: unknown, availableQty: unknown): string {
-  return ((parseNum(rateUnit) ?? 0) * (parseNum(availableQty) ?? 0)).toFixed(2);
+/** `cost (BOM master) * available qty`, two decimals; a blank operand counts as 0. */
+export function computeItemWiseValue(cost: unknown, availableQty: unknown): string {
+  return ((parseNum(cost) ?? 0) * (parseNum(availableQty) ?? 0)).toFixed(2);
 }
 
-/** erp_code-l8_item_category-heat_no-heat_seq; null until the row has a heat no and number. */
-export function buildSerial(r: {
-  erp_code?: string | null;
-  l8_item_category?: string | null;
-  heat_no?: string | null;
-  heat_seq?: number | null;
-}): string | null {
-  if (!r.heat_no || r.heat_seq == null) return null;
-  return [r.erp_code, r.l8_item_category, r.heat_no, r.heat_seq].map((v) => String(v ?? "").trim()).join("-");
+// L levels a row's dropdowns cascade on (L7-PN has no fixed list but still narrows the others).
+const CASCADE_IDX = (
+  ["L2-VALVE TYPE", "Dia", "L4-COMPONENT", "L5- MATERIAL", "L6-STD", "L7-PN", "L8 -ITEM CATEGORY"] as const
+).map((h) => COLUMNS.indexOf(h));
+const normCell = (v: unknown) => String(v ?? "").trim().replace(/\s+/g, " ").toUpperCase();
+
+/**
+ * Options of L dropdown `header` on `row`: only values that occur in some stock
+ * row together with every other L level already filled on `row`. The level
+ * being edited never narrows itself; no match (a new combination) gives the full list.
+ */
+export function cascadedOptions(header: string, row: readonly unknown[], rows: readonly (readonly unknown[])[]): string[] {
+  const all = DROPDOWN_OPTIONS[header as PhysicalStockHeader] ?? [];
+  const self = COLUMNS.indexOf(header as PhysicalStockHeader);
+  const picked = CASCADE_IDX.filter((i) => i !== self && normCell(row[i])).map((i) => [i, normCell(row[i])] as const);
+  if (!picked.length) return [...all];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (picked.every(([i, v]) => normCell(r[i]) === v)) seen.add(normCell(r[self]));
+  }
+  const out = all.filter((o) => seen.has(normCell(o)));
+  return out.length ? out : [...all];
+}
+
+/** erp_code-l8_item_category-heat_no-heat_seq. */
+export function buildSerial(
+  r: { erp_code?: string | null; l8_item_category?: string | null },
+  e: { heat_no: string; heat_seq: number },
+): string {
+  return [r.erp_code, r.l8_item_category, e.heat_no, e.heat_seq].map((v) => String(v ?? "").trim()).join("-");
 }
 
 /** Codes minted by createPhysicalStock: 3 letters + 6 digits. */
@@ -456,9 +475,6 @@ const JOINED_FIELDS = [
 const FILLED_FIELDS = [
   "sum_of_physical_stock",
   "stock_as_per_erp",
-  "rate_unit",
-  "rate_per_pc_qty_weight",
-  "weight_per_pc",
   "purchase_in_26_27",
   "dispatched_in_26_27",
   "order_in_hand_qty",
@@ -474,8 +490,8 @@ const FILLED_FIELDS = [
  * text fields joined with ", " (distinct values only), the rest filled if blank.
  */
 export function mergeRows(
-  target: Partial<Record<PhysicalStockField, unknown>>,
-  source: Partial<Record<PhysicalStockField, unknown>>,
+  target: Partial<Record<keyof PhysicalStockRow, unknown>>,
+  source: Partial<Record<keyof PhysicalStockRow, unknown>>,
 ): Record<string, string | null> {
   const blank = (v: unknown) => String(v ?? "").trim() === "";
   const changes: Record<string, string | null> = {
@@ -486,7 +502,7 @@ export function mergeRows(
   if (available !== null) {
     changes.available_qty = available;
     changes.item_wise_value = computeItemWiseValue(
-      blank(target.rate_unit) ? source.rate_unit : target.rate_unit,
+      blank(target.cost) ? source.cost : target.cost,
       available,
     );
   }

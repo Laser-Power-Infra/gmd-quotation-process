@@ -22,6 +22,7 @@ import { closeNewEnquiryDialog } from "@/lib/dialogsSlice";
 import { useSession } from "next-auth/react";
 import { clearDraft, isDraftEmpty, parseDraft, readDraftRaw, saveDraft, type NewEnquiryDraft } from "@/lib/newEnquiryDraft";
 import { looseIncludes } from "@/lib/squish";
+import { useUtilityDefaultStates } from "@/lib/hooks/useUtilityDefaultStates";
 
 interface NewEnquiryDialogProps {
   nextDocketNumber: string;
@@ -108,6 +109,13 @@ export default function NewEnquiryDialog({
   const [inspection, setInspection] = useState("");
   const [pbg, setPbg] = useState("");
   const [utility, setUtility] = useState("");
+  const utilityDefaultStates = useUtilityDefaultStates();
+  // Picking a utility fills a blank State with its master default (still editable).
+  const handleUtilityChange = (value: string) => {
+    setUtility(value);
+    const defaultState = utilityDefaultStates[value];
+    if (!state && defaultState && dropdownOptions.states.includes(defaultState)) setState(defaultState);
+  };
 
   const [orderStatus, setOrderStatus] = useState("");
 
@@ -580,7 +588,7 @@ export default function NewEnquiryDialog({
                 </Label>
                 <select
                   value={utility}
-                  onChange={(e) => setUtility(e.target.value)}
+                  onChange={(e) => handleUtilityChange(e.target.value)}
                   className={selectClass}
                 >
                   <option value="">Select utility...</option>
