@@ -11,9 +11,9 @@ import { parseAmount, parseSheetDate } from "./debtorsSync";
 
 export { parseAmount, parseSheetDate };
 
-// shortcut: tabs resolved by title; switch to gid like DEBTORS_GID once the gids are known.
-export const CREDITORS_TAB = "CREDITORS";
-export const ADVANCES_TAB = "ADVANCE TO CREDITORS";
+// Resolved by gid, never by title (a renamed tab must not break the sync).
+export const CREDITORS_GID = 266336637;
+export const ADVANCES_GID = 11144496;
 
 export const CREDITOR_HEADERS = {
   accSch: "ACC_SCH",
