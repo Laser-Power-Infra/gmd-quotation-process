@@ -17,10 +17,8 @@ import { prisma } from "@/lib/prisma";
 import { readSheetTabByGid } from "@/lib/gmd_lib/bomMastErp";
 import {
   ADVANCES_GID,
-  ADVANCES_TAB,
   ADVANCE_HEADERS,
   CREDITORS_GID,
-  CREDITORS_TAB,
   CREDITOR_HEADERS,
 } from "@/lib/creditorsSync";
 import { printLedgerReport, runLedgerSync } from "@/schedular_function/ledger-sync";
@@ -33,11 +31,12 @@ async function main() {
   if (dumpHeaders) {
     const spreadsheetId = process.env.GMD_EXECUTION_TRACKING_SPREADSHEET_ID;
     if (!spreadsheetId) throw new Error("GMD_EXECUTION_TRACKING_SPREADSHEET_ID is not set");
-    for (const [gid, title, expected] of [
-      [CREDITORS_GID, CREDITORS_TAB, CREDITOR_HEADERS],
-      [ADVANCES_GID, ADVANCES_TAB, ADVANCE_HEADERS],
+    for (const [gid, expected] of [
+      [CREDITORS_GID, CREDITOR_HEADERS],
+      [ADVANCES_GID, ADVANCE_HEADERS],
     ] as const) {
       const tab = await readSheetTabByGid(spreadsheetId, gid);
+      const title = tab.tabTitle;
       console.log(`tab "${title}" (gid ${gid}): ${tab.rows.length} data rows`);
       console.log(`${title} headers: ${JSON.stringify(tab.headers)}`);
       console.log(`${title} expected: ${JSON.stringify(Object.values(expected))}`);

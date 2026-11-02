@@ -1,7 +1,7 @@
 import "server-only";
 import { stockPrisma } from "@gmd/db-stock";
 import type { PurchaseRow } from "../columns";
-import type { ActionResult, PurchasePage, PurchaseSummary, PurchaseView } from "../types";
+import type { ActionResult, GrnReceipt, PurchasePage, PurchaseSummary, PurchaseView } from "../types";
 import { balanceDisagrees } from "../lib/inTransit";
 
 // Reads of the PurchaseOrderLine table (stock DB). No auth and no flags lookup:
@@ -182,6 +182,48 @@ export async function inTransitForItems(itemCodes?: readonly string[]): Promise<
   return out;
 }
 
+/**
+ * Who the in-transit material is coming from, per ERP item code: one entry per
+ * open PO line, "SUPPLIER — PO no (date), due DELIVERY_SCH: pending / received",
+ * joined with "; ". Received is QTYEXECUTE, the GRN quantity already booked
+ * against the line, so the GRN tab itself is not needed here.
+ */
+export async function incomingFromForItems(itemCodes?: readonly string[]): Promise<Map<string, string>> {
+  const codes = itemCodes?.filter((c) => c && c.trim()).map((c) => c.trim());
+  if (codes && codes.length === 0) return new Map();
+
+  const lines = await stockPrisma.purchaseOrderLine.findMany({
+    where: {
+      AND: [
+        { inTransit: { gt: 0 } },
+        { NOT: { itemCode: null } },
+        ...(codes ? [{ itemCode: { in: codes } }] : []),
+      ],
+    },
+    orderBy: [{ itemCode: "asc" }, { poDate: "asc" }, { poNo: "asc" }],
+    select: {
+      itemCode: true,
+      supplierName: true,
+      poNo: true,
+      poDate: true,
+      deliverySched: true,
+      balanceQty: true,
+      qtyExecuted: true,
+    },
+  });
+
+  const out = new Map<string, string>();
+  for (const l of lines) {
+    if (!l.itemCode) continue;
+    const entry =
+      `${l.supplierName || "Unknown supplier"} — PO ${l.poNo}${l.poDate ? ` (${l.poDate})` : ""}` +
+      `${l.deliverySched ? `, due ${l.deliverySched}` : ""}: ${l.balanceQty ?? "?"} pending, ${l.qtyExecuted || "0"} received`;
+    const prev = out.get(l.itemCode);
+    out.set(l.itemCode, prev ? `${prev}; ${entry}` : entry);
+  }
+  return out;
+}
+
 /** Distinct values for the table's filter dropdowns. */
 export async function purchaseFacets(): Promise<{ suppliers: string[]; contracts: string[] }> {
   const [suppliers, contracts] = await Promise.all([
@@ -203,4 +245,14 @@ export async function purchaseFacets(): Promise<{ suppliers: string[]; contracts
     suppliers: suppliers.map((s) => s.supplierName).filter((s): s is string => Boolean(s)),
     contracts: contracts.map((c) => c.salesContract).filter((c): c is string => Boolean(c)),
   };
+}
+
+/** GRN receipts booked against one PO line, oldest first as the sheet lists them. */
+export async function loadGrnReceipts(poNo: string, poLineNo: string): Promise<ActionResult<GrnReceipt[]>> {
+  return run(() =>
+    stockPrisma.grnLine.findMany({
+      where: { orderVrNo: poNo, orderSlNo: poLineNo },
+      select: { id: true, vrNo: true, vrDate: true, partyBillNo: true, partyBillDate: true, qtyRecd: true, purValue: true },
+    }),
+  );
 }

@@ -61,14 +61,29 @@ model PhysicalStock {
     form_date                           DateTime @default(now())
   created_at                     DateTime @default(now())
   updated_at                     DateTime @updatedAt
-  // Serial number = erp_code-l8_item_category-heat_no-heat_seq. heat_no is typed
-  // by the user; heat_seq counts up per heat_no across all items (derived
-  // serial_no is built in listPhysicalStock, not stored).
-  heat_no                        String?
-  heat_seq                       Int?
+  // Set from the mobile heat-entry form once every heat of this row is entered.
+  heat_done                      Boolean  @default(false)
+  heat_entries                   HeatEntry[]
 
   @@index([erp_code])
+}
+
+// One heat (and so one serial) of a PhysicalStock row; a row can have many.
+// Serial number = erp_code-l8_item_category-heat_no-heat_seq. heat_no is typed
+// by the user; heat_seq counts up per heat_no across all rows (serial_no is
+// built in listPhysicalStock, not stored).
+model HeatEntry {
+  id                String        @id @default(cuid())
+  physical_stock_id String
+  physical_stock    PhysicalStock @relation(fields: [physical_stock_id], references: [id], onDelete: Cascade)
+  heat_no           String
+  heat_seq          Int
+  // Google Drive file id of the printed serial sheet; null = serial reserved, sheet not yet uploaded.
+  sheet_file_id     String?
+  created_at        DateTime      @default(now())
+
   @@unique([heat_no, heat_seq])
+  @@index([physical_stock_id])
 }
 
 // Dimensional details of one assigned serial no (one row per PhysicalStock row).
@@ -127,7 +142,7 @@ model PurchaseOrderLine {
   partyRefNo    String? // PARTYREFNO
   partyRefDate  String? // PARTYREFDATE
   lastPoRate    String? // LAST_PO_RATE
-  minPoRate     String? // MIN_PO_RATE, lowest rate ever paid for the item
+  minPoRate     String? // MIN_PO_RATE — lowest rate this item was ever bought at
   lastPoDate    String? // LAST_PO_DATE
 
   // Derived by the sync with `@gmd/purchase/in-transit`, so every filter and
@@ -145,4 +160,25 @@ model PurchaseOrderLine {
   @@index([itemCode])
   @@index([salesContract])
   @@index([inTransit])
+}
+
+// One receipt line of the `GRN` tab (GMD EXECUTION TRACKING). Joined to the PO
+// line it was received against on (orderVrNo, orderSlNo) = (poNo, poLineNo).
+// The tab has no unique key, so the sync replaces the whole table each run.
+model GrnLine {
+  id            String   @id @default(cuid())
+  mainPostName  String? // MAIN_POST_NAME
+  accCode       String? // ACC_CODE (supplier)
+  vrNo          String // VRNO — GRN number
+  vrDate        String? // VRDATE
+  itemCode      String? // ITEM_CODE
+  partyBillNo   String? // PARTYBILLNO
+  partyBillDate String? // PARTYBILLDATE
+  orderVrNo     String? // ORDER_VRNO -> PurchaseOrderLine.poNo
+  orderSlNo     String? // ORDER_SLNO -> PurchaseOrderLine.poLineNo
+  qtyRecd       Float? // QTYRECD
+  purValue      Float? // PUR_VALUE
+  syncedAt      DateTime @default(now())
+
+  @@index([orderVrNo, orderSlNo])
 }

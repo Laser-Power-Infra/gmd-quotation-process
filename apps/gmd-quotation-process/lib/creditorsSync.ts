@@ -11,12 +11,9 @@ import { parseAmount, parseSheetDate } from "./debtorsSync";
 
 export { parseAmount, parseSheetDate };
 
-/** Tab gids in GMD EXECUTION TRACKING (confirmed by Puja, 31 Oct); resolved by gid, never title. */
+// Resolved by gid, never by title (a renamed tab must not break the sync).
 export const CREDITORS_GID = 266336637;
 export const ADVANCES_GID = 11144496;
-// Titles are kept only for error messages and column-resolution reports.
-export const CREDITORS_TAB = "CREDITORS";
-export const ADVANCES_TAB = "ADVANCE TO CREDITORS";
 
 export const CREDITOR_HEADERS = {
   accSch: "ACC_SCH",

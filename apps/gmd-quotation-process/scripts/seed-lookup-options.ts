@@ -3,7 +3,6 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import "dotenv/config";
 import { PARTY_NAMES } from "../lib/partyNames";
-import { UTILITIES } from "../lib/utilities";
 import { ALLOWED_OPERATION_TYPES } from "../lib/operationTypePatterns";
 import { ALLOWED_EXTENSIONS } from "../lib/extensionPatterns";
 import { ALLOWED_BYPASSES } from "../lib/bypassPatterns";
@@ -255,7 +254,7 @@ const STATIC_DELIVERY_SCHEDULES = [
 
 const lists: Record<string, string[]> = {
   PARTY: PARTY_NAMES,
-  UTILITY: UTILITIES,
+  // UTILITY is seeded from data/utility-master.csv by seed-utility-master.ts.
   ITEM_TYPE: STATIC_ITEM_TYPES,
   MOC: STATIC_MOCS,
   SIZE: STATIC_SIZES,

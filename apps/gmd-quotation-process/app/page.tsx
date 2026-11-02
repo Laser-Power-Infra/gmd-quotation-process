@@ -2,7 +2,7 @@ import React, { Suspense } from "react";
 import DashboardContainer from "./DashboardContainer";
 import { prisma } from "@/lib/prisma";
 import { getActiveLookupValuesByType } from "@/lib/lookup";
-import { syncClosureStatuses } from "@/lib/closureStatusSync";
+import { lastClosureStatusSync } from "@/lib/closureStatusSync";
 import { getFiscalPrefix, nextDocketSerials } from "@/lib/docketNumber";
 import { fetchEnquiryPage } from "./actions/enquiryQuery";
 import { emptyEnquiryQuery, enquiryQueryKey } from "@/lib/enquiryQuery";
@@ -11,14 +11,12 @@ import { emptyEnquiryQuery, enquiryQueryKey } from "@/lib/enquiryQuery";
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  // Derive closureStatus from the thread evidence before the rows are read so the
-  // dashboard shows it: "Sent" for evidenced dockets, "Pending" for mail-less
-  // ones. Only blank values are filled; failures must not block the dashboard.
-  const { sentDockets, pendingDockets } = await syncClosureStatuses()
-    .catch((error) => {
-      console.warn("[Page] closure status sync failed:", error);
-      return { sentDockets: [] as string[], pendingDockets: [] as string[] };
-    });
+  // Closure status is synced by the closure-status scheduler job, never on
+  // render. The auto-detected dockets are only styling hints from its last run.
+  const { sentDockets, pendingDockets } = lastClosureStatusSync() ?? {
+    sentDockets: [] as string[],
+    pendingDockets: [] as string[],
+  };
 
   const initialQuery = emptyEnquiryQuery();
   // Only the first page is loaded here. Filters, paging and sorting re-run

@@ -409,6 +409,9 @@ importers:
       '@gmd/ui':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@googleapis/drive':
+        specifier: ^26.0.2
+        version: 26.0.2
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0

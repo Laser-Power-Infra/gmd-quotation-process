@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { getPbgData } from "@/lib/pbg/pbg-data";
+import { istDateOnly } from "@/lib/pbg/reminder-rules";
 import { PbgTable } from "@/components/pbg/pbg-table";
 
 export const metadata: Metadata = {
@@ -19,10 +20,15 @@ function PbgSkeleton() {
 
 async function PbgDashboard({ includeClosed }: { includeClosed: boolean }) {
   const records = await getPbgData({ includeClosed });
+  const todayIso = istDateOnly();
 
   return (
     <div className="h-full min-h-0">
-      <PbgTable records={records} includeClosed={includeClosed} />
+      <PbgTable
+        records={records}
+        includeClosed={includeClosed}
+        todayIso={todayIso}
+      />
     </div>
   );
 }

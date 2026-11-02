@@ -50,6 +50,9 @@ export const COLUMN_MAP: readonly { sheet: string; db: PurchaseField }[] = [
   { sheet: "BASIC_AMT", db: "basicAmount" },
   { sheet: "DELIVERY_SCH", db: "deliverySched" },
   { sheet: "GRN_VRDATE", db: "grnDate" },
+  { sheet: "LAST_PO_RATE", db: "lastPoRate" },
+  { sheet: "MIN_PO_RATE", db: "minPoRate" },
+  { sheet: "LAST_PO_DATE", db: "lastPoDate" },
   { sheet: "NET_QTYORDER", db: "netQtyOrder" },
   { sheet: "QTYEXECUTE", db: "qtyExecuted" },
   { sheet: "RATE", db: "rate" },
@@ -59,9 +62,6 @@ export const COLUMN_MAP: readonly { sheet: string; db: PurchaseField }[] = [
   { sheet: "PARTYREFDATE", db: "partyRefDate" },
   { sheet: "ITEM_NAME", db: "itemName" },
   { sheet: "ACC_NAME", db: "supplierName" },
-  { sheet: "LAST_PO_RATE", db: "lastPoRate" },
-  { sheet: "MIN_PO_RATE", db: "minPoRate" },
-  { sheet: "LAST_PO_DATE", db: "lastPoDate" },
 ];
 
 /** Table headers, in display order, with the field each one reads. */
@@ -143,8 +143,8 @@ export interface PurchaseRow {
   salesContract: string | null;
   partyRefNo: string | null;
   partyRefDate: string | null;
-  /** Last rate paid for the item, and the lowest ever. */
   lastPoRate: string | null;
+  /** MIN_PO_RATE: the lowest rate this item was ever bought at. */
   minPoRate: string | null;
   lastPoDate: string | null;
   /** Derived by the sync (see `lib/inTransit.ts`); null when the cells were unparseable. */

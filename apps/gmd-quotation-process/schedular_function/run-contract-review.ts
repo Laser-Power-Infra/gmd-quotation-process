@@ -1,11 +1,12 @@
 /**
- * Scheduled job — Contract Review, five steps in order.
+ * Scheduled job — Contract Review, six steps in order.
  *
  *   1.  `runContractReviewSheetSync()`     CONTRACTS + DUMP -> ContractReview
  *   1b. `runContractReviewItemNameSync()`  ITEM MASTER ERP -> ContractReview.itemName
  *   2.  `runContractReviewEnquirySync()`   Enquiry -> State / Utility / Project Ref
  *   3.  `runContractReviewRmAvailSync()`   stock-phys -> VerifyBom -> RM AVAIL -> PHYSICAL STOCK
  *   4.  `runIcDumpSync()`                  INSPECTION OFFER DUMP -> offer / inspection / DI
+ *   5.  `runInspectionOfferSync()`         INSPECTION OFFER DUMP -> InspectionOffer + draft InspectionReport
  *
  * The order is a real dependency chain, not cosmetic:
  *   - 2 depends on 1 for fresh contract rows to match Enquiry against.
@@ -19,6 +20,7 @@
  *     separately from the Indent Listing by `recomputeIndentListingVersionsAction`.
  *     If that has never run, step 4 resolves nothing and writes null.
  *   - 4 joins on `mcNo` + `itemCode`, both of which step 1 is what populates.
+ *   - 5 fills new draft reports from ContractReview, so it runs last.
  *
  * Steps are strictly sequential. A fatal failure aborts the remaining steps
  * rather than running them against a half-updated table.
@@ -44,6 +46,10 @@ import {
   type ContractReviewRmAvailResult,
 } from "./contract-review-rm-avail";
 import { runIcDumpSync, type IcDumpSyncResult } from "./contract-review-ic-dump";
+import {
+  runInspectionOfferSync,
+  type InspectionOfferSyncResult,
+} from "./inspection-offer-sync";
 import { JobAlreadyRunningError } from "./run-gmd-update";
 
 export type JobName = "contract-review";
@@ -59,6 +65,7 @@ export type ScheduledContractReviewResult = {
     enquiry?: ContractReviewEnquiryResult;
     rmAvail?: ContractReviewRmAvailResult;
     icDump?: IcDumpSyncResult;
+    inspectionOffer?: InspectionOfferSyncResult;
   };
 };
 
@@ -70,7 +77,7 @@ export type ScheduledContractReviewResult = {
 const inFlight = new Set<JobName>();
 
 export type RunContractReviewOptions = {
-  /** Compute and report without writing. Applies to steps 2, 3 and 4. */
+  /** Compute and report without writing. Applies to steps 2, 3, 4 and 5. */
   dryRun?: boolean;
   concurrency?: number;
 };
@@ -122,6 +129,9 @@ export async function runScheduledContractReview(
     // `mcNo` + `itemCode` pair that step 1 produced.
     steps.icDump = await runIcDumpSync({ dryRun });
 
+    // Step 5 — InspectionOffer rows + a draft report per new offer VRNO.
+    steps.inspectionOffer = await runInspectionOfferSync({ dryRun });
+
     const elapsedMs = Date.now() - startedAtMs;
 
     console.log(
@@ -130,7 +140,8 @@ export async function runScheduledContractReview(
         `itemNames(updated=${steps.itemNames.updated}, unmatched=${steps.itemNames.unmatched}) ` +
         `enquiry(changed=${steps.enquiry.changed}) ` +
         `rmAvail(stock=${steps.rmAvail.stockUpdated}, noUse=${steps.rmAvail.rmAvailUpdated}, physical=${steps.rmAvail.physicalStockUpdated}) ` +
-        `icDump(matched=${steps.icDump.matched}, updated=${steps.icDump.rowsToUpdate}, written=${steps.icDump.written})`,
+        `icDump(matched=${steps.icDump.matched}, updated=${steps.icDump.rowsToUpdate}, written=${steps.icDump.written}) ` +
+        `inspectionOffer(created=${steps.inspectionOffer.created}, updated=${steps.inspectionOffer.updated}, failed=${steps.inspectionOffer.failed})`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
 

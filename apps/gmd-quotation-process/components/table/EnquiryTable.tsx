@@ -4135,9 +4135,10 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                     <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
                       <div className="flex flex-col gap-1">
                         <CellSelect
-                          placeholder="-"
-                          value={enquiry.closureStatus || ""}
-                          options={dropdownOptions.closureStatuses}
+                          // "-" is how Not Sent is shown and picked (the server stores it as "Not Sent").
+                          // A real option, not the clear row, so picking it on an untouched (empty) row still saves.
+                          value={enquiry.closureStatus?.trim().toLowerCase() === "not sent" ? "-" : enquiry.closureStatus || ""}
+                          options={["-", ...dropdownOptions.closureStatuses.filter((s: string) => s.trim().toLowerCase() !== "not sent")]}
                           allowCustomValue
                           searchPlaceholder="Search closure status..."
                           onChange={(v) => handleEnquiryFieldChange(enquiry.id, "closureStatus", v)}

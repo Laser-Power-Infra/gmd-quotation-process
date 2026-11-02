@@ -1110,7 +1110,17 @@ export default function Home() {
   );
 
   const fmt = (n: number) =>
-    n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+    n.toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  const totalSum = cardStats.indian.sum + cardStats.imported.sum;
+  const totalCount = cardStats.indian.count + cardStats.imported.count;
+  // Pairs cover the same scope only when both toggles are off.
+  const totalDiff =
+    indianImported === "all" && majorFilter === "all"
+      ? totalSum - (cardStats.major.sum + cardStats.minor.sum)
+      : 0;
 
   const handleUsdCostUpdate = useCallback(
     (id: string, usdCost: string) =>
@@ -1188,6 +1198,11 @@ export default function Home() {
                   {cardStats.total.count} item
                   {cardStats.total.count === 1 ? "" : "s"}
                 </span>
+                {Math.abs(totalDiff) > 0.005 && (
+                  <span className="block text-[10px] font-medium text-amber-300 mt-0.5">
+                    ≠ Major+Minor by ₹{fmt(Math.abs(totalDiff))}
+                  </span>
+                )}
               </div>
 
               <button

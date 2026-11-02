@@ -40,6 +40,7 @@ export const COLUMNS = [
   // Derived from the purchase order lines, not from the stock sheet. Last, so
   // every existing column keeps its index (edits look fields up by index).
   "IN TRANSIT",
+  "INCOMING FROM",
 ] as const;
 
 export type PhysicalStockHeader = (typeof COLUMNS)[number];
@@ -82,6 +83,7 @@ export const FIELDS = [
   "heat_no",
   "serial_no",
   "in_transit",
+  "incoming_from",
 ] as const satisfies readonly (keyof PhysicalStockRow)[];
 
 export type PhysicalStockField = (typeof FIELDS)[number];
@@ -112,7 +114,6 @@ export const NUMERIC_COLUMNS: ReadonlySet<string> = new Set([
  */
 export const EDITABLE_CANDIDATES = [
   "ERP CODE",
-  "HEAT NO",
   "DISPATCH QTY.",
   "REMARKS",
   "item type",
@@ -433,15 +434,12 @@ export function cascadedOptions(header: string, row: readonly unknown[], rows: r
   return out.length ? out : [...all];
 }
 
-/** erp_code-l8_item_category-heat_no-heat_seq; null until the row has a heat no and number. */
-export function buildSerial(r: {
-  erp_code?: string | null;
-  l8_item_category?: string | null;
-  heat_no?: string | null;
-  heat_seq?: number | null;
-}): string | null {
-  if (!r.heat_no || r.heat_seq == null) return null;
-  return [r.erp_code, r.l8_item_category, r.heat_no, r.heat_seq].map((v) => String(v ?? "").trim()).join("-");
+/** erp_code-l8_item_category-heat_no-heat_seq. */
+export function buildSerial(
+  r: { erp_code?: string | null; l8_item_category?: string | null },
+  e: { heat_no: string; heat_seq: number },
+): string {
+  return [r.erp_code, r.l8_item_category, e.heat_no, e.heat_seq].map((v) => String(v ?? "").trim()).join("-");
 }
 
 /** Codes minted by createPhysicalStock: 3 letters + 6 digits. */

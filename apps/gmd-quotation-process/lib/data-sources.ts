@@ -3245,6 +3245,15 @@ export const DATA_SOURCES: DataSource[] = [
     tabs: [],
   },
   {
+    page: "Valve Serial No",
+    route: "/valve_serial",
+    dashboardName: "Valve Serial No",
+    sheetName: "",
+    purpose: "Serial-no dimensional records stored in the database; standards pre-filled from the Technical tables.",
+    dbOnly: true,
+    tabs: [],
+  },
+  {
     page: "Upload Image",
     route: "/upload-image",
     dashboardName: "Upload Image",

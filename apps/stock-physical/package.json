@@ -17,6 +17,7 @@
     "@gmd/physical-stock": "workspace:*",
     "@gmd/purchase": "workspace:*",
     "@gmd/ui": "workspace:*",
+    "@googleapis/drive": "^26.0.2",
     "bcrypt": "^6.0.0",
     "flags": "^4.3.1",
     "google-auth-library": "^11.1.0",

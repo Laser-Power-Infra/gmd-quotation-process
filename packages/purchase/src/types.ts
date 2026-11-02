@@ -45,6 +45,18 @@ export interface PurchasePage {
 }
 
 /** The server actions a host app passes in. Each app owns auth and flags. */
+/** One GRN line received against a PO line (the `GRN` tab). */
+export interface GrnReceipt {
+  id: string;
+  vrNo: string;
+  vrDate: string | null;
+  partyBillNo: string | null;
+  partyBillDate: string | null;
+  qtyRecd: number | null;
+  purValue: number | null;
+}
+
 export interface PurchaseActions {
   loadView: (view: PurchaseView) => Promise<ActionResult<PurchasePage>>;
+  loadGrn: (poNo: string, poLineNo: string) => Promise<ActionResult<GrnReceipt[]>>;
 }

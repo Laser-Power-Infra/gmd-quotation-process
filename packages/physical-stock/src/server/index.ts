@@ -15,7 +15,7 @@ import {
 import { outOfTolerance } from "../dimensions";
 import type { DimensionStandard, DimensionValues } from "../dimensions";
 import { NEW_ITEM_FIELDS } from "../types";
-import type { ActionResult, FieldUpdate, NewItemInput, PhysicalStockRow } from "../types";
+import type { ActionResult, FieldUpdate, HeatEntryRow, HeatQueueItem, HeatSerial, NewItemInput, PhysicalStockRow } from "../types";
 
 // Pure operations on the PhysicalStock table (stock DB). No auth, no flags
 // lookup: the host app's Server Actions own those and pass the allow-list in.
@@ -32,17 +32,36 @@ async function run<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
   }
 }
 
+const HEAT_ENTRIES = { heat_entries: { orderBy: { created_at: "asc" as const } } };
+type StockWithHeats = NonNullable<Awaited<ReturnType<typeof findStockWithHeats>>>;
+const findStockWithHeats = (id: string) =>
+  stockPrisma.physicalStock.findUnique({ where: { id }, include: HEAT_ENTRIES });
+
+/** Comma-joined heat nos and serials for the grid; nulls when the row has no entries. */
+function heatColumns(row: StockWithHeats): Pick<PhysicalStockRow, "heat_no" | "serial_no"> {
+  if (!row.heat_entries.length) return { heat_no: null, serial_no: null };
+  return {
+    heat_no: [...new Set(row.heat_entries.map((e) => e.heat_no))].join(", "),
+    serial_no: row.heat_entries.map((e) => buildSerial(row, e)).join(", "),
+  };
+}
+
 export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
   const items = await stockPrisma.physicalStock.findMany({
     orderBy: [{ form_date: "desc" }, { created_at: "desc" }, { id: "asc" }],
+    include: HEAT_ENTRIES,
   });
-  return items.map(({ created_at: _c, updated_at: _u, form_date, ...rest }) => ({
-    ...rest,
-    form_date: form_date ? form_date.toISOString() : null,
-    serial_no: buildSerial(rest),
-    // Filled by the host app's load() from @gmd/purchase; null = not looked up.
-    in_transit: null,
-  }));
+  return items.map((item) => {
+    const { created_at: _c, updated_at: _u, form_date, heat_entries: _h, ...rest } = item;
+    return {
+      ...rest,
+      form_date: form_date ? form_date.toISOString() : null,
+      ...heatColumns(item),
+      // Filled by the host app's load() from @gmd/purchase; null = not looked up.
+      in_transit: null,
+      incoming_from: null,
+    };
+  });
 }
 
 /**
@@ -52,7 +71,7 @@ export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
  */
 async function withHeatSeq<T>(heatNo: string, write: (heatSeq: number) => Promise<T>): Promise<T> {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const { _max } = await stockPrisma.physicalStock.aggregate({
+    const { _max } = await stockPrisma.heatEntry.aggregate({
       where: { heat_no: heatNo },
       _max: { heat_seq: true },
     });
@@ -63,6 +82,106 @@ async function withHeatSeq<T>(heatNo: string, write: (heatSeq: number) => Promis
     }
   }
   throw new Error("Could not assign a heat serial number.");
+}
+
+// ---- Heat entry (mobile form) -------------------------------------------
+
+const toEntryRow = (row: StockWithHeats, e: StockWithHeats["heat_entries"][number]): HeatEntryRow => ({
+  id: e.id,
+  heat_no: e.heat_no,
+  heat_seq: e.heat_seq,
+  serial_no: buildSerial(row, e),
+  sheet_file_id: e.sheet_file_id,
+});
+
+function toQueueItem(row: StockWithHeats): HeatQueueItem {
+  return {
+    id: row.id,
+    erp_code: row.erp_code,
+    location: row.location,
+    description: [row.l2_valve_type, row.dimension, row.l4_component, row.l5_material, row.l6_std, row.l7_dimension]
+      .filter((v) => String(v ?? "").trim())
+      .join(" / "),
+    entries: row.heat_entries.map((e) => toEntryRow(row, e)),
+  };
+}
+
+/** Every assigned serial with its stock row's valve type and size, for screens that record details against a serial. */
+export async function listHeatSerials(): Promise<HeatSerial[]> {
+  const entries = await stockPrisma.heatEntry.findMany({ include: { physical_stock: true }, orderBy: { created_at: "desc" } });
+  return entries.map((e) => ({
+    id: e.id,
+    serial_no: buildSerial(e.physical_stock, e),
+    valve_type: e.physical_stock.l2_valve_type,
+    size: e.physical_stock.dimension,
+  }));
+}
+
+export async function listHeatCategories(): Promise<string[]> {
+  const rows = await stockPrisma.physicalStock.findMany({
+    where: { l8_item_category: { not: null }, erp_code: { not: null } },
+    distinct: ["l8_item_category"],
+    select: { l8_item_category: true },
+    orderBy: { l8_item_category: "asc" },
+  });
+  return rows.map((r) => r.l8_item_category!).filter((c) => c.trim());
+}
+
+/** Coded rows of a category not yet marked done, oldest first: the form walks these in order. */
+export async function listHeatQueue(category: string): Promise<HeatQueueItem[]> {
+  const rows = await stockPrisma.physicalStock.findMany({
+    where: { l8_item_category: category, heat_done: false, erp_code: { not: null } },
+    orderBy: { created_at: "asc" },
+    include: HEAT_ENTRIES,
+  });
+  return rows.filter((r) => String(r.erp_code).trim()).map(toQueueItem);
+}
+
+/** Reserves the next serial of `heatNo` for the row; the sheet is attached later. */
+export async function addHeatEntry(stockId: string, heatNo: string): Promise<ActionResult<HeatEntryRow>> {
+  return run(async () => {
+    const heat = heatNo.trim().toUpperCase();
+    if (!heat) throw new Error("Enter the heat no.");
+    const row = await findStockWithHeats(stockId);
+    if (!row) throw new Error("Physical stock row not found.");
+    if (!String(row.erp_code ?? "").trim()) throw new Error("This row has no ERP CODE.");
+    if (row.heat_entries.some((e) => !e.sheet_file_id)) throw new Error("Upload the sheet of the previous serial first.");
+    const entry = await withHeatSeq(heat, (heat_seq) =>
+      stockPrisma.heatEntry.create({ data: { physical_stock_id: stockId, heat_no: heat, heat_seq } }),
+    );
+    return toEntryRow(row, entry);
+  });
+}
+
+export async function attachHeatSheet(entryId: string, sheetFileId: string): Promise<ActionResult<HeatEntryRow>> {
+  return run(async () => {
+    const entry = await stockPrisma.heatEntry.update({
+      where: { id: entryId },
+      data: { sheet_file_id: sheetFileId },
+      include: { physical_stock: { include: HEAT_ENTRIES } },
+    });
+    return toEntryRow(entry.physical_stock, entry);
+  });
+}
+
+/** Drops a reserved serial whose sheet was never uploaded (its number is left as a gap). */
+export async function deletePendingHeatEntry(entryId: string): Promise<ActionResult<null>> {
+  return run(async () => {
+    const entry = await stockPrisma.heatEntry.findUnique({ where: { id: entryId } });
+    if (!entry) return null;
+    if (entry.sheet_file_id) throw new Error("A serial with an uploaded sheet cannot be removed.");
+    await stockPrisma.heatEntry.delete({ where: { id: entryId } });
+    return null;
+  });
+}
+
+export async function setHeatDone(stockId: string): Promise<ActionResult<null>> {
+  return run(async () => {
+    const pending = await stockPrisma.heatEntry.count({ where: { physical_stock_id: stockId, sheet_file_id: null } });
+    if (pending) throw new Error("Upload the sheet of every serial before Done.");
+    await stockPrisma.physicalStock.update({ where: { id: stockId }, data: { heat_done: true } });
+    return null;
+  });
 }
 
 /**
@@ -81,24 +200,8 @@ export async function updatePhysicalStockField(
 ): Promise<ActionResult<FieldUpdate>> {
   if (!allowed.has(field)) return { success: false, error: `Field "${field}" is not editable.` };
   return run(async () => {
-    const row = await stockPrisma.physicalStock.findUnique({ where: { id } });
+    const row = await findStockWithHeats(id);
     if (!row) throw new Error("Physical stock row not found.");
-    // HEAT NO: needs an ERP code (the serial is built from it). A new heat takes
-    // the next number of that heat (the old heat's number is left as a gap);
-    // blank clears heat and number.
-    if (field === "heat_no") {
-      const heat = value?.trim().toUpperCase() || null;
-      if (heat === (row.heat_no ?? null)) return {} as FieldUpdate;
-      if (!heat) {
-        await stockPrisma.physicalStock.update({ where: { id }, data: { heat_no: null, heat_seq: null } });
-        return { heat_no: null, heat_seq: null, serial_no: null } as FieldUpdate;
-      }
-      if (!String(row.erp_code ?? "").trim()) throw new Error("Fill the ERP CODE before the heat no.");
-      return withHeatSeq(heat, async (heat_seq) => {
-        await stockPrisma.physicalStock.update({ where: { id }, data: { heat_no: heat, heat_seq } });
-        return { heat_no: heat, heat_seq, serial_no: buildSerial({ ...row, heat_no: heat, heat_seq }) } as FieldUpdate;
-      });
-    }
     // Blank-only columns (ERP CODE, location, the L/Dia dropdowns) may be
     // filled but never overwritten, except on a row with a blank ERP CODE.
     const erpBlank = !String(row.erp_code ?? "").trim();
@@ -129,9 +232,10 @@ export async function updatePhysicalStockField(
     // coded row is folded into it. Zero or several matches: leave it alone.
     if (erpBlank && IDENTITY_FIELDS.has(field) && String(next.location ?? "").trim()) {
       const key = itemKey(next);
-      const targets = (await stockPrisma.physicalStock.findMany({ where: { erp_code: { not: null } } })).filter(
-        (r) => String(r.erp_code).trim() && !r.heat_no && r.id !== id && itemKey(r) === key,
-      );
+      // A row with heat entries is its own serialised item: never merged into.
+      const targets = (
+        await stockPrisma.physicalStock.findMany({ where: { erp_code: { not: null }, heat_entries: { none: {} } } })
+      ).filter((r) => String(r.erp_code).trim() && r.id !== id && itemKey(r) === key);
       if (targets.length === 1) {
         const [target] = targets;
         const merge = mergeRows(target, next);
@@ -148,8 +252,8 @@ export async function updatePhysicalStockField(
         } as FieldUpdate;
       }
     }
-    // The serial embeds l8_item_category: send the refreshed one with the edit.
-    return (row.heat_no ? { ...changes, serial_no: buildSerial(next) } : changes) as FieldUpdate;
+    // The serial embeds erp_code and l8_item_category: send the refreshed one with the edit.
+    return { ...changes, ...(row.heat_entries.length ? heatColumns(next) : {}) } as FieldUpdate;
   });
 }
 
@@ -178,15 +282,13 @@ export async function createPhysicalStock(
     const data: Record<string, string | boolean | number | null> = {};
     for (const f of NEW_ITEM_FIELDS) data[f] = input[f]?.trim().toUpperCase() || null;
 
-    // A row with a heat no is its own serialised item: never added into another.
+    // A row with heat entries is its own serialised item: never added into.
     const key = itemKey(data);
-    const generated = data.heat_no
-      ? []
-      : await stockPrisma.physicalStock.findMany({
-          where: { erp_code: { not: null } },
-          orderBy: { created_at: "asc" },
-        });
-    const match = generated.find((r) => !r.heat_no && isGeneratedErpCode(r.erp_code) && itemKey(r) === key);
+    const generated = await stockPrisma.physicalStock.findMany({
+      where: { erp_code: { not: null }, heat_entries: { none: {} } },
+      orderBy: { created_at: "asc" },
+    });
+    const match = generated.find((r) => isGeneratedErpCode(r.erp_code) && itemKey(r) === key);
     if (match) {
       const received_qty = addQty(match.received_qty, data.received_qty);
       const dispatch_qty = addQty(match.dispatch_qty, data.dispatch_qty);
@@ -206,11 +308,7 @@ export async function createPhysicalStock(
     if (available !== null) data.available_qty = available;
     const marking = computeMajorMinorMarking(data.l8_item_category as string | null);
     if (marking !== null) data.majorminor_marking = marking;
-    if (typeof data.heat_no === "string") {
-      await withHeatSeq(data.heat_no, (heat_seq) => stockPrisma.physicalStock.create({ data: { ...data, heat_seq } }));
-    } else {
-      await stockPrisma.physicalStock.create({ data });
-    }
+    await stockPrisma.physicalStock.create({ data });
     return { erp_code, merged: false };
   });
 }
@@ -227,9 +325,13 @@ export async function saveSerialDimension(
   standard: DimensionStandard | null,
 ): Promise<ActionResult<{ flags: string[] }>> {
   return run(async () => {
-    const row = await stockPrisma.physicalStock.findUnique({ where: { id: stockId } });
+    const row = await stockPrisma.physicalStock.findUnique({
+      where: { id: stockId },
+      include: { heat_entries: true },
+    });
     if (!row) throw new Error("Physical stock row not found.");
-    if (!buildSerial(row)) throw new Error("Assign a heat no (serial no) before capturing dimensions.");
+    // Serials now live per heat entry; dimensions need at least one serial on the row.
+    if (row.heat_entries.length === 0) throw new Error("Assign a heat no (serial no) before capturing dimensions.");
     const flags = standard ? outOfTolerance(values, standard) : [];
     const data = { values, standard: standard ?? undefined, flags };
     await stockPrisma.serialDimension.upsert({

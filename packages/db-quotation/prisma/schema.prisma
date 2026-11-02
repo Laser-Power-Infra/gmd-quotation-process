@@ -758,6 +758,9 @@ model LookupOption {
   value     String
   sortOrder Int      @default(0)
   isActive  Boolean  @default(true)
+  // UTILITY master key (UTL-<sector>-<state>-<nnn>) and its default state
+  code         String?  @unique
+  defaultState String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1096,6 +1099,44 @@ model EngineeringSync {
   @@map("engineering_sync")
 }
 
+/// One valve serial number and the dimensions measured against it at
+/// assignment. Dimension columns are String? like the engineering tables so the
+/// inspector's entry survives verbatim. `standard` snapshots the pre-filled
+/// standard values + tolerances (lib/valveSerial.ts) so the out-of-tolerance
+/// flag does not move when the Technicals sheet is re-synced. The serial itself
+/// is assigned by the heat-entry form (stock DB `HeatEntry`); `heatEntryId`
+/// links to it (cross-database, so no FK) and survives an ERP-code rename.
+model ValveSerial {
+  id                String   @id @default(cuid())
+  serialNo          String   @unique
+  heatEntryId       String?  @unique
+  contractNo        String?
+  valveType         String?
+  sizeDn            String?
+  pnRating          String?
+  odMm              String?
+  idMm              String?
+  pcdMm             String?
+  boltHoles         String?
+  holeDiaMm         String?
+  flangeThicknessMm String?
+  faceToFaceMm      String?
+  heightOpenMm      String?
+  heightClosedMm    String?
+  weightKg          String?
+  flangeStandard    String?
+  bodyMoc           String?
+  discMoc           String?
+  seatMoc           String?
+  actuatorGearbox   String?
+  standard          Json?
+  assignedBy        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("valve_serial")
+}
+
 // ─────────────────────────────────────────────────────────────
 // Execution Tracking sync support.
 //
@@ -1219,6 +1260,25 @@ model LedgerFollowUp {
   @@index([ledger, accCode])
 }
 
+// Append-only history of LedgerFollowUp saves (one snapshot per save), so past promises stay visible. No FK, same as PartyLegalCaseLog.
+model LedgerFollowUpLog {
+  id             String    @id @default(cuid())
+  ledger         String
+  accCode        String
+  vrNo           String    @default("")
+  owner          String?
+  lastFollowUp   DateTime?
+  promisedDate   DateTime?
+  promisedAmount Decimal?  @db.Decimal(18, 2)
+  nextActionDate DateTime?
+  status         String?
+  remarks        String?
+  changedById    String?
+  changedAt      DateTime  @default(now())
+
+  @@index([ledger, accCode, changedAt])
+}
+
 // Legal status and doubtful-debt provision per party. Set by Accounts/Legal, never overwritten by the sheet sync.
 model PartyLegalCase {
   id              String    @id @default(cuid())
@@ -1310,4 +1370,43 @@ model BankGuarantee {
   syncedAt        DateTime @default(now())
 
   @@index([beneficiaryName])
+}
+
+/// One row per offer VRNO of the ERP "INSPECTION OFFER DUMP" tab
+/// (BOM MAST ERP workbook, gid 148043829). Synced by step 5 of the
+/// `contract-review` scheduler job. `lines` keeps one entry per sheet row
+/// (item line) with every dump column, as text.
+model InspectionOffer {
+  id           String            @id @default(cuid())
+  vrno         String            @unique
+  vrDate       String?
+  accCode      String?
+  contractVrno String?
+  lines        Json              @default("[]")
+  report       InspectionReport?
+  syncedAt     DateTime          @default(now())
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+/// Draft inspection report, auto-created by the sync when a new offer VRNO
+/// appears. `data` holds the JIR-style body (header / items / qap / tolerance /
+/// mtc / observations); JSON because the final report format is not fixed yet.
+/// `status`: draft | readings_entered | reviewed | final.
+model InspectionReport {
+  id        String          @id @default(cuid())
+  offerId   String          @unique
+  offer     InspectionOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  status    String          @default("draft")
+  data      Json
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+/// Service / job-work codes from ITEM MASTER ERP: LEVEL_1_NAME = "SERVICES" or
+/// ITEM_NATURE = "SR". Snapshot-replaced by the service-orders job.
+model ServiceItem {
+  itemCode String   @id
+  itemName String?
+  syncedAt DateTime @default(now())
 }

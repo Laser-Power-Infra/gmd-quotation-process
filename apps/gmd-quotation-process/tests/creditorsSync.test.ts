@@ -2,13 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   mapCreditorRow, mapAdvanceRow, resolveCreditorColumns, resolveAdvanceColumns,
-  CREDITOR_HEADERS, ADVANCE_HEADERS, CREDITORS_TAB, ADVANCES_TAB, parseAmount, parseSheetDate,
+  CREDITOR_HEADERS, ADVANCE_HEADERS, parseAmount, parseSheetDate,
 } from '../lib/creditorsSync.js'
 
 const CH = Object.values(CREDITOR_HEADERS)
 const AH = Object.values(ADVANCE_HEADERS)
-const cIdx = resolveCreditorColumns(CH, CREDITORS_TAB)
-const aIdx = resolveAdvanceColumns(AH, ADVANCES_TAB)
+const cIdx = resolveCreditorColumns(CH, 'CREDITORS')
+const aIdx = resolveAdvanceColumns(AH, 'ADVANCE TO CREDITORS')
 
 // headers are declared in column order, so key order == column order
 function build<T extends Record<string, string>>(headers: T, base: Record<keyof T, string>, o: Partial<Record<keyof T, string>>) {

@@ -265,7 +265,7 @@ export async function fetchEnquiryPage(
     for (const row of closureRows) {
       const status = (row.status ?? "").trim();
       const count = Number(row.count ?? 0);
-      if (status === "" || status === "-") {
+      if (status === "" || status === "-" || status.toLowerCase() === "not sent") {
         notSentCount += count;
         continue;
       }

@@ -36,10 +36,10 @@ function line(partial: Partial<PurchaseRow>): PurchaseRow {
     salesContract: null,
     partyRefNo: null,
     partyRefDate: null,
-    inTransit: null,
     lastPoRate: null,
     minPoRate: null,
     lastPoDate: null,
+    inTransit: null,
     lineValue: null,
     ...partial,
   };

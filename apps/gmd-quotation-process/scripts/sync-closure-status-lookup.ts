@@ -9,7 +9,7 @@ const APPLY = process.argv.includes("--apply");
 const TYPE = "CLOSURE_STATUS";
 
 // Canonical Closure Status lookup values (single source of truth).
-const DESIRED_LOOKUPS = ["Sent", "Rejected", "Pending"];
+const DESIRED_LOOKUPS = ["Sent", "Rejected", "Pending", "Not Sent"];
 
 // Item values to rewrite to a canonical value.
 const ALIASES: Record<string, string> = {

@@ -31,6 +31,10 @@ import {
 } from "@/lib/pbg/pbg-tree";
 import type { PbgRecord } from "@/lib/pbg/pbg-data";
 import { computeStats } from "@/lib/pbg/stats";
+import {
+  EXPIRING_SOON_DAYS,
+  getExpiryHighlight,
+} from "@/lib/pbg/expiry-status";
 import { formatAmount } from "@/lib/pbg/format";
 import { computeExtendedValidity } from "@/lib/pbg/validity";
 import {
@@ -151,9 +155,11 @@ type CellChange = {
 export function PbgTable({
   records,
   includeClosed,
+  todayIso,
 }: {
   records: PbgRecord[];
   includeClosed: boolean;
+  todayIso: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -202,6 +208,17 @@ export function PbgTable({
   }, [rows, filters, query, selections]);
 
   const stats = useMemo(() => computeStats(filtered), [filtered]);
+
+  const expiryCounts = useMemo(() => {
+    let expired = 0;
+    let expiring = 0;
+    for (const row of filtered) {
+      const state = getExpiryHighlight(row.expiryDate, todayIso, row.status);
+      if (state === "expired") expired += 1;
+      else if (state === "expiring") expiring += 1;
+    }
+    return { expired, expiring };
+  }, [filtered, todayIso]);
 
   const activeFilterDefs = useMemo(
     () => PBG_COLUMN_DEFS.filter((def) => isFilterActive(filters[def.key])),
@@ -465,6 +482,7 @@ export function PbgTable({
         distinctMap={distinctMap}
         statusOptions={statusOptions}
         saving={saving}
+        todayIso={todayIso}
         onCommit={handleCommit}
         onUploadBankGuarantee={handleUploadBankGuarantee}
         onRemoveBankGuarantee={handleRemoveBankGuarantee}
@@ -595,6 +613,25 @@ export function PbgTable({
             {stats.total === 1 ? "" : "s"}
           </span>
         </div>
+
+        {(expiryCounts.expired > 0 || expiryCounts.expiring > 0) && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 self-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
+            {expiryCounts.expired > 0 && (
+              <span className="inline-flex items-center gap-1.5 font-medium text-rose-700">
+                <span className="h-2.5 w-2.5 rounded-full bg-rose-500" />
+                Expired
+                <span className="tabular-nums">({expiryCounts.expired})</span>
+              </span>
+            )}
+            {expiryCounts.expiring > 0 && (
+              <span className="inline-flex items-center gap-1.5 font-medium text-amber-700">
+                <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                Expiring ≤ {EXPIRING_SOON_DAYS} days
+                <span className="tabular-nums">({expiryCounts.expiring})</span>
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {(activeFilterDefs.length > 0 || selections.length > 0) && (

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { SmartsheetTender } from "@/types/smartsheetTender";
+import { canonicalUtility } from "@gmd/contract-review/utility-master";
 
 export class DatabaseSmartsheetService {
   static async getAllSmartsheetTenders(): Promise<SmartsheetTender[]> {
@@ -44,7 +45,8 @@ export class DatabaseSmartsheetService {
         enquiryDate: record.enquiryDate || null,
         partyName: record.partyName || null,
         docketNumber: record.docketNumber,
-        utility: record.utility || null,
+        // Map through the utility master so a sync doesn't undo the utility remap.
+        utility: canonicalUtility(record.utility),
         quotationNumber: record.quotationNumber || null,
         quotationDate: record.quotationDate || null,
         accountHolder: record.accountHolder || null,

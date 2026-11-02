@@ -12,6 +12,7 @@
     "./columns": "./src/lib/columns.ts",
     "./validation": "./src/lib/contractValidation.ts",
     "./pn-rating": "./src/lib/pnRatingMatcher.ts",
+    "./utility-master": "./src/lib/utilityMaster.ts",
     "./flags": "./src/flags.ts",
     "./styles.css": "./src/styles.css"
   },

@@ -11,5 +11,5 @@ export const metadata: Metadata = {
 export const runtime = "nodejs";
 
 export default async function Page() {
-  return <PurchaseDashboard flags={await getPurchaseFlags()} actions={{ ...actions }} />;
+  return <PurchaseDashboard title="Purchases & Pending Receipts" flags={await getPurchaseFlags()} actions={{ ...actions }} />;
 }

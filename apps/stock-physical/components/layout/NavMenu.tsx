@@ -9,7 +9,10 @@ const TAB =
 const TAB_ACTIVE =
   "text-foreground after:absolute after:inset-x-3 after:-bottom-[11px] after:h-0.5 after:rounded-full after:bg-primary";
 
-const NAV = [{ label: "Physical Stock", href: "/" }];
+const NAV = [
+  { label: "Physical Stock", href: "/" },
+  { label: "Heat Entry", href: "/heat-entry" },
+];
 
 export default function NavMenu() {
   const pathname = usePathname();

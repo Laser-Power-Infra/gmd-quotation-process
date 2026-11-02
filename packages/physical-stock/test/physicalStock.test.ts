@@ -91,15 +91,14 @@ test("blank-only dropdown columns map to editable DB fields", () => {
 });
 
 test("buildSerial joins code, category, heat and number", () => {
-  const row = { erp_code: "F001", l8_item_category: "CASTING", heat_no: "3500", heat_seq: 6 };
-  assert.equal(buildSerial(row), "F001-CASTING-3500-6");
-  assert.equal(buildSerial({ ...row, heat_no: null }), null);
-  assert.equal(buildSerial({ ...row, heat_seq: null }), null);
+  const row = { erp_code: "F001", l8_item_category: "CASTING" };
+  assert.equal(buildSerial(row, { heat_no: "3500", heat_seq: 6 }), "F001-CASTING-3500-6");
+  assert.equal(buildSerial({ erp_code: "F001" }, { heat_no: "3500", heat_seq: 6 }), "F001--3500-6");
 });
 
-test("HEAT NO is editable through the flag", () => {
-  const flags = resolvePhysicalStockFlags({ editableColumns: ["HEAT NO"] });
-  assert.deepEqual([...editableFieldsFor(flags)], ["heat_no"]);
+test("HEAT NO is never editable through the grid", () => {
+  const flags = resolvePhysicalStockFlags({ editableColumns: ["HEAT NO" as never] });
+  assert.equal(editableFieldsFor(flags).size, 0);
 });
 
 // Allow-list is checked before any DB access, so no database is needed.

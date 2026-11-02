@@ -18,9 +18,7 @@ import {
 } from "@/lib/debtorsSync";
 import {
   ADVANCES_GID,
-  ADVANCES_TAB,
   CREDITORS_GID,
-  CREDITORS_TAB,
   mapAdvanceRow,
   mapCreditorRow,
   resolveAdvanceColumns,
@@ -89,7 +87,9 @@ const chunks = <T>(rows: T[]) =>
 /** Real sheet + DB, imported lazily so tests that inject deps never load them. */
 async function defaultDeps(): Promise<LedgerSyncDeps> {
   const { prisma } = await import("@/lib/prisma");
-  const { readSheetTabByGid } = await import("@/lib/gmd_lib/bomMastErp");
+  const { readSheetTabByGid } = await import(
+    "@/lib/gmd_lib/bomMastErp"
+  );
   // Delegates differ per table, so each writer is spelled out. Delete runs
   // first inside the transaction, so a failed insert leaves the table as it was.
   return {
@@ -184,7 +184,7 @@ export async function runLedgerSync(opts: LedgerSyncOptions = {}): Promise<Ledge
     dryRun,
     () => d.readByGid(CREDITORS_GID),
     (t) => {
-      const idx = resolveCreditorColumns(t.headers, t.tabTitle ?? CREDITORS_TAB);
+      const idx = resolveCreditorColumns(t.headers, t.tabTitle ?? "CREDITORS");
       return (row) => mapCreditorRow(row, idx);
     },
     d.creditors,
@@ -193,7 +193,7 @@ export async function runLedgerSync(opts: LedgerSyncOptions = {}): Promise<Ledge
     dryRun,
     () => d.readByGid(ADVANCES_GID),
     (t) => {
-      const idx = resolveAdvanceColumns(t.headers, t.tabTitle ?? ADVANCES_TAB);
+      const idx = resolveAdvanceColumns(t.headers, t.tabTitle ?? "ADVANCE TO CREDITORS");
       return (row) => mapAdvanceRow(row, idx);
     },
     d.advances,

@@ -41,7 +41,7 @@ export const physicalStockEditableColumns = flag<EditableHeader[]>({
   defaultValue: [],
   // Blank ERP CODE and the L/Dia dropdowns are added for admin/developer in
   // lib/physical-stock-flags.ts.
-  decide: () => ["DISPATCH QTY.", "REMARKS", "HEAT NO"],
+  decide: () => ["DISPATCH QTY.", "REMARKS"],
 });
 
 export const physicalStockHiddenSidebar = flag<SidebarSection[]>({

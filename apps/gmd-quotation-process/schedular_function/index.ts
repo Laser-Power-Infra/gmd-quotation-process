@@ -126,6 +126,12 @@ export {
 } from "./contract-review-ic-dump";
 
 export {
+  runInspectionOfferSync,
+  type InspectionOfferSyncOptions,
+  type InspectionOfferSyncResult,
+} from "./inspection-offer-sync";
+
+export {
   runPendingDocketCreation,
   type PendingDocketCreationOptions,
   type PendingDocketCreationResult,
@@ -219,6 +225,11 @@ export {
 } from "./run-pbg";
 
 export {
+  runScheduledClosureStatus,
+  type ScheduledClosureStatusResult,
+} from "./run-closure-status";
+
+export {
   planPbgReminders,
   runScheduledPbgReminders,
   type PbgReminderPlan,
@@ -236,6 +247,14 @@ export {
   type LedgerPartReport,
   type ScheduledLedgerSyncResult,
 } from "./ledger-sync";
+
+export {
+  runServiceOrdersSync,
+  runScheduledServiceOrders,
+  type ServiceOrdersSyncReport,
+  type ServiceOrdersPartReport,
+  type ScheduledServiceOrdersResult,
+} from "./service-orders-sync";
 
 export {
   runScheduledPurchaseOrders,
