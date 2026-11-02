@@ -179,6 +179,48 @@ export async function inTransitForItems(itemCodes?: readonly string[]): Promise<
   return out;
 }
 
+/**
+ * Who the in-transit material is coming from, per ERP item code: one entry per
+ * open PO line, "SUPPLIER — PO no (date), due DELIVERY_SCH: pending / received",
+ * joined with "; ". Received is QTYEXECUTE, the GRN quantity already booked
+ * against the line, so the GRN tab itself is not needed here.
+ */
+export async function incomingFromForItems(itemCodes?: readonly string[]): Promise<Map<string, string>> {
+  const codes = itemCodes?.filter((c) => c && c.trim()).map((c) => c.trim());
+  if (codes && codes.length === 0) return new Map();
+
+  const lines = await stockPrisma.purchaseOrderLine.findMany({
+    where: {
+      AND: [
+        { inTransit: { gt: 0 } },
+        { NOT: { itemCode: null } },
+        ...(codes ? [{ itemCode: { in: codes } }] : []),
+      ],
+    },
+    orderBy: [{ itemCode: "asc" }, { poDate: "asc" }, { poNo: "asc" }],
+    select: {
+      itemCode: true,
+      supplierName: true,
+      poNo: true,
+      poDate: true,
+      deliverySched: true,
+      balanceQty: true,
+      qtyExecuted: true,
+    },
+  });
+
+  const out = new Map<string, string>();
+  for (const l of lines) {
+    if (!l.itemCode) continue;
+    const entry =
+      `${l.supplierName || "Unknown supplier"} — PO ${l.poNo}${l.poDate ? ` (${l.poDate})` : ""}` +
+      `${l.deliverySched ? `, due ${l.deliverySched}` : ""}: ${l.balanceQty ?? "?"} pending, ${l.qtyExecuted || "0"} received`;
+    const prev = out.get(l.itemCode);
+    out.set(l.itemCode, prev ? `${prev}; ${entry}` : entry);
+  }
+  return out;
+}
+
 /** Distinct values for the table's filter dropdowns. */
 export async function purchaseFacets(): Promise<{ suppliers: string[]; contracts: string[] }> {
   const [suppliers, contracts] = await Promise.all([

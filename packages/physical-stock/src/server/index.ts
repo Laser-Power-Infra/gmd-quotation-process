@@ -40,6 +40,7 @@ export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
     serial_no: buildSerial(rest),
     // Filled by the host app's load() from @gmd/purchase; null = not looked up.
     in_transit: null,
+    incoming_from: null,
   }));
 }
 

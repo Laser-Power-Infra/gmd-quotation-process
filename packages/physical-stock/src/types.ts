@@ -44,6 +44,8 @@ export interface PhysicalStockRow {
    * not read purchase data — blank means "unknown", never "none on the way".
    */
   in_transit: number | null;
+  /** Open PO lines behind `in_transit` (supplier, PO no/date, due, pending/received); filled like it. */
+  incoming_from: string | null;
 }
 
 export type ActionResult<T> =

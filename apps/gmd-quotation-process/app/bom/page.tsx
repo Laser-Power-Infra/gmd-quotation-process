@@ -21,6 +21,7 @@ import {
 } from "@gmd/ui/components/dialog";
 import { Input } from "@gmd/ui/components/input";
 import { looseIncludes } from "@/lib/squish";
+import ErpBomTab from "./ErpBomTab";
 
 type ItemNamePlan = {
   phase1: {
@@ -203,7 +204,45 @@ function FilterDropdown({
   );
 }
 
+const TABS = [
+  { key: "verify", label: "Verify BOM" },
+  { key: "erp", label: "ERP BOM" },
+] as const;
+
 export default function BomPage() {
+  const [tab, setTab] = useState<(typeof TABS)[number]["key"]>("verify");
+  return (
+    <div className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
+      <div className="shrink-0 px-6 pt-3">
+        <div className="inline-flex items-center p-0.5 rounded-lg bg-muted border border-border">
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                tab === t.key
+                  ? "bg-card text-foreground shadow-2xs font-bold"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {tab === "erp" ? (
+        <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <ErpBomTab />
+        </main>
+      ) : (
+        <VerifyBomView />
+      )}
+    </div>
+  );
+}
+
+function VerifyBomView() {
   const [data, setData] = useState<BomData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
