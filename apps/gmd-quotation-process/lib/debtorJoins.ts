@@ -95,6 +95,23 @@ export function creditNotesByBill(rows: { vrNo: string | null; tCode: string | n
   return m;
 }
 
+/** Promised amount (and party count) whose promised date falls in today's Monday-to-Sunday week. Dates are yyyy-mm-dd. */
+export function promisedThisWeek(follows: Pick<FollowUp, "promisedDate" | "promisedAmount">[], today: Date): { amount: number; parties: number } {
+  const d = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  const from = d.toISOString().slice(0, 10);
+  d.setUTCDate(d.getUTCDate() + 6);
+  const to = d.toISOString().slice(0, 10);
+  let amount = 0;
+  let parties = 0;
+  for (const f of follows) {
+    if (!f.promisedDate || f.promisedDate < from || f.promisedDate > to) continue;
+    parties += 1;
+    amount += Number(f.promisedAmount) || 0;
+  }
+  return { amount, parties };
+}
+
 export function toCsv(header: string[], rows: (string | number | null | undefined)[][]): string {
   const q = (v: string | number | null | undefined) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   return [header, ...rows].map((r) => r.map(q).join(",")).join("\r\n");

@@ -4,7 +4,9 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { User } from "lucide-react";
 import { createColumnHelper, createSortedRowModel, rowSortingFeature, tableFeatures, useTable } from "@tanstack/react-table";
 import { toast } from "sonner";
-import { saveLedgerFollowUpAction } from "@/app/actions/ledgerFollowUp";
+import * as XLSX from "xlsx";
+import { getLedgerFollowUpHistoryAction, saveLedgerFollowUpAction } from "@/app/actions/ledgerFollowUp";
+import type { FollowUpHistoryRow } from "@/app/actions/ledgerFollowUp";
 import { saveLegalCaseAction } from "@/app/actions/partyLegalCase";
 import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import { squish } from "@gmd/dashboard/lib/squish";
@@ -16,7 +18,7 @@ import type { TablePrefs } from "@/lib/tablePrefs";
 import { LEGAL_STATUSES, isUnderLitigation, resolveProvision, splitDues } from "@/lib/legalStatus";
 import type { LegalCaseView } from "@/lib/legalStatus";
 import { formatIndianNumber } from "@/lib/formatCurrency";
-import { EMPTY_FOLLOW_UP, bgExposureByName, bgFor, billInfoFor, creditNoteRefOf, creditNotesByBill, downloadCsv, followUpFor, toCsv } from "@/lib/debtorJoins";
+import { EMPTY_FOLLOW_UP, bgExposureByName, bgFor, billInfoFor, creditNoteRefOf, creditNotesByBill, downloadCsv, followUpFor, promisedThisWeek, toCsv } from "@/lib/debtorJoins";
 import type { BgRow, BillInfo, FollowUp } from "@/lib/debtorJoins";
 import { dueToday, partyMsme } from "@/lib/msme";
 import type { MsmeSettings, PartyMsme } from "@/lib/msme";
@@ -194,6 +196,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
   const [open, setOpen] = useState<string | null>(null);
   const [follow, setFollow] = useState(followUps);
   const [legal, setLegal] = useState(legalCases);
+  const [history, setHistory] = useState<{ accCode: string; rows: FollowUpHistoryRow[] } | null>(null);
 
   // Read saved prefs after mount (not in the initial state) so server and client render the same first paint.
   useEffect(() => {
@@ -207,6 +210,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
 
   const search = prefs.filters.search ?? "";
   const owner = prefs.filters.owner ?? "";
+  const clientType = prefs.filters.clientType ?? "";
   const overdueOnly = !!prefs.filters.overdueOnly;
   const over45 = !!prefs.filters.over45;
   const broken = !!prefs.filters.broken;
@@ -219,12 +223,27 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
     });
   const fmt = prefs.amountFormat === "lakh" ? formatLakh : (n: number) => `${n < 0 ? "-" : ""}₹${formatIndianNumber(Math.abs(n))}`;
 
+  const loadHistory = async (accCode: string) => {
+    try {
+      const rows = await getLedgerFollowUpHistoryAction("debtor", accCode);
+      setHistory((h) => (h === null || h.accCode === accCode ? { accCode, rows } : h));
+    } catch {
+      toast.error("Could not load the follow-up history.");
+    }
+  };
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHistory(open ? { accCode: open, rows: [] } : null);
+    if (open) void loadHistory(open);
+  }, [open]);
+
   // Optimistic: show the edit now, put the old value back and toast if the save fails.
   const saveFollowUp = async (accCode: string, field: keyof FollowUp, value: string) => {
     const prev = follow[accCode];
     const next = { ...EMPTY_FOLLOW_UP, ...prev, [field]: value.trim() || null };
     setFollow((m) => ({ ...m, [accCode]: next }));
     const res = await saveLedgerFollowUpAction({ ledger: "debtor", accCode, ...next });
+    if (res.success && accCode === open) void loadHistory(accCode);
     if (!res.success) {
       setFollow((m) => {
         const rest = { ...m };
@@ -259,6 +278,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
   const split = useMemo(() => splitDues(summary.parties, new Map(Object.entries(legal))), [summary, legal]);
 
   const owners = useMemo(() => [...new Set(Object.values(follow).map((f) => f.owner).filter((o): o is string => !!o))].sort(), [follow]);
+  const clientTypes = useMemo(() => [...new Set(Object.values(follow).map((f) => f.clientType).filter((o): o is string => !!o))].sort(), [follow]);
 
   // shortcut: re-sorts as soon as an edited cell is saved (a row can jump after editing the sorted column), upgrade by freezing order while an input is focused
   const openBills = useMemo(() => {
@@ -280,6 +300,8 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
       return { ...p, bg: bgFor(bgMap, p.accName), follow: f, legal: l, msme: m, promise };
     });
   }, [summary, bgMap, follow, legal, openBills, msme, today]);
+  const promised = useMemo(() => promisedThisWeek(withExtras.map((p) => p.follow), today), [withExtras, today]);
+  const top10 = useMemo(() => withExtras.filter((p) => p.overdue > 0).sort((a, b) => b.overdue - a.overdue).slice(0, 10), [withExtras]);
   // Ageing by stage: litigating parties have a null stage and so never appear here.
   const stageStats = useMemo(() => {
     const out = Array.from({ length: 7 }, () => ({ count: 0, value: 0 }));
@@ -299,6 +321,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
         if (isUnderLitigation(p.legal.status)) return false;
         if (needle && !squish(`${p.accName} ${p.accCode}`).includes(needle)) return false;
         if (owner && p.follow.owner !== owner) return false;
+        if (clientType && p.follow.clientType !== clientType) return false;
         if (overdueOnly && p.overdue <= 0) return false;
         // shortcut: "past 45 days" is approximated by the 61+ buckets, upgrade with the 45-day bucket cut
         if (over45 && p.buckets["61-90"] + p.buckets["91-180"] + p.buckets["180+"] <= 0) return false;
@@ -309,7 +332,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
         if (view === "stage" && stageFilter !== null && p.msme.stage !== stageFilter) return false;
         return true;
       });
-  }, [withExtras, today, search, owner, overdueOnly, over45, broken, bucket, view, stageFilter]);
+  }, [withExtras, today, search, owner, clientType, overdueOnly, over45, broken, bucket, view, stageFilter]);
 
   const table = useTable({
     features,
@@ -349,17 +372,21 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
       ),
     );
 
-  const exportStatement = (accName: string) =>
-    downloadCsv(
-      `statement_${accName.replace(/[^A-Za-z0-9]+/g, "_")}.csv`,
-      toCsv(
-        ["Invoice no", "Date", "Order no", "PO ref", "Items", "Amount", "Allocated", "Balance", "Due date", "Days overdue", "Credit note"],
-        bills.map(({ r, days, bal }) => {
-          const i = billInfoFor(billInfo, r.vrNo);
-          return [r.vrNo, formatDate(r.vrDate), i?.orderNo ?? r.particular, i?.poRef, i?.items, r.drAmt, r.drAllocAmt, bal, formatDate(r.dueDate), days, creditRefOf(r)];
-        }),
-      ),
-    );
+  const STATEMENT_HEADER = ["Invoice no", "Date", "Order no", "PO ref", "Items", "Amount", "Allocated", "Balance", "Due date", "Days overdue", "Credit note"];
+  const statementRows = () =>
+    bills.map(({ r, days, bal }) => {
+      const i = billInfoFor(billInfo, r.vrNo);
+      return [r.vrNo, formatDate(r.vrDate), i?.orderNo ?? r.particular, i?.poRef, i?.items, r.drAmt, r.drAllocAmt, bal, formatDate(r.dueDate), days, creditRefOf(r)];
+    });
+  const statementName = (accName: string) => `statement_${accName.replace(/[^A-Za-z0-9]+/g, "_")}`;
+  const exportStatement = (accName: string) => downloadCsv(`${statementName(accName)}.csv`, toCsv(STATEMENT_HEADER, statementRows()));
+  // Party name on top so the sheet can be attached to a client reminder as-is.
+  const exportStatementXlsx = (accName: string) => {
+    const ws = XLSX.utils.aoa_to_sheet([[`Statement of outstanding: ${accName}`], [`As on ${formatDate(today.toISOString())}`], [], STATEMENT_HEADER, ...statementRows()]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Statement");
+    XLSX.writeFile(wb, `${statementName(accName)}.xlsx`);
+  };
 
   if (rows.length === 0) {
     return (
@@ -373,12 +400,13 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
   const span = BUCKETS.length + 6 + MSME_COLS.length + FOLLOW_UP_COLS.length + LEGAL_COLS.length;
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-auto">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
         <Tile label="Total dues" value={fmt(summary.totalDues)} />
         <Tile label="Overdue" value={fmt(summary.overdue)} />
         <Tile label="Over 90 days" value={fmt(summary.over90)} danger />
         <Tile label={`Unadjusted credits / advances (net ${fmt(summary.net)})`} value={fmt(summary.credits)} />
         <Tile label="No. of parties" value={String(summary.parties.filter((p) => p.totalDues > 0).length)} />
+        <Tile label={`Promised this week (${promised.parties} parties)`} value={fmt(promised.amount)} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -402,6 +430,23 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
         ))}
       </div>
 
+      {top10.length > 0 && (
+        <div className="rounded-lg border border-border bg-card px-4 py-3">
+          <h2 className="mb-2 text-sm font-semibold text-foreground">Top 10 clients by overdue</h2>
+          <ul className="space-y-1.5">
+            {top10.map((p) => (
+              <li key={p.accCode} className="grid grid-cols-[minmax(0,10rem)_1fr_auto] items-center gap-2 text-[13px] sm:grid-cols-[minmax(0,16rem)_1fr_auto]">
+                <span className="truncate" title={p.accName}>{p.accName}</span>
+                <span className="h-3 rounded bg-muted">
+                  <span className="block h-3 rounded bg-red-600/80 dark:bg-red-400/80" style={{ width: `${(p.overdue / top10[0].overdue) * 100}%` }} />
+                </span>
+                <span className="tabular-nums font-semibold">{fmt(p.overdue)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="flex min-h-[320px] flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
         <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
           <h2 className="text-sm font-semibold text-foreground">Party-wise outstanding</h2>
@@ -424,6 +469,10 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
           <select aria-label="Filter by owner" value={owner} onChange={(e) => setFilter("owner", e.target.value)} className="rounded border border-border bg-card px-2 py-1 text-sm">
             <option value="">All owners</option>
             {owners.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select aria-label="Filter by client type" value={clientType} onChange={(e) => setFilter("clientType", e.target.value)} className="rounded border border-border bg-card px-2 py-1 text-sm">
+            <option value="">All client types</option>
+            {clientTypes.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
           {([["overdueOnly", "Overdue only"], ["over45", "Past 45 days only"], ["broken", "Promise broken"]] as const).map(([k, label]) => (
             <label key={k} className="flex items-center gap-1.5 text-sm text-foreground">
@@ -528,6 +577,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
                               <th className={TH} colSpan={2}>
                                 Documents{" "}
                                 <button type="button" className="ml-2 rounded border border-border px-2 py-1 text-xs font-normal" onClick={() => exportStatement(p.accName)}>Download CSV</button>
+                                <button type="button" className="ml-2 rounded border border-border px-2 py-1 text-xs font-normal" onClick={() => exportStatementXlsx(p.accName)}>Download Excel</button>
                                 <a className="ml-2 rounded border border-border px-2 py-1 text-xs font-normal" href={`/api/debtors/${encodeURIComponent(p.accCode)}/interest-statement`} target="_blank" rel="noreferrer">MSME interest statement (PDF)</a>
                               </th>
                             </tr>
@@ -556,6 +606,34 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
                             })}
                           </tbody>
                         </table>
+                        <h3 className="mt-3 mb-1 text-[13px] font-semibold text-foreground">Follow-up history</h3>
+                        {history?.accCode === p.accCode && history.rows.length > 0 ? (
+                          <table className="w-full border-collapse text-[13px]">
+                            <thead>
+                              <tr>
+                                {["Saved on", "Owner", "Last follow-up", "Promised date", "Promised amount", "Next action", "Status", "Remarks"].map((h) => (
+                                  <th key={h} className={`${TH} ${h === "Promised amount" ? "text-right" : ""}`}>{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/60">
+                              {history.rows.map((h, i) => (
+                                <tr key={i}>
+                                  <td className="px-3 py-1.5">{new Date(h.changedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                                  <td className="px-3 py-1.5">{h.owner ?? "-"}</td>
+                                  <td className="px-3 py-1.5">{formatDate(h.lastFollowUp)}</td>
+                                  <td className="px-3 py-1.5">{formatDate(h.promisedDate)}</td>
+                                  <td className={TD}>{h.promisedAmount ? formatIndianNumber(Number(h.promisedAmount), 2) : "-"}</td>
+                                  <td className="px-3 py-1.5">{formatDate(h.nextActionDate)}</td>
+                                  <td className="px-3 py-1.5">{h.status ?? "-"}</td>
+                                  <td className="px-3 py-1.5">{h.remarks ?? "-"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <p className="text-[13px] text-muted-foreground">No follow-ups saved yet.</p>
+                        )}
                       </td>
                     </tr>
                   )}

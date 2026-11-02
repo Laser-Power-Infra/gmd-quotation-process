@@ -37,3 +37,21 @@ test("creditNoteRefOf reads the bill a P row credits, and nothing else", async (
   const m = creditNotesByBill([{ vrNo: "SR26Y-00009", tCode: "P", particular: "Sales against Order/Bill No-GD26Y-00139" }, { vrNo: "GD26Y-00139", tCode: "S", particular: "x" }]);
   assert.deepEqual(m.get("GD26Y-00139"), ["SR26Y-00009"]);
 });
+
+test("promisedThisWeek counts only promises dated Monday to Sunday of the current week", async () => {
+  const { promisedThisWeek } = await import("../lib/debtorJoins");
+  const wed = new Date(2026, 10, 4); // Wed 4 Nov 2026, week is Mon 2 - Sun 8
+  const r = promisedThisWeek(
+    [
+      { promisedDate: "2026-11-02", promisedAmount: "100" },
+      { promisedDate: "2026-11-08", promisedAmount: "50.5" },
+      { promisedDate: "2026-11-09", promisedAmount: "999" },
+      { promisedDate: "2026-11-01", promisedAmount: "999" },
+      { promisedDate: "2026-11-05", promisedAmount: null },
+      { promisedDate: null, promisedAmount: "999" },
+    ],
+    wed,
+  );
+  assert.deepEqual(r, { amount: 150.5, parties: 3 });
+  assert.deepEqual(promisedThisWeek([{ promisedDate: "2026-11-02", promisedAmount: "1" }], new Date(2026, 10, 8)), { amount: 1, parties: 1 });
+});
