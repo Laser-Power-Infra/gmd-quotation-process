@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { runLedgerSync, type LedgerSyncDeps, type LedgerWriter } from '../schedular_function/ledger-sync.js'
-import { DEBTORS_HEADERS } from '../lib/debtorsSync.js'
-import { CREDITOR_HEADERS, ADVANCE_HEADERS, CREDITORS_TAB, ADVANCES_TAB } from '../lib/creditorsSync.js'
+import { DEBTORS_GID, DEBTORS_HEADERS } from '../lib/debtorsSync.js'
+import { CREDITOR_HEADERS, ADVANCE_HEADERS, CREDITORS_GID, ADVANCES_GID } from '../lib/creditorsSync.js'
 
 
 // Rows are built from the real header lists; blank ACC_CODE rows are skipped, so
@@ -29,10 +29,11 @@ function deps(over: Partial<LedgerSyncDeps> = {}) {
   const f = fixture()
   const writes = { debtors: [] as unknown[][], creditors: [] as unknown[][], advances: [] as unknown[][] }
   const d: LedgerSyncDeps = {
-    readByGid: async () => ({ tabTitle: 'DEBTORS', headers: f.dH, rows: [f.dRow, f.dRow] }),
-    readByTitle: async (t) =>
-      t === CREDITORS_TAB ? { headers: f.cH, rows: [f.cRow] }
-      : t === ADVANCES_TAB ? { headers: f.aH, rows: [f.aRow] } : null,
+    readByGid: async (g) =>
+      g === DEBTORS_GID ? { tabTitle: 'DEBTORS', headers: f.dH, rows: [f.dRow, f.dRow] }
+      : g === CREDITORS_GID ? { headers: f.cH, rows: [f.cRow] }
+      : g === ADVANCES_GID ? { headers: f.aH, rows: [f.aRow] }
+      : Promise.reject(new Error(`No tab with gid ${g}`)),
     debtors: writer(writes.debtors as never[][]),
     creditors: writer(writes.creditors as never[][]),
     advances: writer(writes.advances as never[][]),
@@ -53,14 +54,14 @@ test('dry run writes nothing and still reports counts', async () => {
 })
 
 test('a failed creditors tab does not abandon a good debtors sync', async () => {
-  const f = fixture()
+  const base = deps().d
   const { d, writes } = deps({
-    readByTitle: async (t) => (t === CREDITORS_TAB ? null : { headers: f.aH, rows: [f.aRow] }),
+    readByGid: async (g) => (g === CREDITORS_GID ? Promise.reject(new Error(`No tab with gid ${g}`)) : base.readByGid(g)),
   })
   const report = await runLedgerSync({ deps: d })
   assert.ok(report.debtors.written > 0)
   assert.equal(report.debtors.error, undefined)
-  assert.match(report.creditors.error ?? '', /not found/)
+  assert.match(report.creditors.error ?? '', /No tab with gid/)
   assert.equal(report.creditors.written, 0)
   assert.equal(writes.creditors.length, 0) // untouched, not emptied
   assert.equal(report.advances.written, 1) // the other ledger is independent
@@ -69,8 +70,8 @@ test('a failed creditors tab does not abandon a good debtors sync', async () => 
 test('a renamed creditors column fails loudly and writes nothing', async () => {
   const f = fixture()
   const { d, writes } = deps({
-    readByTitle: async (t) =>
-      t === CREDITORS_TAB ? { headers: f.cH.map((h, i) => (i === 1 ? 'RENAMED' : h)), rows: [f.cRow] }
+    readByGid: async (g) =>
+      g === CREDITORS_GID ? { headers: f.cH.map((h, i) => (i === 1 ? 'RENAMED' : h)), rows: [f.cRow] }
       : { headers: f.aH, rows: [f.aRow] },
   })
   const report = await runLedgerSync({ deps: d })

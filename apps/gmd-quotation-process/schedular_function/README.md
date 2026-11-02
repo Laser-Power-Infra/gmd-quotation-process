@@ -763,7 +763,8 @@ morning's ledger. Entry: `runScheduledLedgerSync()` -> `runLedgerSync()` in
 also call (dry-run default, `--apply`, `--dump-headers` unchanged).
 
 - Snapshot copy: each of `Debtor`, `Creditor`, `CreditorAdvance` is deleted and
-  refilled **in its own transaction**. A renamed tab or column fails that ledger
+  refilled **in its own transaction**. Tabs are read by gid (DEBTORS 1451733703,
+  CREDITORS 266336637, ADVANCE TO CREDITORS 11144496). A missing gid or renamed column fails that ledger
   (`report.<ledger>.error`), leaves its table as it was, and does not stop the
   others. The route then returns `success:false` (HTTP 200) and the Ofelia script
   exits 1.
