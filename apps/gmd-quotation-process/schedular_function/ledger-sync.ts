@@ -17,7 +17,9 @@ import {
   type DebtorRecord,
 } from "@/lib/debtorsSync";
 import {
+  ADVANCES_GID,
   ADVANCES_TAB,
+  CREDITORS_GID,
   CREDITORS_TAB,
   mapAdvanceRow,
   mapCreditorRow,
@@ -56,7 +58,6 @@ export type LedgerWriter<T> = {
 
 export type LedgerSyncDeps = {
   readByGid(gid: number): Promise<Tab>;
-  readByTitle(title: string): Promise<Tab | null>;
   debtors: LedgerWriter<DebtorRecord>;
   creditors: LedgerWriter<CreditorRecord>;
   advances: LedgerWriter<CreditorAdvanceRecord>;
@@ -88,14 +89,11 @@ const chunks = <T>(rows: T[]) =>
 /** Real sheet + DB, imported lazily so tests that inject deps never load them. */
 async function defaultDeps(): Promise<LedgerSyncDeps> {
   const { prisma } = await import("@/lib/prisma");
-  const { readSheetTabByGid, readSheetTabByTitleIfPresent } = await import(
-    "@/lib/gmd_lib/bomMastErp"
-  );
+  const { readSheetTabByGid } = await import("@/lib/gmd_lib/bomMastErp");
   // Delegates differ per table, so each writer is spelled out. Delete runs
   // first inside the transaction, so a failed insert leaves the table as it was.
   return {
     readByGid: (gid) => readSheetTabByGid(sheetId(), gid),
-    readByTitle: (title) => readSheetTabByTitleIfPresent(sheetId(), title),
     debtors: {
       count: () => prisma.debtor.count(),
       replace: async (rows) => {
@@ -171,12 +169,6 @@ export async function runLedgerSync(opts: LedgerSyncOptions = {}): Promise<Ledge
     read: 0, mapped: 0, skipped: 0, skippedRows: [], written: 0, inDb: 0,
   });
 
-  const byTitle = (title: string) => async () => {
-    const tab = await d.readByTitle(title);
-    if (!tab) throw new Error(`tab "${title}" not found in the execution-tracking workbook`);
-    return tab;
-  };
-
   // Sequential on purpose: independent ledgers, and one Sheets quota hit
   // should not fail three reads at once.
   const debtors = skip("debtors") ? idle() : await syncOne(
@@ -190,18 +182,18 @@ export async function runLedgerSync(opts: LedgerSyncOptions = {}): Promise<Ledge
   );
   const creditors = skip("creditors") ? idle() : await syncOne(
     dryRun,
-    byTitle(CREDITORS_TAB),
+    () => d.readByGid(CREDITORS_GID),
     (t) => {
-      const idx = resolveCreditorColumns(t.headers, CREDITORS_TAB);
+      const idx = resolveCreditorColumns(t.headers, t.tabTitle ?? CREDITORS_TAB);
       return (row) => mapCreditorRow(row, idx);
     },
     d.creditors,
   );
   const advances = skip("advances") ? idle() : await syncOne(
     dryRun,
-    byTitle(ADVANCES_TAB),
+    () => d.readByGid(ADVANCES_GID),
     (t) => {
-      const idx = resolveAdvanceColumns(t.headers, ADVANCES_TAB);
+      const idx = resolveAdvanceColumns(t.headers, t.tabTitle ?? ADVANCES_TAB);
       return (row) => mapAdvanceRow(row, idx);
     },
     d.advances,

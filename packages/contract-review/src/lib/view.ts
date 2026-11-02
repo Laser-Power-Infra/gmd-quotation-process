@@ -99,6 +99,9 @@ export const UPLOAD_DRAWING_IDX =
  */
 export const PENDING_ACTUATIONS_FILTER = "Pending Actuations";
 
+/** Same idea on the RM CODE FOR ACTUATOR column: actuator rows with no RM code yet. */
+export const RM_CODE_PENDING_FILTER = "RM code pending";
+
 export function statusTitle(value: string): string {
   const s = value.trim();
   if (!s) return "Blanks";
@@ -398,6 +401,11 @@ export function matchesTableFilters(
       selected.includes(PENDING_ACTUATIONS_FILTER) &&
       isActuatorItemRow(row) &&
       cellVal === "";
+    const matchesRmCodePending =
+      colName === "RM CODE FOR ACTUATOR" &&
+      selected.includes(RM_CODE_PENDING_FILTER) &&
+      isActuatorItemRow(row) &&
+      cellVal === "";
     if (
       !(
         matchesBlank ||
@@ -406,6 +414,7 @@ export function matchesTableFilters(
         matchesZero ||
         matchesNonZero ||
         matchesPendingActuation ||
+        matchesRmCodePending ||
         selected.includes(cellVal)
       )
     )

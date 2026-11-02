@@ -19,6 +19,7 @@ import { formatIndianNumber } from "@/lib/formatCurrency";
 import { EMPTY_FOLLOW_UP, bgExposureByName, bgFor, billInfoFor, creditNoteRefOf, creditNotesByBill, downloadCsv, followUpFor, toCsv } from "@/lib/debtorJoins";
 import type { BgRow, BillInfo, FollowUp } from "@/lib/debtorJoins";
 import { dueToday, partyMsme } from "@/lib/msme";
+import { UNASSIGNED, inThisWeek, ownerMatches, promisedThisWeek, topByOverdue } from "@/lib/debtorsViews";
 import type { MsmeSettings, PartyMsme } from "@/lib/msme";
 
 const FOLLOW_UP_COLS: { field: keyof FollowUp; label: string; type?: "date" }[] = [
@@ -207,6 +208,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
 
   const search = prefs.filters.search ?? "";
   const owner = prefs.filters.owner ?? "";
+  const weekOnly = !!prefs.filters.weekOnly;
   const overdueOnly = !!prefs.filters.overdueOnly;
   const over45 = !!prefs.filters.over45;
   const broken = !!prefs.filters.broken;
@@ -280,6 +282,9 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
       return { ...p, bg: bgFor(bgMap, p.accName), follow: f, legal: l, msme: m, promise };
     });
   }, [summary, bgMap, follow, legal, openBills, msme, today]);
+  // Same overdue figure as the table; litigating parties are left out like in the table.
+  const top10 = useMemo(() => topByOverdue(withExtras.filter((p) => !isUnderLitigation(p.legal.status))), [withExtras]);
+  const promised = useMemo(() => promisedThisWeek(withExtras.filter((p) => !isUnderLitigation(p.legal.status)).map((p) => p.follow), today), [withExtras, today]);
   // Ageing by stage: litigating parties have a null stage and so never appear here.
   const stageStats = useMemo(() => {
     const out = Array.from({ length: 7 }, () => ({ count: 0, value: 0 }));
@@ -298,7 +303,8 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
       .filter((p) => {
         if (isUnderLitigation(p.legal.status)) return false;
         if (needle && !squish(`${p.accName} ${p.accCode}`).includes(needle)) return false;
-        if (owner && p.follow.owner !== owner) return false;
+        if (!ownerMatches(p.follow.owner, owner)) return false;
+        if (weekOnly && !inThisWeek(p.follow.promisedDate, today)) return false;
         if (overdueOnly && p.overdue <= 0) return false;
         // shortcut: "past 45 days" is approximated by the 61+ buckets, upgrade with the 45-day bucket cut
         if (over45 && p.buckets["61-90"] + p.buckets["91-180"] + p.buckets["180+"] <= 0) return false;
@@ -309,7 +315,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
         if (view === "stage" && stageFilter !== null && p.msme.stage !== stageFilter) return false;
         return true;
       });
-  }, [withExtras, today, search, owner, overdueOnly, over45, broken, bucket, view, stageFilter]);
+  }, [withExtras, today, search, owner, weekOnly, overdueOnly, over45, broken, bucket, view, stageFilter]);
 
   const table = useTable({
     features,
@@ -373,13 +379,31 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
   const span = BUCKETS.length + 6 + MSME_COLS.length + FOLLOW_UP_COLS.length + LEGAL_COLS.length;
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-auto">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
         <Tile label="Total dues" value={fmt(summary.totalDues)} />
         <Tile label="Overdue" value={fmt(summary.overdue)} />
         <Tile label="Over 90 days" value={fmt(summary.over90)} danger />
         <Tile label={`Unadjusted credits / advances (net ${fmt(summary.net)})`} value={fmt(summary.credits)} />
         <Tile label="No. of parties" value={String(summary.parties.filter((p) => p.totalDues > 0).length)} />
+        <button type="button" aria-pressed={weekOnly} onClick={() => setFilter("weekOnly", weekOnly ? "" : "1")} className={`rounded-lg border text-left ${weekOnly ? "border-primary bg-primary/10" : "border-transparent"}`}>
+          <Tile label={`Promised this week (${promised.count} parties)`} value={fmt(promised.total)} />
+        </button>
       </div>
+
+      {top10.length > 0 && (
+        <div className="rounded-lg border border-border bg-card px-4 py-3">
+          <div className="mb-2 text-xs font-semibold text-muted-foreground">Top 10 clients by overdue (click to filter the table)</div>
+          <div className="flex flex-col gap-1">
+            {top10.map((p) => (
+              <button key={p.accCode} type="button" onClick={() => setFilter("search", search === p.accName ? "" : p.accName)} className="flex items-center gap-3 text-left text-sm hover:bg-accent">
+                <span className="w-56 shrink-0 truncate" title={p.accName}>{p.accName}</span>
+                <span className="h-3 flex-1 rounded bg-muted"><span className="block h-3 rounded bg-red-600/70" style={{ width: `${(p.overdue / top10[0].overdue) * 100}%` }} /></span>
+                <span className="w-28 shrink-0 text-right tabular-nums">{fmt(p.overdue)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Tile label="Gross dues" value={fmt(split.gross)} />
@@ -423,6 +447,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">{parties.length} parties</span>
           <select aria-label="Filter by owner" value={owner} onChange={(e) => setFilter("owner", e.target.value)} className="rounded border border-border bg-card px-2 py-1 text-sm">
             <option value="">All owners</option>
+            <option value={UNASSIGNED}>Unassigned</option>
             {owners.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
           {([["overdueOnly", "Overdue only"], ["over45", "Past 45 days only"], ["broken", "Promise broken"]] as const).map(([k, label]) => (
@@ -528,6 +553,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
                               <th className={TH} colSpan={2}>
                                 Documents{" "}
                                 <button type="button" className="ml-2 rounded border border-border px-2 py-1 text-xs font-normal" onClick={() => exportStatement(p.accName)}>Download CSV</button>
+                                {!isUnderLitigation(p.legal.status) && <a href={`/debtors/interest-statement?accCode=${encodeURIComponent(p.accCode)}`} target="_blank" rel="noreferrer" className="ml-2 rounded border border-border px-2 py-1 text-xs font-normal">MSME interest statement</a>}
                               </th>
                             </tr>
                           </thead>

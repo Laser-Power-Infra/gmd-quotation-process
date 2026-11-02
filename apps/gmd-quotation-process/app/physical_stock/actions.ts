@@ -1,7 +1,9 @@
 "use server";
 import { requireAccess } from "@/lib/access";
 
-import { listPhysicalStock, updatePhysicalStockField } from "@gmd/physical-stock/server";
+import { getSerialDimension, listPhysicalStock, saveSerialDimension, updatePhysicalStockField } from "@gmd/physical-stock/server";
+import { pickFlange, standardFromFlange, type DimensionValues } from "@gmd/physical-stock/dimensions";
+import { prisma } from "@/lib/prisma";
 import { inTransitForItems } from "@gmd/purchase/server";
 import { editableFieldsFor } from "@gmd/physical-stock/flags";
 import type { ActionResult, PhysicalStockRow } from "@gmd/physical-stock/types";
@@ -79,4 +81,29 @@ export async function updateBomId(
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** Saved dimensions + the Technicals > Flange standard (pre-fill) for one serial-no row. */
+export async function getSerialDimensions(id: string) {
+  try {
+    await requireAccess();
+    const row = await stockPrisma.physicalStock.findUnique({ where: { id } });
+    if (!row) throw new Error("Physical stock row not found.");
+    const flange = pickFlange(await prisma.flange.findMany(), row);
+    return {
+      success: true as const,
+      data: { saved: await getSerialDimension(id), standard: flange ? standardFromFlange(flange) : null },
+    };
+  } catch (err) {
+    return { success: false as const, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Inspector confirms/edits the values; standard is re-derived server-side for the tolerance flags. */
+export async function saveSerialDimensions(id: string, values: DimensionValues) {
+  await requireAccess();
+  const row = await stockPrisma.physicalStock.findUnique({ where: { id } });
+  if (!row) return { success: false as const, error: "Physical stock row not found." };
+  const flange = pickFlange(await prisma.flange.findMany(), row);
+  return saveSerialDimension(id, values, flange ? standardFromFlange(flange) : null);
 }

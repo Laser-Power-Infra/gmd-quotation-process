@@ -1296,3 +1296,29 @@ model ActuatorOption {
 
   @@map("actuator_options")
 }
+// One row per Inspection Offer VRNO, synced from the ERP "INSPECTION OFFER DUMP"
+// tab (gid 148043829). rows = that VRNO's dump rows (one per item) keyed by header.
+model InspectionOffer {
+  id          String   @id @default(cuid())
+  vrno        String   @unique
+  vrdate      String?
+  contractNo  String?
+  inspeDate   String?
+  rows        Json
+  firstSeenAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Auto-drafted inspection report, one per offer, created when a new offer VRNO
+// appears. Regenerated only while status = "Draft". header/items are system-filled;
+// inspectors add readings later. issues = validation findings that block "Ready".
+model InspectionReportDraft {
+  id         String   @id @default(cuid())
+  offerVrno  String   @unique
+  status     String   @default("Draft")
+  header     Json
+  items      Json
+  issues     String[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

@@ -7,6 +7,7 @@
     "./new-item-dialog": "./src/ui/NewItemDialog.tsx",
     "./server": "./src/server/index.ts",
     "./columns": "./src/columns.ts",
+    "./dimensions": "./src/dimensions.ts",
     "./flags": "./src/flags.ts",
     "./types": "./src/types.ts",
     "./styles.css": "./src/styles.css"

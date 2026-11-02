@@ -34,7 +34,10 @@ export type PurchaseField =
   | "grnDate"
   | "salesContract"
   | "partyRefNo"
-  | "partyRefDate";
+  | "partyRefDate"
+  | "lastPoRate"
+  | "minPoRate"
+  | "lastPoDate";
 
 /** Sheet column -> DB field, in the order the columns appear on the tab. */
 export const COLUMN_MAP: readonly { sheet: string; db: PurchaseField }[] = [
@@ -56,6 +59,9 @@ export const COLUMN_MAP: readonly { sheet: string; db: PurchaseField }[] = [
   { sheet: "PARTYREFDATE", db: "partyRefDate" },
   { sheet: "ITEM_NAME", db: "itemName" },
   { sheet: "ACC_NAME", db: "supplierName" },
+  { sheet: "LAST_PO_RATE", db: "lastPoRate" },
+  { sheet: "MIN_PO_RATE", db: "minPoRate" },
+  { sheet: "LAST_PO_DATE", db: "lastPoDate" },
 ];
 
 /** Table headers, in display order, with the field each one reads. */
@@ -71,6 +77,8 @@ export const PURCHASE_HEADERS = [
   "RECEIVED",
   "IN TRANSIT",
   "RATE",
+  "LAST RATE",
+  "LOWEST RATE",
   "VALUE",
   "DELIVERY SCH",
   "GRN DATE",
@@ -92,6 +100,8 @@ export const HEADER_TO_FIELD: Record<PurchaseHeader, keyof PurchaseRow> = {
   RECEIVED: "qtyExecuted",
   "IN TRANSIT": "balanceQty",
   RATE: "rate",
+  "LAST RATE": "lastPoRate",
+  "LOWEST RATE": "minPoRate",
   VALUE: "basicAmount",
   "DELIVERY SCH": "deliverySched",
   "GRN DATE": "grnDate",
@@ -105,6 +115,8 @@ export const NUMERIC_HEADERS: ReadonlySet<PurchaseHeader> = new Set([
   "RECEIVED",
   "IN TRANSIT",
   "RATE",
+  "LAST RATE",
+  "LOWEST RATE",
   "VALUE",
 ]);
 
@@ -131,6 +143,10 @@ export interface PurchaseRow {
   salesContract: string | null;
   partyRefNo: string | null;
   partyRefDate: string | null;
+  /** Last rate paid for the item, and the lowest ever. */
+  lastPoRate: string | null;
+  minPoRate: string | null;
+  lastPoDate: string | null;
   /** Derived by the sync (see `lib/inTransit.ts`); null when the cells were unparseable. */
   inTransit: number | null;
   /** Derived by the sync: `BASIC_AMT` parsed. */

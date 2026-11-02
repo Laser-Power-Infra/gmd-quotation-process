@@ -363,3 +363,17 @@ test("Upload Drawing filter understands Has Drawing / No Drawing", () => {
   assert.ok(matchedIdx.length > 0);
   assert.ok(matchedIdx.every((i) => i % 2 === 1));
 });
+
+test("RM code pending filter matches actuator rows with blank RM code only", () => {
+  const mk = (item: string, rm: string) => {
+    const r: unknown[] = headers.map(() => "");
+    r[col("ITEM_NAME")] = item;
+    r[col("RM CODE FOR ACTUATOR")] = rm;
+    return r;
+  };
+  const f = (r: unknown[]) =>
+    matchesTableFilters(r, headers, {}, { "RM CODE FOR ACTUATOR": ["RM code pending"] }, "", {});
+  assert.equal(f(mk("Actuator 10", "")), true);
+  assert.equal(f(mk("Actuator 10", "RM1")), false);
+  assert.equal(f(mk("Valve", "")), false);
+});

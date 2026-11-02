@@ -12,6 +12,8 @@ import {
   fieldOf,
   buildSerial,
 } from "../columns";
+import { outOfTolerance } from "../dimensions";
+import type { DimensionStandard, DimensionValues } from "../dimensions";
 import { NEW_ITEM_FIELDS } from "../types";
 import type { ActionResult, FieldUpdate, NewItemInput, PhysicalStockRow } from "../types";
 
@@ -210,5 +212,31 @@ export async function createPhysicalStock(
       await stockPrisma.physicalStock.create({ data });
     }
     return { erp_code, merged: false };
+  });
+}
+
+/** Saved dimensional details of a serial no (null when none yet). */
+export async function getSerialDimension(stockId: string) {
+  return stockPrisma.serialDimension.findUnique({ where: { physical_stock_id: stockId } });
+}
+
+/** Saves the inspector's values; flags are recomputed against `standard` here, never trusted from the client. */
+export async function saveSerialDimension(
+  stockId: string,
+  values: DimensionValues,
+  standard: DimensionStandard | null,
+): Promise<ActionResult<{ flags: string[] }>> {
+  return run(async () => {
+    const row = await stockPrisma.physicalStock.findUnique({ where: { id: stockId } });
+    if (!row) throw new Error("Physical stock row not found.");
+    if (!buildSerial(row)) throw new Error("Assign a heat no (serial no) before capturing dimensions.");
+    const flags = standard ? outOfTolerance(values, standard) : [];
+    const data = { values, standard: standard ?? undefined, flags };
+    await stockPrisma.serialDimension.upsert({
+      where: { physical_stock_id: stockId },
+      create: { physical_stock_id: stockId, ...data },
+      update: data,
+    });
+    return { flags };
   });
 }

@@ -70,6 +70,9 @@ function toRow(line: {
   salesContract: string | null;
   partyRefNo: string | null;
   partyRefDate: string | null;
+  lastPoRate: string | null;
+  minPoRate: string | null;
+  lastPoDate: string | null;
   inTransit: number | null;
   lineValue: number | null;
 }): PurchaseRow {

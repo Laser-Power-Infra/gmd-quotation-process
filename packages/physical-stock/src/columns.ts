@@ -431,9 +431,6 @@ export function cascadedOptions(header: string, row: readonly unknown[], rows: r
   }
   const out = all.filter((o) => seen.has(normCell(o)));
   return out.length ? out : [...all];
-/** `cost * available qty` (cost comes from the BOM master), two decimals; a blank operand counts as 0. */
-export function computeItemWiseValue(cost: unknown, availableQty: unknown): string {
-  return ((parseNum(cost) ?? 0) * (parseNum(availableQty) ?? 0)).toFixed(2);
 }
 
 /** erp_code-l8_item_category-heat_no-heat_seq; null until the row has a heat no and number. */

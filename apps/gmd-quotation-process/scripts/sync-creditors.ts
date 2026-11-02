@@ -14,10 +14,12 @@
 
 import "dotenv/config";
 import { prisma } from "@/lib/prisma";
-import { readSheetTabByTitleIfPresent } from "@/lib/gmd_lib/bomMastErp";
+import { readSheetTabByGid } from "@/lib/gmd_lib/bomMastErp";
 import {
+  ADVANCES_GID,
   ADVANCES_TAB,
   ADVANCE_HEADERS,
+  CREDITORS_GID,
   CREDITORS_TAB,
   CREDITOR_HEADERS,
 } from "@/lib/creditorsSync";
@@ -31,13 +33,12 @@ async function main() {
   if (dumpHeaders) {
     const spreadsheetId = process.env.GMD_EXECUTION_TRACKING_SPREADSHEET_ID;
     if (!spreadsheetId) throw new Error("GMD_EXECUTION_TRACKING_SPREADSHEET_ID is not set");
-    for (const [title, expected] of [
-      [CREDITORS_TAB, CREDITOR_HEADERS],
-      [ADVANCES_TAB, ADVANCE_HEADERS],
+    for (const [gid, title, expected] of [
+      [CREDITORS_GID, CREDITORS_TAB, CREDITOR_HEADERS],
+      [ADVANCES_GID, ADVANCES_TAB, ADVANCE_HEADERS],
     ] as const) {
-      const tab = await readSheetTabByTitleIfPresent(spreadsheetId, title);
-      if (!tab) throw new Error(`tab "${title}" not found in the execution-tracking workbook`);
-      console.log(`tab "${title}": ${tab.rows.length} data rows`);
+      const tab = await readSheetTabByGid(spreadsheetId, gid);
+      console.log(`tab "${title}" (gid ${gid}): ${tab.rows.length} data rows`);
       console.log(`${title} headers: ${JSON.stringify(tab.headers)}`);
       console.log(`${title} expected: ${JSON.stringify(Object.values(expected))}`);
     }

@@ -71,6 +71,19 @@ model PhysicalStock {
   @@unique([heat_no, heat_seq])
 }
 
+// Dimensional details of one assigned serial no (one row per PhysicalStock row).
+// values = the confirmed/measured fields, standard = the pre-fill snapshot they
+// were checked against, flags = keys outside tolerance when saved.
+model SerialDimension {
+  id                String   @id @default(cuid())
+  physical_stock_id String   @unique
+  values            Json
+  standard          Json?
+  flags             String[]
+  created_at        DateTime @default(now())
+  updated_at        DateTime @updatedAt
+}
+
 model User {
   id            String        @id @default(cuid())
   name          String?
@@ -113,6 +126,9 @@ model PurchaseOrderLine {
   salesContract String? // SALES_CONT
   partyRefNo    String? // PARTYREFNO
   partyRefDate  String? // PARTYREFDATE
+  lastPoRate    String? // LAST_PO_RATE
+  minPoRate     String? // MIN_PO_RATE, lowest rate ever paid for the item
+  lastPoDate    String? // LAST_PO_DATE
 
   // Derived by the sync with `@gmd/purchase/in-transit`, so every filter and
   // total is one Prisma query instead of parsing 13k strings per request.

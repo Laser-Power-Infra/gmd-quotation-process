@@ -43,6 +43,7 @@ import {
   OFFER_PENDING_DONE_IDX,
   ORDER_LIST_IDX,
   PENDING_ACTUATIONS_FILTER,
+  RM_CODE_PENDING_FILTER,
   PN_IDX,
   PROJECT_REFERENCE_IDX,
   RM_CODE_FOR_ACTUATOR_IDX,
@@ -361,6 +362,15 @@ export function ContractReviewPage({
           match: (row: unknown[]) =>
             isActuatorItemRow(row) &&
             String(row[ACTUATOR_IDX] ?? "").trim() === "",
+        },
+      ],
+      "RM CODE FOR ACTUATOR": [
+        {
+          value: RM_CODE_PENDING_FILTER,
+          label: "RM code pending",
+          match: (row: unknown[]) =>
+            isActuatorItemRow(row) &&
+            String(row[RM_CODE_FOR_ACTUATOR_IDX] ?? "").trim() === "",
         },
       ],
     }),
