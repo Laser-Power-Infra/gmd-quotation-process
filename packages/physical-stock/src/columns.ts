@@ -40,6 +40,7 @@ export const COLUMNS = [
   // Derived from the purchase order lines, not from the stock sheet. Last, so
   // every existing column keeps its index (edits look fields up by index).
   "IN TRANSIT",
+  "INCOMING FROM",
 ] as const;
 
 export type PhysicalStockHeader = (typeof COLUMNS)[number];
@@ -82,6 +83,7 @@ export const FIELDS = [
   "heat_no",
   "serial_no",
   "in_transit",
+  "incoming_from",
 ] as const satisfies readonly (keyof PhysicalStockRow)[];
 
 export type PhysicalStockField = (typeof FIELDS)[number];

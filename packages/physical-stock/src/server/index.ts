@@ -57,6 +57,7 @@ export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
       ...heatColumns(item),
       // Filled by the host app's load() from @gmd/purchase; null = not looked up.
       in_transit: null,
+      incoming_from: null,
     };
   });
 }

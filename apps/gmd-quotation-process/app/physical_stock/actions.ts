@@ -2,7 +2,7 @@
 import { requireAccess } from "@/lib/access";
 
 import { listPhysicalStock, updatePhysicalStockField } from "@gmd/physical-stock/server";
-import { inTransitForItems } from "@gmd/purchase/server";
+import { incomingFromForItems, inTransitForItems } from "@gmd/purchase/server";
 import { editableFieldsFor } from "@gmd/physical-stock/flags";
 import type { ActionResult, PhysicalStockRow } from "@gmd/physical-stock/types";
 import { stockPrisma } from "@/lib/stockPrisma";
@@ -30,14 +30,17 @@ export async function load() {
     // Ordered but not yet received, by ERP code. A failure here must not take
     // the stock page down with it: the column falls back to blank (unknown).
     let inTransit = new Map<string, number>();
+    let incomingFrom = new Map<string, string>();
     try {
-      inTransit = await inTransitForItems(items.map((i) => (i.erp_code ?? "").trim()));
+      const codes = items.map((i) => (i.erp_code ?? "").trim());
+      [inTransit, incomingFrom] = await Promise.all([inTransitForItems(codes), incomingFromForItems(codes)]);
     } catch (err) {
       console.error("[physical-stock] in-transit lookup failed", err);
     }
     const withInTransit = items.map((item) => ({
       ...item,
       in_transit: inTransit.get((item.erp_code ?? "").trim()) ?? null,
+      incoming_from: incomingFrom.get((item.erp_code ?? "").trim()) ?? null,
     }));
 
     return { success: true as const, data: { items: withInTransit, bomIdOptions } };
