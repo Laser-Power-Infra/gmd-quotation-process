@@ -1219,6 +1219,25 @@ model LedgerFollowUp {
   @@index([ledger, accCode])
 }
 
+// Append-only history of LedgerFollowUp saves (one snapshot per save), so past promises stay visible. No FK, same as PartyLegalCaseLog.
+model LedgerFollowUpLog {
+  id             String    @id @default(cuid())
+  ledger         String
+  accCode        String
+  vrNo           String    @default("")
+  owner          String?
+  lastFollowUp   DateTime?
+  promisedDate   DateTime?
+  promisedAmount Decimal?  @db.Decimal(18, 2)
+  nextActionDate DateTime?
+  status         String?
+  remarks        String?
+  changedById    String?
+  changedAt      DateTime  @default(now())
+
+  @@index([ledger, accCode, changedAt])
+}
+
 // Legal status and doubtful-debt provision per party. Set by Accounts/Legal, never overwritten by the sheet sync.
 model PartyLegalCase {
   id              String    @id @default(cuid())
