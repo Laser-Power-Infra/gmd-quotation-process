@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import NavMenu from "./NavMenu";
 import { NewItemButton } from "./NewItemButton";
 import { UserMenu } from "./UserMenu";
+import { ThemeToggle } from "./ThemeToggle";
 
 export default async function Navbar() {
   const session = await auth();
@@ -26,6 +27,7 @@ export default async function Navbar() {
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          <ThemeToggle />
           {session?.user?.email ? (
             <>
               <NewItemButton />
