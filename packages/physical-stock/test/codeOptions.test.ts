@@ -31,3 +31,22 @@ test("codesOf lists all matched codes, or one BOM's", () => {
   assert.deepEqual(codesOf(m), ["RM1", "RM2", "RM3"]);
   assert.deepEqual(codesOf(m, "B2"), ["RM2", "RM3"]);
 });
+
+test("the two databases' real spellings compare equal (checked live, 2 Nov 2026)", () => {
+  const real = [
+    row("B4", "SLUICE VALVE-METAL-RISING", "700", "PN-10/16", "RM4"),
+    row("B5", "BUTTERFLY VALVE", "450X300MM", "CLASS-150#", "RM5"),
+    row("B6", "SLUICE VALVE-RESILIENT-NON-RISING", "200", "PN-20/25/30", "RM6"),
+  ];
+  // stock sends "700MM", FullItem stores "700"
+  assert.deepEqual(bomIdsOf(matchBoms(real, { size: "700MM" })), ["B4"]);
+  // stock "PN-16" is covered by the compound "PN-10/16"; "PN-25" by "PN-20/25/30"
+  assert.deepEqual(bomIdsOf(matchBoms(real, { pn: "PN-16" })), ["B4"]);
+  assert.deepEqual(bomIdsOf(matchBoms(real, { pn: "PN-25" })), ["B6"]);
+  assert.equal(matchBoms(real, { pn: "PN-40" }).length, 0);
+  // stock "CLASS 150#" vs FullItem "CLASS-150#"
+  assert.deepEqual(bomIdsOf(matchBoms(real, { pn: "CLASS 150#" })), ["B5"]);
+  // stock's "SLUICE VALVE" matches both sluice variants; "BUTTERFLY VALVE" stays exact
+  assert.deepEqual(bomIdsOf(matchBoms(real, { valveType: "SLUICE VALVE" })), ["B4", "B6"]);
+  assert.deepEqual(bomIdsOf(matchBoms(real, { valveType: "BUTTERFLY VALVE" })), ["B5"]);
+});
