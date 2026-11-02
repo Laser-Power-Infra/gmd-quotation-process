@@ -11,6 +11,7 @@ import {
   DROPDOWN_OPTIONS,
   FIELDS,
   NUMERIC_COLUMNS,
+  cascadedOptions,
   rowToArray,
 } from "../columns";
 import type { PhysicalStockFlags, SidebarSection } from "../flags";
@@ -102,6 +103,10 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
 
   const rows = useMemo(() => items.map(rowToArray), [items]);
   const ids = useMemo(() => items.map((i) => i.id), [items]);
+  const rowDropdownOptions = useCallback(
+    (header: string, row: unknown[]) => cascadedOptions(header, row, rows),
+    [rows],
+  );
 
   // Stat-card filter narrows the table only; the sidebar totals ignore it so
   // toggling a card never changes the qty/value figures.
@@ -272,6 +277,7 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
                 blankOnlyEditableColumns={blankOnlyColumns}
                 blankOnlyUnlockedBy="ERP CODE"
                 fixedDropdownOptions={dropdownOptions}
+                rowDropdownOptions={rowDropdownOptions}
                 hiddenColumns={flags.hiddenColumns}
                 numericColumns={NUMERIC_COLUMNS}
                 bomIdOptionsById={updateBomId ? bomIdOptions : undefined}

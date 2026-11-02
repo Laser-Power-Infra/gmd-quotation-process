@@ -46,7 +46,7 @@ function heatColumns(row: StockWithHeats): Pick<PhysicalStockRow, "heat_no" | "s
 
 export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
   const items = await stockPrisma.physicalStock.findMany({
-    orderBy: [{ form_date: "desc" }, { created_at: "desc" }],
+    orderBy: [{ form_date: "desc" }, { created_at: "desc" }, { id: "asc" }],
     include: HEAT_ENTRIES,
   });
   return items.map((item) => {

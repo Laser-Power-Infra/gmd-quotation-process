@@ -13,6 +13,9 @@ export const NAV: NavEntry[] = [
       { label: "Contract Review", href: "/contract_review" },
       { label: "Indent Checking", href: "/indent_listing" },
       { label: "BIS Status", href: "/bis-status" },
+      { label: "Order Status", href: "/order_status" },
+      { label: "Ready to Bill", href: "/ready_to_bill" },
+      { label: "Sales Register", href: "/sales_register" },
     ],
   },
   {
