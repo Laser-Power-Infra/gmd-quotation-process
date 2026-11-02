@@ -72,7 +72,7 @@ export async function GET(request: Request) {
     success: true,
     job: "contract-review",
     auth: "ok",
-    runs: ["sheetSync", "enquiry", "rmAvail", "icDump"],
+    runs: ["sheetSync", "enquiry", "rmAvail", "icDump", "inspectionOffer"],
     note: "POST to run the job.",
   });
 }

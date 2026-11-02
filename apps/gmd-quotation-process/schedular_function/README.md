@@ -128,7 +128,7 @@ pivot/QUERY result). Nothing here sums anything itself.
 
 ## `contract-review`
 
-Five sequential steps in `run-contract-review.ts`:
+Six sequential steps in `run-contract-review.ts`:
 
 | # | Step | File | What it writes |
 |---|---|---|---|
@@ -137,6 +137,7 @@ Five sequential steps in `run-contract-review.ts`:
 | 2 | `runContractReviewEnquirySync()` | `contract-review-enquiry.ts` | `ContractReview.state` / `.utility` / `.projectReference` |
 | 3 | `runContractReviewRmAvailSync()` | `contract-review-rm-avail.ts` | `RawMaterial.availableStock`, `VerifyBom`, `ContractReview.noUse`, `ContractReview.rmPhysicalStock` |
 | 4 | `runIcDumpSync()` | `contract-review-ic-dump.ts` | `ContractReview.offerNumber` / `.inspectionNumber` / `.diDate` |
+| 5 | `runInspectionOfferSync()` | `inspection-offer-sync.ts` | `InspectionOffer` + a draft `InspectionReport` per new offer VRNO |
 
 Step 1 reads `CONTRACTS` (GID 734728893, header row 4) and `DUMP` (GID
 1604813523, header row 1) from `CONTRACT_REVIEW_SPREADSHEET_ID`. Step 1b reads
@@ -275,6 +276,19 @@ into one shared implementation is a reasonable follow-up.
 Because a failed batch still returns `200` with `success: true`,
 `contract-review-sync.sh` greps for `"failedWrites":[1-9]` as well as
 `"success": *false`.
+
+### Step 5 — Inspection offers and draft reports
+
+`runInspectionOfferSync()` reads the same `INSPECTION OFFER DUMP` tab, by
+header name (all 19 columns required, so a renamed column fails the step), and
+keeps **one `InspectionOffer` row per `VRNO`**, item lines in `lines` (JSON).
+An existing offer has its sheet fields refreshed when they differ. A `VRNO`
+not yet in the table is created **with a draft `InspectionReport`**
+(`lib/inspectionReport.ts` `buildDraftReport`): header and item lines from
+`ContractReview` (CONTRACT_VRNO = `mcNo` + ITEM_CODE) and the client name from
+`acc_master`. An existing report is never rewritten by the sync. Nothing is
+deleted. Each offer is written on its own; a failure is counted in `failed`
+and the run continues. Drafts are listed and edited at `/inspection_reports`.
 
 ## `supply-history`
 

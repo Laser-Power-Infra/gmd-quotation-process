@@ -16,6 +16,7 @@ export const NAV: NavEntry[] = [
       { label: "Order Status", href: "/order_status" },
       { label: "Ready to Bill", href: "/ready_to_bill" },
       { label: "Sales Register", href: "/sales_register" },
+      { label: "Inspection Reports", href: "/inspection_reports" },
     ],
   },
   {

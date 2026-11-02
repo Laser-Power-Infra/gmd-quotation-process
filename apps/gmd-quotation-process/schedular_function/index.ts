@@ -126,6 +126,12 @@ export {
 } from "./contract-review-ic-dump";
 
 export {
+  runInspectionOfferSync,
+  type InspectionOfferSyncOptions,
+  type InspectionOfferSyncResult,
+} from "./inspection-offer-sync";
+
+export {
   runPendingDocketCreation,
   type PendingDocketCreationOptions,
   type PendingDocketCreationResult,
