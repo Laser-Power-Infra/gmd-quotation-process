@@ -36,10 +36,28 @@ export interface PhysicalStockRow {
   cost: string | null;
   bom_id: string | null;
   majorminor_marking: boolean | null;
+  heat_done: boolean;
+  /** Derived from heat_entries: distinct heat nos, comma-joined; null without entries. */
   heat_no: string | null;
-  heat_seq: number | null;
-  /** Derived (erp_code-l8_item_category-heat_no-heat_seq); blank without a heat no. */
+  /** Derived from heat_entries: every serial (erp_code-l8_item_category-heat_no-heat_seq), comma-joined. */
   serial_no: string | null;
+}
+
+export interface HeatEntryRow {
+  id: string;
+  heat_no: string;
+  heat_seq: number;
+  serial_no: string;
+  sheet_file_id: string | null;
+}
+
+/** One ERP code in the mobile heat-entry queue. */
+export interface HeatQueueItem {
+  id: string;
+  erp_code: string | null;
+  location: string | null;
+  description: string;
+  entries: HeatEntryRow[];
 }
 
 export type ActionResult<T> =
@@ -63,7 +81,6 @@ export const NEW_ITEM_FIELDS = [
   "l8_item_category",
   "received_qty",
   "dispatch_qty",
-  "heat_no",
 ] as const;
 
 export type NewItemInput = Partial<Record<(typeof NEW_ITEM_FIELDS)[number], string>>;
