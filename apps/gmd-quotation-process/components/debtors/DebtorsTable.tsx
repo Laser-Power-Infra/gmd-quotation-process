@@ -528,6 +528,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
                               <th className={TH} colSpan={2}>
                                 Documents{" "}
                                 <button type="button" className="ml-2 rounded border border-border px-2 py-1 text-xs font-normal" onClick={() => exportStatement(p.accName)}>Download CSV</button>
+                                <a className="ml-2 rounded border border-border px-2 py-1 text-xs font-normal" href={`/api/debtors/${encodeURIComponent(p.accCode)}/interest-statement`} target="_blank" rel="noreferrer">MSME interest statement (PDF)</a>
                               </th>
                             </tr>
                           </thead>
