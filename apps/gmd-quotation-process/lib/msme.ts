@@ -3,6 +3,9 @@ import { daysOverdue } from "./debtorsAgeing";
 
 export type MsmeSettings = { bankRatePct: number; defaultCreditDays: number; creditDaysNoAgreement: number };
 export const DEFAULT_MSME_SETTINGS: MsmeSettings = { bankRatePct: 5.75, defaultCreditDays: 45, creditDaysNoAgreement: 15 };
+/** Our registration: confirmed Small (certificate dt 24 Feb 2025), so Samadhaan and Sec 43B(h) apply. */
+export const UDYAM_NO = "UDYAM-WB-08-0001675";
+export const UDYAM_CATEGORY = "Small";
 export const MSME_SETTING_TYPES = { bankRatePct: "msme.bankRatePct", defaultCreditDays: "msme.defaultCreditDays", creditDaysNoAgreement: "msme.creditDaysNoAgreement" } as const;
 
 /** LookupOption rows to settings; a missing or non-numeric row keeps the documented default. */
@@ -42,6 +45,22 @@ export function followUpStage(daysPastMsmeDue: number, promiseMissed: boolean, u
 
 export type PartyMsme = { daysPastDue: number | null; interest: number; claimable: number; stage: FollowUpStage | null };
 
+export type MsmeBill = { vrNo: string | null; vrDate: string; bal: number; msmeDue: Date; daysPastDue: number; interest: number };
+
+/** Per-bill MSME position for the open positive bills; bills without a date are left out. */
+export function msmeBills<B extends { bal: number; vrDate: string | null; vrNo?: string | null }>(bills: B[], creditDays: number | null, s: MsmeSettings, today: Date): MsmeBill[] {
+  const end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+  const out: MsmeBill[] = [];
+  for (const b of bills) {
+    if (b.bal <= 0 || !b.vrDate) continue;
+    const msmeDue = msmeDueDate(new Date(b.vrDate), creditDays, s.creditDaysNoAgreement);
+    const days = daysOverdue(msmeDue.toISOString(), today);
+    if (days === null) continue;
+    out.push({ vrNo: b.vrNo ?? null, vrDate: b.vrDate, bal: b.bal, msmeDue, daysPastDue: days, interest: days > 0 ? msmeInterest(b.bal, msmeDue, end, s.bankRatePct) : 0 });
+  }
+  return out;
+}
+
 /** One party, all its open positive bills. creditDays is the party-level agreed period. */
 export function partyMsme(
   bills: { bal: number; vrDate: string | null }[],
@@ -50,19 +69,10 @@ export function partyMsme(
   today: Date,
   o: { promiseMissed: boolean; underLitigation: boolean },
 ): PartyMsme {
-  let daysPastDue: number | null = null;
-  let principal = 0;
-  let interest = 0;
-  const end = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
-  for (const b of bills) {
-    if (b.bal <= 0 || !b.vrDate) continue;
-    const due = msmeDueDate(new Date(b.vrDate), creditDays, s.creditDaysNoAgreement);
-    const days = daysOverdue(due.toISOString(), today);
-    if (days === null) continue;
-    principal += b.bal;
-    if (daysPastDue === null || days > daysPastDue) daysPastDue = days;
-    if (days > 0) interest += msmeInterest(b.bal, due, end, s.bankRatePct);
-  }
+  const rows = msmeBills(bills, creditDays, s, today);
+  const daysPastDue = rows.length ? Math.max(...rows.map((b) => b.daysPastDue)) : null;
+  const principal = rows.reduce((t, b) => t + b.bal, 0);
+  const interest = rows.reduce((t, b) => t + b.interest, 0);
   return { daysPastDue, interest, claimable: principal + interest, stage: daysPastDue === null ? null : followUpStage(daysPastDue, o.promiseMissed, o.underLitigation) };
 }
 

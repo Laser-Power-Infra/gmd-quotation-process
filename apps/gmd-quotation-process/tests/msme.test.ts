@@ -1,12 +1,27 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_MSME_SETTINGS, dueToday, followUpStage, msmeDueDate, msmeInterest, parseMsmeSettings, partyMsme } from "../lib/msme";
+import { DEFAULT_MSME_SETTINGS, UDYAM_NO, dueToday, followUpStage, msmeBills, msmeDueDate, msmeInterest, parseMsmeSettings, partyMsme } from "../lib/msme";
+import { buildInterestStatementHtml } from "../lib/msmeStatement";
+
+test("msmeBills: per-bill rows match partyMsme, and the statement carries Udyam no. and totals", () => {
+  const today = new Date("2027-01-15T00:00:00Z");
+  const bills = [{ vrNo: "GD26Y-00001", vrDate: "2026-10-01", bal: 100000 }, { vrNo: "GD26Y-00002", vrDate: null, bal: 5000 }, { vrNo: "X", vrDate: "2026-10-01", bal: -10 }];
+  const rows = msmeBills(bills, null, DEFAULT_MSME_SETTINGS, today);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].msmeDue.toISOString().slice(0, 10), "2026-10-16");
+  const p = partyMsme(bills, null, DEFAULT_MSME_SETTINGS, today, { promiseMissed: false, underLitigation: false });
+  assert.equal(p.interest, rows[0].interest);
+  const html = buildInterestStatementHtml({ accCode: "C1", accName: "A <b>", bills: rows, settings: DEFAULT_MSME_SETTINGS, today });
+  assert.ok(html.includes(UDYAM_NO));
+  assert.ok(html.includes("A &lt;b&gt;"));
+  assert.ok(html.includes("17.25%"));
+});
 
 test("17.25% p.a. on ₹1,00,000 for 12 months, compounded monthly", () => {
   const expected = 100000 * ((1 + (3 * 5.75) / 100 / 12) ** 12 - 1);
   const got = msmeInterest(100000, new Date("2025-10-31"), new Date("2026-10-31"), 5.75);
   assert.ok(Math.abs(got - expected) < 1e-6);
-  assert.equal(Math.round(got), 18681); // the plan quoted 18687; the formula gives 18681.34
+  assert.equal(Math.round(got * 100) / 100, 18681.34); // the plan quoted 18687; the formula gives 18681.34
 });
 test("interest counts whole months only and is never negative", () => {
   assert.equal(msmeInterest(1000, new Date("2026-10-01"), new Date("2026-10-30"), 5.75), 0);
