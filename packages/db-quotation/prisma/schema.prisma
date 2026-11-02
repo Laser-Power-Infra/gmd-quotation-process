@@ -1099,6 +1099,44 @@ model EngineeringSync {
   @@map("engineering_sync")
 }
 
+/// One valve serial number and the dimensions measured against it at
+/// assignment. Dimension columns are String? like the engineering tables so the
+/// inspector's entry survives verbatim. `standard` snapshots the pre-filled
+/// standard values + tolerances (lib/valveSerial.ts) so the out-of-tolerance
+/// flag does not move when the Technicals sheet is re-synced. The serial itself
+/// is assigned by the heat-entry form (stock DB `HeatEntry`); `heatEntryId`
+/// links to it (cross-database, so no FK) and survives an ERP-code rename.
+model ValveSerial {
+  id                String   @id @default(cuid())
+  serialNo          String   @unique
+  heatEntryId       String?  @unique
+  contractNo        String?
+  valveType         String?
+  sizeDn            String?
+  pnRating          String?
+  odMm              String?
+  idMm              String?
+  pcdMm             String?
+  boltHoles         String?
+  holeDiaMm         String?
+  flangeThicknessMm String?
+  faceToFaceMm      String?
+  heightOpenMm      String?
+  heightClosedMm    String?
+  weightKg          String?
+  flangeStandard    String?
+  bodyMoc           String?
+  discMoc           String?
+  seatMoc           String?
+  actuatorGearbox   String?
+  standard          Json?
+  assignedBy        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("valve_serial")
+}
+
 // ─────────────────────────────────────────────────────────────
 // Execution Tracking sync support.
 //

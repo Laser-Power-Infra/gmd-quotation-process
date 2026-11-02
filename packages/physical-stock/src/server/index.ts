@@ -13,7 +13,7 @@ import {
   buildSerial,
 } from "../columns";
 import { NEW_ITEM_FIELDS } from "../types";
-import type { ActionResult, FieldUpdate, HeatEntryRow, HeatQueueItem, NewItemInput, PhysicalStockRow } from "../types";
+import type { ActionResult, FieldUpdate, HeatEntryRow, HeatQueueItem, HeatSerial, NewItemInput, PhysicalStockRow } from "../types";
 
 // Pure operations on the PhysicalStock table (stock DB). No auth, no flags
 // lookup: the host app's Server Actions own those and pass the allow-list in.
@@ -101,6 +101,17 @@ function toQueueItem(row: StockWithHeats): HeatQueueItem {
       .join(" / "),
     entries: row.heat_entries.map((e) => toEntryRow(row, e)),
   };
+}
+
+/** Every assigned serial with its stock row's valve type and size, for screens that record details against a serial. */
+export async function listHeatSerials(): Promise<HeatSerial[]> {
+  const entries = await stockPrisma.heatEntry.findMany({ include: { physical_stock: true }, orderBy: { created_at: "desc" } });
+  return entries.map((e) => ({
+    id: e.id,
+    serial_no: buildSerial(e.physical_stock, e),
+    valve_type: e.physical_stock.l2_valve_type,
+    size: e.physical_stock.dimension,
+  }));
 }
 
 export async function listHeatCategories(): Promise<string[]> {

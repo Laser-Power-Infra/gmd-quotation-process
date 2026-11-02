@@ -55,6 +55,14 @@ export interface HeatEntryRow {
   sheet_file_id: string | null;
 }
 
+/** One assigned serial, with the valve type and size of its stock row. */
+export interface HeatSerial {
+  id: string;
+  serial_no: string;
+  valve_type: string | null;
+  size: string | null;
+}
+
 /** One ERP code in the mobile heat-entry queue. */
 export interface HeatQueueItem {
   id: string;
