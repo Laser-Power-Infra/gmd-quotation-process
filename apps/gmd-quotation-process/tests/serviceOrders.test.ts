@@ -1,17 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { GRN_HEADERS, buildServiceOrders, camel, mapGrnTab, serviceItemsFrom, sheetDay } from '../lib/serviceOrders.js'
+import { buildServiceOrders, serviceItemsFrom, sheetDay } from '../lib/serviceOrders.js'
 import type { PoLine } from '../lib/serviceOrders.js'
 
 const po = (o: Partial<PoLine>): PoLine => ({
   id: 'p', poNo: 'PE26Y-00001', poLineNo: '1', poDate: '01-10-2026', itemCode: 'SRV001', itemName: 'MACHINING',
   supplierCode: 'S1', supplierName: 'ACME', uom: 'NOS', netQtyOrder: '10', qtyExecuted: '4', balanceQty: '6',
   rate: '100', exchangeRate: '1', deliverySched: '2026-10-20', ...o,
-})
-
-test('camel-cases sheet headers', () => {
-  assert.equal(camel('MAIN_POST_NAME'), 'mainPostName')
-  assert.equal(camel('PARTYBILLNO'), 'partybillno')
 })
 
 test('service codes: LEVEL_1_NAME SERVICES or ITEM_NATURE SR, header row and duplicates skipped', () => {
@@ -24,16 +19,7 @@ test('service codes: LEVEL_1_NAME SERVICES or ITEM_NATURE SR, header row and dup
     ['SERVICES', 'SRV001', 'DUP', 'SR'],
   ] })
   assert.deepEqual(items, [{ itemCode: 'SRV001', itemName: 'MACHINING' }, { itemCode: 'SRV002', itemName: 'PAINTING' }])
-})
-
-test('GRN tab maps every header, drops blank VRNO, fails on a renamed column', () => {
-  const headers = [...GRN_HEADERS]
-  const row = ['SERVICE', 'S1', 'GH1', '05-10-2026', 'SRV001', 'B-9', '04-10-2026', 'PE26Y-00001', '1', '4', '400']
-  const { records, skipped } = mapGrnTab({ headers, rows: [row, ['', '', '']] })
-  assert.equal(skipped, 1)
-  assert.equal(records[0].orderVrno, 'PE26Y-00001')
-  assert.equal(records[0].qtyrecd, '4')
-  assert.throws(() => mapGrnTab({ headers: headers.slice(1), rows: [] }), /MAIN_POST_NAME/)
+  assert.throws(() => serviceItemsFrom({ headers: headers.slice(1), rows: [] }), /LEVEL_1_NAME/)
 })
 
 test('sheetDay reads DD-MM-YYYY and YYYY-MM-DD, nothing else', () => {
@@ -48,9 +34,9 @@ test('joins receipts on order no + line, computes pending, value, days and overd
   const rows = buildServiceOrders(
     [po({}), po({ id: 'closed', poLineNo: '2', balanceQty: '0' }), po({ id: 'rm', itemCode: 'RM1' })],
     [
-      { vrno: 'GH1', vrdate: '05-10-2026', partybillno: 'B-1', orderVrno: 'pe26y-00001', orderSlno: '1' },
-      { vrno: 'GH2', vrdate: '15-10-2026', partybillno: 'B-2', orderVrno: 'PE26Y-00001', orderSlno: '1' },
-      { vrno: 'GH3', vrdate: '16-10-2026', partybillno: 'B-3', orderVrno: 'PE26Y-00001', orderSlno: '2' },
+      { vrNo: 'GH1', vrDate: '05-10-2026', partyBillNo: 'B-1', orderVrNo: 'pe26y-00001', orderSlNo: '1' },
+      { vrNo: 'GH2', vrDate: '15-10-2026', partyBillNo: 'B-2', orderVrNo: 'PE26Y-00001', orderSlNo: '1' },
+      { vrNo: 'GH3', vrDate: '16-10-2026', partyBillNo: 'B-3', orderVrNo: 'PE26Y-00001', orderSlNo: '2' },
     ],
     new Set(['SRV001']),
     today,

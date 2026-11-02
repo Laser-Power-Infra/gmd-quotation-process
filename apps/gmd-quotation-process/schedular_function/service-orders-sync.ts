@@ -1,22 +1,21 @@
 /**
- * Scheduled job: ITEM MASTER ERP + GRN tabs -> `ServiceItem`, `GrnLine`
- * (quotation DB). The Service / Work Orders page joins them on read
- * (`lib/serviceOrders.ts`) with the stock DB's `PurchaseOrderLine`, which the
- * existing purchase-orders job already mirrors — so PO lines are not copied twice.
+ * Scheduled job: ITEM MASTER ERP tab -> `ServiceItem` (quotation DB). The
+ * Service / Work Orders page joins it on read (`lib/serviceOrders.ts`) with the
+ * stock DB's `PurchaseOrderLine` and `GrnLine`, which the purchase-orders job
+ * already mirrors — so PO and GRN lines are not copied twice.
  *
- * Snapshot copy like `ledger-sync.ts`: each table is replaced in its own
- * transaction, so a renamed tab or column fails that table only and leaves it as
- * it was. A failure is reported on that part's `error`, never thrown.
+ * Snapshot copy like `ledger-sync.ts`: the table is replaced in one transaction,
+ * so a renamed tab or column leaves it as it was. A failure is reported on
+ * `error`, never thrown.
  * No `@/app/actions` import.
  */
 
 import { JobAlreadyRunningError } from "./run-gmd-update";
-import { GRN_GID, ITEM_MASTER_GID, mapGrnTab, serviceItemsFrom } from "@/lib/serviceOrders";
+import { ITEM_MASTER_GID, serviceItemsFrom } from "@/lib/serviceOrders";
 
 export type ServiceOrdersPartReport = { read: number; written: number; skipped: number; inDb: number; error?: string };
 export type ServiceOrdersSyncReport = {
   serviceItems: ServiceOrdersPartReport;
-  grn: ServiceOrdersPartReport;
 };
 
 const CHUNK = 500;
@@ -58,7 +57,6 @@ export async function runServiceOrdersSync(opts: { dryRun?: boolean } = {}): Pro
     return r;
   };
 
-  // Sequential on purpose: one Sheets quota hit should not fail both reads at once.
   const serviceItems = await part(
     ITEM_MASTER_GID,
     (tab) => {
@@ -68,13 +66,7 @@ export async function runServiceOrdersSync(opts: { dryRun?: boolean } = {}): Pro
     () => prisma.serviceItem.count(),
     (rows) => prisma.$transaction([prisma.serviceItem.deleteMany(), ...chunks(rows).map((data) => prisma.serviceItem.createMany({ data }))]),
   );
-  const grn = await part(
-    GRN_GID,
-    mapGrnTab,
-    () => prisma.grnLine.count(),
-    (rows) => prisma.$transaction([prisma.grnLine.deleteMany(), ...chunks(rows).map((data) => prisma.grnLine.createMany({ data }))]),
-  );
-  return { serviceItems, grn };
+  return { serviceItems };
 }
 
 export type ScheduledServiceOrdersResult = {

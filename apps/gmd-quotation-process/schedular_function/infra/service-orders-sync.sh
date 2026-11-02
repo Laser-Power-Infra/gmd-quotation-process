@@ -1,8 +1,7 @@
 #!/bin/sh
 # Usage: service-orders-sync.sh  -- POSTs to $GMD_APP_SERVER/api/scheduler/service-orders
-# Replaces the ServiceItem and GrnLine tables from the ITEM MASTER ERP and GRN tabs
-# of GMD_EXECUTION_TRACKING_SPREADSHEET_ID.
-# Daily at 02:10; each table is replaced in its own transaction.
+# Replaces the ServiceItem table from the ITEM MASTER ERP tab of
+# GMD_EXECUTION_TRACKING_SPREADSHEET_ID. Daily at 02:10, after purchase-orders (02:05).
 #
 # Env (set in the ofelia container, not committed):
 #   GMD_APP_SERVER      base URL of this app, e.g. http://gmd-quotation-process:4570

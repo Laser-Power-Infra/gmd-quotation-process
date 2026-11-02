@@ -2,16 +2,14 @@
  * Service / Work Orders: pure mapping and joins, no DB.
  *
  * Sources (all in the GMD EXECUTION TRACKING workbook):
- *   ITEM MASTER ERP (gid 253020709)  -> which item codes are services (`ServiceItem`)
- *   PURCHASE ORD AND GRN             -> order lines, already mirrored into the stock
- *                                       DB's `PurchaseOrderLine` by the purchase-orders
+ *   ITEM MASTER ERP (gid 253020709)  -> which item codes are services (`ServiceItem`,
+ *                                       quotation DB, written by the service-orders job)
+ *   PURCHASE ORD AND GRN             -> order lines, mirrored into the stock DB's
+ *                                       `PurchaseOrderLine` by the purchase-orders
  *                                       job; BALANCE = still pending
- *   GRN (gid 372231442)              -> receipts (`GrnLine`), joined on
+ *   GRN (gid 372231442)              -> receipts, mirrored into the stock DB's
+ *                                       `GrnLine` by the same job; joined on
  *                                       ORDER_VRNO + ORDER_SLNO = VRNO + SLNO
- *
- * GrnLine fields are the sheet headers camel-cased (ACC_CODE -> accCode), so the
- * header list is the only mapping. Every listed header is required: a renamed
- * column fails the run instead of writing nulls.
  */
 
 import { cell, requireColumns } from "./gmd_lib/bomMastErp";
@@ -19,39 +17,8 @@ import { parseSheetDate } from "./debtorsSync";
 import { inTransitQty, parseQty } from "@gmd/purchase/in-transit";
 
 export const ITEM_MASTER_GID = 253020709;
-export const GRN_GID = 372231442;
-
-export const GRN_HEADERS = [
-  "MAIN_POST_NAME", "ACC_CODE", "VRNO", "VRDATE", "ITEM_CODE", "PARTYBILLNO", "PARTYBILLDATE",
-  "ORDER_VRNO", "ORDER_SLNO", "QTYRECD", "PUR_VALUE",
-] as const;
-
-/** ACC_CODE -> accCode, MAIN_POST_NAME -> mainPostName. */
-export const camel = (h: string) =>
-  h.toLowerCase().replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
-
-type Camel<S extends string> = S extends `${infer H}_${infer T}` ? `${Lowercase<H>}${Capitalize<Camel<T>>}` : Lowercase<S>;
-export type GrnRecord = { vrno: string } & { [K in Exclude<(typeof GRN_HEADERS)[number], "VRNO"> as Camel<K>]: string | null };
 
 type Tab = { tabTitle?: string; headers: string[]; rows: string[][] };
-
-/** GRN tab -> records. Rows with a blank VRNO, or repeating the header, are dropped and counted. */
-export function mapGrnTab(tab: Tab): { records: GrnRecord[]; skipped: number } {
-  const idx = requireColumns(tab.headers, [...GRN_HEADERS], tab.tabTitle ?? "GRN");
-  const keys = GRN_HEADERS.map(camel);
-  const vrnoAt = keys.indexOf("vrno");
-  const records: GrnRecord[] = [];
-  let skipped = 0;
-  for (const row of tab.rows) {
-    const vrno = cell(row, idx[vrnoAt]);
-    if (!vrno || vrno.toUpperCase() === "VRNO") {
-      skipped++;
-      continue;
-    }
-    records.push(Object.fromEntries(keys.map((k, i) => [k, cell(row, idx[i]) || null])) as GrnRecord);
-  }
-  return { records, skipped };
-}
 
 /** ITEM MASTER ERP rows whose LEVEL_1_NAME is SERVICES or ITEM_NATURE is SR. */
 export function serviceItemsFrom(tab: Tab): { itemCode: string; itemName: string | null }[] {
@@ -108,6 +75,15 @@ export type PoLine = {
   deliverySched: string | null;
 };
 
+/** The stock-DB `GrnLine` columns this page reads. */
+export type GrnReceipt = {
+  vrNo: string;
+  vrDate: string | null;
+  partyBillNo: string | null;
+  orderVrNo: string | null;
+  orderSlNo: string | null;
+};
+
 export type ServiceOrderRow = {
   id: string;
   orderNo: string;
@@ -138,14 +114,14 @@ export type ServiceOrderRow = {
 /** Service PO lines with their GRN receipts, open lines first, oldest first. */
 export function buildServiceOrders(
   po: PoLine[],
-  grn: Pick<GrnRecord, "vrno" | "vrdate" | "partybillno" | "orderVrno" | "orderSlno">[],
+  grn: GrnReceipt[],
   serviceCodes: Set<string>,
   today: Date,
 ): ServiceOrderRow[] {
-  const receipts = new Map<string, typeof grn>();
+  const receipts = new Map<string, GrnReceipt[]>();
   for (const g of grn) {
-    if (!g.orderVrno) continue;
-    const k = key(g.orderVrno, g.orderSlno);
+    if (!g.orderVrNo) continue;
+    const k = key(g.orderVrNo, g.orderSlNo);
     receipts.set(k, [...(receipts.get(k) ?? []), g]);
   }
   const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
@@ -159,7 +135,7 @@ export function buildServiceOrders(
       const due = sheetDay(p.deliverySched);
       const open = pending > 0;
       const got = (receipts.get(key(p.poNo, p.poLineNo)) ?? [])
-        .map((g) => ({ g, d: sheetDay(g.vrdate) }))
+        .map((g) => ({ g, d: sheetDay(g.vrDate) }))
         .sort((a, b) => (b.d?.getTime() ?? 0) - (a.d?.getTime() ?? 0));
       const last = got[0];
       return {
@@ -182,9 +158,9 @@ export function buildServiceOrders(
         overdue: open && !!due && due.getTime() < todayUtc,
         open,
         grnCount: got.length,
-        lastGrnNo: last?.g.vrno ?? null,
+        lastGrnNo: last?.g.vrNo ?? null,
         lastGrnDate: last?.d?.toISOString() ?? null,
-        lastBillNo: last?.g.partybillno ?? null,
+        lastBillNo: last?.g.partyBillNo ?? null,
       };
     });
 
