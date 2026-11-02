@@ -6,6 +6,7 @@ import { lastClosureStatusSync } from "@/lib/closureStatusSync";
 import { getFiscalPrefix, nextDocketSerials } from "@/lib/docketNumber";
 import { fetchEnquiryPage } from "./actions/enquiryQuery";
 import { emptyEnquiryQuery, enquiryQueryKey } from "@/lib/enquiryQuery";
+import { loadCostLoadingTables } from "@/lib/costLoadingTables";
 
 // The dashboard reads live data on every request.
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function Page() {
   const initialQuery = emptyEnquiryQuery();
   // Only the first page is loaded here. Filters, paging and sorting re-run
   // through the same server action from the client.
-  const [initialPage, enquiries, enquiriesInFiscal, lookup] = await Promise.all([
+  const [initialPage, enquiries, enquiriesInFiscal, lookup, costLoading] = await Promise.all([
     fetchEnquiryPage(initialQuery),
     // Enquiries for the Add Items dropdown.
     prisma.enquiry.findMany({
@@ -33,6 +34,7 @@ export default async function Page() {
       select: { docketNumber: true },
     }),
     getActiveLookupValuesByType(),
+    loadCostLoadingTables(),
   ]);
 
   const [nextDocketNumber] = nextDocketSerials(
@@ -64,6 +66,7 @@ export default async function Page() {
     bypasses: sortOptions(lookup.BYPASS ?? []),
     others: sortOptions(lookup.OTHERS ?? ["flange", "gasket", "nut and bolt"]),
     deliverySchedules: sortOptions(lookup.DELIVERY ?? []),
+    costLoading,
   };
 
   return (

@@ -760,18 +760,49 @@ export async function bulkUpdateValidationAction(itemIds: string[], validation: 
       return { success: false, error: "Validation must be Yes, No, or blank." };
     }
 
-    const existing = await prisma.enquiryItem.findMany({
+    const found = await prisma.enquiryItem.findMany({
       where: { id: { in: uniqueIds } },
       select: { id: true, enquiryId: true, validation: true },
     });
-    if (existing.length !== uniqueIds.length) {
+    if (found.length !== uniqueIds.length) {
       return { success: false, error: "Some items not found. Please refresh and try again." };
     }
 
-    console.log(`[Server] bulkValidation ids=${uniqueIds.length} set="${normalized ?? ""}"`);
+    // Validation = Yes is refused for dockets missing payment terms, inspection or PBG.
+    // Those dockets are skipped and reported; the rest are still validated.
+    let existing = found;
+    let skipped: { docketNumber: string; missing: string[]; items: number }[] = [];
+    if (normalized === "Yes") {
+      const { missingValidationTerms, validationBlockedMessage } = await import("@/lib/commercialTerms");
+      const enquiryIds = [...new Set(found.map((e) => e.enquiryId))];
+      const parents = await prisma.enquiry.findMany({
+        where: { id: { in: enquiryIds } },
+        select: { id: true, docketNumber: true, paymentTerms: true, inspection: true, pbg: true },
+      });
+      const blocked = new Map<string, { docketNumber: string; missing: string[] }>();
+      for (const p of parents) {
+        const missing = missingValidationTerms(p);
+        if (missing.length > 0) blocked.set(p.id, { docketNumber: p.docketNumber, missing });
+      }
+      if (blocked.size > 0) {
+        skipped = [...blocked.entries()].map(([id, b]) => ({
+          ...b,
+          items: found.filter((e) => e.enquiryId === id).length,
+        }));
+        existing = found.filter((e) => !blocked.has(e.enquiryId));
+        if (existing.length === 0) {
+          const first = skipped[0];
+          const more = skipped.length > 1 ? ` (${skipped.length} dockets blocked)` : "";
+          return { success: false, error: validationBlockedMessage(first.docketNumber, first.missing) + more };
+        }
+      }
+    }
+    const targetIds = existing.map((e) => e.id);
+
+    console.log(`[Server] bulkValidation ids=${targetIds.length} set="${normalized ?? ""}" skippedDockets=${skipped.length}`);
 
     await prisma.enquiryItem.updateMany({
-      where: { id: { in: uniqueIds } },
+      where: { id: { in: targetIds } },
       data: { validation: normalized },
     });
     const { logItemChanges } = await import("@/lib/itemChangeLog");
@@ -780,10 +811,10 @@ export async function bulkUpdateValidationAction(itemIds: string[], validation: 
     );
 
     const updatedItems = await prisma.enquiryItem.findMany({
-      where: { id: { in: uniqueIds } },
+      where: { id: { in: targetIds } },
     });
 
-    return { success: true, data: { items: updatedItems.map(serializeItem), updated: updatedItems.length, validation: normalized } };
+    return { success: true, data: { items: updatedItems.map(serializeItem), updated: updatedItems.length, validation: normalized, skipped } };
   } catch (error: any) {
     console.error("Error bulk updating validation:", error);
     return { success: false, error: error.message || "Failed to update validation." };

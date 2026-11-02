@@ -120,6 +120,8 @@ export interface DropdownOptions {
   bypasses: string[];
   others: string[];
   deliverySchedules: string[];
+  /** Add-on lookup tables, used to show the cost loading % next to cost. */
+  costLoading?: import("./costLoading").CostLoadingTables;
 }
 
 export interface FiltersState {
