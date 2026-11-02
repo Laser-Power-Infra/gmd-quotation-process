@@ -2,7 +2,8 @@
  * Ofelia entry point for the Purchase Order / GRN sync.
  *
  * Copies the `PURCHASE_ORD_GRN_GID` tab of
- * `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` into `PurchaseOrderLine`.
+ * `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` into `PurchaseOrderLine`, then
+ * replaces `GrnLine` from the `GRN_GID` tab.
  *
  * Manual checks: `?dryRun=1` reports without writing, `?limit=200` reads only
  * the first rows. The POST body accepts the same two fields.

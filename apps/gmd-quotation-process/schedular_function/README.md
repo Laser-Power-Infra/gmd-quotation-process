@@ -35,7 +35,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | ERP Contract No sync | `POST /api/scheduler/erp-contract-no` | `erp-contract-no-sync` | `SALE_BILL`, `MC` |
 | Closure Status sync *(every 10m)* | `POST /api/scheduler/closure-status` | `closure-status-sync` | `docket_quotation_threads`, `enquiries` |
 | Ledger sync *(daily, 01:55)* | `POST /api/scheduler/ledger` | `ledger-sync` | `DEBTORS`, `CREDITORS`, `ADVANCE TO CREDITORS` -> `Debtor`, `Creditor`, `CreditorAdvance` |
-| Purchase Order / GRN sync | `POST /api/scheduler/purchase-orders` | `purchase-orders-sync` | `PURCHASE ORD AND GRN` -> stock DB `PurchaseOrderLine` |
+| Purchase Order / GRN sync *(daily, 02:05)* | `POST /api/scheduler/purchase-orders` | `purchase-orders-sync` | `PURCHASE ORD AND GRN` -> stock DB `PurchaseOrderLine`; `GRN` -> `GrnLine` |
 
 The stagger is deliberate. `raw-material`, `supply-history` and
 `contract-review` each full-table-read the tables the others write. `bom-mast`
@@ -1483,8 +1483,20 @@ Copies the `PURCHASE ORD AND GRN` tab of the GMD EXECUTION TRACKING workbook
 DB's `PurchaseOrderLine`. That table is what the Purchase dashboard reads, and
 what fills the `IN TRANSIT` column on Physical Stock.
 
-Not yet staggered into the hourly rota: it is cheap (one tab read, ~3.4k rows)
-and nothing else writes the table, so it can take any free slot.
+Then `lib/grnSync.ts` replaces the stock DB's `GrnLine` from the `GRN` tab
+(gid from `GRN_GID`, defaulting to 372231442), in one transaction. The tab has
+no unique key, so it is a snapshot copy like the ledger job. The dashboard joins
+it to a PO line on `ORDER_VRNO` + `ORDER_SLNO` to list the receipts behind it.
+A `limit` run skips the GRN write (a partial snapshot would replace the table).
+
+The PO sync also stores `LAST_PO_RATE` / `MIN_PO_RATE` / `LAST_PO_DATE`; the
+dashboard tints the last rate amber when it is above the lowest ever paid. The
+tab formats `BASIC_AMT` as a date on most rows, so `lineValue` falls back to
+`NET_QTYORDER x RATE` when the cell does not parse.
+
+Runs daily at 02:05 (`infra/purchase-orders.conf`), after the 01:55 ledger job.
+It is cheap (two tab reads, ~3.4k + ~5.3k rows) and nothing else writes either
+table, so it only has to avoid the hourly block.
 
 ### Why it copies instead of computing
 
