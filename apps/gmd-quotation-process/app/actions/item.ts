@@ -310,6 +310,26 @@ export async function updateItemFieldAction(
         }
       }
 
+      // Others cost depends on others + size/MOC/PN: refresh Cost when any of
+      // them changes on an item that uses Others (skip if the bypass gate above
+      // already recalculated, or the enquiry's pricing is frozen).
+      if (
+        updateData.bypass === undefined &&
+        (field === "others" || // also on untick-all, so the old others cost drops out
+          (["size", "moc", "pnRating", "itemName"].includes(field) &&
+            Array.isArray(dbItem.others) && dbItem.others.length > 0))
+      ) {
+        const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+        const parent = await prisma.enquiry.findUnique({
+          where: { id: prevFull.enquiryId },
+          select: { apm: true, offerPdfGeneratedAt: true },
+        });
+        if (!parent || !isEnquiryFrozen(parent.apm, parent.offerPdfGeneratedAt)) {
+          const recalc = await recalculateItem(itemId);
+          if (recalc) dbItem = (await prisma.enquiryItem.findUnique({ where: { id: itemId } })) as any;
+        }
+      }
+
       const MERGE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "others", "itemName"];
       if (MERGE_FIELDS.includes(field)) {
         const merged = getItemNameMerge(dbItem);

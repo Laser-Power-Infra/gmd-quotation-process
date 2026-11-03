@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { computeOthersCost } from "./othersCost";
 import { matchItemType, matchMoc } from "./itemTypePatterns";
 import { roundUp } from "./rounding";
 import { resolveCostChangeAnchor, isOfferRevision } from "./rateAnchor";
@@ -105,6 +106,9 @@ export async function recalculateItem(
 
   // 2. Calculate Cost (only if inputs changed, or cost was null)
   let cost: number | null = existingCost;
+  // undefined = formula didn't run, keep the stored value; null = a ticked
+  // Others component had no technical cost (drives the sanity warning).
+  let othersCostVal: number | null | undefined = undefined;
   const shouldRecalcCost = (updates && (updates.productCost !== undefined || updates.extension !== undefined || updates.bypass !== undefined || updates.cost !== undefined))
     || existingCost === null || existingCost <= 0
     || updates === undefined;
@@ -122,6 +126,15 @@ export async function recalculateItem(
       const bpMapping = await prisma.bypassCost.findUnique({ where: { size: bypass } });
       if (bpMapping) bpCost = parseFloat(bpMapping.cost) || 0;
     }
+
+    // 2.2b. Others Cost (flat): flange / gasket / nut-bolt from technical data
+    const othersRes = await computeOthersCost({
+      others: Array.isArray(item.others) ? item.others : [],
+      size: item.size,
+      moc: item.moc,
+      pnRating: item.pnRating,
+    });
+    othersCostVal = othersRes.complete && item.others?.length ? othersRes.cost : null;
 
     // 2.3. Payment Terms Cost (%)
     let ptPct = 0;
@@ -169,7 +182,7 @@ export async function recalculateItem(
 
     const pctMultiplier = ptPct + inspPct + pbgPct + transPct;
     const baseProductCost = productCost * BASE_COST_FACTOR;
-    cost = baseProductCost + extCost + bpCost + baseProductCost * pctMultiplier;
+    cost = baseProductCost + extCost + bpCost + othersRes.cost + baseProductCost * pctMultiplier;
     cost = parseFloat(cost.toFixed(2));
   }
 
@@ -267,6 +280,7 @@ export async function recalculateItem(
       bypass: bypass,
       quantity: quantity,
       cost: cost,
+      othersCost: othersCostVal,
       vaPercent: vaPercent !== null ? String(vaPercent) : null,
       quotedRate: quotedRate !== null ? quotedRate.toFixed(2) : null,
       quotedRateGst: quotedRateGst,

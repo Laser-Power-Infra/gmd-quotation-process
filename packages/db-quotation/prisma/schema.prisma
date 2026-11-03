@@ -145,6 +145,9 @@ model EnquiryItem {
   extension            String?
   bypass               String?
   others               String[] @default([])
+  // Flat cost added for the ticked Others (flange/gasket/nut-bolt); null when
+  // a ticked component had no technical cost (drives the cost warning).
+  othersCost           Decimal?
   productCost          Decimal?
   costRefCode          String?
   cost                 Decimal?

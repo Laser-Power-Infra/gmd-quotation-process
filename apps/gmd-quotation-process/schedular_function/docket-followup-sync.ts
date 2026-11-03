@@ -6,18 +6,26 @@ import {
   hasDocketCreationKeyword,
   isPendingDocketCandidate,
   isPurchaseOrderMail,
+  hasRealDocketNo,
+  isTenderRefNotDocket,
+  NO_REAL_DOCKET_WHERE,
 } from "@/lib/docketPending";
 import {
   isDocketAiEligible,
   runDocketAiValidation,
   type DocketAiThreadInput,
 } from "@/lib/docketAiValidationRunner";
+import { invalidatePendingDocketsCache } from "@/lib/pendingDocketsCache";
 
 export const DOCKET_PATTERNS = [
   /\bGMD\/\d{4}-\d{2}\/\d+\b/i,
   /\bGMD[-\s_]?\d{4,}\b/i,
   /\bENQ[-\s_]?\d{4,}(?:[-\s_]?\d{2}[-\s_]?\d{2})?\b/i,
-  /\b(?:docket|docket\s*no|docket\s*number|docket#)\s*[:#\-\s]?\s*([a-zA-Z0-9\/-]{4,})\b/i,
+  // The number must contain a digit. Without that, request wording such as
+  // "Docket Creation" / "create docket against RFQ" was read as docket no.
+  // "Creation" / "against", so the mail was marked RESOLVED and never showed
+  // on the Pending Dockets tab.
+  /\bdocket\s*(?:no\.?|number|#)?\s*[:#\-]?\s*((?=[a-zA-Z0-9\/-]*\d)[a-zA-Z0-9\/-]{4,})\b/i,
 ];
 
 /**
@@ -53,8 +61,9 @@ export function detectDocketNumber(thread: {
   ocrText?: string | null;
 }): string | null {
   // 1. Direct DB column check
-  if (thread.docketNo && thread.docketNo.trim()) {
-    return thread.docketNo.trim();
+  // GeM / e-proc refs stored by the mail import are not dockets.
+  if (hasRealDocketNo(thread.docketNo)) {
+    return thread.docketNo!.trim();
   }
 
   const attachText = extractAttachmentNamesText(thread.attachNames);
@@ -68,9 +77,9 @@ export function detectDocketNumber(thread: {
 
   for (const pattern of DOCKET_PATTERNS) {
     const match = combinedSearchText.match(pattern);
-    if (match) {
-      return match[1] || match[0];
-    }
+    const value = match ? match[1] || match[0] : null;
+    // "create docket against GEM/2026/B/..." names the bid, not a docket.
+    if (value && !isTenderRefNotDocket(value)) return value;
   }
 
   return null;
@@ -134,10 +143,15 @@ async function runDocketFollowupSyncInternal(
 
   // Lookback threshold: explicit since, last sync, or the past 48 hours. The
   // job runs hourly; 48h covers ingestion lag without touching older backlog.
+  // Never narrower than 48h: the last-sync stamp is only in memory, and a
+  // window of "since 10 minutes ago" silently skipped mail the ingestion
+  // delivered late.
+  const minLookback = new Date(Date.now() - 48 * 60 * 60 * 1000);
   const lookbackSince =
     options.since ||
-    lastSyncTimestamp ||
-    new Date(Date.now() - 48 * 60 * 60 * 1000);
+    (lastSyncTimestamp && lastSyncTimestamp < minLookback
+      ? lastSyncTimestamp
+      : minLookback);
 
   // 1. Load active PARTY lookup options
   const partyRows = await prisma.lookupOption.findMany({
@@ -151,21 +165,34 @@ async function runDocketFollowupSyncInternal(
   // 2. Incremental Where Clause:
   // Only pending threads or threads touched since the last run. Do NOT scan
   // every `docketNo = null` thread: that is ~7k rows / ~37s on this database.
+  //
+  // The mail ingestion re-syncs old rows every hour, bumping `updatedAt` on
+  // thousands of them. Selecting on `updatedAt` with a 1000-row cap meant those
+  // re-synced old rows crowded out genuinely new mail, which then never got
+  // `pendingDocket = true` and never showed on the Pending Dockets tab. New
+  // mail is found by `date` / `createdAt` instead, and there is no row cap.
+  // Rows that already have a docket can never be pending, so they are skipped
+  // unless still flagged pending (then they need clearing).
+  const undocketed = { ...NO_REAL_DOCKET_WHERE, duplicateOfDocket: null };
   const whereClause = fullScan
-    ? {}
+    ? { OR: [{ pendingDocket: true }, undocketed] }
     : {
         OR: [
           { pendingDocket: true },
-          { updatedAt: { gte: lookbackSince } },
-          { date: { gte: lookbackSince } },
+          {
+            ...undocketed,
+            OR: [
+              { date: { gte: lookbackSince } },
+              { createdAt: { gte: lookbackSince } },
+            ],
+          },
         ],
       };
 
   // 3. Fetch ONLY candidate/updated threads
   const threads = await prisma.docketQuotationThread.findMany({
     where: whereClause,
-    orderBy: { updatedAt: "desc" },
-    take: fullScan ? undefined : 1000,
+    orderBy: { date: "desc" },
     select: {
       id: true,
       threadId: true,
@@ -334,6 +361,8 @@ async function runDocketFollowupSyncInternal(
   }
 
   lastSyncTimestamp = new Date();
+  // The Pending tab reloads right after a sync; don't serve it the stale list.
+  invalidatePendingDocketsCache();
   const elapsedMs = Date.now() - startTime;
 
   return {
