@@ -44,6 +44,36 @@ export const DOCKET_CONTEXT_PATTERNS = [
   /\bpurchase\s+order\b/i,
 ];
 
+/**
+ * The mail import (Match Emails Portal `docketQuotationSync.js`) stores tender
+ * references in `docket_no`: GeM bid numbers (GEM/2026/B/8168518) and state
+ * e-procurement IDs (2026_WBSED_123456_1). Those are not GMD dockets, so a mail
+ * like "please create docket for GeM bid GEM/2026/B/..." must still count as
+ * pending. Real dockets look like GMD/2026-27/589.
+ */
+export function isTenderRefNotDocket(docketNo: string | null | undefined): boolean {
+  const v = (docketNo || "").trim();
+  if (!v) return false;
+  return /^GEM\/\d{4}\/[A-Z]\/\d+$/i.test(v) || /^\d{4}_[A-Z0-9]+_\d+_\d+$/i.test(v);
+}
+
+/** True when the row carries a real docket number (not empty, not a tender ref). */
+export function hasRealDocketNo(docketNo: string | null | undefined): boolean {
+  return !!(docketNo || "").trim() && !isTenderRefNotDocket(docketNo);
+}
+
+/**
+ * Prisma pre-filter for "no real docket yet". Over-selects (any "_" value);
+ * callers re-check with `hasRealDocketNo`.
+ */
+export const NO_REAL_DOCKET_WHERE = {
+  OR: [
+    { docketNo: null },
+    { docketNo: { startsWith: "GEM/", mode: "insensitive" as const } },
+    { docketNo: { contains: "_" } },
+  ],
+};
+
 export function hasDocketCreationKeyword(text: string): boolean {
   if (!text) return false;
   return DOCKET_CREATION_PATTERNS.some((p) => p.test(text));

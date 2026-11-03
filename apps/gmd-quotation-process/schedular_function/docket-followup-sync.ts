@@ -6,6 +6,9 @@ import {
   hasDocketCreationKeyword,
   isPendingDocketCandidate,
   isPurchaseOrderMail,
+  hasRealDocketNo,
+  isTenderRefNotDocket,
+  NO_REAL_DOCKET_WHERE,
 } from "@/lib/docketPending";
 import {
   isDocketAiEligible,
@@ -18,7 +21,11 @@ export const DOCKET_PATTERNS = [
   /\bGMD\/\d{4}-\d{2}\/\d+\b/i,
   /\bGMD[-\s_]?\d{4,}\b/i,
   /\bENQ[-\s_]?\d{4,}(?:[-\s_]?\d{2}[-\s_]?\d{2})?\b/i,
-  /\b(?:docket|docket\s*no|docket\s*number|docket#)\s*[:#\-\s]?\s*([a-zA-Z0-9\/-]{4,})\b/i,
+  // The number must contain a digit. Without that, request wording such as
+  // "Docket Creation" / "create docket against RFQ" was read as docket no.
+  // "Creation" / "against", so the mail was marked RESOLVED and never showed
+  // on the Pending Dockets tab.
+  /\bdocket\s*(?:no\.?|number|#)?\s*[:#\-]?\s*((?=[a-zA-Z0-9\/-]*\d)[a-zA-Z0-9\/-]{4,})\b/i,
 ];
 
 /**
@@ -54,8 +61,9 @@ export function detectDocketNumber(thread: {
   ocrText?: string | null;
 }): string | null {
   // 1. Direct DB column check
-  if (thread.docketNo && thread.docketNo.trim()) {
-    return thread.docketNo.trim();
+  // GeM / e-proc refs stored by the mail import are not dockets.
+  if (hasRealDocketNo(thread.docketNo)) {
+    return thread.docketNo!.trim();
   }
 
   const attachText = extractAttachmentNamesText(thread.attachNames);
@@ -69,9 +77,9 @@ export function detectDocketNumber(thread: {
 
   for (const pattern of DOCKET_PATTERNS) {
     const match = combinedSearchText.match(pattern);
-    if (match) {
-      return match[1] || match[0];
-    }
+    const value = match ? match[1] || match[0] : null;
+    // "create docket against GEM/2026/B/..." names the bid, not a docket.
+    if (value && !isTenderRefNotDocket(value)) return value;
   }
 
   return null;
@@ -165,7 +173,7 @@ async function runDocketFollowupSyncInternal(
   // mail is found by `date` / `createdAt` instead, and there is no row cap.
   // Rows that already have a docket can never be pending, so they are skipped
   // unless still flagged pending (then they need clearing).
-  const undocketed = { docketNo: null, duplicateOfDocket: null };
+  const undocketed = { ...NO_REAL_DOCKET_WHERE, duplicateOfDocket: null };
   const whereClause = fullScan
     ? { OR: [{ pendingDocket: true }, undocketed] }
     : {

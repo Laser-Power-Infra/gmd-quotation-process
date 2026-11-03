@@ -9,6 +9,8 @@ import {
   isGenuineGmdClientThread,
   isPendingDocketCandidate,
   isPurchaseOrderMail,
+  hasRealDocketNo,
+  NO_REAL_DOCKET_WHERE,
 } from "@/lib/docketPending";
 import {
   enqueueDocketAiValidation,
@@ -17,6 +19,7 @@ import {
   type DocketAiThreadInput,
 } from "@/lib/docketAiValidationRunner";
 import { isDocketAiValidationEnabled } from "@/lib/docketAiValidator";
+import { detectDocketNumber } from "@/schedular_function/docket-followup-sync";
 import {
   getPendingDocketsCache,
   setPendingDocketsCache,
@@ -158,12 +161,18 @@ export async function GET() {
     // the whole 10k thread table.
     const threads = await prisma.docketQuotationThread.findMany({
       where: {
-        docketNo: null,
         duplicateOfDocket: null,
-        OR: [
-          { pendingDocket: true },
-          { aiIsNewDocket: true },
-          { aiValidationAttempts: { gt: 0 } },
+        // GeM / e-proc tender refs in docket_no are not dockets (see
+        // isTenderRefNotDocket), so those mails can still be pending.
+        AND: [
+          NO_REAL_DOCKET_WHERE,
+          {
+            OR: [
+              { pendingDocket: true },
+              { aiIsNewDocket: true },
+              { aiValidationAttempts: { gt: 0 } },
+            ],
+          },
         ],
       },
       orderBy: { date: "desc" },
@@ -214,13 +223,17 @@ export async function GET() {
     const pendingRows: PendingRowInternal[] = [];
 
     for (const t of threads) {
-      const aiVerdict = t.aiIsNewDocket ?? null;
-      // AI-rejected rows are hidden permanently.
-      if (aiVerdict === false) continue;
-
       const text = `${t.subject || ""} ${t.body || ""} ${t.bodyPreview || ""}`;
-
       const hasCreationKeyword = hasDocketCreationKeyword(text);
+
+      // AI-rejected rows are hidden, except when the thread explicitly asks
+      // "please create docket": the AI was rejecting those as internal
+      // forwards / reminders (e.g. Puja's "Please create docket - LCC ..."),
+      // so they vanished from this tab. Such rows show as unverified and must
+      // still pass the candidate rule below.
+      const aiVerdict =
+        t.aiIsNewDocket === false && hasCreationKeyword ? null : t.aiIsNewDocket ?? null;
+      if (aiVerdict === false) continue;
       // Customer POs are not docket requests; hides rows flagged earlier.
       if (isPurchaseOrderMail(t) && !hasCreationKeyword) continue;
 
@@ -312,8 +325,13 @@ export async function GET() {
       const firstMsg = parsedMsgs.length > 0 ? parsedMsgs[0] : null;
       const requestSnippet = (firstMsg?.body || t.bodyPreview || "").slice(0, 400).trim();
 
-      const hasDocketInDb = !!t.docketNo || !!t.duplicateOfDocket;
-      const linkedDocketNo = t.docketNo || t.duplicateOfDocket || null;
+      // The "_" pre-filter over-selects; a real docket still hides the row,
+      // as does a GMD docket already quoted in the mail while docket_no holds
+      // only the tender ref.
+      if (hasRealDocketNo(t.docketNo)) continue;
+      if (t.docketNo && detectDocketNumber({ ...t, docketNo: null })) continue;
+      const hasDocketInDb = !!t.duplicateOfDocket;
+      const linkedDocketNo = t.duplicateOfDocket || null;
       const pendingStatus = hasDocketInDb ? "DOCKET_STAMPED" : "PENDING_DOCKET";
 
       const aiAttempts = t.aiValidationAttempts ?? 0;
@@ -323,7 +341,7 @@ export async function GET() {
         body: t.body,
         bodyPreview: t.bodyPreview,
         ocrText: t.ocrText,
-        docketNo: t.docketNo,
+        docketNo: null, // tender ref, not a docket
         duplicateOfDocket: t.duplicateOfDocket,
         aiIsNewDocket: t.aiIsNewDocket,
         aiValidationAttempts: aiAttempts,
@@ -383,7 +401,7 @@ export async function GET() {
             body: m.body,
           })),
         },
-        aiIsNewDocket: t.aiIsNewDocket ?? null,
+        aiIsNewDocket: aiVerdict,
         aiAttempts,
         aiLastError: t.aiValidationLastError ?? null,
         hasDocket: hasDocketInDb,

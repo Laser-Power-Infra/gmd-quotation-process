@@ -11,7 +11,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { isPendingDocketCandidate } from "@/lib/docketPending";
+import { hasRealDocketNo, isPendingDocketCandidate } from "@/lib/docketPending";
 import {
   isDocketAiValidationEnabled,
   validateNewDocketWithAi,
@@ -79,7 +79,7 @@ export interface DocketAiValidationOptions {
 export function isDocketAiEligible(thread: DocketAiThreadInput): boolean {
   if (thread.aiIsNewDocket === true || thread.aiIsNewDocket === false) return false;
   if ((thread.aiValidationAttempts ?? 0) >= maxAttempts()) return false;
-  if (thread.docketNo) return false;
+  if (hasRealDocketNo(thread.docketNo)) return false;
   if (thread.duplicateOfDocket) return false;
 
   const text = `${thread.subject || ""} ${thread.body || ""} ${thread.bodyPreview || ""}`;
