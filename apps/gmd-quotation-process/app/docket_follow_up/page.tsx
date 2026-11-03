@@ -129,7 +129,12 @@ export default function DocketFollowUpPage() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5 * 60_000);
     try {
-      const res = await fetch("/api/scheduler/docket-followup", {
+      // Manual "Sync & Detect" re-scans every undocketed thread; the silent
+      // page-load / hourly runs stay incremental.
+      const syncUrl = isSilent
+        ? "/api/scheduler/docket-followup"
+        : "/api/scheduler/docket-followup?full=true";
+      const res = await fetch(syncUrl, {
         method: "POST",
         headers: { "x-app-source": "gmd-dashboard" },
         signal: controller.signal,
