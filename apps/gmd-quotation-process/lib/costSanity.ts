@@ -19,6 +19,7 @@ const sql = Prisma.sql;
 
 export const COST_WARNING = {
   NEGATIVE_VA: "VA% below 0",
+  OTHERS_COST_MISSING: "Others cost missing: no technical flange/gasket/nut-bolt cost for this size/MOC/PN",
 } as const;
 
 export const SIZE_COST_RATIO = 0.8;
@@ -70,7 +71,9 @@ export function costWarningsSql(i: Prisma.Sql): Prisma.Sql {
   return sql`array_remove(ARRAY[
     ${sizeReasonSql(i)},
     ${actuatorReasonSql(i)},
-    CASE WHEN ${negativeVaSql(i)} THEN ${COST_WARNING.NEGATIVE_VA} END
+    CASE WHEN ${negativeVaSql(i)} THEN ${COST_WARNING.NEGATIVE_VA} END,
+    CASE WHEN cardinality(${i}."others") > 0 AND ${i}."productCost" > 0 AND ${i}."othersCost" IS NULL
+      THEN ${COST_WARNING.OTHERS_COST_MISSING} END
   ]::text[], NULL)`;
 }
 
@@ -90,6 +93,8 @@ export interface CostItem {
   productCost?: number | null;
   contractReviewRate?: string | null;
   vaPercent?: string | null;
+  others?: string[] | null;
+  othersCost?: number | null;
 }
 
 /** Plain-TS mirror of costWarningsSql; returns warnings per item id. */
@@ -120,6 +125,8 @@ export function evaluateCostWarnings(items: CostItem[]): Map<string, string[]> {
     if (n(it.operationType).includes("ACT") && it.productCost! > 0 && rate >= ACTUATOR_RATE_MULTIPLE * it.productCost!)
       add(it.id, `Motorised item: cost ${inr(it.productCost!)} vs contract ${inr(rate)}, actuator cost looks missing`);
     if (parseFloat(it.vaPercent ?? "") < 0) add(it.id, COST_WARNING.NEGATIVE_VA);
+    if ((it.others?.length ?? 0) > 0 && it.productCost! > 0 && (it.othersCost === null || it.othersCost === undefined))
+      add(it.id, COST_WARNING.OTHERS_COST_MISSING);
   }
   return out;
 }
