@@ -1107,3 +1107,63 @@ export async function sendOpenItemsAction(
     };
   }
 }
+
+// "Apply VA% rules" for one docket: refresh CR rates, then set each item's rate per
+// lib/vaRules.ts (CR rate, capped at the last rate SENT to the same party while this
+// docket is unsent, never below the minimum VA%). Validated items are locked, so skipped.
+export async function applyVaRulesAction(enquiryId: string) {
+  await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
+  try {
+    const enquiry = await prisma.enquiry.findUnique({
+      where: { id: enquiryId },
+      select: { partyName: true, apm: true, offerPdfGeneratedAt: true, emailSentBy: true, offerRevised: true, items: { select: { id: true, erpItemCode: true, validation: true } } },
+    });
+    if (!enquiry) return { success: false as const, error: "Docket not found." };
+    const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+    if (isEnquiryFrozen(enquiry.apm, enquiry.offerPdfGeneratedAt)) return { success: false as const, error: "Rates are frozen after one-time PDF generation: revert APM first." };
+
+    // Reuse the Fetch CR Rates lookup; "no matching rows" is not an error here.
+    await fetchContractReviewRatesAction(enquiry.items.filter((i) => i.erpItemCode).map((i) => i.id));
+
+    const sent = !!enquiry.emailSentBy && !enquiry.offerRevised;
+    const prevByCode = new Map<string, number>();
+    if (!sent) {
+      const codes = [...new Set(enquiry.items.map((i) => i.erpItemCode).filter((c): c is string => !!c))];
+      const prior = await prisma.enquiry.findMany({
+        where: { id: { not: enquiryId }, partyName: { equals: enquiry.partyName.trim(), mode: "insensitive" }, emailSentBy: { not: null }, items: { some: { erpItemCode: { in: codes } } } },
+        orderBy: { enquiryDate: "desc" },
+        select: { items: { where: { erpItemCode: { in: codes }, quotedRate: { not: null } }, select: { erpItemCode: true, quotedRate: true } } },
+      });
+      for (const e of prior) for (const i of e.items) {
+        const r = parseFloat(i.quotedRate!);
+        if (r > 0 && !prevByCode.has(i.erpItemCode!)) prevByCode.set(i.erpItemCode!, r); // newest docket first
+      }
+    }
+
+    const { vaRuleRate } = await import("@/lib/vaRules");
+    const { recalculateItem } = await import("@/lib/costCalculator");
+    const { logItemChanges } = await import("@/lib/itemChangeLog");
+    const fresh = await prisma.enquiryItem.findMany({ where: { enquiryId } });
+    let changed = 0, locked = 0;
+    for (const it of fresh) {
+      if (it.validation === "Yes") { locked++; continue; }
+      const rate = vaRuleRate(
+        { itemType: it.itemType, itemName: it.itemName, size: it.size, cost: it.cost ? Number(it.cost) : null, quotedRate: it.quotedRate, contractReviewRate: it.contractReviewRate },
+        it.erpItemCode ? prevByCode.get(it.erpItemCode) : null,
+      );
+      if (rate === null || Math.abs(rate - parseFloat(it.quotedRate ?? "0")) < 0.005) continue;
+      const after = await recalculateItem(it.id, { quotedRate: rate }, { exactQuotedRate: true });
+      await logItemChanges(
+        [{ field: "quotedRate", oldValue: it.quotedRate, newValue: after?.quotedRate }, { field: "vaPercent", oldValue: it.vaPercent, newValue: after?.vaPercent }]
+          .map((c) => ({ ...c, itemId: it.id, enquiryId })),
+      );
+      changed++;
+    }
+    if (changed > 0 && enquiry.emailSentBy && !enquiry.offerRevised) await prisma.enquiry.update({ where: { id: enquiryId }, data: { offerRevised: true } });
+    return { success: true as const, changed, locked };
+  } catch (error: any) {
+    console.error("Error applying VA% rules:", error);
+    return { success: false as const, error: error.message || "Failed to apply VA% rules." };
+  }
+}

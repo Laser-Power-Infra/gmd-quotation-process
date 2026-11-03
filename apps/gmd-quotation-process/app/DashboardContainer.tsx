@@ -147,6 +147,13 @@ export default function DashboardContainer({
     dispatch(setClosedBomIds(derivedClosedBomIds));
   }, [derivedClosedBomIds, dispatch]);
 
+  // Already fetched server-side for the Add Items dropdown; reuse it instead of
+  // making the table fetch the same list again on mount.
+  const docketNumbers = useMemo(
+    () => enquiriesList.map((e) => e.docketNumber),
+    [enquiriesList],
+  );
+
   const formattedSum = formatIndianNumber(summary.totalValueGst, 2);
   const formattedExclSum = formatIndianNumber(summary.totalValueExclGst, 2);
   const formattedTotalCost = formatIndianNumber(summary.totalCost, 2);
@@ -176,7 +183,10 @@ export default function DashboardContainer({
         hasActiveAnalyticsFilters={hasActiveAnalyticsFilters}
         facetCounts={summary.facetCounts ?? {}}
       />
-      <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0 overflow-hidden transition-all duration-300">
+      {/* overflow-y-auto, not hidden: on a short viewport the stat strip + header +
+          stage tiles can exceed the height, and clipping them left no way to reach
+          the table. The table keeps its own min height so it never collapses to zero. */}
+      <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0 overflow-y-auto overflow-x-hidden transition-all duration-300">
         <div className="shrink-0">
           <QuotationTotalValueCard
             formattedSum={formattedSum}
@@ -205,9 +215,10 @@ export default function DashboardContainer({
             initialSummary={initialPage.summary}
           />
         </div>
-        <div className="bg-card rounded-lg border border-border overflow-hidden shadow-sm flex flex-col flex-1 min-h-0 overflow-hidden">
+        <div className="bg-card rounded-lg border border-border shadow-sm flex flex-col flex-1 min-h-[26rem] overflow-hidden">
           <EnquiryTable
             dropdownOptions={dropdownOptions}
+            initialDocketNumbers={docketNumbers}
             autoSentDockets={autoSentDockets}
             autoPendingDockets={autoPendingDockets}
           />

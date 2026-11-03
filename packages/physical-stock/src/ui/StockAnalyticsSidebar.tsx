@@ -58,7 +58,7 @@ function StatCard({
         }
       }}
       className={`shadow-sm transition-all cursor-pointer select-none ${
-        active ? "ring-2 ring-[#0f62fe] bg-muted/40" : "hover:ring-foreground/20 hover:bg-muted/20"
+        active ? "ring-2 ring-[#0f62fe] dark:ring-blue-500 bg-muted/40" : "hover:ring-foreground/20 hover:bg-muted/20"
       }`}
     >
       <CardHeader className="pb-1">

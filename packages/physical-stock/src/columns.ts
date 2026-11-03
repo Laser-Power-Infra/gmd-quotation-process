@@ -41,6 +41,9 @@ export const COLUMNS = [
   // every existing column keeps its index (edits look fields up by index).
   "IN TRANSIT",
   "INCOMING FROM",
+  // Derived from the FG item master (see fgMatcher); last for the same index reason.
+  "FG ITEM CODE",
+  "PRODUCTION ITEM",
 ] as const;
 
 export type PhysicalStockHeader = (typeof COLUMNS)[number];
@@ -84,6 +87,8 @@ export const FIELDS = [
   "serial_no",
   "in_transit",
   "incoming_from",
+  "fg_item_code",
+  "production_item",
 ] as const satisfies readonly (keyof PhysicalStockRow)[];
 
 export type PhysicalStockField = (typeof FIELDS)[number];

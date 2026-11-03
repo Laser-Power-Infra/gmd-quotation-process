@@ -15,7 +15,7 @@ import {
 import { outOfTolerance } from "../dimensions";
 import type { DimensionStandard, DimensionValues } from "../dimensions";
 import { NEW_ITEM_FIELDS } from "../types";
-import type { CodeOptions } from "../codeOptions";
+import { fgMatcher, type CodeOptions } from "../codeOptions";
 import type { ActionResult, FieldUpdate, HeatEntryRow, HeatQueueItem, HeatSerial, NewItemInput, PhysicalStockRow } from "../types";
 
 // Pure operations on the PhysicalStock table (stock DB). No auth, no flags
@@ -52,12 +52,16 @@ export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
     orderBy: [{ form_date: "desc" }, { created_at: "desc" }, { id: "asc" }],
     include: HEAT_ENTRIES,
   });
+  // Table missing until the db-stock migration is deployed: no FG columns, the page still loads.
+  const fg = await stockPrisma.fgBomOption.findMany({ orderBy: { fgCode: "asc" } }).catch(() => []);
+  const matchFg = fgMatcher(fg);
   return items.map((item) => {
     const { created_at: _c, updated_at: _u, form_date, heat_entries: _h, ...rest } = item;
     return {
       ...rest,
       form_date: form_date ? form_date.toISOString() : null,
       ...heatColumns(item),
+      ...matchFg(item),
       // Filled by the host app's load() from @gmd/purchase; null = not looked up.
       in_transit: null,
       incoming_from: null,

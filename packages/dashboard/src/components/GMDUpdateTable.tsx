@@ -3046,7 +3046,7 @@ castingRateInputs,
                       key={idx}
                       className={`relative bg-muted text-foreground text-xs font-bold uppercase tracking-wider px-2.5 py-2 text-left border-b-2 border-border border-r last:border-r-0 select-none align-top${
                         frozenLeft !== undefined ? " sticky z-20" : ""
-                      }${groupIsEditable ? " bg-amber-50/50 dark:bg-[color-mix(in_oklch,var(--muted),var(--color-amber-500)_10%)]" : ""}`}
+                      }${groupIsEditable ? " bg-amber-50/50 dark:bg-[color-mix(in_oklab,var(--muted),var(--color-amber-500)_10%)]" : ""}`}
                       style={
                         frozenLeft !== undefined ? { left: frozenLeft } : undefined
                       }
@@ -3215,7 +3215,7 @@ castingRateInputs,
                       (!editableColumns ||
                         editableColumns.includes(header) ||
                         blankOnlyEditableColumns?.includes(header))
-                        ? " bg-amber-50/50 dark:bg-[color-mix(in_oklch,var(--muted),var(--color-amber-500)_10%)]"
+                        ? " bg-amber-50/50 dark:bg-[color-mix(in_oklab,var(--muted),var(--color-amber-500)_10%)]"
                         : ""
                     }`}
                     style={
@@ -3469,7 +3469,7 @@ castingRateInputs,
                     selectedIndex === idx
                       ? "bg-blue-50 dark:bg-blue-500/10"
                       : isDuplicate
-                        ? "bg-yellow-100 dark:bg-yellow-500/10 hover:bg-yellow-200 dark:hover:bg-yellow-500/20"
+                        ? "bg-yellow-100 dark:bg-[color-mix(in_oklab,var(--card),var(--color-amber-600)_32%)] hover:bg-yellow-200 dark:hover:bg-[color-mix(in_oklab,var(--card),var(--color-amber-600)_44%)]"
                         : "hover:bg-muted/60"
                   }`}
                   onClick={() => onSelect(idx)}
@@ -3614,14 +3614,14 @@ castingRateInputs,
                           : "bg-rose-100 dark:bg-rose-900";
                     const editableBg =
                       isCellEditable || isPnBlankDropdown || groupIsEditable
-                        ? "bg-amber-50 dark:bg-[color-mix(in_oklch,var(--card),var(--color-amber-500)_10%)]"
+                        ? "bg-amber-50 dark:bg-[color-mix(in_oklab,var(--card),var(--color-amber-500)_10%)]"
                         : "";
                     const bgClass = rowIsDiff
                       ? diffBg
                       : isWarned
                         ? "bg-amber-100 dark:bg-amber-500/15"
                         : isDuplicate
-                          ? "bg-yellow-100 dark:bg-yellow-500/10"
+                          ? "bg-yellow-100 dark:bg-[color-mix(in_oklab,var(--card),var(--color-amber-600)_32%)]"
                           : editableBg
                             ? editableBg
                             : frozenLeft !== undefined

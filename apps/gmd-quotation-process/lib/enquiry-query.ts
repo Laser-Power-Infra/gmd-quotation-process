@@ -403,7 +403,14 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
       );
     }
   } else {
-    const needsItem = hasActiveFilters(q) || q.closedBomOnly || q.incompleteOnly || q.costWarningOnly;
+    // Only an item-level filter may require a matching item. Using "any filter is
+    // set" here meant an enquiry-level filter (docket number, party, date, …) also
+    // demanded one, so a docket auto-created from an email — which has no items yet
+    // — disappeared from its own docket-number search.
+    const needsItem = hasActiveItemFilters(
+      f,
+      q.closedBomOnly || q.incompleteOnly || q.costWarningOnly,
+    );
     if (needsItem) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,

@@ -92,6 +92,10 @@ model Enquiry {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([enquiryDate])
+  @@index([closureStatus])
+  @@index([partyName])
 }
 
 // Who changed VA% / quoted rate / validation, and when. No FK: survives item deletion.
@@ -179,6 +183,9 @@ model EnquiryItem {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // The dashboard stage CASE runs four correlated EXISTS on this FK per Enquiry row.
+  @@index([enquiryId])
 }
 
 model GmdItemCode {

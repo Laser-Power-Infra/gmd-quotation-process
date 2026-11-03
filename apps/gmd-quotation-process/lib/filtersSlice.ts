@@ -73,10 +73,8 @@ const filtersSlice = createSlice({
       const { field, value } = action.payload;
       (state as unknown as Record<string, unknown>)[field] = value;
     },
-    // "Reset all filters" clears the column filters only. The header search box lived
-    // outside this slice before and was never cleared by the reset, so keep it.
-    resetFilters(state) {
-      return { ...initialFiltersState, globalSearch: state.globalSearch };
+    resetFilters() {
+      return initialFiltersState;
     },
   },
 });

@@ -22,6 +22,7 @@ import { closeNewEnquiryDialog } from "@/lib/dialogsSlice";
 import { useSession } from "next-auth/react";
 import { clearDraft, isDraftEmpty, parseDraft, readDraftRaw, saveDraft, type NewEnquiryDraft } from "@/lib/newEnquiryDraft";
 import { looseIncludes } from "@/lib/squish";
+import { addPartyOptionAction } from "@/app/actions/enquiry";
 import { useUtilityDefaultStates } from "@/lib/hooks/useUtilityDefaultStates";
 
 interface NewEnquiryDialogProps {
@@ -99,6 +100,9 @@ export default function NewEnquiryDialog({
 
   const [partyName, setPartyName] = useState("");
   const [partySearch, setPartySearch] = useState("");
+  // Parties added from this dialog; the page's option list only refreshes on reload.
+  const [addedParties, setAddedParties] = useState<string[]>([]);
+  const [isAddingParty, setIsAddingParty] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [enquiryDate, setEnquiryDate] = useState(today);
 
@@ -358,9 +362,30 @@ export default function NewEnquiryDialog({
   const debouncedPartySearch = useDebounce(partySearch, 300);
 
   // Filter party names dropdown
-  const filteredParties = dropdownOptions.partyNames.filter((name) =>
+  const allParties = [...dropdownOptions.partyNames, ...addedParties];
+  const filteredParties = allParties.filter((name) =>
     looseIncludes(name, debouncedPartySearch)
   );
+
+  const newPartyName = partySearch.trim();
+  const canAddParty =
+    newPartyName.length > 0 &&
+    !allParties.some((name) => name.toLowerCase() === newPartyName.toLowerCase());
+
+  const handleAddParty = async () => {
+    setIsAddingParty(true);
+    const res = await addPartyOptionAction(newPartyName);
+    setIsAddingParty(false);
+    if (!res.success) {
+      toast.error(res.error || "Could not add the party.");
+      return;
+    }
+    setAddedParties((prev) => [...prev, res.value]);
+    setPartyName(res.value);
+    setIsDropdownOpen(false);
+    setPartySearch("");
+    toast.success(`Added "${res.value}" to the party list.`);
+  };
 
   const selectClass = "w-full h-9 rounded border border-input bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
   const itemSelectClass = "w-full h-8 rounded border border-input bg-background px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
@@ -459,10 +484,23 @@ export default function NewEnquiryDialog({
                         </div>
 
                         <div className="overflow-y-auto max-h-48 divide-y divide-border">
+                          {canAddParty && (
+                            <button
+                              type="button"
+                              disabled={isAddingParty}
+                              onClick={handleAddParty}
+                              className="w-full text-left py-1.5 px-3 text-xs font-semibold text-primary hover:bg-muted cursor-pointer transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              <Plus className="h-3.5 w-3.5 stroke-2" />
+                              {isAddingParty ? "Adding..." : `Add new party "${newPartyName}"`}
+                            </button>
+                          )}
                           {filteredParties.length === 0 ? (
-                            <div className="py-2 px-3 text-xs text-muted-foreground italic">
-                              No parties found
-                            </div>
+                            !canAddParty && (
+                              <div className="py-2 px-3 text-xs text-muted-foreground italic">
+                                No parties found
+                              </div>
+                            )
                           ) : (
                             filteredParties.map((name) => (
                               <button

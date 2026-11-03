@@ -35,6 +35,10 @@ export interface PhysicalStockRow {
   cost: string | null;
   bom_id: string | null;
   majorminor_marking: boolean | null;
+  /** Derived (fgMatcher): FG code of a finished valve, or "NO BOM FG FOUND"; null for other items. */
+  fg_item_code: string | null;
+  /** Derived (fgMatcher): "PRODUCTION ITEM" for a finished valve with a BOM FG. */
+  production_item: string | null;
   heat_done: boolean;
   /** Derived from heat_entries: distinct heat nos, comma-joined; null without entries. */
   heat_no: string | null;
