@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@gmd/ui/components/button";
+import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from "@gmd/ui/components/combobox";
 import { Input } from "@gmd/ui/components/input";
 import { Label } from "@gmd/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@gmd/ui/components/select";
@@ -22,7 +23,6 @@ export function HeatEntryForm() {
   const [items, setItems] = useState<HeatQueueItem[]>([]);
   // ERP code picked from the dropdown; falls back to the first undone code.
   const [selectedId, setSelectedId] = useState("");
-  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [heatNo, setHeatNo] = useState("");
   const [busy, setBusy] = useState(false);
@@ -41,6 +41,7 @@ export function HeatEntryForm() {
   };
 
   const item = items.find((i) => i.id === selectedId) ?? items[0];
+  const codeItems = useMemo(() => items.map((i) => ({ value: i.id, label: i.erp_code ?? "", name: i.description ?? "" })), [items]);
   const pending = item?.entries.find((e) => !e.sheet_file_id) ?? null;
 
   const patchEntries = (fn: (entries: HeatEntryRow[]) => HeatEntryRow[]) =>
@@ -106,7 +107,6 @@ export function HeatEntryForm() {
             if (!v) return;
             setCategory(v);
             setSelectedId("");
-            setSearch("");
             setHeatNo("");
             void loadQueue(v);
           }}
@@ -133,30 +133,28 @@ export function HeatEntryForm() {
       ) : (
         <>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="erp-search">ERP code</Label>
-            <Input
-              id="erp-search"
-              className="h-12 text-base uppercase"
-              placeholder="Search code"
-              inputMode="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value.toUpperCase())}
-            />
-            <Select value={item.id} onValueChange={(v) => v && (setSelectedId(v), setHeatNo(""))}>
-              <SelectTrigger className="h-12 w-full text-base">
-                {/* Base UI shows the raw value (row id) unless given children. */}
-                <SelectValue>{item.erp_code}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {items
-                  .filter((i) => !search || (i.erp_code ?? "").toUpperCase().includes(search))
-                  .map((i) => (
-                    <SelectItem key={i.id} value={i.id}>
-                      {i.erp_code}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <Label htmlFor="erp-code">ERP code</Label>
+            <Combobox
+              items={codeItems}
+              value={codeItems.find((c) => c.value === item.id) ?? null}
+              onValueChange={(v) => v && (setSelectedId(v.value), setHeatNo(""))}
+              filter={(c, q) => `${c.label} ${c.name}`.toUpperCase().includes(q.trim().toUpperCase())}
+              isItemEqualToValue={(a, b) => a.value === b.value}
+              autoHighlight
+            >
+              <ComboboxInput id="erp-code" className="h-12 text-base uppercase" placeholder="Search code" />
+              <ComboboxContent>
+                <ComboboxEmpty>No code matches.</ComboboxEmpty>
+                <ComboboxList>
+                  {(c: (typeof codeItems)[number]) => (
+                    <ComboboxItem key={c.value} value={c}>
+                      <span className="font-mono tabular-nums">{c.label}</span>
+                      <span className="truncate text-muted-foreground">{c.name}</span>
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+              </ComboboxContent>
+            </Combobox>
           </div>
           <div className="rounded-lg border p-3">
             <div className="text-xs text-muted-foreground">
