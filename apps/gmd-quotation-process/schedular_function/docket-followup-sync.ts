@@ -12,6 +12,7 @@ import {
   runDocketAiValidation,
   type DocketAiThreadInput,
 } from "@/lib/docketAiValidationRunner";
+import { invalidatePendingDocketsCache } from "@/lib/pendingDocketsCache";
 
 export const DOCKET_PATTERNS = [
   /\bGMD\/\d{4}-\d{2}\/\d+\b/i,
@@ -134,10 +135,15 @@ async function runDocketFollowupSyncInternal(
 
   // Lookback threshold: explicit since, last sync, or the past 48 hours. The
   // job runs hourly; 48h covers ingestion lag without touching older backlog.
+  // Never narrower than 48h: the last-sync stamp is only in memory, and a
+  // window of "since 10 minutes ago" silently skipped mail the ingestion
+  // delivered late.
+  const minLookback = new Date(Date.now() - 48 * 60 * 60 * 1000);
   const lookbackSince =
     options.since ||
-    lastSyncTimestamp ||
-    new Date(Date.now() - 48 * 60 * 60 * 1000);
+    (lastSyncTimestamp && lastSyncTimestamp < minLookback
+      ? lastSyncTimestamp
+      : minLookback);
 
   // 1. Load active PARTY lookup options
   const partyRows = await prisma.lookupOption.findMany({
@@ -151,21 +157,34 @@ async function runDocketFollowupSyncInternal(
   // 2. Incremental Where Clause:
   // Only pending threads or threads touched since the last run. Do NOT scan
   // every `docketNo = null` thread: that is ~7k rows / ~37s on this database.
+  //
+  // The mail ingestion re-syncs old rows every hour, bumping `updatedAt` on
+  // thousands of them. Selecting on `updatedAt` with a 1000-row cap meant those
+  // re-synced old rows crowded out genuinely new mail, which then never got
+  // `pendingDocket = true` and never showed on the Pending Dockets tab. New
+  // mail is found by `date` / `createdAt` instead, and there is no row cap.
+  // Rows that already have a docket can never be pending, so they are skipped
+  // unless still flagged pending (then they need clearing).
+  const undocketed = { docketNo: null, duplicateOfDocket: null };
   const whereClause = fullScan
-    ? {}
+    ? { OR: [{ pendingDocket: true }, undocketed] }
     : {
         OR: [
           { pendingDocket: true },
-          { updatedAt: { gte: lookbackSince } },
-          { date: { gte: lookbackSince } },
+          {
+            ...undocketed,
+            OR: [
+              { date: { gte: lookbackSince } },
+              { createdAt: { gte: lookbackSince } },
+            ],
+          },
         ],
       };
 
   // 3. Fetch ONLY candidate/updated threads
   const threads = await prisma.docketQuotationThread.findMany({
     where: whereClause,
-    orderBy: { updatedAt: "desc" },
-    take: fullScan ? undefined : 1000,
+    orderBy: { date: "desc" },
     select: {
       id: true,
       threadId: true,
@@ -334,6 +353,8 @@ async function runDocketFollowupSyncInternal(
   }
 
   lastSyncTimestamp = new Date();
+  // The Pending tab reloads right after a sync; don't serve it the stale list.
+  invalidatePendingDocketsCache();
   const elapsedMs = Date.now() - startTime;
 
   return {
