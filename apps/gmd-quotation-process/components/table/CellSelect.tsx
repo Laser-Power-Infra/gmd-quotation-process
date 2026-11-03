@@ -81,6 +81,9 @@ export default function CellSelect({
 }: CellSelectProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [search, setSearch] = useState("");
+  // A page holds ~1,100 of these. Until one is opened it is a plain button, so the
+  // Radix popover tree is never built for cells the user does not touch.
+  const [mounted, setMounted] = useState(defaultOpen);
 
   const usableOptions = useMemo(
     () => (allowCustomValue ? optionsWithCurrent(options, value) : options),
@@ -106,6 +109,47 @@ export default function CellSelect({
     if (next !== value) onChange(next);
   };
 
+  const triggerClassName = cn(
+    TRIGGER_BASE,
+    variant === "chip" ? TRIGGER_CHIP : TRIGGER_DEFAULT,
+    className,
+  );
+
+  const triggerInner = (
+    <>
+      {chipLabel && <span className="shrink-0">{chipLabel}:</span>}
+      <span
+        className={cn(
+          "truncate",
+          chipLabel && "flex-1 text-left text-xs text-foreground font-medium",
+          !chipLabel && !value && placeholder === undefined && "text-muted-foreground",
+        )}
+        title={triggerLabel}
+      >
+        {triggerLabel}
+      </span>
+      <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0 ml-1" />
+    </>
+  );
+
+  if (!mounted) {
+    return (
+      <button
+        type="button"
+        title={title}
+        disabled={disabled}
+        className={triggerClassName}
+        onClick={() => {
+          if (disabled) return;
+          setMounted(true);
+          setOpen(true);
+        }}
+      >
+        {triggerInner}
+      </button>
+    );
+  }
+
   return (
     <Popover
       open={open}
@@ -118,24 +162,8 @@ export default function CellSelect({
         }
       }}
     >
-      <PopoverTrigger
-        type="button"
-        title={title}
-        disabled={disabled}
-        className={cn(TRIGGER_BASE, variant === "chip" ? TRIGGER_CHIP : TRIGGER_DEFAULT, className)}
-      >
-        {chipLabel && <span className="shrink-0">{chipLabel}:</span>}
-        <span
-          className={cn(
-            "truncate",
-            chipLabel && "flex-1 text-left text-xs text-foreground font-medium",
-            !chipLabel && !value && placeholder === undefined && "text-muted-foreground",
-          )}
-          title={triggerLabel}
-        >
-          {triggerLabel}
-        </span>
-        <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0 ml-1" />
+      <PopoverTrigger type="button" title={title} disabled={disabled} className={triggerClassName}>
+        {triggerInner}
       </PopoverTrigger>
 
       <PopoverContent

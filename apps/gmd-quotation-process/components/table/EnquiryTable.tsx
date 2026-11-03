@@ -58,6 +58,9 @@ interface EnquiryTableProps {
 }
 
 // Red warning icon beside Product Cost; the reasons come from lib/costSanity.ts.
+/** Shared empty list, so a docket with no items keeps a stable prop identity. */
+const EMPTY_ITEMS: EnquiryItemData[] = [];
+
 function CostWarningIcon({ warnings }: { warnings?: string[] | null }) {
   if (!warnings?.length) return null;
   const text = `Cost warning: ${warnings.join("; ")}`;
@@ -784,25 +787,24 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
 
 
 
-  // Auto-expand rows when docket number is searched - respects manual collapse
+  // Open the docket the user searched for, but only once the search names exactly one.
+  // Expanding every partial match meant typing "123" opened all 50 dockets on the "1"
+  // it passes through, which is the whole page's items rendered twice over before the
+  // search even finished. Respects a manual collapse.
   useEffect(() => {
-    if (filters.docketNumber) {
-      const next: Record<string, boolean> = {};
-      for (const enquiry of enquiries) {
-        if (looseIncludes(enquiry.docketNumber, filters.docketNumber)) {
-          if (expandedRows[enquiry.id] === undefined) {
-            next[enquiry.id] = true;
-          }
-        }
-      }
-      if (Object.keys(next).length > 0) {
-        dispatch(setExpandedRows(next));
-      }
+    if (!filters.docketNumber) return;
+    let only: EnquiryData | undefined;
+    for (const enquiry of enquiries) {
+      if (!looseIncludes(enquiry.docketNumber, filters.docketNumber)) continue;
+      if (only) return; // more than one match: leave them all collapsed
+      only = enquiry;
     }
+    if (!only || expandedRows[only.id] !== undefined) return;
+    dispatch(setExpandedRows({ [only.id]: true }));
   }, [filters.docketNumber, enquiries, expandedRows, dispatch]);
 
-  // globalSearch is excluded on purpose: hasActiveFilters drives row auto-expansion, and
-  // the search box never expanded rows back when it filtered server-side.
+  // Drives the "clear filters" button. globalSearch is excluded on purpose: it filters
+  // server-side and never counted as an active filter here.
   const hasActiveFilters = useMemo(
     () =>
       Object.entries(filters).some(([key, val]) => {
@@ -1431,6 +1433,17 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
     return byId;
   }, [paginatedEnquiries, getFilteredItems]);
 
+  // Unfiltered items per docket, grouped once. OfferPdfCell used to select every item
+  // in the store and filter them in its own body, once per row.
+  const itemsByEnquiry = useMemo(() => {
+    const byId = new Map<string, EnquiryItemData[]>();
+    for (const item of allItems) {
+      const list = byId.get(item.enquiryId);
+      if (list) list.push(item);
+      else byId.set(item.enquiryId, [item]);
+    }
+    return byId;
+  }, [allItems]);
 
   const handleImportFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2042,7 +2055,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   };
   const allExpanded =
     paginatedEnquiries.length > 0 &&
-    paginatedEnquiries.every((e) => expandedRows[e.id] ?? hasActiveFilters);
+    paginatedEnquiries.every((e) => expandedRows[e.id] ?? false);
   const toggleExpandAll = () =>
     dispatch(setExpandedRows(Object.fromEntries(paginatedEnquiries.map((e) => [e.id, !allExpanded]))));
 
@@ -3828,7 +3841,9 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 });
               }
               const hasMultiple = displayItems.length > 1;
-              const isExpanded = expandedRows[enquiry.id] ?? hasActiveFilters;
+              // Collapsed by default even under a filter: auto-expanding every docket
+              // multiplied the rendered rows by items-per-docket on the slowest action.
+              const isExpanded = expandedRows[enquiry.id] ?? false;
               const firstItem = displayItems[0];
               const isSelected = isEnquirySelected(enquiry.id);
               const isFrozen = isEnquiryFrozen((enquiry as any).apm, (enquiry as any).offerPdfGeneratedAt);
@@ -4844,7 +4859,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
 
                     {/* Offer PDF */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                      <OfferPdfCell enquiry={enquiry} />
+                      <OfferPdfCell enquiry={enquiry} items={itemsByEnquiry.get(enquiry.id) ?? EMPTY_ITEMS} />
                     </td>
 
                     {/* Send Email */}
@@ -5470,11 +5485,9 @@ function triggerDownload(base64: string, fileName: string) {
   URL.revokeObjectURL(url);
 }
 
-function OfferPdfCell({ enquiry }: { enquiry: EnquiryData }) {
+function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: EnquiryItemData[] }) {
   const [status, setStatus] = useState<"idle" | "generating" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const storeItems = useAppSelector(selectAllItems);
-  const items = storeItems.filter((item: EnquiryItemData) => item.enquiryId === enquiry.id);
   const apm = (enquiry as any).apm as string | null | undefined;
   const generatedAt = (enquiry as any).offerPdfGeneratedAt as string | Date | null | undefined;
   const access = oneClickAccess(apm ?? null, generatedAt ?? null);

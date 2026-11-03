@@ -3,8 +3,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useDebounce } from "../lib/useDebounce";
 
-// Keeps a filter keystroke inside this leaf and commits upward after 300ms. Tables import
-// it so typing does not re-render the whole table body on every character.
+/** How long a filter box waits after the last keystroke before it hits the server. */
+export const SEARCH_DEBOUNCE_MS = 700;
+
+// Keeps a filter keystroke inside this leaf and commits upward once typing stops. Tables
+// import it so typing does not re-render the whole table body on every character.
 export default function DebouncedSearchInput({
   value,
   onCommit,
@@ -20,7 +23,9 @@ export default function DebouncedSearchInput({
 }) {
   const [local, setLocal] = useState(value);
   const [prevValue, setPrevValue] = useState(value);
-  const debounced = useDebounce(local, 300);
+  // Each commit is a server round-trip, so wait until the user has really stopped typing
+  // rather than firing one off mid-word.
+  const debounced = useDebounce(local, SEARCH_DEBOUNCE_MS);
   const isTypingRef = useRef(false);
 
   // Adjust during render rather than in an effect, so an external reset (e.g. "Reset all
