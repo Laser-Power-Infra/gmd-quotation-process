@@ -703,7 +703,12 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
                         {r.aiVerification === "unverified" && (
                           r.aiExhausted ? (
                             <span
-                              title={r.aiLastError || "AI verification failed after 3 attempts"}
+                              title={
+                                r.aiLastError ||
+                                (r.aiAttempts >= 3
+                                  ? "AI verification failed after 3 attempts"
+                                  : "Not sent to AI: the mail does not match the docket-request rules")
+                              }
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300 border border-rose-300/60 dark:border-rose-500/25"
                             >
                               <AlertCircle className="w-3 h-3 text-rose-600 dark:text-rose-300 shrink-0" />

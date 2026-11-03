@@ -11,7 +11,12 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { hasRealDocketNo, isPendingDocketCandidate } from "@/lib/docketPending";
+import {
+  hasDocketCreationKeyword,
+  hasRealDocketNo,
+  isPendingDocketCandidate,
+  NO_REAL_DOCKET_WHERE,
+} from "@/lib/docketPending";
 import {
   isDocketAiValidationEnabled,
   validateNewDocketWithAi,
@@ -20,6 +25,13 @@ import { invalidatePendingDocketsCache } from "@/lib/pendingDocketsCache";
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_LIMIT = 100;
+/** Wait at least this long after a failed call before retrying the same thread. */
+const DEFAULT_RETRY_DELAY_MS = 10 * 60 * 1000;
+
+function retryDelayMs(): number {
+  const raw = Number(process.env.DOCKET_AI_RETRY_DELAY_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_RETRY_DELAY_MS;
+}
 
 function maxAttempts(): number {
   const raw = Number(process.env.DOCKET_AI_MAX_ATTEMPTS);
@@ -83,6 +95,9 @@ export function isDocketAiEligible(thread: DocketAiThreadInput): boolean {
   if (thread.duplicateOfDocket) return false;
 
   const text = `${thread.subject || ""} ${thread.body || ""} ${thread.bodyPreview || ""}`;
+  // "Please create docket" is AI rule 2 (always true) and the Pending Dockets
+  // tab shows these rows as verified anyway, so a model call would be wasted.
+  if (hasDocketCreationKeyword(text)) return false;
   return isPendingDocketCandidate({
     userLabels: thread.userLabels,
     isGmdClient: thread.isGmdClient,
@@ -108,15 +123,28 @@ async function validateOne(thread: DocketAiThreadInput): Promise<ValidateOutcome
     select: {
       aiIsNewDocket: true,
       aiValidationAttempts: true,
+      aiValidationLastError: true,
       docketNo: true,
       duplicateOfDocket: true,
+      updatedAt: true,
     },
   });
 
   if (!current) return "skipped";
   if (current.aiIsNewDocket !== null) return "skipped";
-  if (current.docketNo || current.duplicateOfDocket) return "skipped";
+  // A GeM / e-proc tender ref in docket_no is not a docket. The old truthy
+  // check skipped those rows forever, leaving them on "Verifying… (0/3)".
+  if (hasRealDocketNo(current.docketNo) || current.duplicateOfDocket) return "skipped";
   if (current.aiValidationAttempts >= maxAttempts()) return "skipped";
+  // Space retries out: page loads re-trigger the queue every few seconds, so a
+  // short outage or rate limit used to burn all 3 attempts almost at once.
+  if (
+    current.aiValidationAttempts > 0 &&
+    current.aiValidationLastError &&
+    Date.now() - current.updatedAt.getTime() < retryDelayMs()
+  ) {
+    return "skipped";
+  }
 
   // Optimistic claim: only the caller that observes the same counter value may
   // call the model. This caps the thread at exactly maxAttempts calls.
@@ -125,8 +153,8 @@ async function validateOne(thread: DocketAiThreadInput): Promise<ValidateOutcome
       id: thread.id,
       aiIsNewDocket: null,
       aiValidationAttempts: current.aiValidationAttempts,
-      docketNo: null,
       duplicateOfDocket: null,
+      ...NO_REAL_DOCKET_WHERE,
     },
     data: { aiValidationAttempts: { increment: 1 } },
   });

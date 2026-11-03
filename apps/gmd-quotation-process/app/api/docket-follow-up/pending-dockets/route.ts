@@ -135,6 +135,10 @@ interface PendingRowInternal {
   aiAttempts: number;
   aiLastError: string | null;
   hasDocket: boolean;
+  /** Mail explicitly asks to create a docket (AI rule 2): verified without a model call. */
+  keywordRequest: boolean;
+  /** The AI will actually be called for this row (enabled, eligible, attempts left). */
+  aiQueued: boolean;
 }
 
 export async function GET() {
@@ -351,7 +355,9 @@ export async function GET() {
         toDetails: t.toDetails,
         ccDetails: t.ccDetails,
       };
-      if (!hasDocketInDb && isDocketAiEligible(aiInput)) {
+      // Only rows the queue will really send to the model show "Verifying…".
+      const aiQueued = aiEnabled && !hasDocketInDb && isDocketAiEligible(aiInput);
+      if (aiQueued) {
         aiCandidates.push(aiInput);
       }
 
@@ -405,6 +411,8 @@ export async function GET() {
         aiAttempts,
         aiLastError: t.aiValidationLastError ?? null,
         hasDocket: hasDocketInDb,
+        keywordRequest: hasCreationKeyword,
+        aiQueued,
       });
     }
 
@@ -421,19 +429,27 @@ export async function GET() {
         aiExhausted: boolean;
         aiLastError: string | null;
       }
-    > = visible.map((p) => ({
-      ...p.row,
-      aiVerification: p.aiIsNewDocket === true ? "verified" : "unverified",
-      aiAttempts: p.aiAttempts,
-      aiExhausted:
-        p.aiIsNewDocket == null && p.aiAttempts >= maxAttempts,
-      aiLastError: p.aiLastError,
-    }));
+    > = visible.map((p) => {
+      // An explicit "please create docket" mail is a docket request by
+      // definition (AI rule 2), so it is verified without spending a model call.
+      const verified = p.aiIsNewDocket === true || p.keywordRequest;
+      return {
+        ...p.row,
+        aiVerification: verified ? "verified" : "unverified",
+        aiAttempts: p.aiAttempts,
+        // "Verifying…" only while a model call is really coming; otherwise the
+        // row is final "Not verified" (3 failed attempts, AI off, or ineligible).
+        aiExhausted: !verified && !p.aiQueued,
+        aiLastError:
+          p.aiLastError ||
+          (!verified && !p.aiQueued && !aiEnabled ? "AI verification is turned off (no DOCKET_AI_API_KEY)." : null),
+      };
+    });
 
     const aiVerifiedCount = rows.filter((r) => r.aiVerification === "verified").length;
     const aiUnverifiedCount = rows.length - aiVerifiedCount;
     const aiPendingCount = visible.filter(
-      (p) => p.aiIsNewDocket == null && p.aiAttempts < maxAttempts
+      (p) => p.aiIsNewDocket !== true && !p.keywordRequest && p.aiQueued
     ).length;
     const aiRejectedCount = threads.filter(
       (t) => t.aiIsNewDocket === false
