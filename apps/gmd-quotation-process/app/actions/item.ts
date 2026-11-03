@@ -153,6 +153,8 @@ export async function updateItemFieldAction(
         validation: true,
         vaPercent: true,
         quotedRate: true,
+        cost: true,
+        contractReviewRate: true,
         [field]: true,
       },
     });
@@ -184,6 +186,14 @@ export async function updateItemFieldAction(
         success: false,
         error: "Rate & VA% are locked for validated items (Validation = Yes) — VA% follows cost changes automatically.",
       };
+    }
+
+    // Validation = Yes needs the VA% rules met (red row = not met): run "Apply VA% rules" on the docket first.
+    if (field === "validation" && String(value ?? "").trim() === "Yes") {
+      const { isVaRuleViolation } = await import("@/lib/vaRules");
+      if (isVaRuleViolation({ ...prevFull, cost: prevFull.cost ? Number(prevFull.cost) : null, vaPercent: prevFull.vaPercent ? Number(prevFull.vaPercent) : null })) {
+        return { success: false, error: "Cannot set Validation = Yes: VA% is below the minimum or the rate is above the CR rate. Use 'Apply VA% rules' on the docket first." };
+      }
     }
 
     // Validation = Yes needs payment terms, inspection and PBG: blank terms load 0% and distort VA%.

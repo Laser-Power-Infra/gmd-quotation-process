@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useState } from "react";
-import { Search, PanelLeftOpen, PanelLeftClose, RefreshCw } from "lucide-react";
+import { PanelLeftOpen, PanelLeftClose, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@gmd/ui/components/button";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
@@ -10,7 +10,6 @@ import { setFilter } from "@/lib/filtersSlice";
 import { toggleAnalyticsSidebar } from "@/lib/uiSlice";
 import { selectEnquirySummary, syncEnquiryEmailAddresses } from "@/lib/enquiriesSlice";
 import { BLANK } from "@/lib/filterUtils";
-import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import AddItemsDialog from "./AddItemsDialog";
 import NewEnquiryDialog from "./NewEnquiryDialog";
 import ContractMatchButton from "./ContractMatchButton";
@@ -34,7 +33,6 @@ export default function DashboardHeader({
 }: DashboardHeaderProps) {
   const dispatch = useAppDispatch();
   const isCollapsed = useAppSelector((s) => s.ui.isAnalyticsSidebarCollapsed);
-  const searchVal = useAppSelector((s) => s.filters.globalSearch);
   const [syncingEmails, setSyncingEmails] = useState(false);
 
   const handleSyncEmails = useCallback(async () => {
@@ -58,13 +56,6 @@ export default function DashboardHeader({
       setSyncingEmails(false);
     }
   }, [dispatch]);
-
-  // Search filters the already-loaded rows client-side. It used to push ?search= and re-run
-  // the dashboard's Prisma query, which refetched and re-hydrated the entire dataset.
-  const commitSearch = useCallback(
-    (val: string) => dispatch(setFilter({ field: "globalSearch", value: val })),
-    [dispatch]
-  );
 
   const closureFilter = useAppSelector((s) => s.filters.closureStatus);
   const summary = useAppSelector(selectEnquirySummary) ?? initialSummary;
@@ -112,16 +103,6 @@ export default function DashboardHeader({
           <h1 className="text-xl font-bold text-foreground tracking-tight">
             Recent Enquiries
           </h1>
-        </div>
-
-        <div className="relative w-full max-w-xs">
-          <Search className="absolute top-2.5 left-3 h-4 w-4 text-muted-foreground" />
-          <DebouncedSearchInput
-            value={searchVal}
-            onCommit={commitSearch}
-            placeholder="Filter by Docket or Party..."
-            className="w-full rounded-md border border-border py-1.5 pr-4 pl-9 text-sm text-foreground placeholder-muted-foreground outline-none transition focus:border-ring focus:ring-1 focus:ring-ring"
-          />
         </div>
       </div>
 

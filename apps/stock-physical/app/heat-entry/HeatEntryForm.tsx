@@ -20,6 +20,9 @@ export function HeatEntryForm() {
   const [cats, setCats] = useState<string[]>([]);
   const [category, setCategory] = useState("");
   const [items, setItems] = useState<HeatQueueItem[]>([]);
+  // ERP code picked from the dropdown; falls back to the first undone code.
+  const [selectedId, setSelectedId] = useState("");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [heatNo, setHeatNo] = useState("");
   const [busy, setBusy] = useState(false);
@@ -37,11 +40,11 @@ export function HeatEntryForm() {
     else toast.error(r.error);
   };
 
-  const item = items[0];
+  const item = items.find((i) => i.id === selectedId) ?? items[0];
   const pending = item?.entries.find((e) => !e.sheet_file_id) ?? null;
 
   const patchEntries = (fn: (entries: HeatEntryRow[]) => HeatEntryRow[]) =>
-    setItems(([first, ...rest]) => [{ ...first, entries: fn(first.entries) }, ...rest]);
+    setItems((list) => list.map((i) => (i.id === item.id ? { ...i, entries: fn(i.entries) } : i)));
 
   const getSerial = async () => {
     if (!item) return;
@@ -84,10 +87,14 @@ export function HeatEntryForm() {
     const r = await done(item.id);
     setBusy(false);
     if (!r.success) return toast.error(r.error);
-    setItems((list) => list.slice(1));
+    setItems((list) => list.filter((i) => i.id !== item.id));
+    setSelectedId("");
   };
 
-  const skip = () => setItems(([first, ...rest]) => [...rest, first]);
+  const skip = () => {
+    setItems((list) => [...list.filter((i) => i.id !== item.id), item]);
+    setSelectedId("");
+  };
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-4 p-4">
@@ -98,6 +105,8 @@ export function HeatEntryForm() {
           onValueChange={(v) => {
             if (!v) return;
             setCategory(v);
+            setSelectedId("");
+            setSearch("");
             setHeatNo("");
             void loadQueue(v);
           }}
@@ -123,6 +132,32 @@ export function HeatEntryForm() {
         <p className="text-sm text-muted-foreground">Every ERP code in this category is done.</p>
       ) : (
         <>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="erp-search">ERP code</Label>
+            <Input
+              id="erp-search"
+              className="h-12 text-base uppercase"
+              placeholder="Search code"
+              inputMode="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value.toUpperCase())}
+            />
+            <Select value={item.id} onValueChange={(v) => v && (setSelectedId(v), setHeatNo(""))}>
+              <SelectTrigger className="h-12 w-full text-base">
+                {/* Base UI shows the raw value (row id) unless given children. */}
+                <SelectValue>{item.erp_code}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {items
+                  .filter((i) => !search || (i.erp_code ?? "").toUpperCase().includes(search))
+                  .map((i) => (
+                    <SelectItem key={i.id} value={i.id}>
+                      {i.erp_code}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="rounded-lg border p-3">
             <div className="text-xs text-muted-foreground">
               {items.length} left · {item.location ?? "-"}

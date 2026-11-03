@@ -1389,3 +1389,31 @@ export async function syncEnquiryEmailAddressesAction() {
 //     return { success: false as const, error: message };
 //   }
 // }
+
+/** Lets the New Enquiry form add a party it cannot find. Same gate as creating the enquiry itself. */
+export async function addPartyOptionAction(rawValue: string) {
+  await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
+  const value = rawValue.trim();
+  if (!value) return { success: false as const, error: "Party name is required." };
+
+  const existing = await prisma.lookupOption.findUnique({
+    where: { type_value: { type: "PARTY", value } },
+  });
+  if (existing) {
+    // Deactivated parties are missing from the dropdown, so re-adding one means switching it back on.
+    if (!existing.isActive) {
+      await prisma.lookupOption.update({ where: { id: existing.id }, data: { isActive: true } });
+    }
+    return { success: true as const, value };
+  }
+
+  const maxSort = await prisma.lookupOption.aggregate({
+    where: { type: "PARTY" },
+    _max: { sortOrder: true },
+  });
+  await prisma.lookupOption.create({
+    data: { type: "PARTY", value, sortOrder: (maxSort._max.sortOrder ?? -1) + 1 },
+  });
+  return { success: true as const, value };
+}

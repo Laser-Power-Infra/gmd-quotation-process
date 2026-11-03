@@ -206,3 +206,16 @@ model BomCodeOption {
 
   @@index([valveType, size, pn])
 }
+
+// Snapshot of FG items (quotation DB FullItem) that own a BOM, one row per (FG, BOM): drives
+// the stock page's FG ITEM CODE / PRODUCTION ITEM columns. Filled by the same hourly sync.
+model FgBomOption {
+  id       String  @id @default(cuid())
+  fgCode   String
+  bomId    String
+  itemType String?
+  moc      String?
+  size     String?
+
+  @@index([fgCode])
+}

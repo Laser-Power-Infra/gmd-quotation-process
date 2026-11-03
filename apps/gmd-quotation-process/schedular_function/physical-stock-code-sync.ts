@@ -12,7 +12,7 @@ const CHUNK = 2000;
 const chunks = <T>(rows: T[]) =>
   Array.from({ length: Math.ceil(rows.length / CHUNK) }, (_, i) => rows.slice(i * CHUNK, (i + 1) * CHUNK));
 
-export type CodeOptionsSyncResult = { rmCodes: number; bomCodes: number };
+export type CodeOptionsSyncResult = { rmCodes: number; bomCodes: number; fgBomCodes: number };
 
 export async function syncPhysicalStockCodeOptions(): Promise<CodeOptionsSyncResult> {
   const rms = await prisma.rawMaterial.findMany({
@@ -44,6 +44,22 @@ export async function syncPhysicalStockCodeOptions(): Promise<CodeOptionsSyncRes
   });
   const bomRows = flattenCreateBoms(boms);
 
+  // Finished-valve FGs that own a BOM: the stock dashboard matches on type + MOC + size only.
+  const fgs = await prisma.fullItem.findMany({
+    where: { itemCode: { not: null }, boms: { some: {} } },
+    select: { itemCode: true, itemType: true, moc: true, size: true, boms: { select: { bomId: true } } },
+    orderBy: { itemCode: "asc" },
+  });
+  const fgRows = fgs.flatMap((f) =>
+    f.boms.map((b) => ({
+      fgCode: (f.itemCode ?? "").trim(),
+      bomId: b.bomId,
+      itemType: f.itemType?.trim() || null,
+      moc: f.moc?.trim() || null,
+      size: f.size?.trim() || null,
+    })),
+  );
+
   await stockPrisma.$transaction(
     [
       stockPrisma.rmCodeOption.deleteMany(),
@@ -54,5 +70,9 @@ export async function syncPhysicalStockCodeOptions(): Promise<CodeOptionsSyncRes
     stockPrisma.bomCodeOption.deleteMany(),
     ...chunks(bomRows).map((data) => stockPrisma.bomCodeOption.createMany({ data })),
   ]);
-  return { rmCodes: rmRows.length, bomCodes: bomRows.length };
+  await stockPrisma.$transaction([
+    stockPrisma.fgBomOption.deleteMany(),
+    ...chunks(fgRows).map((data) => stockPrisma.fgBomOption.createMany({ data })),
+  ]);
+  return { rmCodes: rmRows.length, bomCodes: bomRows.length, fgBomCodes: fgRows.length };
 }

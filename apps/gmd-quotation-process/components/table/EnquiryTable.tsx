@@ -24,7 +24,9 @@ import type { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { useSession } from "next-auth/react";
 import { oneClickAccess, FROZEN_ITEM_FIELD_SET, isEnquiryFrozen } from "@/lib/oneClickAccess";
 import { importExcelData, autoFillBlanks, updateVaPercent } from "@/lib/enquiriesSlice";
-import { validateVaPercent } from "@/lib/vaValidation";
+import { isVaRuleViolation } from "@/lib/vaRules";
+import { applyVaRulesAction } from "@/app/actions/misc";
+import { markEnquiryPageStale } from "@/lib/enquiriesSlice";
 import { parseAndValidateContractNumbers } from "@/lib/contractValidation";
 import { makeImageKey } from "@/lib/imageKey";
 import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
@@ -49,6 +51,8 @@ import { computeCostLoading, describeCostLoading, formatLoadingPct } from "@/lib
 
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
+  /** Every docket number, from the server render. Refetched only after a duplicate delete. */
+  initialDocketNumbers?: string[];
   autoSentDockets?: string[];
   autoPendingDockets?: string[];
 }
@@ -376,17 +380,19 @@ function ItemCodeCell({ item }: { item?: EnquiryItemData }) {
   );
 }
 
-export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPendingDockets }: EnquiryTableProps) {
+export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, autoSentDockets, autoPendingDockets }: EnquiryTableProps) {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role as string | undefined;
   const canEditApm = role === "admin" || role === "developer";
   const dispatch = useAppDispatch();
   const enquiries = useAppSelector(selectAllEnquiries);
   // Not the loaded page: the original docket can be on any page, under any filter.
-  // shortcut: refreshed on mount and after a duplicate delete, not on other users' creates.
-  const [docketNumbers, setDocketNumbers] = useState<string[]>([]);
+  // Seeded from the server render; refetched only after a duplicate delete, not on
+  // other users' creates.
+  const [docketNumbers, setDocketNumbers] = useState<string[]>(initialDocketNumbers ?? []);
   const [docketListVersion, setDocketListVersion] = useState(0);
   useEffect(() => {
+    if (docketListVersion === 0) return; // the server already sent this list
     fetchDocketNumbers().then(setDocketNumbers).catch(() => {});
   }, [docketListVersion]);
   // Rows just marked Duplicate = Yes: their original picker opens by itself once.
@@ -766,12 +772,12 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }, [enquiries]);
 
-  // VA% validation: compute set of item IDs where VA% exceeds allowed max
+  // VA% rules: item IDs below the minimum VA% or above the CR rate
   const invalidVaItemIds = useMemo(() => {
     const ids = new Set<string>();
     for (const item of allItems) {
-      const result = validateVaPercent(item.itemType, item.size, item.vaPercent);
-      if (!result.isValid) ids.add(item.id);
+      const violates = isVaRuleViolation(item);
+      if (violates) ids.add(item.id);
     }
     return ids;
   }, [allItems]);
@@ -1414,6 +1420,17 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
   const paginatedEnquiries = enquiries;
 
+  // getFilteredItems runs ~130 predicates per item. Called straight from the render
+  // map it re-ran for every row on every one of this component's state changes, so
+  // the result is cached per page and only recomputed when the filters really change.
+  const filteredItemsByEnquiry = useMemo(() => {
+    const byId = new Map<string, EnquiryItemData[]>();
+    for (const enquiry of paginatedEnquiries) {
+      byId.set(enquiry.id, getFilteredItems(enquiry));
+    }
+    return byId;
+  }, [paginatedEnquiries, getFilteredItems]);
+
 
   const handleImportFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1916,6 +1933,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     }
   }
 
+  const handleApplyVaRules = async (enquiryId: string, docket: string) => {
+    if (!(await ask(`Apply VA% rules to ${docket}? Fetches CR rates, then sets rates (min VA%, CR rate, previous-party cap). Validated items are skipped.`))) return
+    const res = await applyVaRulesAction(enquiryId)
+    if (!res.success) return void toast.error(res.error)
+    dispatch(markEnquiryPageStale())
+    toast.success(`${docket}: ${res.changed} item(s) updated${res.locked ? `, ${res.locked} validated item(s) skipped` : ""}`)
+  }
+
   const handlePopulatePdCostVal = async () => {
     // Collect items from currently paginated enquiries that pass active filters and have both CR Rate and Product Cost
     const matchedItems: EnquiryItemData[] = []
@@ -2036,7 +2061,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               type="button"
               onClick={() => dispatch(setEnquiryStage(active ? "" : stage))}
               aria-pressed={active}
-              className={`flex flex-col items-start rounded-md border px-3 py-1.5 min-w-32 cursor-pointer transition-colors ${
+              className={`flex flex-1 flex-col items-start rounded-md border px-3 py-1.5 min-w-32 cursor-pointer transition-colors ${
                 active
                   ? "border-[#0f62fe] bg-[#0f62fe] text-white dark:border-blue-500/80 dark:bg-blue-500/80"
                   : "border-border bg-background text-foreground hover:bg-accent"
@@ -2054,8 +2079,9 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       </div>
       <AssigneePendingStrip rows={pageState.summary?.assigneePending ?? []} />
       {/* Table Toolbar */}
-      <div className="flex justify-between items-center px-4 py-2.5 bg-muted/50 border-b border-border">
-        <span className="text-[11px] font-semibold text-muted-foreground">
+      <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 px-4 py-2.5 bg-muted/50 border-b border-border">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
+        <span className="whitespace-nowrap text-[11px] font-semibold text-muted-foreground">
           {isPageLoading ? (
             <span className="inline-flex items-center gap-1.5 text-[#0f62fe] dark:text-blue-300">
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -2084,20 +2110,22 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               · {validSelectedEnquiryIds.length} selected
             </span>
           )}
-          {/* Row colour legend (red = invalidVaItemIds, blue = isSelected) */}
-          <span className="ml-3 inline-flex items-center gap-3 font-normal text-muted-foreground/80">
-            <span className="inline-flex items-center gap-1" title="Red row = VA% above allowed limit for this type/size">
-              <span className="h-2.5 w-2.5 rounded-sm border border-red-300 bg-red-100 dark:border-red-500/40 dark:bg-red-500/15" />
-              Red row = VA% above allowed limit for this type/size
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded-sm border border-blue-300 bg-blue-50 dark:border-blue-500/40 dark:bg-blue-500/10" />
-              Selected
-            </span>
-          </span>
         </span>
 
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Row colour legend (red = invalidVaItemIds, blue = isSelected) */}
+        <span className="hidden items-center gap-3 whitespace-nowrap text-[10px] font-normal text-muted-foreground/80 sm:flex">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-2 shrink-0 rounded-[2px] border border-red-300 bg-red-100 dark:border-red-500/40 dark:bg-red-500/15" />
+            Red row = VA% below minimum, or rate above CR rate
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-2 shrink-0 rounded-[2px] border border-blue-300 bg-blue-50 dark:border-blue-500/40 dark:bg-blue-500/10" />
+            Selected
+          </span>
+        </span>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {hasActiveFilters && (
             <button
               type="button"
@@ -2202,6 +2230,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             {syncStockStatus === "running" ? "Syncing Stock..." : "Sync Available Stock"}
           </button>
         </div>
+      </div>
+
+      {/* Narrowing to a stage returns few rows and comes back fast, so the opacity dip
+          alone was easy to miss. This bar always registers. */}
+      <div className="h-0.5 w-full shrink-0 overflow-hidden" aria-hidden="true">
+        {isPageLoading && (
+          <div className="h-full w-full animate-pulse bg-[#0f62fe] dark:bg-blue-400" />
+        )}
       </div>
 
       <div
@@ -3783,7 +3819,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             paginatedEnquiries.map((enquiry) => {
               const { company, branch } = parseParty(enquiry.partyName);
               const initials = getInitials(enquiry.partyName);
-              let displayItems = getFilteredItems(enquiry);
+              let displayItems = filteredItemsByEnquiry.get(enquiry.id) ?? getFilteredItems(enquiry);
               if (displayItems.length > 1 && sortField === "image") {
                 displayItems = [...displayItems].sort((a, b) => {
                   const aVal = getItemImage(a) ? 1 : 0;
@@ -3813,7 +3849,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 <React.Fragment key={enquiry.id}>
                   {/* Main Docket / First Item Row */}
                   <tr
-                    title={firstItem && invalidVaItemIds.has(firstItem.id) ? "Red row = VA% above allowed limit for this type/size" : undefined} className={`transition-colors ${firstItem && invalidVaItemIds.has(firstItem.id) ? "bg-red-100 dark:bg-red-500/15" : isSelected ? "bg-blue-50/70 hover:bg-blue-50 dark:bg-blue-500/10 dark:hover:bg-blue-500/20" : "hover:bg-muted/20"}`}>
+                    title={firstItem && invalidVaItemIds.has(firstItem.id) ? "Red row = VA% below minimum, or rate above CR rate" : undefined} className={`transition-colors ${firstItem && invalidVaItemIds.has(firstItem.id) ? "bg-red-100 dark:bg-red-500/15" : isSelected ? "bg-blue-50/70 hover:bg-blue-50 dark:bg-blue-500/10 dark:hover:bg-blue-500/20" : "hover:bg-muted/20"}`}>
                     {/* Select checkbox for this docket */}
                     <td className="py-3.5 px-2 text-center border-r border-b border-border">
                       <input
@@ -3868,6 +3904,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             </button>
                           ) : null;
                         })()}
+                        <button
+                          type="button"
+                          onClick={() => handleApplyVaRules(enquiry.id, enquiry.docketNumber)}
+                          title="Fetch CR rates and apply the VA% rules to this docket"
+                          className="inline-flex items-center justify-center h-4 px-1.5 rounded text-[9px] font-semibold border border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-300 cursor-pointer shrink-0"
+                        >
+                          Apply VA% rules
+                        </button>
                         <StageAssignPopover
                           enquiry={enquiry}
                           onChange={(field, value) => handleEnquiryFieldChange(enquiry.id, field, value)}
@@ -4826,7 +4870,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                     displayItems.slice(1).map((item: EnquiryItemData, idx: number) => (
                       <tr
                         key={item.id}
-                        title={invalidVaItemIds.has(item.id) ? "Red row = VA% above allowed limit for this type/size" : undefined} className={`transition-colors ${invalidVaItemIds.has(item.id) ? "bg-red-100 dark:bg-red-500/15" : "bg-muted/10 hover:bg-muted/20"}`}
+                        title={invalidVaItemIds.has(item.id) ? "Red row = VA% below minimum, or rate above CR rate" : undefined} className={`transition-colors ${invalidVaItemIds.has(item.id) ? "bg-red-100 dark:bg-red-500/15" : "bg-muted/10 hover:bg-muted/20"}`}
                       >
                         {/* Empty selection cell — selection is per docket */}
                         <td className="py-3 px-2 text-center border-r border-b border-border"></td>

@@ -80,7 +80,7 @@ export async function fetchEnquiryPage(
   // Tiles keep their counts while one is active, so drop the stage filter here.
   const stageWhere = buildEnquiryWhereSql({ ...query, selectedEnquiryIds: [] }, { skipField: "stage" });
 
-  const [idRows, countRows, scopedCountRows, totalRows, itemRows, closureRows, stageRows, ageRows, ownerRows, facetRows] =
+  const [idRows, countRows, scopedCountRows, totalRows, itemRows, closureRows, ageRows, ownerRows, facetRows] =
     await Promise.all([
       prisma.$queryRaw<{ id: string }[]>`
         SELECT e.id FROM "Enquiry" e
@@ -118,14 +118,8 @@ export async function fetchEnquiryPage(
             GROUP BY 1
           `
         : Promise.resolve(undefined),
-      includeSummary
-        ? prisma.$queryRaw<{ stage: string | null; count: number }[]>`
-            SELECT ${STAGE_SQL} AS stage, count(*)::int AS count
-            FROM "Enquiry" e WHERE ${stageWhere}
-            GROUP BY 1
-          `
-        : Promise.resolve(undefined),
       // Whole IST days since enquiry; bucketed in JS by ageBucket().
+      // Per-stage totals are summed from these rows, so there is no separate stage query.
       includeSummary
         ? prisma.$queryRaw<{ stage: string | null; days: number; count: number }[]>`
             SELECT ${STAGE_SQL} AS stage,
@@ -273,11 +267,13 @@ export async function fetchEnquiryPage(
     }
 
     const stageAgeing: EnquirySummary["stageAgeing"] = {};
+    const stageCounts: EnquirySummary["stageCounts"] = {};
     for (const row of ageRows ?? []) {
       if (!row.stage) continue;
       const buckets = (stageAgeing[row.stage] ??= {});
       const bucket = ageBucket(Number(row.days));
       buckets[bucket] = (buckets[bucket] ?? 0) + Number(row.count);
+      stageCounts[row.stage] = (stageCounts[row.stage] ?? 0) + Number(row.count);
     }
 
     summary = {
@@ -290,9 +286,7 @@ export async function fetchEnquiryPage(
       closureCounts,
       notSentCount,
       totalEnquiries: totalRows ?? 0,
-      stageCounts: Object.fromEntries(
-        (stageRows ?? []).filter((r) => r.stage).map((r) => [r.stage, Number(r.count)]),
-      ),
+      stageCounts,
       stageAgeing,
       assigneePending: (ownerRows ?? []).map((r) => ({
         userId: r.userId,
@@ -339,15 +333,13 @@ export async function fetchEnquiryFacet(
 
   const rows =
     facet.level === "enquiry"
-      ? await prisma.$queryRaw<{ value: string | null }[]>`
+      ? // No item-exists clause here: buildEnquiryWhereSql already adds one, but only
+        // when an item-level filter is set. Hard-coding it dropped every docket with
+        // no items yet, so their party / state never reached the dropdown at all.
+        await prisma.$queryRaw<{ value: string | null }[]>`
           SELECT DISTINCT ${facet.expr} AS value
           FROM "Enquiry" e
           WHERE ${buildEnquiryWhereSql(query, { skipField: field })}
-            AND EXISTS (
-              SELECT 1 FROM "EnquiryItem" i
-              WHERE i."enquiryId" = e.id
-                AND ${buildItemWhereSql(query, { skipField: field })}
-            )
             AND ${facet.expr} IS NOT NULL
           ORDER BY 1
           LIMIT ${FACET_LIMIT + 1}
