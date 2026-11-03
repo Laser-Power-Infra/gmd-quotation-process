@@ -134,12 +134,13 @@ export function HeatEntryForm() {
             <Label>ERP code</Label>
             <Select value={item.id} onValueChange={(v) => v && (setSelectedId(v), setHeatNo(""))}>
               <SelectTrigger className="h-12 w-full text-base">
-                <SelectValue />
+                {/* Base UI shows the raw value (row id) unless given children. */}
+                <SelectValue>{item.erp_code}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {items.map((i) => (
                   <SelectItem key={i.id} value={i.id}>
-                    {i.erp_code} · {i.location ?? "-"} · {i.description || "-"}
+                    {i.erp_code}
                   </SelectItem>
                 ))}
               </SelectContent>
