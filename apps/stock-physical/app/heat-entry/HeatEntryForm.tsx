@@ -22,6 +22,7 @@ export function HeatEntryForm() {
   const [items, setItems] = useState<HeatQueueItem[]>([]);
   // ERP code picked from the dropdown; falls back to the first undone code.
   const [selectedId, setSelectedId] = useState("");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [heatNo, setHeatNo] = useState("");
   const [busy, setBusy] = useState(false);
@@ -105,6 +106,7 @@ export function HeatEntryForm() {
             if (!v) return;
             setCategory(v);
             setSelectedId("");
+            setSearch("");
             setHeatNo("");
             void loadQueue(v);
           }}
@@ -131,18 +133,28 @@ export function HeatEntryForm() {
       ) : (
         <>
           <div className="flex flex-col gap-1.5">
-            <Label>ERP code</Label>
+            <Label htmlFor="erp-search">ERP code</Label>
+            <Input
+              id="erp-search"
+              className="h-12 text-base uppercase"
+              placeholder="Search code"
+              inputMode="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value.toUpperCase())}
+            />
             <Select value={item.id} onValueChange={(v) => v && (setSelectedId(v), setHeatNo(""))}>
               <SelectTrigger className="h-12 w-full text-base">
                 {/* Base UI shows the raw value (row id) unless given children. */}
                 <SelectValue>{item.erp_code}</SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {items.map((i) => (
-                  <SelectItem key={i.id} value={i.id}>
-                    {i.erp_code}
-                  </SelectItem>
-                ))}
+                {items
+                  .filter((i) => !search || (i.erp_code ?? "").toUpperCase().includes(search))
+                  .map((i) => (
+                    <SelectItem key={i.id} value={i.id}>
+                      {i.erp_code}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
