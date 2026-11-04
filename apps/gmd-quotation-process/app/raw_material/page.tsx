@@ -630,7 +630,18 @@ export default function Home() {
             column: groupColumn,
             summary: (_key: string, rows: unknown[][]) => {
               const s = summarizeGroup(rows, headers);
-              return `${s.count} items · stock ₹${s.stockValue.toLocaleString("en-IN", { maximumFractionDigits: 0 })} · blank cost ${s.blankCost} · weight missing ${s.weightMissing} · blank HSN ${s.blankHsn}`;
+              const chips: [string, string | number, string, string?][] = [
+                ["items", s.count, "Items in this head"],
+                ["stock ₹", s.stockValue.toLocaleString("en-IN", { maximumFractionDigits: 0 }), "Available stock x cost"],
+                ["no cost", s.blankCost, "Items with blank COST", s.blankCost ? "text-amber-600 dark:text-amber-400" : ""],
+                ["no wgt", s.weightMissing, "Castings with blank 1 PCS WGT - cost not derivable", s.weightMissing ? "text-red-600 dark:text-red-400" : ""],
+                ["no HSN", s.blankHsn, "Items with blank HSN CODE", s.blankHsn ? "text-amber-600 dark:text-amber-400" : ""],
+              ];
+              return chips.map(([label, value, tip, tone]) => (
+                <span key={label} title={tip} className={`rounded border border-border bg-card px-1.5 py-0.5 whitespace-nowrap ${tone ?? ""}`}>
+                  {label} <b>{value}</b>
+                </span>
+              ));
             },
           }
         : undefined,
