@@ -4,6 +4,7 @@ import { syncAvailableBomIds, maybeUpdateProductCostFromNewCode } from "@/lib/it
 import { prisma } from "@/lib/prisma";
 import { recalculateItem, serializeItem, autoDetectItemType, getItemNameMerge } from "@/lib/costCalculator";
 import { resolveItemCategory } from "@/lib/itemCategoryResolver";
+import { ensureCfSetItem } from "@/lib/cfSetItem";
 import { correctItemType } from "@/lib/itemTypePatterns";
 import { DETAILS_FIELDS, pnFromName, type AutoFillChange, type DetailsField } from "@/lib/detailsCheck";
 import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
@@ -155,7 +156,7 @@ export async function updateItemFieldAction(
         quotedRate: true,
         cost: true,
         contractReviewRate: true,
-        [field]: true,
+        ...({ [field]: true } as {}),
       },
     });
     if (!prevFull) {
@@ -263,6 +264,8 @@ export async function updateItemFieldAction(
         updateData.itemTypeSource = resolved.itemTypeSource;
         updateData.mocSource = resolved.mocSource;
         updateData.size = resolved.size;
+        // Text now asks for flanges/fasteners/gaskets: tick Others (never untick the user's own).
+        if (resolved.others.length > 0) updateData.others = resolved.others;
         // Bypass gating: sync bypass with resolved value ( "-" when no mention )
         if (resolved.bypass !== currentItem?.bypass) {
           updateData.bypass = resolved.bypass;
@@ -310,26 +313,6 @@ export async function updateItemFieldAction(
         }
       }
 
-      // Others cost depends on others + size/MOC/PN: refresh Cost when any of
-      // them changes on an item that uses Others (skip if the bypass gate above
-      // already recalculated, or the enquiry's pricing is frozen).
-      if (
-        updateData.bypass === undefined &&
-        (field === "others" || // also on untick-all, so the old others cost drops out
-          (["size", "moc", "pnRating", "itemName"].includes(field) &&
-            Array.isArray(dbItem.others) && dbItem.others.length > 0))
-      ) {
-        const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
-        const parent = await prisma.enquiry.findUnique({
-          where: { id: prevFull.enquiryId },
-          select: { apm: true, offerPdfGeneratedAt: true },
-        });
-        if (!parent || !isEnquiryFrozen(parent.apm, parent.offerPdfGeneratedAt)) {
-          const recalc = await recalculateItem(itemId);
-          if (recalc) dbItem = (await prisma.enquiryItem.findUnique({ where: { id: itemId } })) as any;
-        }
-      }
-
       const MERGE_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "others", "itemName"];
       if (MERGE_FIELDS.includes(field)) {
         const merged = getItemNameMerge(dbItem);
@@ -347,6 +330,13 @@ export async function updateItemFieldAction(
           updatedItem = await recalculateItem(itemId, { vaPercent: defaultVa });
         }
       }
+    }
+
+    // CF set child (flanges + gaskets + bolts + nuts) follows its valve's Others/size/MOC/PN/quantity.
+    if (["others", "size", "moc", "pnRating", "itemName", "quantity"].includes(field)) {
+      const self = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { parentItemId: true } });
+      if (!self?.parentItemId) await ensureCfSetItem(itemId, { resetMoc: field === "moc" });
+      else if (field === "moc") await ensureCfSetItem(self.parentItemId); // user picked CS for the CF line
     }
 
     const after: Record<string, unknown> | null = updatedItem;
@@ -1207,7 +1197,7 @@ export async function previewAutoFillAction(itemIds: string[]) {
   try {
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
-      select: { id: true, itemName: true, itemType: true, moc: true, size: true, pnRating: true, operationType: true, extension: true, bypass: true },
+      select: { id: true, itemName: true, itemType: true, moc: true, size: true, pnRating: true, operationType: true, extension: true, bypass: true, others: true },
     })
 
     const changes: AutoFillChange[] = []
@@ -1225,7 +1215,7 @@ export async function previewAutoFillAction(itemIds: string[]) {
       // Keyword-only correction runs even when nothing is blank, so skip the
       // AI-backed resolveItemCategory for pure-correction rows to save tokens.
       const resolved = hasBlank ? await resolveItemCategory({ itemName: item.itemName }) : null
-      const add = (field: AutoFillChange["field"], newValue: string | null | undefined, extra: Partial<AutoFillChange> = {}) => {
+      const add = (field: Exclude<AutoFillChange["field"], "others">, newValue: string | null | undefined, extra: Partial<AutoFillChange> = {}) => {
         const oldValue = item[field] ?? ""
         if (newValue && newValue !== oldValue) {
           changes.push({ itemId: item.id, itemName: item.itemName, field, oldValue, newValue, ...extra })
@@ -1249,6 +1239,10 @@ export async function previewAutoFillAction(itemIds: string[]) {
         if (!item.operationType) add("operationType", resolved.operationType)
         if (!item.extension || item.extension === "-") add("extension", resolved.extension)
         if (!item.bypass || item.bypass === "-") add("bypass", resolved.bypass !== "-" ? resolved.bypass : null)
+        // Text asks for flanges/fasteners/gaskets: propose the "flange" tick (never replaces the user's own ticks).
+        if (item.others.length === 0 && resolved.others[0]) {
+          changes.push({ itemId: item.id, itemName: item.itemName, field: "others", oldValue: "", newValue: resolved.others[0] })
+        }
       }
     }
     return { success: true, data: { changes } }
@@ -1263,7 +1257,7 @@ export async function applyAutoFillAction(changes: AutoFillChange[]) {
   await requireAccess();
   const denied = await loginRequired(); if (denied) return denied;
   try {
-    const FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass"]
+    const FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "extension", "bypass", "others"]
     const byItem = new Map<string, AutoFillChange[]>()
     for (const c of changes) {
       if (!FIELDS.includes(c.field)) continue // the payload comes from the client
@@ -1272,9 +1266,9 @@ export async function applyAutoFillAction(changes: AutoFillChange[]) {
 
     let updated = 0
     for (const [itemId, list] of byItem) {
-      const data: Record<string, string | null> = {}
+      const data: Record<string, string | string[] | null> = {}
       for (const c of list) {
-        data[c.field] = c.newValue
+        data[c.field] = c.field === "others" ? [c.newValue] : c.newValue
         if (c.field === "itemType") data.itemTypeSource = c.source ?? "keyword"
         if (c.field === "moc") data.mocSource = c.source ?? "keyword"
       }
@@ -1298,6 +1292,11 @@ export async function applyAutoFillAction(changes: AutoFillChange[]) {
       if (!row.vaPercent && row.itemType) {
         const defaultVa = getDefaultVaPercent(row.itemType, row.size)
         if (defaultVa !== null) await recalculateItem(itemId, { vaPercent: defaultVa })
+      }
+
+      // CF set child follows size/MOC/PN/Others (skips children and frozen enquiries itself).
+      if (list.some((c) => ["size", "moc", "pnRating", "others"].includes(c.field))) {
+        await ensureCfSetItem(itemId, { resetMoc: list.some((c) => c.field === "moc") })
       }
     }
 

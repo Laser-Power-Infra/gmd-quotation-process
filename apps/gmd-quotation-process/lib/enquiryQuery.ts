@@ -96,7 +96,7 @@ export function emptyEnquiryQuery(): EnquiryQuery {
     selectedEnquiryIds: [],
     sort: null,
     page: 1,
-    pageSize: 50,
+    pageSize: 25,
   };
 }
 

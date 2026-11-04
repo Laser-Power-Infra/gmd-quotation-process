@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useDebounce } from "../lib/useDebounce";
 
 /** How long a filter box waits after the last keystroke before it hits the server. */
-export const SEARCH_DEBOUNCE_MS = 700;
+export const SEARCH_DEBOUNCE_MS = 300;
 
 // Keeps a filter keystroke inside this leaf and commits upward once typing stops. Tables
 // import it so typing does not re-render the whole table body on every character.

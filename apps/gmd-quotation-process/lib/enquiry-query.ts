@@ -168,8 +168,8 @@ const IMAGE_EXISTS_SQL = (alias: Prisma.Sql) => sql`EXISTS (
 )`;
 
 // Any of the five Details fields blank/UNKNOWN (size also counts SIZE_BLANK_VALUES).
-// Keep in step with isEmptyDetail in lib/detailsCheck.ts.
-const DETAILS_INCOMPLETE_SQL = (alias: Prisma.Sql) => sql`(
+// Keep in step with missingDetails/isEmptyDetail in lib/detailsCheck.ts (CF SET child lines are exempt).
+const DETAILS_INCOMPLETE_SQL = (alias: Prisma.Sql) => sql`(${alias}."itemType" IS DISTINCT FROM 'CF SET' AND (
   ${Prisma.join(
     ["itemType", "moc", "size", "pnRating", "operationType"].map(
       (f) =>
@@ -178,7 +178,7 @@ const DETAILS_INCOMPLETE_SQL = (alias: Prisma.Sql) => sql`(
     " OR ",
   )}
   OR btrim(${alias}."size") IN (${Prisma.join(SIZE_BLANK_VALUES)})
-)`;
+))`;
 
 /**
  * Status-tile stage of a docket (`e` alias): the first unmet step wins.
@@ -541,6 +541,49 @@ export const FIRST_ITEM_JOIN_SQL = sql`LEFT JOIN LATERAL (
   ORDER BY fi."position" ASC, fi.id ASC
   LIMIT 1
 ) f ON true`;
+
+/** Text money/number column as numeric (commas stripped); NULL when not numeric-looking. */
+const numericValue = (expr: Prisma.Sql) => {
+  const t = sql`btrim(replace(${expr}, ',', ''))`;
+  return sql`(CASE WHEN ${t} ~ '^-?[0-9]+([.][0-9]+)?$' THEN ${t}::numeric END)`;
+};
+
+/**
+ * The dashboard cards in one aggregate over the filtered, non-duplicate items.
+ * Zero values add nothing; cost counts only when > 0 and multiplies by quantity (1 when quantity <= 0).
+ */
+export function summaryTotalsSql(q: EnquiryQuery, scopedWhere: Prisma.Sql): Prisma.Sql {
+  return sql`SELECT count(*)::int AS items,
+      coalesce(sum(${numericValue(sql`i."totalValue"`)}), 0)::float8 AS gst,
+      coalesce(sum(${numericValue(sql`i."itemWiseTotalValue"`)}), 0)::float8 AS excl,
+      coalesce(sum(CASE WHEN i."cost" > 0 THEN i."cost" * (CASE WHEN i."quantity" > 0 THEN i."quantity" ELSE 1 END) END), 0)::float8 AS cost,
+      coalesce(sum(CASE WHEN i."quantity" > 0 THEN i."quantity" END), 0)::float8 AS qty
+    FROM "EnquiryItem" i
+    JOIN "Enquiry" e ON e.id = i."enquiryId"
+    WHERE ${scopedWhere} AND ${buildItemWhereSql(q)}
+      AND coalesce(btrim(e."duplicate"), '') <> 'Yes'
+      AND coalesce(btrim(i."cBatch"), '') <> 'C'
+      AND coalesce(btrim(i."nBatch"), '') <> 'N'`;
+}
+
+/** Id of each given docket's first item that matches the item filters. */
+export function firstItemIdsSql(q: EnquiryQuery, enquiryIds: string[]): Prisma.Sql {
+  return sql`SELECT DISTINCT ON (i."enquiryId") i.id FROM "EnquiryItem" i
+    JOIN "Enquiry" e ON e.id = i."enquiryId"
+    WHERE i."enquiryId" = ANY(${enquiryIds}::text[]) AND ${buildItemWhereSql(q)}
+    ORDER BY i."enquiryId", i."position" ASC, i.id ASC`;
+}
+
+/** Per docket: items matching the filters, and all items with incomplete details. */
+export function itemCountsSql(q: EnquiryQuery, enquiryIds: string[]): Prisma.Sql {
+  return sql`SELECT i."enquiryId",
+      (count(*) FILTER (WHERE ${buildItemWhereSql(q)}))::int AS "itemCount",
+      (count(*) FILTER (WHERE ${DETAILS_INCOMPLETE_SQL(sql`i`)}))::int AS "incompleteItemCount"
+    FROM "EnquiryItem" i
+    JOIN "Enquiry" e ON e.id = i."enquiryId"
+    WHERE i."enquiryId" = ANY(${enquiryIds}::text[])
+    GROUP BY i."enquiryId"`;
+}
 
 // ------------------------------------------------------------------ FACETS ---
 

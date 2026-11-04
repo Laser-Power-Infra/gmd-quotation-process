@@ -12,6 +12,7 @@ import { updateItemFieldAction, importExcelDataAction, applyAutoFillAction, upda
 import { bulkUpdateValidationAction, bulkUpdateApmAction, clearQuotedRatesAction, fetchContractReviewRatesAction, populatePdCostValidationAction } from "@/app/actions/misc";
 import {
   fetchEnquiryFacet,
+  fetchEnquiryItems,
   fetchEnquiryPage,
   fetchFilteredEnquiryIds,
 } from "@/app/actions/enquiryQuery";
@@ -474,10 +475,20 @@ function applyEnquiryPage(
   result: EnquiryPageResult,
   key: string,
 ) {
-  enquiriesAdapter.setAll(state.enquiries, result.enquiries);
+  // A refreshed page carries only the first item; keep the list already loaded (fresh first item swapped in).
+  const incoming = result.enquiries.map((enquiry) => {
+    const old = state.enquiries.entities[enquiry.id];
+    // Page already carries every item (itemCount <= items): take it as-is so deleted children vanish.
+    if (!old || enquiry.itemsLoaded || (enquiry.itemCount ?? 0) <= enquiry.items.length || old.items.length <= enquiry.items.length) return enquiry;
+    // Shown as-is to avoid flicker, but marked stale: a mutation may have changed other
+    // items too (CF child, positions), so expanded dockets reload them.
+    const fresh = new Map(enquiry.items.map((i) => [i.id, i]));
+    return { ...enquiry, itemsLoaded: false, items: old.items.map((i) => fresh.get(i.id) ?? i) };
+  });
+  enquiriesAdapter.setAll(state.enquiries, incoming);
   itemsAdapter.setAll(
     state.items,
-    result.enquiries.flatMap((enquiry) => enquiry.items),
+    incoming.flatMap((enquiry) => enquiry.items),
   );
   state.page.total = result.total;
   if (result.summary) state.page.summary = result.summary;
@@ -497,6 +508,12 @@ export const loadEnquiryPage = createAsyncThunk<
   fetchEnquiryPage(query, includeSummary ?? true),
 );
 
+/** Full item lists for dockets whose page row carries only the first item. */
+export const loadEnquiryItems = createAsyncThunk<EnquiryItemData[], { enquiryIds: string[] }>(
+  "enquiries/loadItems",
+  async ({ enquiryIds }) => fetchEnquiryItems(enquiryIds),
+);
+
 /** Cascading dropdown options - one distinct query per column, on open. */
 export const loadEnquiryFacet = createAsyncThunk<
   EnquiryFacetResult,
@@ -511,6 +528,7 @@ export const loadFilteredEnquiryIds = createAsyncThunk<
 
 const READ_ONLY_THUNKS = new Set([
   "enquiries/loadPage",
+  "enquiries/loadItems",
   "enquiries/loadFacet",
   "enquiries/loadFilteredIds",
 ]);
@@ -590,6 +608,20 @@ const enquiriesSlice = createSlice({
         }
         state.page.status = "error";
         state.page.error = action.error.message ?? "Failed to load enquiries";
+      })
+      .addCase(loadEnquiryItems.fulfilled, (state, action) => {
+        const byDocket = new Map<string, EnquiryItemData[]>();
+        for (const item of action.payload) {
+          byDocket.set(item.enquiryId, [...(byDocket.get(item.enquiryId) ?? []), item]);
+        }
+        for (const id of action.meta.arg.enquiryIds) {
+          const enquiry = state.enquiries.entities[id];
+          if (!enquiry) continue; // page changed while loading
+          const items = byDocket.get(id) ?? [];
+          enquiry.items = items;
+          enquiry.itemsLoaded = true;
+          itemsAdapter.upsertMany(state.items, items);
+        }
       })
       .addCase(loadEnquiryFacet.pending, (state, action) => {
         state.page.facets[action.meta.arg.field] = {

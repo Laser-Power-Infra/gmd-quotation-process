@@ -8,6 +8,7 @@ import { extractExtensionFromItemName } from './extensionMatcher';
 import { detectBypass } from './bypassDetector';
 import { hasBypassMention } from './bypassMatcher';
 import { guardInventedMoc } from './mocGuard';
+import { detectCfSet } from './cfSet';
 
 const VALIDATION_ENABLED = process.env.AI_VALIDATION_ENABLED !== 'false';
 
@@ -28,6 +29,8 @@ export interface ResolveResult {
   extension: string | null;
   bypass: string | null;
   operationType: string | null;
+  /** Others ticks implied by the party text ("with companion flanges" -> ["flange"]). */
+  others: string[];
   itemTypeSource: 'sheet' | 'keyword' | 'ai' | null;
   mocSource: 'sheet' | 'keyword' | 'ai' | null;
   operationTypeSource: 'sheet' | 'ai' | 'rule' | null;
@@ -50,6 +53,7 @@ export async function resolveItemCategory(params: {
     extension: null,
     bypass: null,
     operationType: null,
+    others: [],
     itemTypeSource: sheetItemType ? 'sheet' : null,
     mocSource: sheetMoc ? 'sheet' : null,
     operationTypeSource: null,
@@ -153,6 +157,8 @@ export async function resolveItemCategory(params: {
       }
     }
   }
+
+  result.others = detectCfSet(itemName, result.itemType);
 
   // Bypass logic only if itemName explicitly mentions bypass / by-pass / by pass
   if (hasBypassMention(itemName)) {

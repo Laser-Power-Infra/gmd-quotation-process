@@ -53,6 +53,24 @@ export interface PhysicalStockRow {
   in_transit: number | null;
   /** Open PO lines behind `in_transit` (supplier, PO no/date, due, pending/received); filled like it. */
   incoming_from: string | null;
+  /** Orders holding this stock (host fills it from the allocation engine); null = not looked up, like `in_transit`. */
+  allocations: StockAllocationRow[] | null;
+  /** Derived columns, rendered by rowToArray from `allocations`; never stored. */
+  allocated_qty?: never;
+  free_qty?: never;
+}
+
+export type StockAllocationStage = "Booked" | "Offered" | "Inspection done" | "Dispatched";
+
+// Structural subset of the host's `Allocation` so the host can pass its objects straight through.
+export interface StockAllocationRow {
+  contractNo: string;
+  itemCode: string;
+  party: string;
+  poNo: string | null;
+  qty: number;
+  stage: StockAllocationStage;
+  allocatedAt: string | null;
 }
 
 export interface HeatEntryRow {

@@ -18,18 +18,20 @@ import CodeCheckButton from "./CodeCheckButton";
 const NOT_SENT = "Not Sent";
 
 interface DashboardHeaderProps {
-  enquiries: { id: string; docketNumber: string; partyName: string }[];
   nextDocketNumber: string;
   dropdownOptions: any;
   /** Server-rendered summary, so the counts are correct before hydration. */
   initialSummary?: import("@/lib/enquiryQuery").EnquirySummary | null;
+  analyticsOn: boolean;
+  onAnalyticsChange: (on: boolean) => void;
 }
 
 export default function DashboardHeader({
-  enquiries,
   nextDocketNumber,
   dropdownOptions,
   initialSummary,
+  analyticsOn,
+  onAnalyticsChange,
 }: DashboardHeaderProps) {
   const dispatch = useAppDispatch();
   const isCollapsed = useAppSelector((s) => s.ui.isAnalyticsSidebarCollapsed);
@@ -88,7 +90,7 @@ export default function DashboardHeader({
     <div className="flex flex-col gap-4 py-3 px-6 bg-card sm:flex-row sm:items-center sm:justify-between border-b border-border shrink-0">
       <div className="flex flex-1 flex-col gap-4 sm:flex-row sm:items-center">
         <div className="flex items-center gap-2 shrink-0">
-          <button
+          {analyticsOn && <button
             type="button"
             onClick={() => dispatch(toggleAnalyticsSidebar())}
             title={isCollapsed ? "Expand Analytics Filters" : "Collapse Analytics Filters"}
@@ -99,7 +101,7 @@ export default function DashboardHeader({
             ) : (
               <PanelLeftClose className="h-4 w-4 stroke-[1.75]" />
             )}
-          </button>
+          </button>}
           <h1 className="text-xl font-bold text-foreground tracking-tight">
             Recent Enquiries
           </h1>
@@ -107,7 +109,7 @@ export default function DashboardHeader({
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
-        <div className="flex items-center rounded-md border border-border bg-background p-0.5">
+        {analyticsOn && <div className="flex items-center rounded-md border border-border bg-background p-0.5">
           {closureOptions.map((status) => {
             const active = isStatusActive(status);
             return (
@@ -138,8 +140,9 @@ export default function DashboardHeader({
           >
             Not Sent ({notSentCount})
           </button>
-        </div>
+        </div>}
 
+        {analyticsOn && <>
         <Button
           onClick={handleSyncEmails}
           disabled={syncingEmails}
@@ -152,6 +155,21 @@ export default function DashboardHeader({
 
         <CodeCheckButton />
         <ContractMatchButton />
+        </>}
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={analyticsOn}
+          onClick={() => onAnalyticsChange(!analyticsOn)}
+          title="Show or hide the analytics (sidebar, totals, stage tiles, toolbar)"
+          className="flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2 text-xs font-semibold text-foreground cursor-pointer"
+        >
+          Analytics
+          <span className={`relative h-4 w-7 rounded-full transition-colors ${analyticsOn ? "bg-[#0f62fe] dark:bg-blue-500/80" : "bg-muted-foreground/40"}`}>
+            <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${analyticsOn ? "left-[0.875rem]" : "left-0.5"}`} />
+          </span>
+        </button>
 
         <Button
           onClick={() => dispatch(openAddItemsDialog())}
@@ -174,9 +192,7 @@ export default function DashboardHeader({
         </Button>
       </div>
 
-      <AddItemsDialog
-        enquiries={enquiries}
-      />
+      <AddItemsDialog />
       <NewEnquiryDialog
         nextDocketNumber={nextDocketNumber}
         dropdownOptions={dropdownOptions}

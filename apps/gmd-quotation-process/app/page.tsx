@@ -22,13 +22,8 @@ export default async function Page() {
   const initialQuery = emptyEnquiryQuery();
   // Only the first page is loaded here. Filters, paging and sorting re-run
   // through the same server action from the client.
-  const [initialPage, enquiries, enquiriesInFiscal, lookup, costLoading] = await Promise.all([
+  const [initialPage, enquiriesInFiscal, lookup, costLoading] = await Promise.all([
     fetchEnquiryPage(initialQuery),
-    // Enquiries for the Add Items dropdown.
-    prisma.enquiry.findMany({
-      select: { id: true, docketNumber: true, partyName: true },
-      orderBy: { docketNumber: "asc" },
-    }),
     prisma.enquiry.findMany({
       where: { docketNumber: { startsWith: getFiscalPrefix(new Date()) } },
       select: { docketNumber: true },
@@ -78,7 +73,6 @@ export default async function Page() {
             initialQueryKey={enquiryQueryKey(initialQuery)}
             dropdownOptions={dropdownOptions}
             nextDocketNumber={nextDocketNumber}
-            enquiriesList={enquiries}
             autoSentDockets={sentDockets}
             autoPendingDockets={pendingDockets}
           />

@@ -31,10 +31,6 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="h-screen flex flex-col overflow-hidden bg-background">
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=block"
-        />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="gmd-theme" disableTransitionOnChange>
         <SessionProvider>
           <StoreProvider>

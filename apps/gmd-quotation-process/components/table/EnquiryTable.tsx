@@ -2,23 +2,24 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FileText, ChevronDown, ChevronRight, Search, Download, Upload, Edit2, Sparkles, Percent, Plus, RefreshCw, DollarSign, Trash2, X, PackageCheck, ExternalLink, ImageIcon, Check, Mail, Loader2, History, AlertTriangle } from "lucide-react";
+import Image from "next/image";
 import { shallowEqual } from "react-redux";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
-import DocketAttachmentsCell from "@/components/attachment/DocketAttachmentsCell";
 import Pagination from "./Pagination";
 import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
 import CellSelect, { optionsWithCurrent } from "./CellSelect";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, loadEnquiryItems, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
 import { enquiryFilterKey, type EnquiryStage } from "@/lib/enquiryQuery";
-import { fetchDocketNumbers, fetchFilteredEnquiryExport } from "@/app/actions/enquiryQuery";
+import { fetchDocketNumbers, fetchFilteredEnquiryExport, fetchGeneratedImageMap } from "@/app/actions/enquiryQuery";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { itemDeletedStatus, DELETED_STATUS_OPTIONS } from "@/lib/filterUtils";
 import { setPage, setPageSize } from "@/lib/paginationSlice";
-import { toggleRow, setRowExpanded, setColumnWidth, setExpandedRows, DEFAULT_COLUMN_WIDTHS, setGeneratedImages, toggleEnquirySelection, setSelectedEnquiries, clearEnquirySelection } from "@/lib/uiSlice";
+import { toggleRow, setRowExpanded, setColumnWidth, setVisibleColumns, setExpandedRows, DEFAULT_COLUMN_WIDTHS, setGeneratedImages, toggleEnquirySelection, setSelectedEnquiries, clearEnquirySelection } from "@/lib/uiSlice";
 import type { DropdownOptions, EnquiryData, EnquiryItemData, FiltersState } from "@/lib/types";
+import type { CfResult } from "@/lib/cfSet";
 import { generateOfferPdfAction } from "@/lib/generate-offer-pdf";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { useSession } from "next-auth/react";
@@ -36,7 +37,12 @@ import { correctItemType } from "@/lib/itemTypePatterns";
 import { missingDetails, sizeFromName, type AutoFillChange } from "@/lib/detailsCheck";
 import { previewAutoFillAction, getItemChangeLogAction } from "@/app/actions/item";
 import AutoFillReviewDialog from "./AutoFillReviewDialog";
-import StageAssignPopover from "./StageAssignPopover";
+import DocketRow, { type DocketRowActions } from "./DocketRow";
+import EnquiryFilterBar from "./EnquiryFilterBar";
+import DocketEditDrawer from "./DocketEditDrawer";
+import EditableText from "./EditableText";
+import { ALL_COLUMN_KEYS, effectiveColumns } from "@/lib/enquiryColumns";
+import { ENQUIRY_COLUMNS_KEY, loadColumnSet, saveColumnSet } from "@/lib/tablePrefs";
 import AssigneePendingStrip from "./AssigneePendingStrip";
 import { AGE_BUCKETS, istDaysSince } from "@/lib/stageAgeing";
 import { ConfirmDialog } from "@/components/chat/ConfirmDialog";
@@ -52,7 +58,6 @@ import { computeCostLoading, describeCostLoading, formatLoadingPct } from "@/lib
 interface EnquiryTableProps {
   dropdownOptions: DropdownOptions;
   /** Every docket number, from the server render. Refetched only after a duplicate delete. */
-  initialDocketNumbers?: string[];
   autoSentDockets?: string[];
   autoPendingDockets?: string[];
 }
@@ -69,33 +74,6 @@ function CostWarningIcon({ warnings }: { warnings?: string[] | null }) {
       <AlertTriangle className="h-3.5 w-3.5" />
     </span>
   );
-}
-
-// Helper to extract company name and branch
-function parseParty(partyName: string) {
-  const parts = partyName.split(",").map((s) => s.trim());
-  return {
-    company: parts[0] || "",
-    branch: parts.slice(1).join(", ") || null,
-  };
-}
-
-// Helper to generate initials for avatar
-function getInitials(name: string) {
-  const { company } = parseParty(name);
-  const cleanName = company
-    .replace(/[^a-zA-Z0-9\s]/g, "") // remove special chars
-    .replace(/\b(Ltd|Limited|Inc|Corporation|Corp|Co|Pvt)\b/gi, "")
-    .trim();
-
-  const parts = cleanName.split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  if (parts.length === 1) {
-    return parts[0].substring(0, 2).toUpperCase();
-  }
-  return "EQ";
 }
 
 const fileToBase64 = (file: File): Promise<string> => {
@@ -310,9 +288,10 @@ function ItemImageCells({
             <div className="flex items-center gap-2 min-w-0">
               <div className="w-10 h-10 rounded border border-border bg-muted overflow-hidden flex items-center justify-center shrink-0">
                 {image.driveFileId ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <Image
                     src={`https://drive.google.com/thumbnail?id=${image.driveFileId}&sz=w400`}
+                    width={40}
+                    height={40}
                     alt={item.itemName || "item"}
                     className="w-full h-full object-cover"
                     onError={(e) => {
@@ -383,23 +362,20 @@ function ItemCodeCell({ item }: { item?: EnquiryItemData }) {
   );
 }
 
-export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, autoSentDockets, autoPendingDockets }: EnquiryTableProps) {
+export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPendingDockets }: EnquiryTableProps) {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role as string | undefined;
   const canEditApm = role === "admin" || role === "developer";
   const dispatch = useAppDispatch();
   const enquiries = useAppSelector(selectAllEnquiries);
   // Not the loaded page: the original docket can be on any page, under any filter.
-  // Seeded from the server render; refetched only after a duplicate delete, not on
+  // Fetched on mount; refetched only after a duplicate delete, not on
   // other users' creates.
-  const [docketNumbers, setDocketNumbers] = useState<string[]>(initialDocketNumbers ?? []);
+  const [docketNumbers, setDocketNumbers] = useState<string[]>([]);
   const [docketListVersion, setDocketListVersion] = useState(0);
   useEffect(() => {
-    if (docketListVersion === 0) return; // the server already sent this list
     fetchDocketNumbers().then(setDocketNumbers).catch(() => {});
   }, [docketListVersion]);
-  // Rows just marked Duplicate = Yes: their original picker opens by itself once.
-  const [openOriginalIds, setOpenOriginalIds] = useState<Set<string>>(new Set());
   const autoSentSet = useMemo(() => new Set(autoSentDockets ?? []), [autoSentDockets]);
   const autoPendingSet = useMemo(() => new Set(autoPendingDockets ?? []), [autoPendingDockets]);
   const allItems = useAppSelector(selectAllItems);
@@ -418,12 +394,22 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   const sortDirection = pageState.sort?.direction ?? "desc";
   const expandedRows = useAppSelector((s) => s.ui.expandedRows);
   const columnWidths = useAppSelector((s) => s.ui.columnWidths);
+  const analyticsOn = useAppSelector((s) => s.ui.analyticsOn);
+  const storedColumns = useAppSelector((s) => s.ui.visibleColumns);
+  const visibleColumns = effectiveColumns(analyticsOn, storedColumns);
+  const [editingDocketId, setEditingDocketId] = useState<string | null>(null);
+  // The saved column choice is read after mount so the server render matches the first client render.
+  useEffect(() => {
+    const saved = loadColumnSet(ENQUIRY_COLUMNS_KEY, ALL_COLUMN_KEYS);
+    if (saved) dispatch(setVisibleColumns(saved));
+  }, [dispatch]);
+  const changeColumns = (keys: string[]) => {
+    dispatch(setVisibleColumns(keys));
+    saveColumnSet(ENQUIRY_COLUMNS_KEY, keys);
+  };
   const selectedEnquiryIds = useAppSelector((s) => s.ui.selectedEnquiryIds);
   const closedBomIds = useAppSelector((s) => s.ui.closedBomIds);
 
-  const [editingPartyEnquiryId, setEditingPartyEnquiryId] = useState<string | null>(null);
-
-  const attachInputRefs = useRef<Record<string, HTMLInputElement>>({});
   const tableRef = useRef<HTMLTableElement>(null);
 
   const handleAddAttachments = async (e: React.ChangeEvent<HTMLInputElement>, enquiryId: string) => {
@@ -516,6 +502,22 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
       </div>
     );
   };
+  // "CF" chip on a CF set line: tooltip = priced parts + gaps, link = the Flange master row it was priced from.
+  const cfChip = (item: EnquiryItemData) => {
+    const b = item.cfSetBreakdown as CfResult | null | undefined;
+    if (!item.parentItemId || !b) return null;
+    const title = [
+      ...b.lines.map((l) => `${l.qty} x ${l.part} (${l.unitKg} kg @ ${l.rateKey}) = ${l.cost}`),
+      ...b.missing.map((m) => `MISSING: ${m}`),
+      b.standardAssumed ? "Flange standard not in master: matched without it" : "",
+    ].filter(Boolean).join("\n");
+    const href = b.flangeRowIndex != null ? `/technical?tab=flange&row=${b.flangeRowIndex}` : "/technical?tab=flange";
+    return (
+      <a href={href} title={title} className="block text-[9px] text-right px-1 font-bold text-sky-700 dark:text-sky-300 hover:underline">
+        CF set{b.missing.length ? " · incomplete" : ""} · flange master
+      </a>
+    );
+  };
   type ChangeRow = { id: string; field: string; oldValue: string | null; newValue: string | null; changedBy: string; createdAt: string };
   const [history, setHistory] = useState<{ itemName: string; rows: ChangeRow[] } | null>(null);
   const historyButton = (item: EnquiryItemData) => (
@@ -558,24 +560,15 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   // Product Cost header filter: only items with a cost sanity warning (lib/costSanity.ts).
   const costWarningOnly = pageState.costWarningOnly;
   const setCostWarningOnly = (value: boolean) => dispatch(setEnquiryCostWarningOnly(value));
-  const [addingContractFor, setAddingContractFor] = useState<string | null>(null);
 
   // Image lookup: GeneratedImage rows keyed by imageKey (itemType__operationType__rmType).
-  // Fetched once from the same endpoint the Upload Image dashboard uses; stored in Redux so cards can react.
+  // Fetched on mount and stored in Redux so cards can react.
   const imageMap = useAppSelector((s) => s.ui.generatedImages);
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/generated-images", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((json) => {
-        if (cancelled) return;
-        const map: Record<string, { url: string | null; driveFileId: string | null }> = {};
-        for (const it of json.items ?? []) {
-          if (it.url || it.driveFileId) {
-            map[it.imageKey] = { url: it.url ?? null, driveFileId: it.driveFileId ?? null };
-          }
-        }
-        dispatch(setGeneratedImages(map));
+    fetchGeneratedImageMap()
+      .then((map) => {
+        if (!cancelled) dispatch(setGeneratedImages(map));
       })
       .catch(() => {});
     return () => {
@@ -851,32 +844,6 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
     dispatch(setFilter({ field: "bypass", value: [] }));
     dispatch(setFilter({ field: "others", value: [] }));
     dispatch(setFilter({ field: "rmType", value: [] }));
-  }, [dispatch]);
-
-  const activeStateUtilityFilterCount = useMemo(() => {
-    let count = 0;
-    if (filters.state && filters.state.length > 0) count++;
-    if (filters.utility && filters.utility.length > 0) count++;
-    return count;
-  }, [filters]);
-
-  const handleClearStateUtilityFilters = useCallback(() => {
-    dispatch(setFilter({ field: "state", value: [] }));
-    dispatch(setFilter({ field: "utility", value: [] }));
-  }, [dispatch]);
-
-  const activePaymentTermsFilterCount = useMemo(() => {
-    let count = 0;
-    if (filters.paymentTerms && filters.paymentTerms.length > 0) count++;
-    if (filters.pbg && filters.pbg.length > 0) count++;
-    if (filters.inspection && filters.inspection.length > 0) count++;
-    return count;
-  }, [filters]);
-
-  const handleClearPaymentTermsFilters = useCallback(() => {
-    dispatch(setFilter({ field: "paymentTerms", value: [] }));
-    dispatch(setFilter({ field: "pbg", value: [] }));
-    dispatch(setFilter({ field: "inspection", value: [] }));
   }, [dispatch]);
 
   const getFilteredItems = useCallback((enquiry: EnquiryData) => {
@@ -1170,7 +1137,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   const [deletingEnquiryId, setDeletingEnquiryId] = useState<string | null>(null);
   const handleDeleteDuplicate = async (enquiry: EnquiryData) => {
     if (!enquiry.duplicateOfDocket) return;
-    const itemCount = enquiry.items?.length ?? 0;
+    const itemCount = enquiry.itemsLoaded ? enquiry.items.length : (enquiry.itemCount ?? 0);
     if (
       !await ask(
         `Delete docket ${enquiry.docketNumber} as a duplicate of ${enquiry.duplicateOfDocket}?` +
@@ -1192,6 +1159,21 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
       );
     } finally {
       setDeletingEnquiryId(null);
+    }
+  };
+
+  // No batch action exists, so the drawer saves one changed field at a time.
+  const handleDrawerSave = async (id: string, changes: Record<string, string>, contracts: string[] | null) => {
+    const toastId = toast.loading("Saving docket...");
+    try {
+      for (const [field, value] of Object.entries(changes)) {
+        await dispatch(updateEnquiryField({ enquiryId: id, field, value: value === "" ? null : value })).unwrap();
+      }
+      if (contracts) await dispatch(updateEnquiryField({ enquiryId: id, field: "selectedContractNo", value: contracts })).unwrap();
+      toast.success("Saved.", { id: toastId });
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : err ? String(err) : "Failed to save.", { id: toastId });
+      throw err;
     }
   };
 
@@ -1316,7 +1298,9 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
 
     e.preventDefault();
 
-    const targets = getFilteredItems(enquiry).slice(startIndex);
+    const [full] = (await ensureItems([enquiry])) ?? [];
+    if (!full) return;
+    const targets = getFilteredItems(full).slice(startIndex);
     if (targets.length === 0) return;
 
     const updates: { item: { id: string }; cost?: number; vaPercent?: number; quotedRate?: number }[] = [];
@@ -1421,6 +1405,38 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   const someFilteredSelected = selectedFilteredCount > 0 && !allFilteredSelected;
 
   const paginatedEnquiries = enquiries;
+
+  // Page rows carry only their first item. Expanded dockets load the rest (toggle,
+  // expand-all and auto-expand all just set expandedRows).
+  const loadingIds = useRef(new Set<string>());
+  useEffect(() => {
+    const ids = paginatedEnquiries
+      .filter((e) => expandedRows[e.id] && !e.itemsLoaded && (e.itemCount ?? 0) > 1 && !loadingIds.current.has(e.id))
+      .map((e) => e.id);
+    if (ids.length === 0) return;
+    ids.forEach((id) => loadingIds.current.add(id));
+    dispatch(loadEnquiryItems({ enquiryIds: ids })).finally(() => ids.forEach((id) => loadingIds.current.delete(id)));
+  }, [paginatedEnquiries, expandedRows, dispatch]);
+
+  // Every handler that loops a docket's items must go through this first, or it would
+  // silently process only the first item of each collapsed docket. Returns the page
+  // with full item lists, or null (after a toast) when loading failed.
+  const ensureItems = async (list: EnquiryData[]): Promise<EnquiryData[] | null> => {
+    const missing = list.filter((e) => !e.itemsLoaded).map((e) => e.id);
+    if (missing.length === 0) return list;
+    const toastId = toast.loading("Loading items...");
+    try {
+      const loaded = await dispatch(loadEnquiryItems({ enquiryIds: missing })).unwrap();
+      toast.dismiss(toastId);
+      return list.map((e) =>
+        e.itemsLoaded ? e : { ...e, itemsLoaded: true, items: loaded.filter((i) => i.enquiryId === e.id) },
+      );
+    } catch (err) {
+      toast.error("Could not load items - nothing was changed.", { id: toastId });
+      return null;
+    }
+  };
+  const ensurePageItems = () => ensureItems(paginatedEnquiries);
 
   // getFilteredItems runs ~130 predicates per item. Called straight from the render
   // map it re-ran for every row on every one of this component's state changes, so
@@ -1647,9 +1663,11 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   };
 
   const handleAutoFillBlanks = async () => {
+    const pageFull = await ensurePageItems();
+    if (!pageFull) return;
     // Collect items that pass all active filters
     const matchedItems: EnquiryItemData[] = []
-    for (const enquiry of paginatedEnquiries) {
+    for (const enquiry of pageFull) {
       for (const item of getFilteredItems(enquiry)) {
         matchedItems.push(item)
       }
@@ -1712,11 +1730,13 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   }
 
   const handleFetchItemCodes = async () => {
+    const pageFull = await ensurePageItems();
+    if (!pageFull) return;
     // Collect every item that passes all active filters. Already-coded items are
     // included too: the button re-syncs the master sheet, so codes whose mapping
     // changed upstream are updated, not just blanks.
     const matchedItems: EnquiryItemData[] = []
-    for (const enquiry of paginatedEnquiries) {
+    for (const enquiry of pageFull) {
       for (const item of getFilteredItems(enquiry)) {
         matchedItems.push(item)
       }
@@ -1813,13 +1833,15 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   }
 
   const handleUpdateAllBomCosts = async () => {
+    const pageFull = await ensurePageItems();
+    if (!pageFull) return;
     const frozenEnquiryIds = new Set(
       paginatedEnquiries
         .filter((e) => isEnquiryFrozen((e as any).apm, (e as any).offerPdfGeneratedAt))
         .map((e) => e.id)
     );
     const matchedItems: EnquiryItemData[] = []
-    for (const enquiry of paginatedEnquiries) {
+    for (const enquiry of pageFull) {
       if (frozenEnquiryIds.has(enquiry.id)) continue;
       for (const item of getFilteredItems(enquiry)) {
         matchedItems.push(item)
@@ -1866,13 +1888,15 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   }
 
   const handleAutoFillVa = async () => {
+    const pageFull = await ensurePageItems();
+    if (!pageFull) return;
     const frozenEnquiryIds2 = new Set(
       paginatedEnquiries
         .filter((e) => isEnquiryFrozen((e as any).apm, (e as any).offerPdfGeneratedAt))
         .map((e) => e.id)
     );
     const matchedItems: EnquiryItemData[] = []
-    for (const enquiry of paginatedEnquiries) {
+    for (const enquiry of pageFull) {
       if (frozenEnquiryIds2.has(enquiry.id)) continue;
       for (const item of getFilteredItems(enquiry)) {
         matchedItems.push(item)
@@ -1904,9 +1928,11 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   }
 
   const handleFetchContractReviewRates = async () => {
+    const pageFull = await ensurePageItems();
+    if (!pageFull) return;
     // Collect items with an erpItemCode from currently paginated enquiries that pass active filters
     const itemsWithCode: EnquiryItemData[] = []
-    for (const enquiry of paginatedEnquiries) {
+    for (const enquiry of pageFull) {
       for (const item of getFilteredItems(enquiry)) {
         if (item.erpItemCode) itemsWithCode.push(item)
       }
@@ -1955,9 +1981,11 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   }
 
   const handlePopulatePdCostVal = async () => {
+    const pageFull = await ensurePageItems();
+    if (!pageFull) return;
     // Collect items from currently paginated enquiries that pass active filters and have both CR Rate and Product Cost
     const matchedItems: EnquiryItemData[] = []
-    for (const enquiry of paginatedEnquiries) {
+    for (const enquiry of pageFull) {
       for (const item of getFilteredItems(enquiry)) {
         if (item.contractReviewRate && item.productCost != null) {
           matchedItems.push(item)
@@ -2004,18 +2032,46 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
     }
   }
 
-  const TOTAL_COLUMNS = 42;
+  const TOTAL_COLUMNS = ALL_COLUMN_KEYS.length;
   const SELECT_COL_WIDTH = 44;
   const getColWidth = (idx: number) => columnWidths[idx] ?? DEFAULT_COLUMN_WIDTHS[idx] ?? 120;
+  const visibleSet = new Set(visibleColumns);
+  const hiddenIdx = ALL_COLUMN_KEYS.flatMap((k, i) => (visibleSet.has(k) ? [] : [i]));
   const totalTableWidth =
-    Array.from({ length: TOTAL_COLUMNS }, (_, idx) => getColWidth(idx)).reduce((a, b) => a + b, 0) +
+    ALL_COLUMN_KEYS.reduce((sum, k, idx) => sum + (visibleSet.has(k) ? getColWidth(idx) : 0), 0) +
     SELECT_COL_WIDTH;
-  // Docket No, Item Name and Details (holds Size) pin to the left; columns between them scroll underneath.
+  // Docket, Item Name and Details (holds Size) pin to the left; columns between them scroll underneath.
   const frozenLeft: Record<number, number> = {
-    1: 0,
-    14: getColWidth(1),
-    15: getColWidth(1) + getColWidth(14),
+    0: 0,
+    8: getColWidth(0),
+    9: getColWidth(0) + (visibleSet.has("itemName") ? getColWidth(8) : 0),
   };
+  // Hidden columns: the cell at the same position in every row (the select checkbox is the first) is hidden.
+  const hiddenColumnsCss =
+    hiddenIdx
+      .map((i) => `.enq-table > colgroup > col:nth-child(${i + 2}), .enq-table tr > :nth-child(${i + 2})`)
+      .join(",") + "{display:none}";
+  const rowCallbacks = useRef<DocketRowActions>(null as unknown as DocketRowActions);
+  rowCallbacks.current = {
+    toggleExpand,
+    applyVaRules: handleApplyVaRules,
+    fieldChange: handleEnquiryFieldChange,
+    addAttachments: handleAddAttachments,
+    showIncomplete: () => setIncompleteOnly(true),
+    edit: setEditingDocketId,
+  };
+  // Stable, so a memoised DocketRow is not re-rendered by unrelated table updates.
+  const rowActions = useMemo<DocketRowActions>(
+    () => ({
+      toggleExpand: (...a) => rowCallbacks.current.toggleExpand(...a),
+      applyVaRules: (...a) => rowCallbacks.current.applyVaRules(...a),
+      fieldChange: (...a) => rowCallbacks.current.fieldChange(...a),
+      addAttachments: (...a) => rowCallbacks.current.addAttachments(...a),
+      showIncomplete: () => rowCallbacks.current.showIncomplete(),
+      edit: (id) => rowCallbacks.current.edit(id),
+    }),
+    [],
+  );
   // Collapsed table borders don't travel with sticky cells, so draw the divider as a shadow.
   const FROZEN_TD = "sticky z-20 bg-background shadow-[inset_-1px_0_0_var(--border)]";
   // Yes/No toggle: only the saved side is coloured (with a tick), so the stored value reads at a glance.
@@ -2065,7 +2121,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
   return (
     <div className="flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0">
       {/* Status tiles: one stage per docket, counted server-side; click to filter */}
-      <div className="flex flex-wrap gap-2 px-4 py-2 border-b border-border">
+      {analyticsOn && <div className="flex flex-wrap gap-2 px-4 py-2 border-b border-border">
         {STAGE_TILES.map(([stage, label]) => {
           const active = pageState.stage === stage;
           return (
@@ -2089,8 +2145,8 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
             </button>
           );
         })}
-      </div>
-      <AssigneePendingStrip rows={pageState.summary?.assigneePending ?? []} />
+      </div>}
+      {analyticsOn && <AssigneePendingStrip rows={pageState.summary?.assigneePending ?? []} />}
       {/* Table Toolbar */}
       <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 px-4 py-2.5 bg-muted/50 border-b border-border">
         <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
@@ -2126,7 +2182,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
         </span>
 
         {/* Row colour legend (red = invalidVaItemIds, blue = isSelected) */}
-        <span className="hidden items-center gap-3 whitespace-nowrap text-[10px] font-normal text-muted-foreground/80 sm:flex">
+        {analyticsOn && <span className="hidden items-center gap-3 whitespace-nowrap text-[10px] font-normal text-muted-foreground/80 sm:flex">
           <span className="flex items-center gap-1.5">
             <span className="h-2 w-2 shrink-0 rounded-[2px] border border-red-300 bg-red-100 dark:border-red-500/40 dark:bg-red-500/15" />
             Red row = VA% below minimum, or rate above CR rate
@@ -2135,10 +2191,10 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
             <span className="h-2 w-2 shrink-0 rounded-[2px] border border-blue-300 bg-blue-50 dark:border-blue-500/40 dark:bg-blue-500/10" />
             Selected
           </span>
-        </span>
+        </span>}
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        {analyticsOn && <div className="flex flex-wrap items-center justify-end gap-2">
           {hasActiveFilters && (
             <button
               type="button"
@@ -2242,8 +2298,22 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
             <PackageCheck className={`h-3.5 w-3.5 text-amber-700 dark:text-amber-300 stroke-2 ${syncStockStatus === "running" ? "animate-spin" : ""}`} />
             {syncStockStatus === "running" ? "Syncing Stock..." : "Sync Available Stock"}
           </button>
-        </div>
+        </div>}
       </div>
+
+      <EnquiryFilterBar
+        dropdownOptions={dropdownOptions}
+        cascadedOptions={cascadedOptions}
+        requestFacet={requestFacet}
+        contractOptions={allSelectedContractOptions}
+        pendingOnly={pendingOnly}
+        onTogglePending={() => setPendingOnly((v) => !v)}
+        hasActiveFilters={hasActiveFilters}
+        onClearAll={handleResetAllFilters}
+        visibleColumns={visibleColumns}
+        onColumnsChange={changeColumns}
+        showColumns={analyticsOn}
+      />
 
       {/* Narrowing to a stage returns few rows and comes back fast, so the opacity dip
           alone was easy to miss. This bar always registers. */}
@@ -2259,9 +2329,10 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
           isPageLoading ? "opacity-60" : ""
         }`}
       >
+        {hiddenIdx.length > 0 && <style>{hiddenColumnsCss}</style>}
         <table
         ref={tableRef}
-        className="border-collapse text-left border border-border"
+        className="enq-table border-collapse text-left border border-border"
         style={{ tableLayout: "fixed", width: totalTableWidth }}
       >
         <colgroup>
@@ -2298,27 +2369,21 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 )}
               </div>
             </th>
-            {/* 0. Enquiry Date */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Enquiry Date</span>
-                {renderSortArrow("enquiryDate")}
+            <th style={{ left: 0 }} className="relative py-1.5 px-3 sticky top-0 z-40 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="flex items-center gap-1 truncate"><button
+                    type="button"
+                    onClick={toggleExpandAll}
+                    disabled={paginatedEnquiries.length === 0}
+                    title={allExpanded ? "Collapse all dockets" : "Expand all dockets"}
+                    aria-label={allExpanded ? "Collapse all dockets" : "Expand all dockets"}
+                    className="inline-flex items-center justify-center p-0.5 hover:bg-background rounded cursor-pointer disabled:opacity-40"
+                  >
+                    {allExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  </button>Docket</span>
+                <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">{renderSortArrow("docketNumber")}<span className="text-[8px] font-semibold">Date</span>{renderSortArrow("enquiryDate")}<span className="text-[8px] font-semibold">Party</span>{renderSortArrow("partyName")}</span>
               </div>
-              <div className="flex gap-1 items-center mt-1.5">
-                <FilterTextInput
-                  field="enquiryDateFrom"
-                  type="date"
-                  placeholder=""
-                  className="h-6 w-full text-[9px] p-0.5 border rounded bg-background text-foreground outline-none font-normal"
-                />
-                <span className="text-[9px] text-muted-foreground font-normal">to</span>
-                <FilterTextInput
-                  field="enquiryDateTo"
-                  type="date"
-                  placeholder=""
-                  className="h-6 w-full text-[9px] p-0.5 border rounded bg-background text-foreground outline-none font-normal"
-                />
-              </div>
+              <FilterTextInput field="docketNumber" placeholder="Docket no..." className={inputClass} />
               <div
                 onMouseDown={(e) => handleMouseDown(0, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -2328,42 +2393,11 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
               </div>
             </th>
-
-            {/* 1. Docket No */}
-            <th style={{ left: frozenLeft[1] }} className="relative py-2.5 px-3 sticky top-0 z-40 bg-muted shadow-[inset_-1px_0_0_var(--border),inset_0_-1px_0_var(--border)] text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={toggleExpandAll}
-                    disabled={paginatedEnquiries.length === 0}
-                    title={allExpanded ? "Collapse all dockets" : "Expand all dockets"}
-                    aria-label={allExpanded ? "Collapse all dockets" : "Expand all dockets"}
-                    className="inline-flex items-center justify-center p-0.5 hover:bg-background rounded cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {allExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                  </button>
-                  Docket No
-                </span>
-                {renderSortArrow("docketNumber")}
+            <th className="relative py-1.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="flex items-center gap-1 truncate">Location</span>
+                <span className="flex items-center gap-1"></span>
               </div>
-              <FilterTextInput
-                field="docketNumber"
-                placeholder="Search..."
-                className={inputClass}
-              />
-              <button
-                type="button"
-                onClick={() => setPendingOnly((v) => !v)}
-                className={`mt-1.5 w-full h-6 rounded border text-[9px] font-semibold transition-colors cursor-pointer ${
-                  pendingOnly
-                    ? "bg-amber-500 text-white border-amber-500"
-                    : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/25 dark:hover:bg-amber-500/20"
-                }`}
-                title="Show only pending dockets (auto-created, with or without items)"
-              >
-                {pendingOnly ? "Pending only ✓" : "Pending only"}
-              </button>
               <div
                 onMouseDown={(e) => handleMouseDown(1, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
@@ -2373,23 +2407,10 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
               </div>
             </th>
-
-            {/* 2. Party Name */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Party Name</span>
-                {renderSortArrow("partyName")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Party Name"
-                  allLabel="All Parties"
-                  options={dropdownOptions.partyNames}
-                  cascadedOptions={cascadedOptions.partyNames}
-                  onOpen={() => requestFacet('partyNames')}
-                  selected={filters.partyNames}
-                  onChange={(v) => dispatch(setFilter({ field: "partyNames", value: v }))}
-                />
+            <th className="relative py-1.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="flex items-center gap-1 truncate">Terms &amp; Contract</span>
+                <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">{renderSortArrow("contractNo")}</span>
               </div>
               <div
                 onMouseDown={(e) => handleMouseDown(2, e)}
@@ -2400,25 +2421,10 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
               </div>
             </th>
-
-            {/* 3. Contract Review (matched from ContractReview by party name) */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Contract Number</span>
-                {renderSortArrow("contractNo")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Contract Number"
-                  allLabel="All Contracts"
-                  options={allSelectedContractOptions}
-                  cascadedOptions={cascadedOptions.contractNo || []}
-                  onOpen={() => requestFacet('contractNo')}
-                  selected={(filters as any).contractNo || []}
-                  onChange={(v) => dispatch(setFilter({ field: "contractNo" as any, value: v }))}
-                  includeBlank
-                  includeAvailable
-                />
+            <th className="relative py-1.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="flex items-center gap-1 truncate">Contact</span>
+                <span className="flex items-center gap-1"></span>
               </div>
               <div
                 onMouseDown={(e) => handleMouseDown(3, e)}
@@ -2429,318 +2435,13 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
               </div>
             </th>
-
-            {/* 4. Enquiry Type Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Enquiry Type</span>
-                {renderSortArrow("enquiryType")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Enquiry Type"
-                  allLabel="All Types"
-                  options={dropdownOptions.enquiryTypes}
-                  cascadedOptions={cascadedOptions.enquiryType}
-                  onOpen={() => requestFacet('enquiryType')}
-                  selected={filters.enquiryType}
-                  onChange={(v) => dispatch(setFilter({ field: "enquiryType", value: v }))}
-                  includeBlank
-                />
+            <th className="relative py-1.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="flex items-center gap-1 truncate">Status</span>
+                <span className="flex shrink-0 items-center gap-1 whitespace-nowrap"><span className="text-[8px] font-semibold">Order</span>{renderSortArrow("orderStatus")}<span className="text-[8px] font-semibold">Closure</span>{renderSortArrow("closureStatus")}</span>
               </div>
               <div
                 onMouseDown={(e) => handleMouseDown(4, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* State/Utility */}
-            <th className="relative py-2.5 px-2.5 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
-              <div className="flex items-center justify-between gap-1">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="truncate">State / Utility</span>
-                  {activeStateUtilityFilterCount > 0 && (
-                    <span className="inline-flex items-center justify-center h-4 px-1.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
-                      {activeStateUtilityFilterCount}
-                    </span>
-                  )}
-                </div>
-                {activeStateUtilityFilterCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleClearStateUtilityFilters}
-                    className="inline-flex items-center gap-0.5 text-[9px] font-medium text-muted-foreground hover:text-red-500 dark:hover:text-red-200 cursor-pointer transition-colors normal-case"
-                    title="Clear State / Utility filters"
-                  >
-                    <X className="h-2.5 w-2.5" />
-                    <span>Clear</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Side-by-side compact dropdown filters for State and Utility */}
-              <div className="grid grid-cols-2 gap-1 mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="State"
-                  allLabel="State"
-                  renderButtonLabel={(sel) => (sel.length === 0 ? "State" : `State (${sel.length})`)}
-                  options={dropdownOptions.states}
-                  cascadedOptions={cascadedOptions.state}
-                  onOpen={() => requestFacet('state')}
-                  selected={filters.state}
-                  onChange={(v) => dispatch(setFilter({ field: "state", value: v }))}
-                  includeBlank
-                  searchPlaceholder="Search state..."
-                  className={cn(
-                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
-                    filters.state.length > 0 &&
-                      "border-blue-500 dark:border-blue-400/50 bg-blue-50/80 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 font-semibold"
-                  )}
-                  align="start"
-                />
-
-                <MultiSelectFilter
-                  label="Utility"
-                  allLabel="Utility"
-                  renderButtonLabel={(sel) => (sel.length === 0 ? "Utility" : `Util (${sel.length})`)}
-                  options={dropdownOptions.utilities}
-                  cascadedOptions={cascadedOptions.utility}
-                  onOpen={() => requestFacet('utility')}
-                  selected={filters.utility}
-                  onChange={(v) => dispatch(setFilter({ field: "utility", value: v }))}
-                  includeBlank
-                  searchPlaceholder="Search utility..."
-                  className={cn(
-                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
-                    filters.utility.length > 0 &&
-                      "border-blue-500 dark:border-blue-400/50 bg-blue-50/80 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 font-semibold"
-                  )}
-                  align="end"
-                />
-              </div>
-
-              <div
-                onMouseDown={(e) => handleMouseDown(5, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 6. Payment Terms / PBG / Inspection */}
-            <th className="relative py-2.5 px-2.5 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
-              <div className="flex items-center justify-between gap-1">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <span className="truncate">Payment / PBG / Insp</span>
-                  {activePaymentTermsFilterCount > 0 && (
-                    <span className="inline-flex items-center justify-center h-4 px-1.5 rounded-full text-[9px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
-                      {activePaymentTermsFilterCount}
-                    </span>
-                  )}
-                </div>
-                {activePaymentTermsFilterCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleClearPaymentTermsFilters}
-                    className="inline-flex items-center gap-0.5 text-[9px] font-medium text-muted-foreground hover:text-red-500 dark:hover:text-red-200 cursor-pointer transition-colors normal-case"
-                    title="Clear Payment / PBG / Inspection filters"
-                  >
-                    <X className="h-2.5 w-2.5" />
-                    <span>Clear</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Side-by-side compact dropdown filters for Payment Terms, PBG, Inspection */}
-              <div className="grid grid-cols-3 gap-1 mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Payment Terms"
-                  allLabel="Payment"
-                  renderButtonLabel={(sel) => (sel.length === 0 ? "Payment" : `Pay (${sel.length})`)}
-                  options={dropdownOptions.paymentTerms}
-                  cascadedOptions={cascadedOptions.paymentTerms}
-                  onOpen={() => requestFacet('paymentTerms')}
-                  selected={filters.paymentTerms}
-                  onChange={(v) => dispatch(setFilter({ field: "paymentTerms", value: v }))}
-                  includeBlank
-                  searchPlaceholder="Search payment terms..."
-                  className={cn(
-                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
-                    filters.paymentTerms.length > 0 &&
-                      "border-blue-500 dark:border-blue-400/50 bg-blue-50/80 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 font-semibold"
-                  )}
-                  align="start"
-                />
-
-                <MultiSelectFilter
-                  label="PBG"
-                  allLabel="PBG"
-                  renderButtonLabel={(sel) => (sel.length === 0 ? "PBG" : `PBG (${sel.length})`)}
-                  options={dropdownOptions.pbgs}
-                  cascadedOptions={cascadedOptions.pbg}
-                  onOpen={() => requestFacet('pbg')}
-                  selected={filters.pbg}
-                  onChange={(v) => dispatch(setFilter({ field: "pbg", value: v }))}
-                  includeBlank
-                  searchPlaceholder="Search PBG..."
-                  className={cn(
-                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
-                    filters.pbg.length > 0 &&
-                      "border-blue-500 dark:border-blue-400/50 bg-blue-50/80 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 font-semibold"
-                  )}
-                  align="center"
-                />
-
-                <MultiSelectFilter
-                  label="Inspection"
-                  allLabel="Inspect"
-                  renderButtonLabel={(sel) => (sel.length === 0 ? "Inspect" : `Insp (${sel.length})`)}
-                  options={dropdownOptions.inspections}
-                  cascadedOptions={cascadedOptions.inspection}
-                  onOpen={() => requestFacet('inspection')}
-                  selected={filters.inspection}
-                  onChange={(v) => dispatch(setFilter({ field: "inspection", value: v }))}
-                  includeBlank
-                  searchPlaceholder="Search inspection..."
-                  className={cn(
-                    "h-6 px-1.5 py-0 text-[9px] font-normal leading-none",
-                    filters.inspection.length > 0 &&
-                      "border-blue-500 dark:border-blue-400/50 bg-blue-50/80 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300 font-semibold"
-                  )}
-                  align="end"
-                />
-              </div>
-
-              <div
-                onMouseDown={(e) => handleMouseDown(6, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            
-
-            
-
-            
-
-
-
-            {/* Email Address */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Email Address</span>
-              </div>
-              <FilterTextInput
-                field="emailAddress"
-                placeholder="Search..."
-                className={inputClass}
-              />
-              <div
-                onMouseDown={(e) => handleMouseDown(7, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* Contact No */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Contact No</span>
-              </div>
-              <FilterTextInput
-                field="contactNo"
-                placeholder="Search..."
-                className={inputClass}
-              />
-              <div
-                onMouseDown={(e) => handleMouseDown(8, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* 10. Order Status Dropdown */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Order Status</span>
-                {renderSortArrow("orderStatus")}
-              </div>
-              <div className="relative mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Order Status"
-                  allLabel="All Statuses"
-                  options={dropdownOptions.orderStatuses}
-                  cascadedOptions={cascadedOptions.orderStatus}
-                  onOpen={() => requestFacet('orderStatus')}
-                  selected={filters.orderStatus}
-                  onChange={(v) => dispatch(setFilter({ field: "orderStatus", value: v }))}
-                  includeBlank
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(9, e)}
-                className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
-                style={{ marginRight: "-3px" }}
-              >
-                <div className="absolute top-0 left-[-4px] w-[14px] h-full" />
-                <div className="absolute right-[2px] top-0 w-[2px] h-full bg-transparent group-hover:bg-[#0f62fe] group-active:bg-[#0f62fe] dark:group-hover:bg-blue-500 dark:group-active:bg-blue-500 transition-colors" />
-              </div>
-            </th>
-
-            {/* Closure Status / Duplicate */}
-            <th className="relative py-2.5 px-3 sticky top-0 z-30 bg-muted text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border shadow-[inset_0_-1px_0_var(--border)] last:border-r-0">
-              <div className="flex items-center justify-between">
-                <span>Closure Status/Duplicate</span>
-                {renderSortArrow("closureStatus")}
-              </div>
-              <div className="grid grid-cols-2 gap-1 mt-1.5 normal-case font-normal text-left text-foreground">
-                <MultiSelectFilter
-                  label="Closure Status"
-                  allLabel="Closure"
-                  renderButtonLabel={(sel) => (sel.length === 0 ? "Closure" : `Closure (${sel.length})`)}
-                  options={dropdownOptions.closureStatuses}
-                  cascadedOptions={cascadedOptions.closureStatus}
-                  onOpen={() => requestFacet('closureStatus')}
-                  selected={filters.closureStatus}
-                  onChange={(v) => dispatch(setFilter({ field: "closureStatus", value: v }))}
-                  includeBlank
-                  searchPlaceholder="Search closure status..."
-                  className="h-6 px-1.5 py-0 text-[9px] font-normal leading-none"
-                  align="start"
-                />
-                <MultiSelectFilter
-                  label="Duplicate"
-                  allLabel="Duplicate"
-                  renderButtonLabel={(sel) => (sel.length === 0 ? "Duplicate" : `Dup (${sel.length})`)}
-                  options={["Yes", "No"]}
-                  cascadedOptions={cascadedOptions.duplicate ?? []}
-                  onOpen={() => requestFacet('duplicate')}
-                  selected={filters.duplicate}
-                  onChange={(v) => dispatch(setFilter({ field: "duplicate", value: v }))}
-                  includeBlank
-                  searchPlaceholder="Search duplicate..."
-                  className="h-6 px-1.5 py-0 text-[9px] font-normal leading-none"
-                  align="end"
-                />
-              </div>
-              <div
-                onMouseDown={(e) => handleMouseDown(10, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2763,7 +2464,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(11, e)}
+                onMouseDown={(e) => handleMouseDown(5, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2778,7 +2479,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 <span>Technical Evaluation</span>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(12, e)}
+                onMouseDown={(e) => handleMouseDown(6, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2793,7 +2494,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 <span>Reverse Auction</span>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(13, e)}
+                onMouseDown={(e) => handleMouseDown(7, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2803,7 +2504,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
             </th>
 
             {/* 14. Item Name As Per Party */}
-            <th style={{ left: frozenLeft[14] }} className="relative py-2.5 px-3 sticky top-0 z-40 bg-muted shadow-[inset_-1px_0_0_var(--border),inset_0_-1px_0_var(--border)] text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th style={{ left: frozenLeft[8] }} className="relative py-2.5 px-3 sticky top-0 z-40 bg-muted shadow-[inset_-1px_0_0_var(--border),inset_0_-1px_0_var(--border)] text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between">
                 <span>Item Name</span>
                 {renderSortArrow("itemName")}
@@ -2814,7 +2515,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(14, e)}
+                onMouseDown={(e) => handleMouseDown(8, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -2824,7 +2525,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
             </th>
 
             {/* Details */}
-            <th style={{ left: frozenLeft[15] }} className="relative py-2.5 px-2.5 sticky top-0 z-40 bg-muted shadow-[inset_-1px_0_0_var(--border),inset_0_-1px_0_var(--border)] text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
+            <th style={{ left: frozenLeft[9] }} className="relative py-2.5 px-2.5 sticky top-0 z-40 bg-muted shadow-[inset_-1px_0_0_var(--border),inset_0_-1px_0_var(--border)] text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-r border-b border-border last:border-r-0">
               <div className="flex items-center justify-between gap-1">
                 <div className="flex items-center gap-1.5 min-w-0">
                   <span>Details</span>
@@ -3035,7 +2736,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
               </div>
 
               <div
-                onMouseDown={(e) => handleMouseDown(15, e)}
+                onMouseDown={(e) => handleMouseDown(9, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3056,7 +2757,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(16, e)}
+                onMouseDown={(e) => handleMouseDown(10, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3101,7 +2802,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(17, e)}
+                onMouseDown={(e) => handleMouseDown(11, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3147,7 +2848,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 Closed BOM only
               </label>
               <div
-                onMouseDown={(e) => handleMouseDown(18, e)}
+                onMouseDown={(e) => handleMouseDown(12, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3187,7 +2888,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 Cost warnings
               </label>
               <div
-                onMouseDown={(e) => handleMouseDown(19, e)}
+                onMouseDown={(e) => handleMouseDown(13, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3221,7 +2922,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(20, e)}
+                onMouseDown={(e) => handleMouseDown(14, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3249,7 +2950,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 panelClassName="w-56 z-80"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(21, e)}
+                onMouseDown={(e) => handleMouseDown(15, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3270,7 +2971,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(22, e)}
+                onMouseDown={(e) => handleMouseDown(16, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3291,7 +2992,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(23, e)}
+                onMouseDown={(e) => handleMouseDown(17, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3319,7 +3020,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(24, e)}
+                onMouseDown={(e) => handleMouseDown(18, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3346,7 +3047,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(25, e)}
+                onMouseDown={(e) => handleMouseDown(19, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3367,7 +3068,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(26, e)}
+                onMouseDown={(e) => handleMouseDown(20, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3388,7 +3089,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(27, e)}
+                onMouseDown={(e) => handleMouseDown(21, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3416,7 +3117,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(28, e)}
+                onMouseDown={(e) => handleMouseDown(22, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3448,7 +3149,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(29, e)}
+                onMouseDown={(e) => handleMouseDown(23, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3482,7 +3183,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(30, e)}
+                onMouseDown={(e) => handleMouseDown(24, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3516,7 +3217,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(31, e)}
+                onMouseDown={(e) => handleMouseDown(25, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3537,7 +3238,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(32, e)}
+                onMouseDown={(e) => handleMouseDown(26, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3571,7 +3272,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className="mt-1 w-full h-6 rounded border border-border bg-background px-1.5 py-0.5 text-[9px] font-normal text-foreground placeholder:text-muted-foreground outline-none focus:border-blue-500 normal-case"
               />
               <div
-                onMouseDown={(e) => handleMouseDown(33, e)}
+                onMouseDown={(e) => handleMouseDown(27, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3592,7 +3293,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(34, e)}
+                onMouseDown={(e) => handleMouseDown(28, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3613,7 +3314,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 className={inputClass}
               />
               <div
-                onMouseDown={(e) => handleMouseDown(35, e)}
+                onMouseDown={(e) => handleMouseDown(29, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3670,7 +3371,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(36, e)}
+                onMouseDown={(e) => handleMouseDown(30, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3698,7 +3399,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 />
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(37, e)}
+                onMouseDown={(e) => handleMouseDown(31, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3755,7 +3456,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                 </button>
               </div>
               <div
-                onMouseDown={(e) => handleMouseDown(38, e)}
+                onMouseDown={(e) => handleMouseDown(32, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3771,7 +3472,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(39, e)}
+                onMouseDown={(e) => handleMouseDown(33, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3787,7 +3488,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
               </div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(40, e)}
+                onMouseDown={(e) => handleMouseDown(34, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3797,11 +3498,11 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
             </th>
 
             {/* 47. Actions */}
-            <th className="relative sticky top-0 z-30 bg-muted py-2.5 px-3 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-b border-border shadow-[inset_0_-1px_0_var(--border)] text-right">
+            <th style={{ right: 0 }} className="relative sticky top-0 z-40 bg-muted py-2.5 px-3 text-[10px] font-bold tracking-wider text-muted-foreground uppercase border-b border-border shadow-[inset_1px_0_0_var(--border),inset_0_-1px_0_var(--border)] text-right">
               <div>Actions</div>
               <div className="h-7 mt-1.5" />
               <div
-                onMouseDown={(e) => handleMouseDown(41, e)}
+                onMouseDown={(e) => handleMouseDown(35, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"
                 style={{ marginRight: "-3px" }}
               >
@@ -3830,8 +3531,6 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
             </tr>
           ) : (
             paginatedEnquiries.map((enquiry) => {
-              const { company, branch } = parseParty(enquiry.partyName);
-              const initials = getInitials(enquiry.partyName);
               let displayItems = filteredItemsByEnquiry.get(enquiry.id) ?? getFilteredItems(enquiry);
               if (displayItems.length > 1 && sortField === "image") {
                 displayItems = [...displayItems].sort((a, b) => {
@@ -3848,23 +3547,15 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
               const isSelected = isEnquirySelected(enquiry.id);
               const isFrozen = isEnquiryFrozen((enquiry as any).apm, (enquiry as any).offerPdfGeneratedAt);
 
-              // Setup custom brand avatar styles
-              let badgeBg = "bg-blue-50 text-blue-600 border border-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/25";
-              if (initials === "RE") {
-                badgeBg = "bg-indigo-50 text-indigo-600 border border-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/25";
-              } else if (initials === "AD") {
-                badgeBg = "bg-sky-50 text-sky-600 border border-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:border-sky-500/25";
-              } else if (initials === "LT") {
-                badgeBg = "bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/25";
-              } else if (initials === "JS") {
-                badgeBg = "bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/25";
-              }
-
                return (
                 <React.Fragment key={enquiry.id}>
                   {/* Main Docket / First Item Row */}
                   <tr
-                    title={firstItem && invalidVaItemIds.has(firstItem.id) ? "Red row = VA% below minimum, or rate above CR rate" : undefined} className={`transition-colors ${firstItem && invalidVaItemIds.has(firstItem.id) ? "bg-red-100 dark:bg-red-500/15" : isSelected ? "bg-blue-50/70 hover:bg-blue-50 dark:bg-blue-500/10 dark:hover:bg-blue-500/20" : "hover:bg-muted/20"}`}>
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && e.target === e.currentTarget) setEditingDocketId(enquiry.id);
+                    }}
+                    title={firstItem && invalidVaItemIds.has(firstItem.id) ? "Red row = VA% below minimum, or rate above CR rate" : undefined} className={`h-[60px] transition-colors focus-visible:outline-1 focus-visible:outline-blue-500 ${firstItem && invalidVaItemIds.has(firstItem.id) ? "bg-red-100 dark:bg-red-500/15" : isSelected ? "bg-blue-50/70 hover:bg-blue-50 dark:bg-blue-500/10 dark:hover:bg-blue-500/20" : "hover:bg-muted/20"}`}>
                     {/* Select checkbox for this docket */}
                     <td className="py-3.5 px-2 text-center border-r border-b border-border">
                       <input
@@ -3875,457 +3566,27 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                         title={isSelected ? "Deselect docket" : "Select docket"}
                       />
                     </td>
-                    {/* Enquiry Date */}
-                    <td className="py-3.5 px-4 text-xs text-muted-foreground border-r border-b border-border last:border-r-0 truncate">
-                      {new Date(enquiry.enquiryDate).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                      <span className="ml-1 text-[9px] font-semibold" title="Days since enquiry">
-                        {istDaysSince(enquiry.enquiryDate)}d
-                      </span>
-                    </td>
-
-                    {/* Docket No with expand arrow if applicable */}
-                    <td style={{ left: frozenLeft[1] }} className={`${FROZEN_TD} py-3.5 px-4 text-xs font-semibold text-[#0f62fe] dark:text-blue-300 border-r border-b border-border last:border-r-0`}>
-                      <div className="flex items-center flex-wrap gap-1">
-                        {hasMultiple && (
-                          <button
-                            type="button"
-                            onClick={() => toggleExpand(enquiry.id, isExpanded)}
-                            className="mr-1 inline-flex items-center justify-center p-0.5 hover:bg-muted rounded text-muted-foreground cursor-pointer focus:outline-none shrink-0"
-                          >
-                            {isExpanded ? (
-                              <ChevronDown className="h-3.5 w-3.5" />
-                            ) : (
-                              <ChevronRight className="h-3.5 w-3.5" />
-                            )}
-                          </button>
-                        )}
-                        <span className="hover:underline cursor-pointer truncate">
-                          {enquiry.docketNumber}
-                        </span>
-                        {(() => {
-                          const incomplete = (enquiry.items ?? []).filter((i: EnquiryItemData) => missingDetails(i).length > 0).length;
-                          return incomplete > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => setIncompleteOnly(true)}
-                              title={`${incomplete} item(s) missing Type, MOC, Size, PN or Op Type - click to filter`}
-                              className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-[9px] font-bold bg-red-600 text-white cursor-pointer"
-                            >
-                              {incomplete}
-                            </button>
-                          ) : null;
-                        })()}
-                        <button
-                          type="button"
-                          onClick={() => handleApplyVaRules(enquiry.id, enquiry.docketNumber)}
-                          title="Fetch CR rates and apply the VA% rules to this docket"
-                          className="inline-flex items-center justify-center h-4 px-1.5 rounded text-[9px] font-semibold border border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/25 dark:bg-violet-500/10 dark:text-violet-300 cursor-pointer shrink-0"
-                        >
-                          Apply VA% rules
-                        </button>
-                        <StageAssignPopover
-                          enquiry={enquiry}
-                          onChange={(field, value) => handleEnquiryFieldChange(enquiry.id, field, value)}
-                        />
-                        <DocketAttachmentsCell
-                          docketNumber={enquiry.docketNumber}
-                          attachments={enquiry.attachments}
-                          onAddClick={() => attachInputRefs.current[enquiry.id]?.click()}
-                        />
-                        <input
-                          ref={(el) => {
-                            if (el) attachInputRefs.current[enquiry.id] = el;
-                          }}
-                          type="file"
-                          multiple
-                          className="hidden"
-                          onChange={(e) => handleAddAttachments(e, enquiry.id)}
-                        />
-                        {(!enquiry.items || enquiry.items.length === 0) && (
-                          <span
-                            className="ml-1 px-1.5 py-0.5 text-[9px] font-semibold bg-amber-50 text-amber-700 rounded-full border border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/25 shrink-0"
-                            title="Auto-created pending docket - add items to complete it"
-                          >
-                            Pending - no items
-                          </span>
-                        )}
-                        {hasMultiple && !isExpanded && (
-                          <span className="ml-1 px-1.5 py-0.5 text-[9px] font-medium bg-blue-50 text-blue-600 rounded-full border border-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/25 shrink-0">
-                            +{displayItems.length - 1} more items
-                          </span>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Party Name */}
-                    <td className="py-2.5 px-4 border-r border-b border-border last:border-r-0 truncate">
-                      {editingPartyEnquiryId === enquiry.id ? (
-                        <CellSelect
-                          defaultOpen
-                          value={enquiry.partyName}
-                          options={dropdownOptions.partyNames}
-                          searchPlaceholder="Search party..."
-                          className="h-8 text-xs font-semibold"
-                          onChange={(v) => handleEnquiryFieldChange(enquiry.id, "partyName", v)}
-                          onClose={() => setEditingPartyEnquiryId(null)}
-                        />
-                      ) : (
-                        <div className="flex items-center justify-between w-full group truncate">
-                          <div className="flex items-center gap-3 truncate">
-                            <div
-                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${badgeBg}`}
-                            >
-                              {initials}
-                            </div>
-                            <div className="flex flex-col truncate">
-                              <span className="text-xs font-bold text-foreground truncate">
-                                {company}
-                              </span>
-                              {branch && (
-                                <span className="text-[10px] text-muted-foreground font-medium truncate">
-                                  {branch}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => setEditingPartyEnquiryId(enquiry.id)}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:bg-muted rounded text-muted-foreground hover:text-muted-foreground cursor-pointer shrink-0 transition-opacity ml-2"
-                          >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-
-                    {/* 3. Contract Review — available contracts multi-select (persists to selectedContractNo) + manual Add */}
-                    <td className="py-1 px-1 border-r border-b border-border last:border-r-0 align-top">
-                      {enquiry.contractNo && enquiry.contractNo.length > 0 ? (
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-1">
-                            <div className="flex-1 min-w-0">
-                              <MultiSelectFilter
-                                label="Contract"
-                                allLabel="—"
-                                options={enquiry.contractNo}
-                                cascadedOptions={enquiry.contractNo}
-                                selected={(enquiry as any).selectedContractNo ?? []}
-                                onChange={(values) => handleSelectedContractNoChange(enquiry.id, values)}
-                                searchPlaceholder="Search contracts..."
-                                className={cn(
-                                  "text-[10px]",
-                                  (!((enquiry as any).selectedContractNo) || ((enquiry as any).selectedContractNo).length === 0) && "text-muted-foreground"
-                                )}
-                                renderButtonLabel={(sel) => sel.length === 0 ? "—" : sel.join(", ")}
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setAddingContractFor(enquiry.id)}
-                              title="Manually add contract number"
-                              className="shrink-0 inline-flex items-center gap-0.5 px-1.5 py-1 text-[10px] font-semibold rounded border border-blue-200 dark:border-blue-500/25 bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-500/20 cursor-pointer"
-                            >
-                              <Plus className="h-3 w-3" /> Add
-                            </button>
-                          </div>
-                          {addingContractFor === enquiry.id && (
-                            <input
-                              autoFocus
-                              type="text"
-                              placeholder="Add contract numbers (comma separated)"
-                              onChange={(e) => {
-                                e.target.value = e.target.value.toUpperCase();
-                              }}
-                              onBlur={(e) => {
-                                const raw = e.target.value.trim();
-                                if (raw) {
-                                  const validation = parseAndValidateContractNumbers(raw);
-                                  if (!validation.isValid) {
-                                    toast.error(validation.error || "Invalid contract number");
-                                    setAddingContractFor(null);
-                                    return;
-                                  }
-                                  if (validation.contracts.length > 0) {
-                                    const current = ((enquiry as any).selectedContractNo ?? []) as string[];
-                                    const merged = [...current];
-                                    for (const v of validation.contracts) if (!merged.includes(v)) merged.push(v);
-                                    if (merged.length !== current.length) handleSelectedContractNoChange(enquiry.id, merged);
-                                  }
-                                }
-                                setAddingContractFor(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                                if (e.key === "Escape") setAddingContractFor(null);
-                              }}
-                              className="w-full uppercase bg-background border border-blue-200 dark:border-blue-500/25 text-[10px] text-foreground outline-none p-1.5 rounded focus:ring-1 focus:ring-blue-500 placeholder:text-muted-foreground placeholder:normal-case"
-                            />
-                          )}
-                        </div>
-                      ) : (
-                        <input
-                          key={enquiry.id + "-selectedContractNo-" + ((enquiry as any).selectedContractNo ?? []).join(",")}
-                          type="text"
-                          defaultValue={((enquiry as any).selectedContractNo ?? []).join(", ")}
-                          placeholder="Add contract numbers (comma separated)"
-                          onChange={(e) => {
-                            e.target.value = e.target.value.toUpperCase();
-                          }}
-                          onBlur={(e) => {
-                            const raw = e.target.value;
-                            const current = ((enquiry as any).selectedContractNo ?? []) as string[];
-                            const validation = parseAndValidateContractNumbers(raw);
-                            if (!validation.isValid) {
-                              toast.error(validation.error || "Invalid contract number");
-                              e.target.value = current.join(", ");
-                              return;
-                            }
-                            const arr = validation.contracts;
-                            const same = arr.length === current.length && arr.every((v, i) => v === current[i]);
-                            if (!same) handleSelectedContractNoChange(enquiry.id, arr);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          className="w-full uppercase bg-transparent border-none text-[10px] text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium placeholder:text-muted-foreground placeholder:normal-case"
-                        />
-                      )}
-                    </td>
-
-                    {/* 4. Enquiry Type Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      <CellSelect
-                        placeholder="-"
-                        value={enquiry.enquiryType || ""}
-                        options={dropdownOptions.enquiryTypes}
-                        searchPlaceholder="Search enquiry type..."
-                        onChange={(v) => handleEnquiryFieldChange(enquiry.id, "enquiryType", v)}
-                      />
-                    </td>
-
-                    {/* State/Utility */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0 align-top">
-                      <div className="flex flex-wrap gap-x-1.5 gap-y-1">
-                        <CellSelect
-                          variant="chip"
-                          chipLabel="state"
-                          placeholder="-"
-                          className="w-full"
-                          value={enquiry.state || ""}
-                          options={dropdownOptions.states}
-                          onChange={(v) => handleEnquiryFieldChange(enquiry.id, "state", v)}
-                        />
-                        <CellSelect
-                          variant="chip"
-                          chipLabel="utility"
-                          placeholder="-"
-                          className="w-full"
-                          value={enquiry.utility || ""}
-                          options={dropdownOptions.utilities}
-                          onChange={(v) => handleEnquiryFieldChange(enquiry.id, "utility", v)}
-                        />
-                      </div>
-                    </td>
-
-                    {/* Payment Terms / PBG / Inspection */}
-                    <td className="py-2 px-2 border-r border-b border-border last:border-r-0 align-top">
-                      <div className="flex flex-wrap gap-x-1.5 gap-y-1">
-                        <CellSelect
-                          variant="chip"
-                          chipLabel="payment_terms"
-                          placeholder="-"
-                          className="w-full"
-                          value={enquiry.paymentTerms || ""}
-                          options={dropdownOptions.paymentTerms}
-                          onChange={(v) => handleEnquiryFieldChange(enquiry.id, "paymentTerms", v)}
-                        />
-                        <CellSelect
-                          variant="chip"
-                          chipLabel="inspection"
-                          placeholder="-"
-                          className="w-full"
-                          value={enquiry.inspection || ""}
-                          options={dropdownOptions.inspections}
-                          onChange={(v) => handleEnquiryFieldChange(enquiry.id, "inspection", v)}
-                        />
-                        <CellSelect
-                          variant="chip"
-                          chipLabel="pbg"
-                          placeholder="-"
-                          className="w-full"
-                          value={enquiry.pbg || ""}
-                          options={dropdownOptions.pbgs}
-                          onChange={(v) => handleEnquiryFieldChange(enquiry.id, "pbg", v)}
-                        />
-                      </div>
-                    </td>
-
-                    {/* Email Address (sender) */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      {enquiry.senderEmail && isInternalEmail(enquiry.senderEmail) && (
-                        <span
-                          className="inline-block mb-0.5 px-1.5 py-0.5 text-[9px] font-semibold bg-slate-100 text-slate-600 rounded-full border border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/25"
-                          title="Internal (GMD / Laser) email address"
-                        >
-                          Internal
-                        </span>
-                      )}
-                      <input
-                        key={enquiry.id + "-senderEmail-" + (enquiry.senderEmail || "")}
-                        type="text"
-                        defaultValue={enquiry.senderEmail || ""}
-                        onBlur={(e) => {
-                          if (e.target.value !== (enquiry.senderEmail || "")) {
-                            handleEnquiryFieldChange(enquiry.id, "senderEmail", e.target.value);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            (e.target as HTMLInputElement).blur();
-                          }
-                        }}
-                        placeholder="-"
-                        className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
-                      />
-                    </td>
-
-                    {/* Contact No */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      <input
-                        key={enquiry.id + "-contactNo-" + (enquiry.contactNo || "")}
-                        type="text"
-                        defaultValue={enquiry.contactNo || ""}
-                        onBlur={(e) => {
-                          if (e.target.value !== (enquiry.contactNo || "")) {
-                            handleEnquiryFieldChange(enquiry.id, "contactNo", e.target.value);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            (e.target as HTMLInputElement).blur();
-                          }
-                        }}
-                        placeholder="-"
-                        className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
-                      />
-                    </td>
-
-                    {/* 10. Order Status Inline Select */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      <CellSelect
-                        placeholder="-"
-                        value={enquiry.orderStatus || ""}
-                        options={dropdownOptions.orderStatuses}
-                        searchPlaceholder="Search order status..."
-                        onChange={(v) => handleEnquiryFieldChange(enquiry.id, "orderStatus", v)}
-                      />
-                    </td>
-
-                    {/* Closure Status / Duplicate */}
-                    <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      <div className="flex flex-col gap-1">
-                        <CellSelect
-                          // "-" is how Not Sent is shown and picked (the server stores it as "Not Sent").
-                          // A real option, not the clear row, so picking it on an untouched (empty) row still saves.
-                          value={enquiry.closureStatus?.trim().toLowerCase() === "not sent" ? "-" : enquiry.closureStatus || ""}
-                          options={["-", ...dropdownOptions.closureStatuses.filter((s: string) => s.trim().toLowerCase() !== "not sent")]}
-                          allowCustomValue
-                          searchPlaceholder="Search closure status..."
-                          onChange={(v) => handleEnquiryFieldChange(enquiry.id, "closureStatus", v)}
-                          className={cn(
-                            enquiry.closureStatus === "Sent" && autoSentSet.has(enquiry.docketNumber) &&
-                              "text-blue-600 font-semibold bg-blue-50/60 dark:bg-blue-950/30",
-                            enquiry.closureStatus === "Pending" && autoPendingSet.has(enquiry.docketNumber) &&
-                              "text-amber-600 font-semibold bg-amber-50/60 dark:bg-amber-950/30"
-                          )}
-                          title={
-                            enquiry.closureStatus === "Sent" && autoSentSet.has(enquiry.docketNumber)
-                              ? "Auto-detected from thread attachments/OCR"
-                              : enquiry.closureStatus === "Pending" && autoPendingSet.has(enquiry.docketNumber)
-                                ? "No email found for this docket"
-                                : undefined
-                          }
-                        />
-                        <CellSelect
-                          placeholder="-"
-                          value={enquiry.duplicate || ""}
-                          options={["Yes", "No"]}
-                          onChange={(v) => {
-                            setOpenOriginalIds((prev) => {
-                              const next = new Set(prev);
-                              if (v === "Yes") next.add(enquiry.id);
-                              else next.delete(enquiry.id);
-                              return next;
-                            });
-                            handleEnquiryFieldChange(enquiry.id, "duplicate", v);
-                          }}
-                          title="Mark this docket as a duplicate"
-                        />
-                        {enquiry.duplicate === "Yes" && (
-                          <>
-                            <CellSelect
-                              placeholder="- original -"
-                              value={enquiry.duplicateOfDocket || ""}
-                              defaultOpen={openOriginalIds.has(enquiry.id)}
-                              onClose={() =>
-                                setOpenOriginalIds((prev) => {
-                                  if (!prev.has(enquiry.id)) return prev;
-                                  const next = new Set(prev);
-                                  next.delete(enquiry.id);
-                                  return next;
-                                })
-                              }
-                              options={optionsWithCurrent(
-                                docketNumbers.filter((d) => d !== enquiry.docketNumber),
-                                enquiry.duplicateOfDocket,
-                              )}
-                              searchPlaceholder="Search docket no..."
-                              onChange={(v) => handleEnquiryFieldChange(enquiry.id, "duplicateOfDocket", v)}
-                              title="Select the original docket this duplicates"
-                            />
-                            <button
-                              type="button"
-                              disabled={deletingEnquiryId === enquiry.id || !enquiry.duplicateOfDocket}
-                              onClick={() => handleDeleteDuplicate(enquiry)}
-                              className="inline-flex items-center justify-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:hover:bg-rose-500/20 dark:border-rose-500/25 dark:bg-rose-500/10 dark:text-rose-300 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={
-                                !enquiry.duplicateOfDocket
-                                  ? "Select the original docket first"
-                                  : (enquiry.items?.length ?? 0) > 0
-                                    ? `Delete this duplicate docket and its ${enquiry.items.length} item(s)`
-                                    : "Delete this duplicate docket"
-                              }
-                            >
-                              <Trash2 className="h-3 w-3" />
-                              Delete duplicate
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
+                    <DocketRow
+                      enquiry={enquiry}
+                      itemCount={enquiry.itemsLoaded ? displayItems.length : (enquiry.itemCount ?? displayItems.length)}
+                      isExpanded={isExpanded}
+                      incomplete={enquiry.itemsLoaded ? (enquiry.items ?? []).filter((i: EnquiryItemData) => missingDetails(i).length > 0).length : (enquiry.incompleteItemCount ?? 0)}
+                      closureAuto={
+                        enquiry.closureStatus === "Sent" && autoSentSet.has(enquiry.docketNumber) ? "sent"
+                          : enquiry.closureStatus === "Pending" && autoPendingSet.has(enquiry.docketNumber) ? "pending" : null
+                      }
+                      actions={rowActions}
+                    />
 
                     {/* Project Reference */}
                     <td className="py-2 px-1 border-r border-b border-border last:border-r-0">
-                      <input
-                        key={enquiry.id + "-projectReference-" + (enquiry.projectReference || "")}
-                        type="text"
-                        defaultValue={enquiry.projectReference || ""}
-                        onBlur={(e) => {
-                          if (e.target.value !== (enquiry.projectReference || "")) {
-                            handleEnquiryFieldChange(enquiry.id, "projectReference", e.target.value);
+                      <EditableText
+                        value={enquiry.projectReference || ""}
+                        onCommit={(v) => {
+                          if (v !== (enquiry.projectReference || "")) {
+                            handleEnquiryFieldChange(enquiry.id, "projectReference", v);
                           }
                         }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            (e.target as HTMLInputElement).blur();
-                          }
-                        }}
-                        placeholder="-"
                         className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-center"
                       />
                     </td>
@@ -4339,7 +3600,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     </td>
 
                     {/* First Item Name */}
-                    <td style={{ left: frozenLeft[14] }} className={`${FROZEN_TD} py-2 px-2 text-xs text-muted-foreground font-medium border-r border-b border-border last:border-r-0 align-top`}>
+                    <td style={{ left: frozenLeft[8] }} className={`${FROZEN_TD} py-2 px-2 text-xs text-muted-foreground font-medium border-r border-b border-border last:border-r-0 align-top`}>
                       {firstItem ? (
                         editingItemNameId === firstItem.id ? (
                           <input
@@ -4382,7 +3643,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     </td>
 
                     {/* Details */}
-                    <td style={{ left: frozenLeft[15] }} className={`${FROZEN_TD} py-2 px-2 border-r border-b border-border last:border-r-0 align-top`}>
+                    <td style={{ left: frozenLeft[9] }} className={`${FROZEN_TD} py-2 px-2 border-r border-b border-border last:border-r-0 align-top`}>
                       {firstItem ? (
                         <ItemDetailFields
                           item={firstItem}
@@ -4396,21 +3657,15 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     {/* First Item Quantity */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-quantity-" + (firstItem.quantity || "")}
-                          type="text"
-                          defaultValue={firstItem.quantity ? Number(firstItem.quantity).toString() : ""}
+                        <EditableText
+                          value={firstItem.quantity ? Number(firstItem.quantity).toString() : ""}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.quantity ? Number(firstItem.quantity).toString() : "")) {
-                              handleItemFieldChange(firstItem.id, "quantity", e.target.value);
+                          onCommit={(v) => {
+                            if (v !== (firstItem.quantity ? Number(firstItem.quantity).toString() : "")) {
+                              handleItemFieldChange(firstItem.id, "quantity", v);
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-semibold text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
@@ -4466,22 +3721,16 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                       {firstItem ? (
                         <div className="flex items-center gap-1">
                         <CostWarningIcon warnings={firstItem.costWarnings} />
-                        <input
-                          key={firstItem.id + "-productCost-" + (firstItem.productCost !== null && firstItem.productCost !== undefined ? Number(firstItem.productCost).toString() : "")}
-                          type="text"
-                          defaultValue={formatIndianNumber(firstItem.productCost)}
+                        <EditableText
+                          value={formatIndianNumber(firstItem.productCost)}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const next = cleanNumberInput(e.target.value);
+                          onCommit={(v) => {
+                            const next = cleanNumberInput(v);
                             if (hasNumberChanged(next, firstItem.productCost)) {
                               handleItemFieldChange(firstItem.id, "productCost", next);
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                         </div>
@@ -4491,21 +3740,15 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     {/* First Item Cost Ref Code */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-costRefCode-" + (firstItem.costRefCode || "")}
-                          type="text"
-                          defaultValue={firstItem.costRefCode || ""}
+                        <EditableText
+                          value={firstItem.costRefCode || ""}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.costRefCode || "")) {
-                              handleItemFieldChange(firstItem.id, "costRefCode", e.target.value);
+                          onCommit={(v) => {
+                            if (v !== (firstItem.costRefCode || "")) {
+                              handleItemFieldChange(firstItem.id, "costRefCode", v);
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
@@ -4514,45 +3757,33 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     {/* First Item Cost */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (<>
-                        <input
-                          key={firstItem.id + "-cost-" + (firstItem.cost !== null && firstItem.cost !== undefined ? Number(firstItem.cost).toString() : "")}
-                          type="text"
-                          defaultValue={formatIndianNumber(firstItem.cost)}
+                        <EditableText
+                          value={formatIndianNumber(firstItem.cost)}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const next = cleanNumberInput(e.target.value);
+                          onPaste={(e) => handleBulkFieldPaste(enquiry, "cost", e, 0)}
+                          onCommit={(v) => {
+                            const next = cleanNumberInput(v);
                             if (hasNumberChanged(next, firstItem.cost)) {
                               handleItemFieldChange(firstItem.id, "cost", next);
                             }
                           }}
-                          onPaste={(e) => handleBulkFieldPaste(enquiry, "cost", e, 0)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
-                        {costLoadingBadge(enquiry, firstItem)}</>
+                        {costLoadingBadge(enquiry, firstItem)}{cfChip(firstItem)}</>
                       ) : "-"}
                     </td>
 
                     {/* First Item Stock Status */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-stockStatus-" + (firstItem.stockStatus || "")}
-                          type="text"
-                          defaultValue={firstItem.stockStatus || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.stockStatus || "")) {
-                              handleItemFieldChange(firstItem.id, "stockStatus", e.target.value);
+                        <EditableText
+                          value={firstItem.stockStatus || ""}
+                          onCommit={(v) => {
+                            if (v !== (firstItem.stockStatus || "")) {
+                              handleItemFieldChange(firstItem.id, "stockStatus", v);
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
                         />
                       ) : "-"}
@@ -4561,19 +3792,13 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     {/* First Item Stock Quantity */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-stockQuantity-" + (firstItem.stockQuantity || "")}
-                          type="text"
-                          defaultValue={firstItem.stockQuantity || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.stockQuantity || "")) {
-                              handleItemFieldChange(firstItem.id, "stockQuantity", e.target.value);
+                        <EditableText
+                          value={firstItem.stockQuantity || ""}
+                          onCommit={(v) => {
+                            if (v !== (firstItem.stockQuantity || "")) {
+                              handleItemFieldChange(firstItem.id, "stockQuantity", v);
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
                         />
                       ) : "-"}
@@ -4582,19 +3807,13 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     {/* First Item Available Stock */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-availableStock-" + (firstItem.availableStock || "")}
-                          type="text"
-                          defaultValue={firstItem.availableStock || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.availableStock || "")) {
-                              handleItemFieldChange(firstItem.id, "availableStock", e.target.value);
+                        <EditableText
+                          value={firstItem.availableStock || ""}
+                          onCommit={(v) => {
+                            if (v !== (firstItem.availableStock || "")) {
+                              handleItemFieldChange(firstItem.id, "availableStock", v);
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
                         />
                       ) : "-"}
@@ -4606,19 +3825,13 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     {/* First Item Stock Against Contract */}
                     <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-stockAgainstContract-" + (firstItem.stockAgainstContract || "")}
-                          type="text"
-                          defaultValue={firstItem.stockAgainstContract || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.stockAgainstContract || "")) {
-                              handleItemFieldChange(firstItem.id, "stockAgainstContract", e.target.value);
+                        <EditableText
+                          value={firstItem.stockAgainstContract || ""}
+                          onCommit={(v) => {
+                            if (v !== (firstItem.stockAgainstContract || "")) {
+                              handleItemFieldChange(firstItem.id, "stockAgainstContract", v);
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
                         />
                       ) : "-"}
@@ -4627,21 +3840,15 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     {/* First Item Discount */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-discount-" + (firstItem.discount !== null && firstItem.discount !== undefined ? Number(firstItem.discount).toString() : "")}
-                          type="text"
-                          defaultValue={firstItem.discount !== null && firstItem.discount !== undefined ? Number(firstItem.discount).toString() : ""}
+                        <EditableText
+                          value={firstItem.discount !== null && firstItem.discount !== undefined ? Number(firstItem.discount).toString() : ""}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            if (e.target.value !== (firstItem.discount !== null && firstItem.discount !== undefined ? Number(firstItem.discount).toString() : "")) {
-                              handleItemFieldChange(firstItem.id, "discount", e.target.value);
+                          onCommit={(v) => {
+                            if (v !== (firstItem.discount !== null && firstItem.discount !== undefined ? Number(firstItem.discount).toString() : "")) {
+                              handleItemFieldChange(firstItem.id, "discount", v);
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
@@ -4651,24 +3858,18 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (
                         <div className="flex items-center gap-1">
-                        <input
-                          key={firstItem.id + "-vaPercent-" + (firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : "")}
-                          type="text"
-                          defaultValue={firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : ""}
+                        <EditableText
+                          value={firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : ""}
                           disabled={isFrozen}
                           readOnly={firstItem.validation === "Yes"}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const val = e.target.value.trim();
+                          onPaste={(e) => handleBulkFieldPaste(enquiry, "vaPercent", e, 0)}
+                          onCommit={(v) => {
+                            const val = v.trim();
                             if (val !== (firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : "")) {
                               handleItemFieldChange(firstItem.id, "vaPercent", val);
                             }
                           }}
-                          onPaste={(e) => handleBulkFieldPaste(enquiry, "vaPercent", e, 0)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className={`w-full bg-transparent border-none text-xs ${(firstItem.vaPercent ?? 0) < 0 ? "text-red-600 dark:text-red-400" : "text-foreground"} outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed`}
                         />
                         {unlockButton(firstItem)}
@@ -4679,24 +3880,18 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     {/* First Item Quoted Rate */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-" + (firstItem.quotedRate || "")}
-                          type="text"
-                          defaultValue={formatIndianNumber(firstItem.quotedRate)}
+                        <EditableText
+                          value={formatIndianNumber(firstItem.quotedRate)}
                           disabled={isFrozen}
                           readOnly={firstItem.validation === "Yes"}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const next = cleanNumberInput(e.target.value);
+                          onPaste={(e) => handleBulkFieldPaste(enquiry, "quotedRate", e, 0)}
+                          onCommit={(v) => {
+                            const next = cleanNumberInput(v);
                             if (hasNumberChanged(next, firstItem.quotedRate)) {
                               handleItemFieldChange(firstItem.id, "quotedRate", next);
                             }
                           }}
-                          onPaste={(e) => handleBulkFieldPaste(enquiry, "quotedRate", e, 0)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
@@ -4733,22 +3928,16 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     {/* First Item Total Value */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-totalValue-" + (firstItem.totalValue || "")}
-                          type="text"
-                          defaultValue={formatIndianNumber(firstItem.totalValue)}
+                        <EditableText
+                          value={formatIndianNumber(firstItem.totalValue)}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const next = cleanNumberInput(e.target.value);
+                          onCommit={(v) => {
+                            const next = cleanNumberInput(v);
                             if (hasNumberChanged(next, firstItem.totalValue)) {
                               handleItemFieldChange(firstItem.id, "totalValue", next);
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
@@ -4757,22 +3946,16 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     {/* First Item Itemwise Total Value */}
                     <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
                       {firstItem ? (
-                        <input
-                          key={firstItem.id + "-itemWiseTotalValue-" + (firstItem.itemWiseTotalValue || "")}
-                          type="text"
-                          defaultValue={formatIndianNumber(firstItem.itemWiseTotalValue)}
+                        <EditableText
+                          value={formatIndianNumber(firstItem.itemWiseTotalValue)}
                           disabled={isFrozen}
                           title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const next = cleanNumberInput(e.target.value);
+                          onCommit={(v) => {
+                            const next = cleanNumberInput(v);
                             if (hasNumberChanged(next, firstItem.itemWiseTotalValue)) {
                               handleItemFieldChange(firstItem.id, "itemWiseTotalValue", next);
                             }
                           }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
                           className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       ) : "-"}
@@ -4868,7 +4051,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3.5 px-4 text-right border-b border-border">
+                    <td style={{ right: 0 }} className="sticky z-20 bg-background shadow-[inset_1px_0_0_var(--border)] py-3.5 px-4 text-right border-b border-border">
                       {firstItem && (
                         <ActionsDropdown
                           item={firstItem}
@@ -4889,13 +4072,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                       >
                         {/* Empty selection cell — selection is per docket */}
                         <td className="py-3 px-2 text-center border-r border-b border-border"></td>
-                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
-                        <td style={{ left: frozenLeft[1] }} className={`${FROZEN_TD} py-3 px-4 border-r border-b border-border last:border-r-0`}></td>
-                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
-                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
-                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
-                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
-                        <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
+                        <td style={{ left: frozenLeft[0] }} className={`${FROZEN_TD} py-3 px-4 border-r border-b border-border last:border-r-0`}></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
@@ -4905,7 +4082,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
 
                         {/* Additional Item Name */}
-                        <td style={{ left: frozenLeft[14] }} className={`${FROZEN_TD} py-2 px-2 text-xs text-muted-foreground font-medium border-r border-b border-border last:border-r-0 align-top`}>
+                        <td style={{ left: frozenLeft[8] }} className={`${FROZEN_TD} py-2 px-2 text-xs text-muted-foreground font-medium border-r border-b border-border last:border-r-0 align-top`}>
                           {editingItemNameId === item.id ? (
                             <input
                               type="text"
@@ -4944,7 +4121,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                         </td>
                         
                         {/* Details */}
-                        <td style={{ left: frozenLeft[15] }} className={`${FROZEN_TD} py-2 px-2 border-r border-b border-border last:border-r-0 align-top`}>
+                        <td style={{ left: frozenLeft[9] }} className={`${FROZEN_TD} py-2 px-2 border-r border-b border-border last:border-r-0 align-top`}>
                           <ItemDetailFields
                             item={item}
                             dropdownOptions={dropdownOptions}
@@ -4955,23 +4132,17 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
 
                         {/* Additional Item Quantity */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
-                          <input
-                            key={item.id + "-quantity-" + (item.quantity || "")}
-                            type="text"
-                            defaultValue={item.quantity ? Number(item.quantity).toString() : ""}
+                          <EditableText
+                            value={item.quantity ? Number(item.quantity).toString() : ""}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.quantity ? Number(item.quantity).toString() : "")) {
-                              handleItemFieldChange(item.id, "quantity", e.target.value);
+                            onCommit={(v) => {
+                            if (v !== (item.quantity ? Number(item.quantity).toString() : "")) {
+                              handleItemFieldChange(item.id, "quantity", v);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-semibold text-right disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-semibold text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
                         </td>
 
                         {/* Item Code (read-only) */}
@@ -5021,127 +4192,92 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
                           <div className="flex items-center gap-1">
                           <CostWarningIcon warnings={item.costWarnings} />
-                          <input
-                            key={item.id + "-productCost-" + (item.productCost !== null && item.productCost !== undefined ? Number(item.productCost).toString() : "")}
-                            type="text"
-                            defaultValue={formatIndianNumber(item.productCost)}
+                          <EditableText
+                            value={formatIndianNumber(item.productCost)}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const next = cleanNumberInput(e.target.value);
+                            onCommit={(v) => {
+                            const next = cleanNumberInput(v);
                             if (hasNumberChanged(next, item.productCost)) {
                               handleItemFieldChange(item.id, "productCost", next);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
                           </div>
                       </td>
 
                       {/* Cost Ref Code */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
-                          <input
-                            key={item.id + "-costRefCode-" + (item.costRefCode || "")}
-                            type="text"
-                            defaultValue={item.costRefCode || ""}
+                          <EditableText
+                            value={item.costRefCode || ""}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.costRefCode || "")) {
-                              handleItemFieldChange(item.id, "costRefCode", e.target.value);
+                            onCommit={(v) => {
+                            if (v !== (item.costRefCode || "")) {
+                              handleItemFieldChange(item.id, "costRefCode", v);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
                       </td>
 
                       {/* Cost */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
-                          <input
-                            key={item.id + "-cost-" + (item.cost !== null && item.cost !== undefined ? Number(item.cost).toString() : "")}
-                            type="text"
-                            defaultValue={formatIndianNumber(item.cost)}
+                          <EditableText
+                            value={formatIndianNumber(item.cost)}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const next = cleanNumberInput(e.target.value);
+                            onPaste={(e) => handleBulkFieldPaste(enquiry, "cost", e, idx + 1)}
+                            onCommit={(v) => {
+                            const next = cleanNumberInput(v);
                             if (hasNumberChanged(next, item.cost)) {
                               handleItemFieldChange(item.id, "cost", next);
                             }
-                          }}
-                          onPaste={(e) => handleBulkFieldPaste(enquiry, "cost", e, idx + 1)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
                         {costLoadingBadge(enquiry, item)}
+                        {cfChip(item)}
                       </td>
 
                       {/* Stock Status */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                          <input
-                            key={item.id + "-stockStatus-" + (item.stockStatus || "")}
-                            type="text"
-                            defaultValue={item.stockStatus || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.stockStatus || "")) {
-                              handleItemFieldChange(item.id, "stockStatus", e.target.value);
+                          <EditableText
+                            value={item.stockStatus || ""}
+                            onCommit={(v) => {
+                            if (v !== (item.stockStatus || "")) {
+                              handleItemFieldChange(item.id, "stockStatus", v);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium"
+                          />
                       </td>
 
                       {/* Stock Quantity */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                          <input
-                            key={item.id + "-stockQuantity-" + (item.stockQuantity || "")}
-                            type="text"
-                            defaultValue={item.stockQuantity || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.stockQuantity || "")) {
-                              handleItemFieldChange(item.id, "stockQuantity", e.target.value);
+                          <EditableText
+                            value={item.stockQuantity || ""}
+                            onCommit={(v) => {
+                            if (v !== (item.stockQuantity || "")) {
+                              handleItemFieldChange(item.id, "stockQuantity", v);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          />
                       </td>
 
                       {/* Available Stock */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                          <input
-                            key={item.id + "-availableStock-" + (item.availableStock || "")}
-                            type="text"
-                            defaultValue={item.availableStock || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.availableStock || "")) {
-                              handleItemFieldChange(item.id, "availableStock", e.target.value);
+                          <EditableText
+                            value={item.availableStock || ""}
+                            onCommit={(v) => {
+                            if (v !== (item.availableStock || "")) {
+                              handleItemFieldChange(item.id, "availableStock", v);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          />
                       </td>
 
                       {/* View Image */}
@@ -5149,93 +4285,69 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
 
                       {/* Stock Against Contract */}
                         <td className="py-2 px-2 border-r border-b border-border last:border-r-0">
-                          <input
-                            key={item.id + "-stockAgainstContract-" + (item.stockAgainstContract || "")}
-                            type="text"
-                            defaultValue={item.stockAgainstContract || ""}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.stockAgainstContract || "")) {
-                              handleItemFieldChange(item.id, "stockAgainstContract", e.target.value);
+                          <EditableText
+                            value={item.stockAgainstContract || ""}
+                            onCommit={(v) => {
+                            if (v !== (item.stockAgainstContract || "")) {
+                              handleItemFieldChange(item.id, "stockAgainstContract", v);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right"
+                          />
                       </td>
 
                       {/* Discount */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
-                          <input
-                            key={item.id + "-discount-" + (item.discount !== null && item.discount !== undefined ? Number(item.discount).toString() : "")}
-                            type="text"
-                            defaultValue={item.discount !== null && item.discount !== undefined ? Number(item.discount).toString() : ""}
+                          <EditableText
+                            value={item.discount !== null && item.discount !== undefined ? Number(item.discount).toString() : ""}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            if (e.target.value !== (item.discount !== null && item.discount !== undefined ? Number(item.discount).toString() : "")) {
-                              handleItemFieldChange(item.id, "discount", e.target.value);
+                            onCommit={(v) => {
+                            if (v !== (item.discount !== null && item.discount !== undefined ? Number(item.discount).toString() : "")) {
+                              handleItemFieldChange(item.id, "discount", v);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
                       </td>
 
                       {/* VA% */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-muted" : ""}`}>
                           <div className="flex items-center gap-1">
-                          <input
-                            key={item.id + "-vaPercent-" + (item.vaPercent !== null ? `${item.vaPercent}%` : "")}
-                            type="text"
-                            defaultValue={item.vaPercent !== null ? `${item.vaPercent}%` : ""}
+                          <EditableText
+                            value={item.vaPercent !== null ? `${item.vaPercent}%` : ""}
                             disabled={isFrozen}
                             readOnly={item.validation === "Yes"}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const val = e.target.value.trim();
+                            onPaste={(e) => handleBulkFieldPaste(enquiry, "vaPercent", e, idx + 1)}
+                            onCommit={(v) => {
+                            const val = v.trim();
                             if (val !== (item.vaPercent !== null ? `${item.vaPercent}%` : "")) {
                               handleItemFieldChange(item.id, "vaPercent", val);
                             }
-                          }}
-                          onPaste={(e) => handleBulkFieldPaste(enquiry, "vaPercent", e, idx + 1)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className={`w-full bg-transparent border-none text-xs ${(item.vaPercent ?? 0) < 0 ? "text-red-600 dark:text-red-400" : "text-foreground"} outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed`}
-                        />
+                            }}
+                            className={`w-full bg-transparent border-none text-xs ${(item.vaPercent ?? 0) < 0 ? "text-red-600 dark:text-red-400" : "text-foreground"} outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed`}
+                          />
                           {unlockButton(item)}
                           </div>
                       </td>
 
                       {/* Quoted Rate */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
-                          <input
-                            key={item.id + "-" + (item.quotedRate || "")}
-                            type="text"
-                            defaultValue={formatIndianNumber(item.quotedRate)}
+                          <EditableText
+                            value={formatIndianNumber(item.quotedRate)}
                             disabled={isFrozen}
                             readOnly={item.validation === "Yes"}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const next = cleanNumberInput(e.target.value);
+                            onPaste={(e) => handleBulkFieldPaste(enquiry, "quotedRate", e, idx + 1)}
+                            onCommit={(v) => {
+                            const next = cleanNumberInput(v);
                             if (hasNumberChanged(next, item.quotedRate)) {
                               handleItemFieldChange(item.id, "quotedRate", next);
                             }
-                          }}
-                          onPaste={(e) => handleBulkFieldPaste(enquiry, "quotedRate", e, idx + 1)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
                       </td>
 
                       {/* CR Rate (Contract Review Rate — read-only) */}
@@ -5266,46 +4378,34 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
 
                         {/* Total Value */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
-                          <input
-                            key={item.id + "-totalValue-" + (item.totalValue || "")}
-                            type="text"
-                            defaultValue={formatIndianNumber(item.totalValue)}
+                          <EditableText
+                            value={formatIndianNumber(item.totalValue)}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const next = cleanNumberInput(e.target.value);
+                            onCommit={(v) => {
+                            const next = cleanNumberInput(v);
                             if (hasNumberChanged(next, item.totalValue)) {
                               handleItemFieldChange(item.id, "totalValue", next);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
                       </td>
 
                       {/* Itemwise Total Value */}
                         <td className={`py-2 px-2 border-r border-b border-border last:border-r-0 ${isFrozen ? "bg-muted" : ""}`}>
-                          <input
-                            key={item.id + "-itemWiseTotalValue-" + (item.itemWiseTotalValue || "")}
-                            type="text"
-                            defaultValue={formatIndianNumber(item.itemWiseTotalValue)}
+                          <EditableText
+                            value={formatIndianNumber(item.itemWiseTotalValue)}
                             disabled={isFrozen}
                             title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                          onBlur={(e) => {
-                            const next = cleanNumberInput(e.target.value);
+                            onCommit={(v) => {
+                            const next = cleanNumberInput(v);
                             if (hasNumberChanged(next, item.itemWiseTotalValue)) {
                               handleItemFieldChange(item.id, "itemWiseTotalValue", next);
                             }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                          }}
-                          placeholder="-"
-                          className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
+                            }}
+                            className="w-full bg-transparent border-none text-xs text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                          />
                       </td>
 
                       {/* Validation */}
@@ -5358,7 +4458,7 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
                         <td className="py-3 px-4 border-r border-b border-border last:border-r-0"></td>
 
                         {/* Actions on this item */}
-                        <td className="py-3.5 px-4 text-right border-b border-border">
+                        <td style={{ right: 0 }} className="sticky z-20 bg-background shadow-[inset_1px_0_0_var(--border)] py-3.5 px-4 text-right border-b border-border">
                           <ActionsDropdown
                             item={item}
                             enquiry={enquiry}
@@ -5462,7 +4562,18 @@ export default function EnquiryTable({ dropdownOptions, initialDocketNumbers, au
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </div>
+    <DocketEditDrawer
+      enquiry={paginatedEnquiries.find((e) => e.id === editingDocketId) ?? null}
+      dropdownOptions={dropdownOptions}
+      docketNumbers={docketNumbers}
+      deleting={deletingEnquiryId !== null}
+      onSave={handleDrawerSave}
+      onClose={() => setEditingDocketId(null)}
+      onDeleteDuplicate={async (e) => {
+        await handleDeleteDuplicate(e);
+        setEditingDocketId(null);
+      }}
+    />  </div>
   );
 }
 
@@ -5496,6 +4607,8 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
   const handleGenerate = async () => {
     setStatus("generating");
     try {
+      // The row may hold only its first item; the offer needs all of them.
+      const all = enquiry.itemsLoaded ? items : await dispatch(loadEnquiryItems({ enquiryIds: [enquiry.id] })).unwrap();
       // Map data into OfferLetterTemplateData shape
       const rowData: OfferLetterTemplateData = {
         docketNo: enquiry.docketNumber,
@@ -5518,7 +4631,7 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
         })(),
         approval: "It shall be in our scope",
         deliveryDestination: enquiry.state || "",
-        items: items.map((item: EnquiryItemData) => ({
+        items: all.map((item: EnquiryItemData) => ({
           itemName: item.itemName,
           partyItemName: item.itemNameMerge || "",
           quantity: item.quantity ? Number(item.quantity) : 0,
@@ -5528,7 +4641,7 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
           unit: "Nos.",
           deliverySchedule: item.deliverySchedule || "2-3 weeks",
         })),
-        totalItemwiseValue: items.reduce((sum: number, item: EnquiryItemData) => {
+        totalItemwiseValue: all.reduce((sum: number, item: EnquiryItemData) => {
           const qty = item.quantity ? Number(item.quantity) : 0;
           const rate = item.quotedRate ? parseFloat(item.quotedRate) : 0;
           return sum + qty * rate;
@@ -5815,6 +4928,7 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
     </div>
   );
 }

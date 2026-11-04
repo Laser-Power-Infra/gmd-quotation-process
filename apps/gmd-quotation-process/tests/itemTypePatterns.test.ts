@@ -224,3 +224,20 @@ test('correctItemType forces TPAV for any air-valve name with a wrong stored typ
   // Not an air valve.
   assert.equal(correctItemType('Repair Valve 50mm', 'SLUICE VALVE-RESILIENT-NON-RISING'), null)
 })
+
+import { detectCfSet } from '../lib/cfSet.js'
+
+test('detectCfSet: valve text asking for flanges / fasteners / gaskets ticks "flange"', () => {
+  assert.deepEqual(detectCfSet('CI Sluice Valve 100mm PN10 with companion flanges', 'SLUICE VALVE-RESILIENT-NON-RISING'), ['flange'])
+  assert.deepEqual(detectCfSet('DI Butterfly valve DN200 with CF, bolts & nuts', 'BUTTERFLY VALVE'), ['flange'])
+  assert.deepEqual(detectCfSet('Sluice valve DN80 with fasteners', 'SLUICE VALVE-RESILIENT-NON-RISING'), ['flange'])
+  assert.deepEqual(detectCfSet('Sluice valve DN80 with gaskets', 'SLUICE VALVE-RESILIENT-NON-RISING'), ['flange'])
+})
+
+test('detectCfSet: plain valves and standalone parts are left alone', () => {
+  assert.deepEqual(detectCfSet('CI Sluice Valve 100mm PN10', 'SLUICE VALVE-RESILIENT-NON-RISING'), [])
+  assert.deepEqual(detectCfSet('Companion flange DN100', 'COMPANION FLANGE'), [])
+  assert.deepEqual(detectCfSet('Rubber gasket DN100', 'GASKET'), [])
+  assert.deepEqual(detectCfSet('Bolts and nuts M16', 'BOLTS OR NUTS'), [])
+  assert.deepEqual(detectCfSet('with flanges', null), [])
+})

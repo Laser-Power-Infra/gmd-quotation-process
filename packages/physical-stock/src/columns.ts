@@ -1,4 +1,4 @@
-import type { PhysicalStockRow } from "./types";
+import type { PhysicalStockRow, StockAllocationRow } from "./types";
 
 // Plain TS, safe to import from client and server code.
 
@@ -44,6 +44,10 @@ export const COLUMNS = [
   // Derived from the FG item master (see fgMatcher); last for the same index reason.
   "FG ITEM CODE",
   "PRODUCTION ITEM",
+  // Derived from the stock allocation engine; last for the same index reason.
+  "ALLOCATED QTY",
+  "FREE QTY",
+  "ALLOCATIONS",
 ] as const;
 
 export type PhysicalStockHeader = (typeof COLUMNS)[number];
@@ -89,6 +93,9 @@ export const FIELDS = [
   "incoming_from",
   "fg_item_code",
   "production_item",
+  "allocated_qty",
+  "free_qty",
+  "allocations",
 ] as const satisfies readonly (keyof PhysicalStockRow)[];
 
 export type PhysicalStockField = (typeof FIELDS)[number];
@@ -110,6 +117,8 @@ export const NUMERIC_COLUMNS: ReadonlySet<string> = new Set([
   "shortage qty",
   "",
   "COST",
+  "ALLOCATED QTY",
+  "FREE QTY",
 ]);
 
 /**
@@ -396,10 +405,27 @@ export const BLANK_ONLY_HEADERS = [
   "L8 -ITEM CATEGORY",
 ] as const satisfies readonly EditableHeader[];
 
+/** Open allocations only (dispatched ones already left the shed); null when not looked up. */
+export function allocatedQty(row: PhysicalStockRow): number | null {
+  return row.allocations && row.allocations.filter((a) => a.stage !== "Dispatched").reduce((n, a) => n + a.qty, 0);
+}
+
+export const allocationText = (a: StockAllocationRow) => `${a.contractNo} ×${a.qty} (${a.stage})`;
+
 export function rowToArray(row: PhysicalStockRow): unknown[] {
+  const allocated = allocatedQty(row);
+  const free = allocated === null ? "" : Math.max(0, (parseNum(row.available_qty) ?? 0) - allocated);
   // item wise-value is shown from the current cost, which the BOM job refreshes hourly.
   return FIELDS.map((field) =>
-    field === "item_wise_value" ? computeItemWiseValue(row.cost, row.available_qty) : row[field] ?? "",
+    field === "item_wise_value"
+      ? computeItemWiseValue(row.cost, row.available_qty)
+      : field === "allocated_qty"
+        ? allocated ?? ""
+        : field === "free_qty"
+          ? free
+          : field === "allocations"
+            ? (row.allocations ?? []).map(allocationText).join("; ")
+            : row[field] ?? "",
   );
 }
 

@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
     // proxy buffer to match the Server Action limit.
     proxyClientMaxBodySize: '100mb',
   },
+   images: {
+    remotePatterns: [{ protocol: "https", hostname: "drive.google.com", pathname: "/thumbnail" }],
+    minimumCacheTTL: 2678400,
+  },
    output: "standalone",
 };
 

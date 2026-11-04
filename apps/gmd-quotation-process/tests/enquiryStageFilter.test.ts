@@ -18,3 +18,8 @@ test('tile counts skip the stage filter', () => {
   const where = buildEnquiryWhereSql({ ...emptyEnquiryQuery(), stage: 'cost' }, { skipField: 'stage' })
   assert.equal(where.sql, 'TRUE')
 })
+
+test('details-incomplete predicate exempts CF SET child lines', () => {
+  const where = buildEnquiryWhereSql({ ...emptyEnquiryQuery(), incompleteOnly: true })
+  assert.match(where.sql, /"itemType" IS DISTINCT FROM 'CF SET'/)
+})

@@ -33,3 +33,8 @@ test('missingDetails counts blank, UNKNOWN and undetectable size', () => {
     [],
   )
 })
+
+test('CF SET child line is never detail-incomplete', () => {
+  assert.deepEqual(missingDetails({ itemType: 'CF SET', moc: 'MS', size: '100', pnRating: 'PN10', operationType: null }), [])
+  assert.deepEqual(missingDetails({ itemType: 'GATE VALVE', moc: 'MS', size: '100', pnRating: 'PN10', operationType: null }), ['operationType'])
+})

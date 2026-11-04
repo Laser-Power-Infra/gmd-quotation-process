@@ -77,3 +77,26 @@ export const DEFAULT_CREDITOR_PREFS: TablePrefs = {
 };
 
 export const CREDITOR_PREFS_KEY = "creditors-table-prefs-v1";
+
+export const ENQUIRY_COLUMNS_KEY = "enquiry-columns-v1";
+
+/** Saved visible-column keys, dropping any that no longer exist; null when nothing usable is stored. */
+export function loadColumnSet(key: string, valid: readonly string[]): string[] | null {
+  try {
+    const raw = globalThis.localStorage.getItem(key);
+    const parsed: unknown = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(parsed)) return null;
+    const keep = valid.filter((k) => parsed.includes(k));
+    return keep.length > 0 ? keep : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveColumnSet(key: string, columns: string[]): void {
+  try {
+    globalThis.localStorage.setItem(key, JSON.stringify(columns));
+  } catch {
+    // storage blocked or full: the choice just won't survive a reload
+  }
+}

@@ -1,5 +1,7 @@
 "use client";
 
+import { CircleAlert } from "lucide-react";
+
 interface ErrorStateProps {
   message: string;
   onRetry?: () => void;
@@ -9,7 +11,7 @@ export default function ErrorState({ message, onRetry }: ErrorStateProps) {
   return (
     <div className="flex-1 flex items-center justify-center p-xl">
       <div className="text-center max-w-lg">
-        <span className="material-symbols-outlined text-[48px] text-error mb-md inline-block">error</span>
+        <CircleAlert size={48} className="text-error mb-md inline-block" />
         <h3 className="font-headline-sm text-headline-sm text-on-surface mb-sm">Failed to load data</h3>
         <p className="text-body-md text-on-surface-variant mb-lg">{message}</p>
         {onRetry && (

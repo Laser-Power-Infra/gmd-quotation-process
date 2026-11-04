@@ -8,6 +8,7 @@ import { incomingFromForItems, inTransitForItems } from "@gmd/purchase/server";
 import { editableFieldsFor } from "@gmd/physical-stock/flags";
 import type { ActionResult, PhysicalStockRow } from "@gmd/physical-stock/types";
 import { stockPrisma } from "@/lib/stockPrisma";
+import { computeStockAllocation } from "@/lib/stockAllocation/load";
 import { getPhysicalStockFlags } from "@/lib/physical-stock-flags";
 import {
   costForPhysicalStockBom,
@@ -39,8 +40,18 @@ export async function load() {
     } catch (err) {
       console.error("[physical-stock] in-transit lookup failed", err);
     }
+    // Order-wise allocation per stock row; failure leaves the column unknown (null).
+    const allocByStock = new Map<string, NonNullable<PhysicalStockRow["allocations"]>>();
+    let allocated = false;
+    try {
+      for (const a of (await computeStockAllocation()).allocations) allocByStock.set(a.stockId, [...(allocByStock.get(a.stockId) ?? []), a]);
+      allocated = true;
+    } catch (err) {
+      console.error("[physical-stock] allocation lookup failed", err);
+    }
     const withInTransit = items.map((item) => ({
       ...item,
+      allocations: allocated ? (allocByStock.get(item.id) ?? []) : null,
       in_transit: inTransit.get((item.erp_code ?? "").trim()) ?? null,
       incoming_from: incomingFrom.get((item.erp_code ?? "").trim()) ?? null,
     }));

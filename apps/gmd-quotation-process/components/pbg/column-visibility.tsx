@@ -6,15 +6,23 @@ import {
   type ColumnKey,
 } from "@/lib/pbg/pbg-columns";
 
-type ColumnVisibilityProps = {
-  visible: ColumnKey[];
-  onChange: (keys: ColumnKey[]) => void;
+type ColumnVisibilityProps<K extends string> = {
+  visible: K[];
+  onChange: (keys: K[]) => void;
+  /** Defaults to the PBG table columns; other tables pass their own. `locked` columns cannot be hidden. */
+  defs?: readonly { key: K; label: string; locked?: boolean }[];
+  defaults?: K[];
 };
 
-export function ColumnVisibility({ visible, onChange }: ColumnVisibilityProps) {
-  const visibleSet = new Set(visible);
+export function ColumnVisibility<K extends string = ColumnKey>({
+  visible,
+  onChange,
+  defs = PBG_COLUMN_DEFS as unknown as readonly { key: K; label: string }[],
+  defaults = DEFAULT_VISIBLE_COLUMNS as unknown as K[],
+}: ColumnVisibilityProps<K>) {
+  const visibleSet = new Set<K>(visible);
 
-  function toggle(key: ColumnKey) {
+  function toggle(key: K) {
     const next = new Set(visibleSet);
     if (next.has(key)) {
       if (next.size === 1) return;
@@ -22,7 +30,7 @@ export function ColumnVisibility({ visible, onChange }: ColumnVisibilityProps) {
     } else {
       next.add(key);
     }
-    onChange(PBG_COLUMN_DEFS.map((d) => d.key).filter((k) => next.has(k)));
+    onChange(defs.map((d) => d.key).filter((k) => next.has(k)));
   }
 
   return (
@@ -31,14 +39,14 @@ export function ColumnVisibility({ visible, onChange }: ColumnVisibilityProps) {
         <span className="text-xs font-semibold text-slate-700">Columns</span>
         <button
           type="button"
-          onClick={() => onChange(DEFAULT_VISIBLE_COLUMNS)}
+          onClick={() => onChange(defaults)}
           className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
         >
           Reset
         </button>
       </div>
       <div className="max-h-72 overflow-y-auto rounded-md border border-slate-200">
-        {PBG_COLUMN_DEFS.map((column) => (
+        {defs.map((column) => (
           <label
             key={column.key}
             className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
@@ -46,6 +54,7 @@ export function ColumnVisibility({ visible, onChange }: ColumnVisibilityProps) {
             <input
               type="checkbox"
               checked={visibleSet.has(column.key)}
+              disabled={"locked" in column && !!column.locked}
               onChange={() => toggle(column.key)}
               className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-400"
             />

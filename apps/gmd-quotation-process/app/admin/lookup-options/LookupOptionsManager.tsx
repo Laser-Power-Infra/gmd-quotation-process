@@ -34,6 +34,10 @@ const TYPE_LABELS: Record<string, string> = {
   BYPASS: "Bypasses",
   DELIVERY: "Delivery Schedules",
   GMD_CASTING_RATE: "GMD Casting Rates",
+  CF_FLANGE_RATE: "CF Flange Rates (Rs/kg)",
+  CF_FASTENER_RATE: "CF Fastener Rates (Rs/kg)",
+  CF_GASKET_RATE: "CF Gasket Rates (Rs/kg)",
+  CF_MACHINING: "CF Machining per CF (Rs, by size band)",
 };
 
 interface LookupOptionsManagerProps {

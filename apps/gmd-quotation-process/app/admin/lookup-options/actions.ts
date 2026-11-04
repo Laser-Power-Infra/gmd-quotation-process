@@ -3,6 +3,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { recomputeCfSets, refreshFlangeGaskets } from "@/lib/cfSetItem";
 
 async function assertDeveloper(): Promise<boolean> {
   const session = await auth();
@@ -132,9 +133,21 @@ export async function updateLookupOptionAction(formData: FormData) {
     where: { id },
     data: { type, value, sortOrder, code, defaultState },
   });
+  // Quote-time CF sets must not go stale when a CF rate is edited.
+  // The rate row is already saved: a failed recompute is logged, not reported as a failed save.
+  let note: string | undefined;
+  if (type.startsWith("CF_")) {
+    try {
+      await recomputeCfSets();
+      if (type === "CF_GASKET_RATE") await refreshFlangeGaskets();
+    } catch (e) {
+      console.error("[updateLookupOptionAction] CF recompute failed:", e);
+      note = "Rate saved, but CF sets could not be re-priced; retry or save again.";
+    }
+  }
 
   revalidatePath("/admin/lookup-options");
-  return { success: true };
+  return note ? { success: true, note } : { success: true };
 }
 
 export async function toggleLookupOptionAction(id: string) {

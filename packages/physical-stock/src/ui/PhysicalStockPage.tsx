@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, Loader2, Plus } from "lucide-react";
 import { toast } from "sonner";
 import GMDUpdateTable from "@gmd/dashboard/components/GMDUpdateTable";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
@@ -25,6 +25,11 @@ const BLANK_ONLY = new Set<string>(BLANK_ONLY_HEADERS);
 const AVAILABLE_IDX = COLUMNS.indexOf("AVAILABLE QTY.");
 const COST_IDX = COLUMNS.indexOf("COST");
 const MAJOR_IDX = COLUMNS.indexOf("MAJOR/MINOR MARKING");
+const LOCATION_IDX = COLUMNS.indexOf("location");
+const ALLOCATED_IDX = COLUMNS.indexOf("ALLOCATED QTY");
+const FREE_IDX = COLUMNS.indexOf("FREE QTY");
+type StockMode = "all" | "free" | "allocated";
+const CONTROL = "h-7 rounded border border-border bg-background px-2 text-[11px] text-foreground";
 
 function toNum(value: unknown): number {
   const n = parseFloat(String(value ?? "").replace(/,/g, ""));
@@ -52,6 +57,10 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [cardFilter, setCardFilter] = useState<StockCardKind | null>(null);
   const [majorMinorFilter, setMajorMinorFilter] = useState<Set<MajorMinorKind>>(new Set());
+  const [locationFilter, setLocationFilter] = useState("");
+  const [orderText, setOrderText] = useState("");
+  const [stockMode, setStockMode] = useState<StockMode>("all");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { load, updateField, create, updateBomId } = actions;
 
@@ -141,17 +150,26 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
   }, [cardFilteredRows]);
 
   // Major/Minor filter narrows the table without touching other filters.
+  // Location / order text / free-allocated filters live here too, so the sidebar sums follow them.
+  const locations = useMemo(
+    () => [...new Set(items.map((i) => (i.location ?? "").trim()).filter(Boolean))].sort(),
+    [items],
+  );
   const tableRows = useMemo(() => {
-    if (majorMinorFilter.size === 0) return { rows, ids };
+    const q = orderText.trim().toLowerCase();
     const rowsOut: unknown[][] = [];
     const idsOut: string[] = [];
     for (let i = 0; i < rows.length; i++) {
-      if (!majorMinorFilter.has(majorMinorKind(rows[i][MAJOR_IDX]))) continue;
+      if (majorMinorFilter.size && !majorMinorFilter.has(majorMinorKind(rows[i][MAJOR_IDX]))) continue;
+      if (locationFilter && String(rows[i][LOCATION_IDX] ?? "").trim() !== locationFilter) continue;
+      if (stockMode === "free" && !(toNum(rows[i][FREE_IDX]) > 0)) continue;
+      if (stockMode === "allocated" && !(toNum(rows[i][ALLOCATED_IDX]) > 0)) continue;
+      if (q && !items[i].allocations?.some((a) => (a.contractNo + " " + a.party).toLowerCase().includes(q))) continue;
       rowsOut.push(rows[i]);
       idsOut.push(ids[i]);
     }
     return { rows: rowsOut, ids: idsOut };
-  }, [rows, ids, majorMinorFilter]);
+  }, [rows, ids, items, majorMinorFilter, locationFilter, orderText, stockMode]);
 
   const toggleMajorMinor = useCallback((kind: MajorMinorKind) => {
     setMajorMinorFilter((prev) => {
@@ -174,6 +192,82 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
     }
     return { availableQty: qty, availableValue: value };
   }, [statsRows]);
+
+  const itemByRow = useMemo(() => new Map(rows.map((r, i) => [r, items[i]])), [rows, items]);
+
+  // One column set per order, as wide as the busiest exported row.
+  const exportCsv = useCallback(() => {
+    const out = statsRows.filter(cardDisplayFilter);
+    const max = Math.max(0, ...out.map((r) => itemByRow.get(r)?.allocations?.length ?? 0));
+    const orderHeaders = Array.from({ length: max }, (_, n) =>
+      ["contract", "PO", "party", "item", "qty", "stage", "date"].map((h) => `Order ${n + 1} ${h}`),
+    ).flat();
+    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [[...HEADERS, ...orderHeaders].map(esc).join(",")];
+    for (const r of out) {
+      const orders = (itemByRow.get(r)?.allocations ?? []).flatMap((a) => [
+        a.contractNo, a.poNo, a.party, a.itemCode, a.qty, a.stage, a.allocatedAt?.slice(0, 10),
+      ]);
+      lines.push([...r, ...orders].map(esc).join(","));
+    }
+    const url = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Physical_Stock_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [statsRows, cardDisplayFilter, itemByRow]);
+
+  const renderAllocations = useCallback(
+    (row: unknown[], id: string) => {
+      const list = itemByRow.get(row)?.allocations;
+      if (!list?.length) return null;
+      const open = expanded.has(id);
+      return (
+        <div className="text-[11px]">
+          <button
+            type="button"
+            className="flex items-center gap-1 text-emerald-500 hover:underline"
+            onClick={() =>
+              setExpanded((prev) => {
+                const next = new Set(prev);
+                if (!next.delete(id)) next.add(id);
+                return next;
+              })
+            }
+          >
+            {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {list.length} order{list.length > 1 ? "s" : ""}
+          </button>
+          {open && (
+            <table className="mt-1 border-collapse whitespace-nowrap">
+              <thead>
+                <tr className="text-muted-foreground">
+                  {["Contract", "PO", "Party", "Item", "Qty", "Stage", "Date"].map((h) => (
+                    <th key={h} className="px-1 text-left font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((a, n) => (
+                  <tr key={n}>
+                    <td className="px-1">{a.contractNo}</td>
+                    <td className="px-1">{a.poNo ?? ""}</td>
+                    <td className="px-1">{a.party}</td>
+                    <td className="px-1">{a.itemCode}</td>
+                    <td className="px-1 text-right">{a.qty}</td>
+                    <td className="px-1">{a.stage}</td>
+                    <td className="px-1">{a.allocatedAt?.slice(0, 10) ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      );
+    },
+    [itemByRow, expanded],
+  );
 
   const mergeRow = useCallback((id: string, changes: Partial<PhysicalStockRow>) => {
     setItems((prev) => prev.map((row) => (row.id === id ? { ...row, ...changes } : row)));
@@ -288,6 +382,32 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
                 onSelectBomId={updateBomId ? handleSelectBomId : undefined}
                 onCellUpdate={handleCellUpdate}
                 displayOnlyRowFilter={cardDisplayFilter}
+                customCell={{ column: "ALLOCATIONS", render: renderAllocations }}
+                toolbarExtra={
+                  <div className="flex items-center gap-2">
+                    <select className={CONTROL} value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}>
+                      <option value="">All locations</option>
+                      {locations.map((l) => (
+                        <option key={l} value={l}>{l}</option>
+                      ))}
+                    </select>
+                    <input
+                      className={`${CONTROL} w-40`}
+                      placeholder="Contract no / party"
+                      value={orderText}
+                      onChange={(e) => setOrderText(e.target.value)}
+                    />
+                    <select className={CONTROL} value={stockMode} onChange={(e) => setStockMode(e.target.value as StockMode)}>
+                      <option value="all">All</option>
+                      <option value="free">Free stock only</option>
+                      <option value="allocated">Allocated only</option>
+                    </select>
+                    <button type="button" onClick={exportCsv} className={`${CONTROL} flex items-center gap-1`}>
+                      <Download size={12} />
+                      CSV
+                    </button>
+                  </div>
+                }
                 onFilteredRowsChange={setStatsRows}
                 duplicateErpHighlight={flags.duplicateErpHighlight}
                 fullHeight

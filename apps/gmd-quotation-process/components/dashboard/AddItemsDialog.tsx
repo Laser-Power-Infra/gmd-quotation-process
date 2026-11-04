@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import { Plus, Trash, Search, Check, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
@@ -28,16 +28,15 @@ import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import { closeAddItemsDialog } from "@/lib/dialogsSlice";
 import { formatIndianNumber, cleanNumberInput } from "@/lib/formatCurrency";
 import { looseIncludes } from "@/lib/squish";
+import { fetchDocketList } from "@/app/actions/enquiryQuery";
 
-interface AddItemsDialogProps {
-  enquiries: { id: string; docketNumber: string; partyName: string }[];
-}
-
-export default function AddItemsDialog({
-  enquiries,
-}: AddItemsDialogProps) {
+export default function AddItemsDialog() {
   const dispatch = useAppDispatch();
   const open = useAppSelector((state) => state.dialogs.isAddItemsOpen);
+  const [enquiries, setEnquiries] = useState<{ id: string; docketNumber: string; partyName: string }[]>([]);
+  useEffect(() => {
+    if (open) fetchDocketList().then(setEnquiries).catch(() => {});
+  }, [open]);
   const [enquiryId, setEnquiryId] = useState("");
   const [items, setItems] = useState<{ itemName: string; quantity: string; cost: string; vaPercent: string }[]>([
     { itemName: "", quantity: "", cost: "", vaPercent: "" },

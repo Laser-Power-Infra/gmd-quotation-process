@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Paperclip, Plus } from "lucide-react";
 import AttachmentPreviewDialog from "./AttachmentPreviewDialog";
 import type { AttachmentData } from "@/lib/types";
 
@@ -15,10 +15,13 @@ export default function DocketAttachmentsCell({
   docketNumber,
   attachments,
   onAddClick,
+  compact = false,
 }: {
   docketNumber: string;
   attachments: AttachmentData[];
   onAddClick: () => void;
+  /** Paperclip icon instead of the "Attachments" label. */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const list = attachments ?? [];
@@ -42,7 +45,7 @@ export default function DocketAttachmentsCell({
             : "text-muted-foreground cursor-default"
         }`}
       >
-        Attachments
+        {compact ? <Paperclip className="h-3 w-3" /> : "Attachments"}
         <span
           className={`inline-flex items-center justify-center min-w-[14px] h-[14px] px-1 rounded-full text-[9px] font-bold leading-none ${
             hasAttachments

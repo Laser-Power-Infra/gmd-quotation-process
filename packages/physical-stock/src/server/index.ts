@@ -64,6 +64,7 @@ export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
       ...matchFg(item),
       // Filled by the host app's load() from @gmd/purchase; null = not looked up.
       in_transit: null,
+      allocations: null,
       incoming_from: null,
     };
   });

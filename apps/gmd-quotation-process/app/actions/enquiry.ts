@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { uploadFileToDrive } from "@/lib/gdrive";
 import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry } from "@/lib/costCalculator";
 import { resolveItemCategory } from "@/lib/itemCategoryResolver";
+import { ensureCfSetItem } from "@/lib/cfSetItem";
 import { roundUp } from "@/lib/rounding";
 import { getDefaultVaPercent } from "@/lib/vaValidation";
 import { buildDocketEmailHtml, buildDocketEmailSubject, buildItemsClause } from "@/lib/docketEmailTemplate";
@@ -164,7 +165,7 @@ export async function createNewEnquiryAction(formData: {
               operationType: item.operationType || null,
               extension: item.extension || null,
               bypass: item.bypass || null,
-              others: Array.isArray((item as any).others) ? (item as any).others : ((item as any).others ? [String((item as any).others)] : []),
+              others: Array.isArray((item as any).others) ? (item as any).others : ((item as any).others ? [String((item as any).others)] : item.resolved.others),
               productCost: item.productCost || null,
               costRefCode: item.costRefCode || null,
               cost: itemCost,
@@ -191,6 +192,9 @@ export async function createNewEnquiryAction(formData: {
     // Run recalculation on each item to set the correct Cost based on lookup tables
     for (const item of created.items) {
       await recalculateItem(item.id);
+    }
+    for (const item of created.items) {
+      if (item.others.length > 0) await ensureCfSetItem(item.id);
     }
 
     // Backfill contractNo for the new docket by party name so the Contract Review column is populated without manual script
@@ -304,7 +308,7 @@ export async function addItemsAction(formData: {
           operationType: item.operationType || null,
           extension: item.extension || null,
           bypass: item.bypass || null,
-          others: Array.isArray((item as any).others) ? (item as any).others : ((item as any).others ? [String((item as any).others)] : []),
+          others: Array.isArray((item as any).others) ? (item as any).others : ((item as any).others ? [String((item as any).others)] : item.resolved.others),
           productCost: item.productCost || null,
           costRefCode: item.costRefCode || null,
           cost: itemCost,
@@ -328,6 +332,9 @@ export async function addItemsAction(formData: {
     });
     for (const item of items) {
       await recalculateItem(item.id);
+    }
+    for (const item of items) {
+      if (item.others.length > 0 && !item.parentItemId) await ensureCfSetItem(item.id);
     }
 
     const createdItems = await prisma.enquiryItem.findMany({
@@ -577,6 +584,8 @@ export async function updateEnquiryItemAction(formData: {
         erpItemCode,
       },
     });
+    // CF set child follows the valve's Others/size/MOC/PN/quantity (skips children and frozen enquiries itself).
+    await ensureCfSetItem(formData.itemId, { resetMoc: resolved.moc !== item.moc });
 
     // Update attachments if provided and upload to Google Drive
     if (formData.attachments) {

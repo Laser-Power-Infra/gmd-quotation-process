@@ -1,55 +1,54 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { UiState } from "./types";
 
+// Positions match ENQUIRY_COLUMNS in lib/enquiryColumns.ts.
 export const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
-  0: 220,  // Enquiry Date
-  1: 200,  // Docket No
-  2: 240,  // Party Name
-  3: 160,  // Contract Review
-  4: 130,  // Enquiry Type
-  5: 200,  // State/Utility
-  6: 210,  // Payment Terms / PBG / Inspection
-  7: 200,  // Email Address
-  8: 140,  // Contact No
-  9: 130,  // Order Status
-  10: 140, // Closure Status
-  11: 160, // Project Reference
-  12: 160, // Technical Evaluation
-  13: 160, // Reverse Auction
-  14: 300, // Item Name As Per Party
-  15: 400, // Details
-  16: 110, // Quantity
-  17: 140, // Item Code
-  18: 140, // BOM ID
-  19: 110, // Product Cost
-  20: 120, // Cost Ref Code
-  21: 130, // Cost
-  22: 120, // Stock Status
-  23: 120, // Stock Quantity
-  24: 140, // Available Stock
-  25: 140, // View Image
-  26: 100, // Stock Against Contract
-  27: 120, // Discount
-  28: 150, // VA%
-  29: 120, // Quoted Rate
-  30: 140, // Rate (Contract Review)
-  31: 140, // PD Cost Val
-  32: 140, // QR incl. GST
-  33: 240, // Item Name (Merge)
-  34: 140, // Total Value incl. GST
-  35: 140, // Itemwise Total Value
-  36: 170, // Validation
-  37: 140, // Delivery Schedule
-  38: 170, // APM
-  39: 150, // Offer PDF
-  40: 150, // Send Email
-  41: 80,  // Actions
+  0: 320,
+  1: 150,
+  2: 210,
+  3: 180,
+  4: 170,
+  5: 160,
+  6: 160,
+  7: 160,
+  8: 240,
+  9: 400,
+  10: 110,
+  11: 140,
+  12: 140,
+  13: 110,
+  14: 120,
+  15: 130,
+  16: 120,
+  17: 120,
+  18: 140,
+  19: 140,
+  20: 100,
+  21: 120,
+  22: 150,
+  23: 120,
+  24: 140,
+  25: 140,
+  26: 140,
+  27: 240,
+  28: 140,
+  29: 140,
+  30: 170,
+  31: 140,
+  32: 170,
+  33: 150,
+  34: 150,
+  35: 80,
 };
+
+import { COLUMN_VIEWS } from "./enquiryColumns";
 
 const initialState: UiState = {
   expandedRows: {},
   isAnalyticsSidebarCollapsed: false,
+  analyticsOn: true,
   columnWidths: { ...DEFAULT_COLUMN_WIDTHS },
+  visibleColumns: [...COLUMN_VIEWS.pricing.columns],
   generatedImages: {},
   selectedEnquiryIds: [],
   closedBomIds: [],
@@ -84,11 +83,17 @@ const uiSlice = createSlice({
     ) {
       state.columnWidths[action.payload.index] = action.payload.width;
     },
+    setVisibleColumns(state, action: PayloadAction<string[]>) {
+      state.visibleColumns = action.payload;
+    },
     toggleAnalyticsSidebar(state) {
       state.isAnalyticsSidebarCollapsed = !state.isAnalyticsSidebarCollapsed;
     },
     setAnalyticsSidebarCollapsed(state, action: PayloadAction<boolean>) {
       state.isAnalyticsSidebarCollapsed = action.payload;
+    },
+    setAnalyticsOn(state, action: PayloadAction<boolean>) {
+      state.analyticsOn = action.payload;
     },
     setGeneratedImages(
       state,
@@ -122,8 +127,10 @@ export const {
   setRowExpanded,
   setExpandedRows,
   setColumnWidth,
+  setVisibleColumns,
   toggleAnalyticsSidebar,
   setAnalyticsSidebarCollapsed,
+  setAnalyticsOn,
   setGeneratedImages,
   toggleEnquirySelection,
   setSelectedEnquiries,
