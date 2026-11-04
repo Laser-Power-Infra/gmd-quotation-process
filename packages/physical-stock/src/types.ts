@@ -42,7 +42,7 @@ export interface PhysicalStockRow {
   heat_done: boolean;
   /** Derived from heat_entries: distinct heat nos, comma-joined; null without entries. */
   heat_no: string | null;
-  /** Derived from heat_entries: every serial (erp_code-l8_item_category-heat_no-heat_seq), comma-joined. */
+  /** Derived from heat_entries: every serial (erp_code-valve type short form-heat_no-heat_seq), comma-joined. */
   serial_no: string | null;
   /**
    * Ordered but not yet received against a GRN, summed over this item's open
@@ -55,7 +55,11 @@ export interface PhysicalStockRow {
   incoming_from: string | null;
 }
 
-export interface HeatEntryRow {
+/** Flange dims typed per serial on the heat-entry page; labels in DIMENSION_FIELDS (dimensions.ts). */
+export const HEAT_DIM_KEYS = ["od", "id_mm", "pcd", "bolt_holes", "flange_thickness"] as const;
+export type HeatDims = Record<(typeof HEAT_DIM_KEYS)[number], string | null>;
+
+export interface HeatEntryRow extends HeatDims {
   id: string;
   heat_no: string;
   heat_seq: number;
@@ -76,6 +80,7 @@ export interface HeatQueueItem {
   id: string;
   erp_code: string | null;
   location: string | null;
+  available_qty: string | null;
   description: string;
   entries: HeatEntryRow[];
 }

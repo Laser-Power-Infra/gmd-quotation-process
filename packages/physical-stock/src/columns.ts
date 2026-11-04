@@ -439,15 +439,38 @@ export function cascadedOptions(header: string, row: readonly unknown[], rows: r
   return out.length ? out : [...all];
 }
 
-/** erp_code-l8_item_category-heat_no-heat_seq. */
+// L2-VALVE TYPE short forms that are not plain word initials.
+const VALVE_TYPE_CODES: Record<string, string> = {
+  "BUTTERFLY VALVE": "BFV",
+  "SLUICE VALVE": "SLV",
+  "CHECK VALVE": "NRV",
+  "AIR VALVE": "AVV",
+  "FLOAT VALVE": "FLV",
+};
+
+/** Short form of L2-VALVE TYPE for the serial: mapped above, else word initials (KNIFE GATE VALVE -> KGV, DPCV -> DPCV). */
+export function valveTypeCode(valveType: unknown): string {
+  const t = String(valveType ?? "").trim().toUpperCase();
+  if (!t) return "";
+  return VALVE_TYPE_CODES[t] ?? t.split(/[^A-Z0-9]+/).filter(Boolean).map((w) => (t.includes(" ") ? w[0] : w)).join("");
+}
+
+/** erp_code-valveTypeCode(l2_valve_type)-heat_no-heat_seq. */
 export function buildSerial(
-  r: { erp_code?: string | null; l8_item_category?: string | null },
+  r: { erp_code?: string | null; l2_valve_type?: string | null },
   e: { heat_no: string; heat_seq: number },
 ): string {
-  return [r.erp_code, r.l8_item_category, e.heat_no, e.heat_seq].map((v) => String(v ?? "").trim()).join("-");
+  return [r.erp_code, valveTypeCode(r.l2_valve_type), e.heat_no, e.heat_seq].map((v) => String(v ?? "").trim()).join("-");
 }
 
 /** Codes minted by createPhysicalStock: 3 letters + 6 digits. */
+/** Sort key for the heat-entry queue: numeric available_qty > 0 ascending; zero, negative, blank and non-numeric last. */
+export function availableQtyOrder(qty: unknown): number {
+  const t = String(qty ?? "").replace(/,/g, "").trim();
+  const n = Number(t);
+  return t && Number.isFinite(n) && n > 0 ? n : Infinity;
+}
+
 export const isGeneratedErpCode = (code: string | null | undefined): boolean =>
   /^[A-Z]{3}\d{6}$/.test((code ?? "").trim());
 

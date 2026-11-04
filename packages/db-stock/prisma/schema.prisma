@@ -69,7 +69,7 @@ model PhysicalStock {
 }
 
 // One heat (and so one serial) of a PhysicalStock row; a row can have many.
-// Serial number = erp_code-l8_item_category-heat_no-heat_seq. heat_no is typed
+// Serial number = erp_code-<L2 valve type short form>-heat_no-heat_seq. heat_no is typed
 // by the user; heat_seq counts up per heat_no across all rows (serial_no is
 // built in listPhysicalStock, not stored).
 model HeatEntry {
@@ -80,6 +80,12 @@ model HeatEntry {
   heat_seq          Int
   // Google Drive file id of the printed serial sheet; null = serial reserved, sheet not yet uploaded.
   sheet_file_id     String?
+  // Flange dims typed on the heat-entry page with the sheet (free text, mm / count).
+  od                String?
+  id_mm             String?
+  pcd               String?
+  bolt_holes        String?
+  flange_thickness  String?
   created_at        DateTime      @default(now())
 
   @@unique([heat_no, heat_seq])
