@@ -728,7 +728,17 @@ function VerifyBomView() {
         const boms = new Set(rows.map((r) => String(r[bomIdx] ?? "")).filter(Boolean));
         const items = new Set(rows.map((r) => String(r[codeIdx] ?? "")).filter(Boolean));
         const bad = rows.filter((r) => r[mIdx] === FLAG_YES).length;
-        return `${boms.size} BOMs · ${items.size} item codes · ${rows.length} lines · ${bad} mismatch`;
+        const chips: [string, number, string, string?][] = [
+          ["BOMs", boms.size, "Distinct BOM IDs of this type"],
+          ["items", items.size, "Distinct item codes"],
+          ["lines", rows.length, "Component lines"],
+          ["mismatch", bad, "Lines with a size / MOC / PN / type mismatch", bad ? "text-red-600 dark:text-red-400" : ""],
+        ];
+        return chips.map(([label, value, tip, tone]) => (
+          <span key={label} title={tip} className={`rounded border border-border bg-card px-1.5 py-0.5 whitespace-nowrap ${tone ?? ""}`}>
+            {label} <b>{value}</b>
+          </span>
+        ));
       },
     };
   }, [groupMode]);

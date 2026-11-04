@@ -2821,21 +2821,23 @@ castingRateInputs,
           </span>
           {toolbarExtra}
           {usdInrRate != null && (
-            <span className="flex items-center gap-1 text-xs font-semibold text-green-700 dark:text-green-300 bg-card border border-border rounded px-2 py-0.5">
+            <span
+              className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-green-700 dark:text-green-300 bg-card border border-border rounded px-2 py-0.5"
+              title={usdRateNote ?? undefined}
+            >
               1 USD = ₹{usdInrRate.toFixed(2)}
-              {usdRateNote && (
-                <span className="font-normal text-muted-foreground">· {usdRateNote}</span>
-              )}
               {onRefreshRate && (
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     onRefreshRate();
                   }}
-                  className="text-[#0070f3] dark:text-primary hover:text-foreground underline"
-                  title="Refresh rate"
+                  className="ml-1 text-muted-foreground hover:text-foreground"
+                  title={`Refresh rate${usdRateNote ? ` (${usdRateNote})` : ""}`}
+                  aria-label="Refresh USD rate"
                 >
-                  refresh
+                  <RotateCcw size={11} />
                 </button>
               )}
             </span>
@@ -3282,7 +3284,7 @@ castingRateInputs,
                       className={`flex justify-between gap-1.5 cursor-pointer ${wrapCells ? "items-start" : "items-center"}`}
                       onClick={() => handleSort(idx)}
                     >
-                      <span className={wrapCells ? "wrap-break-word" : "truncate"}>
+                      <span className={wrapCells ? "wrap-break-word" : "truncate"} title={header}>
                         {header}
                       </span>
                       {isSorted && (
@@ -3539,16 +3541,18 @@ castingRateInputs,
                   >
                     <td
                       colSpan={visibleCols.length + (onDeleteRow ? 1 : 0)}
-                      className="px-3 py-1.5 text-xs font-bold text-foreground border-y border-border"
+                      className="p-0 text-xs font-bold text-foreground border-y border-border"
                     >
-                      <span className="inline-flex items-center gap-2">
+                      {/* The cell spans every column; pin its content to the
+                          left edge so it stays in view while scrolling sideways. */}
+                      <div className="sticky left-0 w-fit max-w-[calc(100vw-2rem)] flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5">
                         {collapsedGroups.has(groupKey) ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
-                        <span>{groupKey}</span>
-                        <span className="font-normal text-muted-foreground">
+                        <span title={groupKey}>{groupKey}</span>
+                        <span className="font-normal text-muted-foreground flex flex-wrap items-center gap-1">
                           {rowGroups?.summary?.(groupKey, groupRows.get(groupKey) ?? []) ??
                             `${groupRows.get(groupKey)?.length ?? 0} items`}
                         </span>
-                      </span>
+                      </div>
                     </td>
                   </tr>
                 )}

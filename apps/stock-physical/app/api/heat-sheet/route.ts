@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { attachHeatSheet } from "@gmd/physical-stock/server";
+import { HEAT_DIM_KEYS } from "@gmd/physical-stock/types";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { uploadHeatSheet } from "@/lib/gdrive";
 
@@ -8,7 +9,7 @@ export const runtime = "nodejs";
 const MAX_BYTES = 10 * 1024 * 1024;
 const TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "application/pdf"]);
 
-/** POST multipart { entryId, file }: stores the printed serial sheet on Drive and attaches it to the heat entry. */
+/** POST multipart { entryId, file, od?, id_mm?, pcd?, bolt_holes?, flange_thickness? }: stores the sheet on Drive and attaches it with the dims. */
 export async function POST(req: Request) {
   if (!(await getCurrentUser())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const form = await req.formData();
@@ -22,7 +23,8 @@ export async function POST(req: Request) {
   try {
     const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
     const fileId = await uploadHeatSheet(`${entryId}${ext}`, file.type, Buffer.from(await file.arrayBuffer()));
-    const res = await attachHeatSheet(entryId, fileId);
+    const dims = Object.fromEntries(HEAT_DIM_KEYS.map((k) => [k, String(form.get(k) ?? "").trim() || null]));
+    const res = await attachHeatSheet(entryId, fileId, dims);
     return res.success ? NextResponse.json(res) : NextResponse.json({ error: res.error }, { status: 400 });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Upload failed" }, { status: 500 });

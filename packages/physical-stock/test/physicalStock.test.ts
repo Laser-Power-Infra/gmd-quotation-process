@@ -7,6 +7,7 @@ import {
   EDITABLE_CANDIDATES,
   FIELDS,
   addQty,
+  availableQtyOrder,
   buildSerial,
   cascadedOptions,
   computeAvailableQty,
@@ -15,6 +16,7 @@ import {
   isGeneratedErpCode,
   itemKey,
   mergeRows,
+  valveTypeCode,
 } from "../src/columns";
 import { editableFieldsFor, resolvePhysicalStockFlags } from "../src/flags";
 import { updatePhysicalStockField } from "../src/server/index";
@@ -90,10 +92,18 @@ test("blank-only dropdown columns map to editable DB fields", () => {
   assert.deepEqual([...fields].sort(), BLANK_ONLY_HEADERS.map((h) => fieldOf(h)!).sort());
 });
 
-test("buildSerial joins code, category, heat and number", () => {
-  const row = { erp_code: "F001", l8_item_category: "CASTING" };
-  assert.equal(buildSerial(row, { heat_no: "3500", heat_seq: 6 }), "F001-CASTING-3500-6");
+test("buildSerial joins code, valve type short form, heat and number", () => {
+  const row = { erp_code: "F001", l2_valve_type: "KNIFE GATE VALVE" };
+  assert.equal(buildSerial(row, { heat_no: "3500", heat_seq: 6 }), "F001-KGV-3500-6");
   assert.equal(buildSerial({ erp_code: "F001" }, { heat_no: "3500", heat_seq: 6 }), "F001--3500-6");
+});
+
+test("valveTypeCode: mapped short forms, else initials", () => {
+  for (const [t, c] of [
+    ["BUTTERFLY VALVE", "BFV"], ["SLUICE VALVE", "SLV"], ["CHECK VALVE", "NRV"], ["AIR VALVE", "AVV"],
+    ["DPCV", "DPCV"], ["AIR CUSHION VALVE", "ACV"], ["PRESSURE REDUCING VALVE", "PRV"], ["FLOAT VALVE", "FLV"], ["FOOT VALVE", "FV"],
+    ["Sluice Gate", "SG"], ["", ""],
+  ]) assert.equal(valveTypeCode(t), c);
 });
 
 test("HEAT NO is never editable through the grid", () => {
@@ -105,4 +115,11 @@ test("HEAT NO is never editable through the grid", () => {
 test("updatePhysicalStockField rejects fields outside the allow-list", async () => {
   const res = await updatePhysicalStockField("id", "location", "X", new Set(["remarks"]));
   assert.equal(res.success, false);
+});
+
+test("availableQtyOrder sorts qty > 0 ascending; zero, blank and junk last", () => {
+  const order = ["", "12", null, "3", "1,000", "abc", "0"].sort((a, b) => availableQtyOrder(a) - availableQtyOrder(b));
+  assert.deepEqual(order.slice(0, 3), ["3", "12", "1,000"]);
+  assert.equal(availableQtyOrder("0"), Infinity);
+  assert.equal(availableQtyOrder("abc"), Infinity);
 });
