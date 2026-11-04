@@ -1,6 +1,7 @@
 "use server";
 import { requireAccess } from "@/lib/access";
-import { sendOpenItemsAction } from "./misc";
+import { sendOpenItemsAction, recomputeCastingCosts } from "./misc";
+import type { PcsWgtRow } from "@/lib/pcsWgtUpload";
 import { ERP_CLOSED_STATUSES } from "@/lib/erpItemStatus";
 import { columnAccess } from "@gmd/contract-review/flags";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
@@ -1022,6 +1023,40 @@ export async function selectGMDUpdateBomIdAction(
   } catch (error: any) {
     console.error("Error selecting GMD BOM ID:", error);
     return { success: false, error: error.message || "Failed to select BOM ID." };
+  }
+}
+
+/** Bulk 1 PCS WGT by ERP code, then COST = weight x cast rate is re-persisted. */
+export async function uploadPcsWgtAction(rows: PcsWgtRow[]) {
+  "use server";
+  await requireAccess();
+  try {
+    const valid = rows.filter((r) => typeof r?.erpItemCode === "string" && Number.isFinite(r.pcsWgt) && r.pcsWgt > 0);
+    const existing = await prisma.rawMaterial.findMany({
+      where: { erpItemCode: { in: valid.map((r) => r.erpItemCode) } },
+      select: { id: true, erpItemCode: true },
+    });
+    const byCode = new Map(existing.map((e) => [e.erpItemCode!, e.id]));
+    const matched = valid.filter((r) => byCode.has(r.erpItemCode));
+    for (let i = 0; i < matched.length; i += 200) {
+      await prisma.$transaction(
+        matched.slice(i, i + 200).map((r) =>
+          prisma.rawMaterial.update({ where: { id: byCode.get(r.erpItemCode)! }, data: { pcsWgt: String(r.pcsWgt) } }),
+        ),
+      );
+    }
+    const recomputed = await recomputeCastingCosts();
+    return {
+      success: true,
+      data: {
+        updated: matched.length,
+        notMatched: valid.filter((r) => !byCode.has(r.erpItemCode)).map((r) => r.erpItemCode),
+        recomputed,
+      },
+    };
+  } catch (error: any) {
+    console.error("Error uploading weights:", error);
+    return { success: false, error: error.message || "Failed to upload weights." };
   }
 }
 

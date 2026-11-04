@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback, useEffect, type ReactNode } from "react";
+import { Fragment, useState, useMemo, useRef, useCallback, useEffect, type ReactNode } from "react";
 import { ChevronUp, ChevronDown, ArrowUpDown, Search, RotateCcw, X, Download, Files, FileText, ExternalLink, Copy, Upload, Eye, Paperclip, Trash2, ImageIcon, Check, Highlighter, AlertTriangle, Loader2 } from "lucide-react";
 import GMDUpdateStatusBadge from "./GMDUpdateStatusBadge";
 import { looseIncludes, squish } from "../lib/squish";
@@ -947,7 +947,23 @@ interface GMDUpdateTableProps {
     label: string;
     value: string;
     onChange: (value: string) => void;
+    /** Effective date (yyyy-mm-dd) shown beside the rate. */
+    date?: string;
+    onDateChange?: (value: string) => void;
   }[];
+  /**
+   * Collapsible group rows: rows are ordered by `column` and a clickable
+   * header row (key + `summary`) precedes each run of equal values. Collapsing
+   * a group hides its rows. Independent of `groupByColumn` (rowSpan merging).
+   */
+  rowGroups?: {
+    column: string;
+    summary?: (key: string, rows: unknown[][]) => ReactNode;
+  };
+  /** Ids of rows tinted red (e.g. cost not derivable). */
+  dangerRowIds?: ReadonlySet<string>;
+  /** Row click with the row's id and data (onSelect only gets the page index). */
+  onSelectRow?: (id: string | undefined, row: unknown[]) => void;
   lockedCostIds?: ReadonlySet<string>;
   bomIdOptionsById?: Record<string, string[]>;
   onSelectBomId?: (id: string, bomId: string | null) => void;
@@ -1275,9 +1291,15 @@ castingRateInputs,
   warningTitle,
   duplicateErpHighlight,
   serverMode,
+  rowGroups,
+  dangerRowIds,
+  onSelectRow,
 }: GMDUpdateTableProps) {
   const isControlled = !!filterState;
   const isServer = !!serverMode;
+  const rowGroupIdx = rowGroups ? headers.indexOf(rowGroups.column) : -1;
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
+  const groupKeyOf = (row: unknown[]) => String(row[rowGroupIdx] ?? "").trim() || "(Blank)";
 
   const [sortColumn, setSortColumn] = useState<number | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -1686,12 +1708,16 @@ castingRateInputs,
     const decorated = rows.map((row, i) => ({ row, id: ids[i], i }));
     // Server mode: the page already arrives filtered and sorted.
     if (isServer) return decorated;
-    if (activeSortColumn === null && !isGrouped) return decorated;
+    if (activeSortColumn === null && !isGrouped && rowGroupIdx < 0) return decorated;
     const dir = activeSortDirection === "asc" ? 1 : -1;
     const sortHeader =
       activeSortColumn !== null ? (headers[activeSortColumn] ?? "") : "";
     const isDateSort = activeSortColumn !== null && isDateHeader(sortHeader);
     decorated.sort((a, b) => {
+      if (rowGroupIdx >= 0) {
+        const g = cellCompare(a.row[rowGroupIdx], b.row[rowGroupIdx], 1);
+        if (g !== 0) return g;
+      }
       if (isGrouped) {
         const g = cellCompare(a.row[groupByIdx], b.row[groupByIdx], 1);
         if (g !== 0) return g;
@@ -1722,6 +1748,7 @@ castingRateInputs,
     activeSortDirection,
     isGrouped,
     groupByIdx,
+    rowGroupIdx,
     headers,
     sortByType,
   ]);
@@ -2023,12 +2050,31 @@ castingRateInputs,
     return result;
   }, [rows, ids, headers, categoryOptions, multiFilters, hasActiveFilters, rowPassesFilters, columnUniqueVals, filterOptionsOverride]);
 
+  // Rows per group over the whole filtered set (summaries are not per page).
+  const groupRows = useMemo(() => {
+    const map = new Map<string, unknown[][]>();
+    if (rowGroupIdx < 0) return map;
+    for (const { row } of displayedWithIds) {
+      const key = groupKeyOf(row);
+      const arr = map.get(key);
+      if (arr) arr.push(row);
+      else map.set(key, [row]);
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayedWithIds, rowGroupIdx]);
+
   const paginatedWithIds = useMemo(() => {
     // Server mode hands us exactly one page.
     if (isServer) return filteredWithIds;
+    const visible =
+      rowGroupIdx >= 0 && collapsedGroups.size > 0
+        ? displayedWithIds.filter(({ row }) => !collapsedGroups.has(groupKeyOf(row)))
+        : displayedWithIds;
     const start = (activePage - 1) * pageSize;
-    return displayedWithIds.slice(start, start + pageSize);
-  }, [isServer, displayedWithIds, activePage, pageSize]);
+    return visible.slice(start, start + pageSize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isServer, displayedWithIds, activePage, pageSize, rowGroupIdx, collapsedGroups]);
 
   const { mergedSpans, mergedSkipped } = useMemo(() => {
     const spans = new Map<string, number>();
@@ -2799,10 +2845,11 @@ castingRateInputs,
               <span className="text-[10px] uppercase tracking-wider">
                 Cast Rates
               </span>
-              {castingRateInputs.map(({ key, label, value, onChange }) => (
+              {castingRateInputs.map(({ key, label, value, onChange, date, onDateChange }) => (
                 <label
                   key={key}
                   className="flex items-center gap-1 bg-card border border-border rounded px-1.5 py-0.5 cursor-text"
+                  title={date ? `Rs/kg effective ${date}` : "Rs/kg"}
                 >
                   <span className="text-[9px] text-foreground/80">{label}</span>
                   <input
@@ -2813,6 +2860,15 @@ castingRateInputs,
                     placeholder="0"
                     className="w-14 text-[10px] bg-transparent outline-none text-foreground placeholder:text-foreground/70"
                   />
+                  {onDateChange && (
+                    <input
+                      type="date"
+                      value={date ?? ""}
+                      onChange={(e) => onDateChange(e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-24 text-[10px] bg-transparent outline-none text-foreground/80"
+                    />
+                  )}
                 </label>
               ))}
             </div>
@@ -3462,17 +3518,54 @@ castingRateInputs,
               paginatedWithIds.map(({ row, id }, idx) => {
                 const isWarned = !!id && !!warningRowIds?.has(id);
                 const isDuplicate = duplicateRowSet.has(row);
+                const isDanger = !!id && !!dangerRowIds?.has(id);
+                const groupKey = rowGroupIdx >= 0 ? groupKeyOf(row) : null;
+                const startsGroup =
+                  groupKey !== null &&
+                  (idx === 0 || groupKeyOf(paginatedWithIds[idx - 1].row) !== groupKey);
                 return (
+                <Fragment key={id ?? idx}>
+                {startsGroup && (
+                  <tr
+                    className="bg-muted/70 cursor-pointer select-none hover:bg-muted"
+                    onClick={() =>
+                      setCollapsedGroups((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(groupKey)) next.delete(groupKey);
+                        else next.add(groupKey);
+                        return next;
+                      })
+                    }
+                  >
+                    <td
+                      colSpan={visibleCols.length + (onDeleteRow ? 1 : 0)}
+                      className="px-3 py-1.5 text-xs font-bold text-foreground border-y border-border"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        {collapsedGroups.has(groupKey) ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
+                        <span>{groupKey}</span>
+                        <span className="font-normal text-muted-foreground">
+                          {rowGroups?.summary?.(groupKey, groupRows.get(groupKey) ?? []) ??
+                            `${groupRows.get(groupKey)?.length ?? 0} items`}
+                        </span>
+                      </span>
+                    </td>
+                  </tr>
+                )}
                 <tr
-                  key={id ?? idx}
                   className={`transition-colors cursor-pointer ${
                     selectedIndex === idx
                       ? "bg-blue-50 dark:bg-blue-500/10"
+                      : isDanger
+                        ? "bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20"
                       : isDuplicate
                         ? "bg-yellow-100 dark:bg-[color-mix(in_oklab,var(--card),var(--color-amber-600)_32%)] hover:bg-yellow-200 dark:hover:bg-[color-mix(in_oklab,var(--card),var(--color-amber-600)_44%)]"
                         : "hover:bg-muted/60"
                   }`}
-                  onClick={() => onSelect(idx)}
+                  onClick={() => {
+                    onSelect(idx);
+                    onSelectRow?.(id, row);
+                  }}
                 >
                   {visibleCols.map((col, visIdx) => {
                     const { header, idx: cellIdx, group } = col;
@@ -3691,6 +3784,7 @@ castingRateInputs,
                     </td>
                   )}
                 </tr>
+                </Fragment>
                 );
               })
             )}

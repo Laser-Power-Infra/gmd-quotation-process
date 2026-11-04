@@ -1,6 +1,7 @@
 import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { proposeMissingBoms } from "@/lib/bomChange";
 import { sheets as googleSheets } from "@googleapis/sheets";
 import { getOAuthClient } from "@/lib/googleAuth";
 import {
@@ -173,9 +174,13 @@ export async function POST() {
       `Upserted ${upserted} BomItem(s) from sheet "${SHEET_NAME}"`,
     );
 
+    // Items quoted / ordered that still have no open BOM get a CREATE proposal.
+    const proposals = await proposeMissingBoms("bom/sync");
+
     return NextResponse.json({
       count: upserted,
       totalInSheet: mapped.length,
+      proposed: proposals.proposed,
       syncedAt: new Date().toISOString(),
     });
   } catch (error) {

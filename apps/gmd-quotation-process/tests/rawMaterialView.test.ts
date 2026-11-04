@@ -26,7 +26,11 @@ test("itemToRow is cached per item identity and inserts derived name + cBatch", 
   const row = itemToRow(a);
   assert.equal(itemToRow(a), row);
   assert.equal(row[2], "NAME");
-  assert.equal(row[row.length - 1], "C");
+  // Tail: cBatch, then the derived Major Heads and cost basis.
+  assert.equal(row[row.length - 4], "C");
+  assert.equal(row[row.length - 3], "UNCLASSIFIED");
+  assert.equal(row[row.length - 2], "UNCLASSIFIED");
+  assert.equal(row[row.length - 1], "Missing");
   assert.notEqual(itemToRow({ ...a }), row);
 });
 

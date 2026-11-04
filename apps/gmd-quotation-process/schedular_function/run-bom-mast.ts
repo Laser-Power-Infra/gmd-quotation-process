@@ -15,6 +15,7 @@
 
 import { runBomMastErpSync, type BomMastSyncResult } from "./bom-mast-sync";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { proposeMissingBoms } from "@/lib/bomChange";
 
 export type JobName = "bom-mast";
 
@@ -25,6 +26,8 @@ export type ScheduledBomMastResult = {
   elapsedMs: number;
   steps: {
     bomMast?: BomMastSyncResult;
+    /** CREATE proposals for quoted / ordered items without an open BOM. */
+    bomPropose?: { proposed: number; failed: number };
   };
 };
 
@@ -46,6 +49,9 @@ export async function runScheduledBomMast(): Promise<ScheduledBomMastResult> {
     console.log(`\n########## [SCHEDULER] ${job} start ${startedAt} ##########`);
 
     steps.bomMast = await runBomMastErpSync();
+    // Never throws; runs after the sheet sync so a BOM the sheet just added is
+    // not proposed again.
+    steps.bomPropose = await proposeMissingBoms(job);
 
     const elapsedMs = Date.now() - startedAtMs;
 

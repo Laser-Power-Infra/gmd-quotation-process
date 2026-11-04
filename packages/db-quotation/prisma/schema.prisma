@@ -527,11 +527,39 @@ model Bom {
   // Materials / FullItems consumed by this BOM
   components BomItem[]
   supplyHistoryLinks SupplyHistoryBomLink[]
+  // Set when an approved BomChange reopened a BOM that BOM MAST ERP had closed
+  // (TO_DATE). The TO_DATE -> NO USE marking skips such BOMs.
+  reopenedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([fullItemId])
+}
+
+// A proposed change to a BOM, routed Draft -> Submitted -> Approved (admin or
+// developer). Approving applies it to Bom/BomItem; the rows are the history.
+// `lines` is [{ code, qty }] - the complete wanted component list for EDIT,
+// REOPEN and CREATE; ignored for CLOSE.
+model BomChange {
+  id          String    @id @default(cuid())
+  kind        String // EDIT | CLOSE | REOPEN | CREATE
+  status      String    @default("DRAFT") // DRAFT | SUBMITTED | APPROVED | REJECTED
+  bomId       String? // Bom.bomId being changed (null for CREATE)
+  itemCode    String // owning FullItem.itemCode
+  lines       Json
+  note        String?
+  // MANUAL | DOCKET:<docket no> | CONTRACT:<contract no> (why it was proposed)
+  source      String?
+  createdBy   String?
+  submittedAt DateTime?
+  approvedBy  String?
+  approvedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([itemCode])
 }
 
 model BomItem {

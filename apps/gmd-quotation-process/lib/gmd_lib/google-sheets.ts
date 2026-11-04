@@ -118,7 +118,13 @@ export async function fetchGMDUpdateSheet(): Promise<{
 
   const columnMap = buildColumnMap(rawHeaders);
   const headers = CANONICAL_COLUMNS;
-  const rows = rawRows.map((row) => columnMap.map((idx) => (idx >= 0 ? row[idx] : null)));
+  // A cell that repeats its own header (a pasted header row, or header text
+  // dragged into a data row) is not data.
+  const isHeaderText = (v: unknown, idx: number) =>
+    idx >= 0 && String(v ?? "").trim().toUpperCase() === rawHeaders[idx].trim().toUpperCase();
+  const rows = rawRows.map((row) =>
+    columnMap.map((idx) => (idx >= 0 && !isHeaderText(row[idx], idx) ? row[idx] : null)),
+  );
 
   return { headers, rows };
 }

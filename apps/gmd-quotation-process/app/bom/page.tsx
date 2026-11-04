@@ -22,6 +22,17 @@ import {
 import { Input } from "@gmd/ui/components/input";
 import { looseIncludes } from "@/lib/squish";
 import ErpBomTab from "./ErpBomTab";
+import BomChangesTab from "./BomChangesTab";
+import BomChangeDialog, { type BomChangeDraft } from "./BomChangeDialog";
+import { markCorrectBomAction } from "@/app/actions/bomChange";
+import {
+  BOM_ISSUES_HEADER,
+  BOM_MISMATCH_HEADER,
+  BOM_TYPE_HEADER,
+  FLAG_YES,
+  MULTI_OPEN_BOM_HEADER,
+  OPEN_BOMS_HEADER,
+} from "@/lib/bomColumns";
 
 type ItemNamePlan = {
   phase1: {
@@ -102,11 +113,12 @@ const GROUPED_PARENT_HEADERS = [
   "CONSUMPTION 3",
 ];
 
-const GROUPED_BOM_HEADERS = ["BOM ID", "BOM COST", "BOM ID TYPE", "BOM ITEM QTY"];
+const GROUPED_BOM_HEADERS = ["BOM ID", BOM_TYPE_HEADER, OPEN_BOMS_HEADER, "BOM COST", "BOM ID TYPE", "BOM ITEM QTY"];
 
 const GROUPED_DETAIL_HEADERS = [
   "RM ITEM CODE",
   "RM ITEM NAME",
+  BOM_ISSUES_HEADER,
   "USE/NO USE",
   "AVAILABLE STOCK",
   "COST",
@@ -118,11 +130,37 @@ const GROUPED_MERGE_COLUMNS = [
   ...GROUPED_BOM_HEADERS,
 ];
 
+// Hidden YES/blank flags behind the quick filters and row tints.
+const GROUPED_FLAG_HEADERS = [MULTI_OPEN_BOM_HEADER, BOM_MISMATCH_HEADER];
+
 const GROUPED_HEADER_ORDER = [
   ...GROUPED_PARENT_HEADERS,
   ...GROUPED_BOM_HEADERS,
   ...GROUPED_DETAIL_HEADERS,
+  ...GROUPED_FLAG_HEADERS,
 ];
+
+const GROUPED_BATCH_FILTERS = [
+  {
+    key: "multiOpen",
+    label: "Multiple open BOMs",
+    column: MULTI_OPEN_BOM_HEADER,
+    value: FLAG_YES,
+    title: "Item codes with more than one open BOM - mark one as correct",
+  },
+  {
+    key: "mismatch",
+    label: "Size/PN/type mismatch",
+    column: BOM_MISMATCH_HEADER,
+    value: FLAG_YES,
+    title: "Parent vs child size, MOC, PN or valve type differ (CI->DI substitution is info only)",
+  },
+];
+
+const GROUP_MODES = [
+  { key: "item", label: "Item code" },
+  { key: "type", label: "BOM TYPE" },
+] as const;
 
 interface BomData {
   headers: string[];
@@ -206,6 +244,7 @@ function FilterDropdown({
 
 const TABS = [
   { key: "verify", label: "Verify BOM" },
+  { key: "changes", label: "BOM Changes" },
   { key: "erp", label: "ERP BOM" },
 ] as const;
 
@@ -235,6 +274,10 @@ export default function BomPage() {
         <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
           <ErpBomTab />
         </main>
+      ) : tab === "changes" ? (
+        <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <BomChangesTab />
+        </main>
       ) : (
         <VerifyBomView />
       )}
@@ -257,6 +300,9 @@ function VerifyBomView() {
   const [selectedGroupedIndex, setSelectedGroupedIndex] = useState<
     number | null
   >(null);
+  const [selectedRow, setSelectedRow] = useState<unknown[] | null>(null);
+  const [groupMode, setGroupMode] = useState<(typeof GROUP_MODES)[number]["key"]>("item");
+  const [changeDraft, setChangeDraft] = useState<BomChangeDraft | null>(null);
   const [search, setSearch] = useState<Record<SearchKey, string>>({
     itemCode: "",
     itemName: "",
@@ -657,6 +703,79 @@ function VerifyBomView() {
     };
   }, [visibleData]);
 
+  // Row tints: red for a hard parent/child mismatch, warning triangle on BOM ID
+  // when the item code has more than one open BOM.
+  const { mismatchIds, multiOpenIds } = useMemo(() => {
+    const mIdx = GROUPED_HEADER_ORDER.indexOf(BOM_MISMATCH_HEADER);
+    const oIdx = GROUPED_HEADER_ORDER.indexOf(MULTI_OPEN_BOM_HEADER);
+    const mismatchIds = new Set<string>();
+    const multiOpenIds = new Set<string>();
+    groupedData.rows.forEach((row, i) => {
+      if (row[mIdx] === FLAG_YES) mismatchIds.add(groupedData.ids[i]);
+      if (row[oIdx] === FLAG_YES) multiOpenIds.add(groupedData.ids[i]);
+    });
+    return { mismatchIds, multiOpenIds };
+  }, [groupedData]);
+
+  const rowGroups = useMemo(() => {
+    if (groupMode !== "type") return undefined;
+    const bomIdx = GROUPED_HEADER_ORDER.indexOf("BOM ID");
+    const codeIdx = GROUPED_HEADER_ORDER.indexOf("ITEM CODE");
+    const mIdx = GROUPED_HEADER_ORDER.indexOf(BOM_MISMATCH_HEADER);
+    return {
+      column: BOM_TYPE_HEADER,
+      summary: (_key: string, rows: unknown[][]) => {
+        const boms = new Set(rows.map((r) => String(r[bomIdx] ?? "")).filter(Boolean));
+        const items = new Set(rows.map((r) => String(r[codeIdx] ?? "")).filter(Boolean));
+        const bad = rows.filter((r) => r[mIdx] === FLAG_YES).length;
+        return `${boms.size} BOMs · ${items.size} item codes · ${rows.length} lines · ${bad} mismatch`;
+      },
+    };
+  }, [groupMode]);
+
+  // What the selected row stands for, with every line of its BOM, so the
+  // change dialog opens pre-filled.
+  const selection = useMemo(() => {
+    if (!selectedRow) return null;
+    const h = GROUPED_HEADER_ORDER;
+    const cell = (row: unknown[], name: string) => String(row[h.indexOf(name)] ?? "").trim();
+    const itemCode = cell(selectedRow, "ITEM CODE");
+    const bomId = cell(selectedRow, "BOM ID");
+    const itemName = cell(selectedRow, "ITEM NAME");
+    const lines = bomId
+      ? groupedData.rows
+          .filter((r) => cell(r, "BOM ID") === bomId && cell(r, "RM ITEM CODE"))
+          .map((r) => ({ code: cell(r, "RM ITEM CODE"), qty: Number(cell(r, "BOM ITEM QTY")) || 1, open: cell(r, "USE/NO USE") !== "NO USE" }))
+      : [];
+    const closed = lines.length > 0 && lines.every((l) => !l.open);
+    const multiOpen = cell(selectedRow, MULTI_OPEN_BOM_HEADER) === FLAG_YES;
+    return { itemCode, bomId, itemName, lines, closed, multiOpen };
+  }, [selectedRow, groupedData]);
+
+  const openChange = useCallback(
+    (kind: BomChangeDraft["kind"]) => {
+      if (!selection) return;
+      const lines =
+        kind === "REOPEN" ? selection.lines : selection.lines.filter((l) => l.open);
+      setChangeDraft({
+        kind,
+        bomId: kind === "CREATE" ? null : selection.bomId,
+        itemCode: selection.itemCode,
+        itemName: selection.itemName,
+        lines: lines.map(({ code, qty }) => ({ code, qty })),
+      });
+    },
+    [selection],
+  );
+
+  const handleMarkCorrect = useCallback(async () => {
+    if (!selection?.bomId) return;
+    const toastId = toast.loading("Raising close requests for the other open BOMs...");
+    const res = await markCorrectBomAction(selection.itemCode, selection.bomId);
+    if (!res.success) toast.error(res.error, { id: toastId });
+    else toast.success(`${res.created} close request(s) submitted - see BOM Changes`, { id: toastId });
+  }, [selection]);
+
   const handleCellUpdate = useCallback(
     async (id: string, colIndex: number, value: string) => {
       if (!data) return;
@@ -904,19 +1023,61 @@ function VerifyBomView() {
             cellBadges={ITEM_CODE_BADGES}
           />
           */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-muted-foreground">Group by:</span>
+            {GROUP_MODES.map((g) => (
+              <button
+                key={g.key}
+                type="button"
+                onClick={() => setGroupMode(g.key)}
+                className={`rounded border px-2 py-1 ${
+                  groupMode === g.key
+                    ? "border-primary bg-primary/10 text-primary font-semibold"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {g.label}
+              </button>
+            ))}
+            <span className="ml-auto text-muted-foreground">
+              {selection ? `${selection.itemCode}${selection.bomId ? ` · ${selection.bomId}` : " · no BOM"}` : "Select a row to act on it"}
+            </span>
+            <Button size="sm" variant="outline" disabled={!selection?.bomId || selection.closed} onClick={() => openChange("EDIT")} title="Correct child codes / qty of this BOM (goes through approval)">
+              Edit BOM
+            </Button>
+            <Button size="sm" variant="outline" disabled={!selection?.bomId || !selection.closed} onClick={() => openChange("REOPEN")} title="Reuse this closed BOM: reopen it with corrected lines instead of creating a new BOM ID">
+              Reopen + correct
+            </Button>
+            <Button size="sm" variant="outline" disabled={!selection?.bomId || !selection.multiOpen} onClick={handleMarkCorrect} title="Keep this BOM; raise close requests for the item's other open BOMs">
+              Mark as correct
+            </Button>
+            <Button size="sm" variant="outline" disabled={!selection?.itemCode} onClick={() => openChange("CREATE")} title="Propose a new BOM for this item code">
+              Create BOM
+            </Button>
+          </div>
           <GMDUpdateTable
             headers={groupedData.headers}
             rows={groupedData.rows}
             ids={groupedData.ids}
             selectedIndex={selectedGroupedIndex}
             onSelect={setSelectedGroupedIndex}
-            title="Verify BOM — grouped by ITEM CODE"
+            onSelectRow={(_id, row) => setSelectedRow(row)}
+            title={groupMode === "type" ? "Verify BOM — grouped by BOM TYPE" : "Verify BOM — grouped by ITEM CODE"}
             groupByColumn="ITEM CODE"
             mergeColumns={GROUPED_MERGE_COLUMNS}
+            rowGroups={rowGroups}
+            hiddenColumns={GROUPED_FLAG_HEADERS}
+            batchFilterHeader="ITEM CODE"
+            batchPresenceFilters={GROUPED_BATCH_FILTERS}
+            dangerRowIds={mismatchIds}
+            warningRowIds={multiOpenIds}
+            warningColumn="BOM ID"
+            warningTitle="More than one open BOM for this item code"
             diffHighlight={{ columns: ["ITEM NAME", "NEW ITEM NAME"], tone:"amber" }}
             fullHeight
           />
-        </div> 
+          <BomChangeDialog draft={changeDraft} onClose={() => setChangeDraft(null)} onSaved={() => {}} />
+        </div>
         <Dialog open={confirmItemName} onOpenChange={setConfirmItemName}>
           <DialogContent className="sm:max-w-130 max-h-[85vh] overflow-y-auto">
             <DialogHeader>

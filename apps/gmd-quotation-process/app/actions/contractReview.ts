@@ -1411,7 +1411,16 @@ export async function syncBomMastItemNamesAction() {
     let marked = 0;
     let created = 0;
 
+    // BOMs reopened through an approved BomChange keep their lines open even
+    // though the sheet still carries a TO_DATE for them.
+    const reopened = new Set(
+      (await prisma.bom.findMany({ where: { reopenedAt: { not: null } }, select: { bomId: true } })).map((b) =>
+        norm(b.bomId),
+      ),
+    );
+
     for (const key of toDateKeys) {
+      if (reopened.has(key.split("||")[0])) continue;
       const existingId = idByKey.get(key);
       if (existingId) {
         updateOps.push(

@@ -5,6 +5,17 @@ import {
   VERIFY_BOM_HEADERS,
   dbVerifyBomToRow,
 } from "@/lib/gmd_lib/verify-bom-columns";
+import { classifyBom, storedTypeDisagrees } from "@/lib/bomClassify";
+import { bomMismatches, isHardIssue } from "@/lib/bomMismatch";
+import {
+  BOM_EXTRA_HEADERS,
+  BOM_TYPE_HEADER,
+  OPEN_BOMS_HEADER,
+  BOM_ISSUES_HEADER,
+  MULTI_OPEN_BOM_HEADER,
+  BOM_MISMATCH_HEADER,
+  FLAG_YES,
+} from "@/lib/bomColumns";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +90,37 @@ export async function GET() {
       ].map((p) => String(p ?? "").trim());
       const merged = parts.some((p) => p === "") ? "" : parts.join("_");
 
+      // BOM TYPE and the duplicate-BOM flag are per BOM / per item; the
+      // mismatch check is per line and only where the child stands in for the
+      // whole valve (an FG code or a TV- trading code).
+      const openBomCount = fullItem.boms.filter((b) =>
+        b.components.some((c) => !c.noUse && (c.rawMaterial || c.fullItem)),
+      ).length;
+      const multiOpen = openBomCount > 1 ? FLAG_YES : "";
+      const typeOf = (bom: BomRow) =>
+        classifyBom(
+          bom.components
+            .filter((c) => c.rawMaterial || c.fullItem)
+            .map((c) => ({
+              code: c.rawMaterial?.erpItemCode ?? c.fullItem?.itemCode ?? "",
+              name: c.rawMaterial?.itemNameAuto ?? c.fullItem?.itemName ?? null,
+              isFullItem: !!c.fullItem,
+              open: !c.noUse,
+            })),
+        );
+      const extras = (bom: BomRow | null, issues: string[]) => {
+        const type = bom ? typeOf(bom) : "";
+        if (bom && storedTypeDisagrees(type as never, bom.bomIdType))
+          issues = [...issues, `ID TYPE ${bom.bomIdType} stored`];
+        return [
+          type,
+          bom ? String(openBomCount) : "0",
+          issues.join("; "),
+          multiOpen,
+          issues.some(isHardIssue) ? FLAG_YES : "",
+        ];
+      };
+
       const pushParentOnly = (bom: BomRow | null) => {
         const bomCost =
           bom?.bomCost != null
@@ -98,7 +140,7 @@ export async function GET() {
           bomItemQtyCost: null,
           merged,
         });
-        rows.push([...row, bomCost]);
+        rows.push([...row, bomCost, ...extras(bom, [])]);
         ids.push(bom ? `bom:${bom.id}` : `item:${fullItem.id}`);
         touch(fullItem.updatedAt);
         if (bom) touch(bom.updatedAt);
@@ -153,7 +195,16 @@ export async function GET() {
             merged,
           });
 
-          rows.push([...row, bomCost]);
+          const wholeValve = !!compFull || /^TV-/i.test(code) || /^TV-/i.test(String(rm?.itemNameAuto ?? ""));
+          const issues = wholeValve
+            ? bomMismatches(
+                { name: parent.itemName, size: parent.size, moc: parent.moc, pn: parent.pnGmd },
+                rm
+                  ? { name: rm.itemNameAuto, size: rm.l3Dia, moc: rm.l5Material }
+                  : { name: compFull?.itemName, size: compFull?.size, moc: compFull?.moc, pn: compFull?.pnGmd },
+              )
+            : [];
+          rows.push([...row, bomCost, ...extras(bom, issues)]);
           ids.push(c.id);
           emitted++;
 
@@ -167,7 +218,7 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      headers: [...VERIFY_BOM_HEADERS, "BOM COST"],
+      headers: [...VERIFY_BOM_HEADERS, "BOM COST", ...BOM_EXTRA_HEADERS],
       rows,
       ids,
       totalRows: rows.length,

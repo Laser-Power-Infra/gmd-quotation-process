@@ -25,11 +25,21 @@ import {
   applyCastingCost,
   computeCardStats,
   computeDuplicateDerivedIds,
+  getCastingKey,
   itemToRow,
   matchesNewItemsTableFilters,
   matchesSidebarItem,
+  summarizeGroup,
   type CastingKey,
 } from "@/lib/gmd_lib/rawMaterialView";
+import {
+  COST_BASIS,
+  COST_BASIS_HEADER,
+  MAJOR_HEAD_ITEM_TYPE_HEADER,
+  MAJOR_HEAD_VALVE_TYPE_HEADER,
+  UNCLASSIFIED_HEAD,
+  costBasisOf,
+} from "@/lib/gmd_lib/majorHead";
 import {
   FIXED_DROPDOWN_OPTIONS,
   CANONICAL_COLUMNS,
@@ -39,7 +49,7 @@ import {
 } from "@/lib/gmd_lib/sheet-columns";
 import { buildLCascade } from "@gmd/dashboard/lib/lCascade";
 import { C_BATCH_HEADER, cBatchBadges, cBatchFilter } from "@/lib/gmd_lib/verify-bom-columns";
-import { getUsdInrRateAction, setGMDUpdateTransferredAction, addTransferredBlankItemsAction, importTransferredExcelAction, transferFilteredByCodeAction, getTradingValveOptionsAction, getTransferCostMatchProposalsAction, applyTransferCostMatchAction, uploadSupplierRatesAction, type TransferCostMatchProposal } from "@/app/actions/gmdUpdate";
+import { getUsdInrRateAction, setGMDUpdateTransferredAction, addTransferredBlankItemsAction, importTransferredExcelAction, transferFilteredByCodeAction, getTradingValveOptionsAction, getTransferCostMatchProposalsAction, applyTransferCostMatchAction, uploadSupplierRatesAction, uploadPcsWgtAction, type TransferCostMatchProposal } from "@/app/actions/gmdUpdate";
 import { getGMDCastingRatesAction, saveGMDCastingRateAction } from "@/app/actions/misc";
 import TransferCostMatchDialog from "../../components/gmd_dashboard/TransferCostMatchDialog";
 import { toast } from "sonner";
@@ -99,7 +109,30 @@ function isMoveToNewItemsStatus(value: string | null): boolean {
 }
 
 // Stable descriptor list so GMDUpdateTable's row predicate keeps a stable dep.
-const RAW_MATERIAL_BATCH_FILTERS = [cBatchFilter()];
+const RAW_MATERIAL_BATCH_FILTERS = [
+  cBatchFilter(),
+  {
+    key: "unclassified",
+    label: "Unclassified",
+    column: MAJOR_HEAD_ITEM_TYPE_HEADER,
+    value: UNCLASSIFIED_HEAD,
+    title: "Review queue: L8 blank or not in the Major Head mapping",
+  },
+  {
+    key: "weightMissing",
+    label: "Weight missing",
+    column: COST_BASIS_HEADER,
+    value: COST_BASIS.weightMissing,
+    title: "Castings with no 1 PCS WGT - cost not derivable",
+  },
+];
+
+const GROUP_BY_OPTIONS = [
+  { key: "none", label: "No grouping", column: null },
+  { key: "item", label: "Item Type head", column: MAJOR_HEAD_ITEM_TYPE_HEADER },
+  { key: "valve", label: "Valve Type head", column: MAJOR_HEAD_VALVE_TYPE_HEADER },
+] as const;
+type GroupByKey = (typeof GROUP_BY_OPTIONS)[number]["key"];
 
 // Static table props, hoisted so every render hands GMDUpdateTable the same
 // references and its filter/option memos aren't invalidated by parent renders.
@@ -145,8 +178,11 @@ function rowToGMDUpdateItem(
   row: unknown[],
   cBatchIdx: number,
   costMerged = false,
+  headIdx: { item: number; valve: number } = { item: -1, valve: -1 },
 ): GMDUpdateRow {
   return {
+    majorHeadItemType: headIdx.item >= 0 ? String(row[headIdx.item] ?? "") : null,
+    majorHeadValveType: headIdx.valve >= 0 ? String(row[headIdx.valve] ?? "") : null,
     id,
     erpItemCode: String(row[0] ?? ""),
     itemNameAuto: String(row[1] ?? ""),
@@ -265,6 +301,10 @@ export default function Home() {
     MS: "",
     GI: "",
   });
+  const [castingRateDates, setCastingRateDates] = useState<Record<string, string>>({});
+  // fetchData is defined further down; the rate-save timer reaches it through this ref.
+  const fetchDataRef = useRef<() => Promise<void>>(async () => {});
+  const [groupBy, setGroupBy] = useState<GroupByKey>("none");
   const saveRateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [transferredIds, setTransferredIds] = useState<string[]>([]);
   const [pasteDraft, setPasteDraft] = useState("");
@@ -280,18 +320,42 @@ export default function Home() {
     storage: layoutStorage,
   });
 
-  const handleCastingRateChange = useCallback((key: string, value: string) => {
-    setCastingRates((prev) => ({ ...prev, [key]: value }));
-    if (saveRateTimer.current) clearTimeout(saveRateTimer.current);
-    saveRateTimer.current = setTimeout(() => {
-      saveGMDCastingRateAction(key, value);
-    }, 600);
-  }, []);
+  // Saving a rate re-persists COST = weight x rate on the server, so the
+  // catalogue is refetched afterwards to show the stored figures.
+  const saveCastingRate = useCallback(
+    (key: string, value: string, from?: string) => {
+      if (saveRateTimer.current) clearTimeout(saveRateTimer.current);
+      saveRateTimer.current = setTimeout(async () => {
+        const res = await saveGMDCastingRateAction(key, value, from);
+        if (!res.success) toast.error(res.error || "Failed to save cast rate");
+        else if (res.recomputed) {
+          toast.success(`${key} rate saved - ${res.recomputed} casting cost${res.recomputed === 1 ? "" : "s"} updated`);
+          void fetchDataRef.current();
+        }
+      }, 600);
+    },
+    [],
+  );
+  const handleCastingRateChange = useCallback(
+    (key: string, value: string) => {
+      setCastingRates((prev) => ({ ...prev, [key]: value }));
+      saveCastingRate(key, value);
+    },
+    [saveCastingRate],
+  );
+  const handleCastingDateChange = useCallback(
+    (key: string, date: string) => {
+      setCastingRateDates((prev) => ({ ...prev, [key]: date }));
+      saveCastingRate(key, castingRates[key as CastingKey] ?? "", date);
+    },
+    [saveCastingRate, castingRates],
+  );
 
   useEffect(() => {
     getGMDCastingRatesAction().then((res) => {
       if (res.success && res.data) {
         setCastingRates((prev) => ({ ...prev, ...res.data }));
+        if (res.dates) setCastingRateDates(res.dates);
       }
     });
   }, []);
@@ -325,8 +389,10 @@ export default function Home() {
         label: key,
         value: castingRates[key],
         onChange: (value: string) => handleCastingRateChange(key, value),
+        date: castingRateDates[key] ?? "",
+        onDateChange: (date: string) => handleCastingDateChange(key, date),
       })),
-    [castingRates, handleCastingRateChange],
+    [castingRates, castingRateDates, handleCastingRateChange, handleCastingDateChange],
   );
 
   const applyUsdRate = useCallback(
@@ -422,6 +488,8 @@ export default function Home() {
     }
   }, [loadTradingValveOptions]);
 
+  fetchDataRef.current = fetchData;
+
   const handleSync = useCallback(async () => {
     setSyncing(true);
     setError(null);
@@ -464,6 +532,10 @@ export default function Home() {
         )
         .map(({ i }) => i);
       const cBatchIdx = (data.headers ?? []).indexOf(C_BATCH_HEADER);
+      const headIdx = {
+        item: (data.headers ?? []).indexOf(MAJOR_HEAD_ITEM_TYPE_HEADER),
+        valve: (data.headers ?? []).indexOf(MAJOR_HEAD_VALVE_TYPE_HEADER),
+      };
       const costMergedIdSet = new Set(data.costMergedIds ?? []);
       const items = validIndices.map((i) =>
         rowToGMDUpdateItem(
@@ -471,6 +543,7 @@ export default function Home() {
           data.rows[i],
           cBatchIdx,
           costMergedIdSet.has(data.ids[i]),
+          headIdx,
         ),
       );
       dispatch(hydrateGMDUpdate(items));
@@ -531,6 +604,37 @@ export default function Home() {
   const duplicateDerivedIds = useMemo(
     () => computeDuplicateDerivedIds(allItems),
     [allItems],
+  );
+  // Castings with no 1 PCS WGT: cost cannot be derived, shown red.
+  const weightMissingIds = useMemo(
+    () =>
+      new Set(
+        allItems
+          .filter(
+            (it) =>
+              costBasisOf(
+                getCastingKey(it.l8ItemCategory ?? "", it.l5Material ?? "") !== null,
+                it.pcsWgt,
+                it.cost,
+              ) === COST_BASIS.weightMissing,
+          )
+          .map((it) => it.id),
+      ),
+    [allItems],
+  );
+  const groupColumn = GROUP_BY_OPTIONS.find((g) => g.key === groupBy)?.column ?? null;
+  const rowGroups = useMemo(
+    () =>
+      groupColumn
+        ? {
+            column: groupColumn,
+            summary: (_key: string, rows: unknown[][]) => {
+              const s = summarizeGroup(rows, headers);
+              return `${s.count} items · stock ₹${s.stockValue.toLocaleString("en-IN", { maximumFractionDigits: 0 })} · blank cost ${s.blankCost} · weight missing ${s.weightMissing} · blank HSN ${s.blankHsn}`;
+            },
+          }
+        : undefined,
+    [groupColumn, headers],
   );
 
   const processedCost = useMemo(
@@ -936,6 +1040,50 @@ export default function Home() {
     unchanged: number;
   } | null>(null);
   const supplierFileRef = useRef<HTMLInputElement>(null);
+  const pcsWgtFileRef = useRef<HTMLInputElement>(null);
+
+  const handleDownloadPcsWgtTemplate = useCallback(async () => {
+    const XLSX = await import("xlsx");
+    const { PCS_WGT_HEADERS } = await import("@/lib/pcsWgtUpload");
+    // Pre-filled with the castings still missing a weight, so the sheet sent out is the review list.
+    const rows = allItems
+      .filter((it) => weightMissingIds.has(it.id))
+      .map((it) => [it.erpItemCode, "", it.itemNameAuto, it.l5Material]);
+    const ws = XLSX.utils.aoa_to_sheet([[...PCS_WGT_HEADERS, "Item Name", "L5 Material"], ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "1 PCS WGT");
+    XLSX.writeFile(wb, "pcs-weight-template.xlsx");
+  }, [allItems, weightMissingIds]);
+
+  const handleUploadPcsWgt = useCallback(
+    async (file: File) => {
+      const toastId = toast.loading("Reading weights...");
+      try {
+        const { parsePcsWgtFile } = await import("@/lib/pcsWgtUpload");
+        const { weights, errors } = parsePcsWgtFile(await file.arrayBuffer());
+        if (!weights.length) {
+          toast.error(errors[0]?.message ?? "No weights found in the sheet.", { id: toastId });
+          return;
+        }
+        const res = await uploadPcsWgtAction(weights);
+        if (!res.success || !res.data) {
+          toast.error(res.error || "Failed to upload weights.", { id: toastId });
+          return;
+        }
+        const { updated, notMatched, recomputed } = res.data;
+        toast.success(
+          `${updated} weight${updated === 1 ? "" : "s"} saved, ${recomputed} cost${recomputed === 1 ? "" : "s"} recomputed` +
+            (notMatched.length ? `, ${notMatched.length} code${notMatched.length === 1 ? "" : "s"} not in master` : "") +
+            (errors.length ? `, ${errors.length} row${errors.length === 1 ? "" : "s"} skipped` : ""),
+          { id: toastId, duration: 8000 },
+        );
+        void fetchData();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to read Excel file.", { id: toastId });
+      }
+    },
+    [fetchData],
+  );
 
   const handleDownloadSupplierTemplate = useCallback(async () => {
     const XLSX = await import("xlsx");
@@ -1105,8 +1253,15 @@ export default function Home() {
   }, [newItems, headers, columnFilters, multiFilters, globalSearch, batchFilters]);
 
   const cardStats = useMemo(
-    () => computeCardStats(sidebarBaseRows, headers, indianImported, majorFilter),
-    [sidebarBaseRows, headers, indianImported, majorFilter],
+    () =>
+      computeCardStats(
+        sidebarBaseRows,
+        headers,
+        indianImported,
+        majorFilter,
+        groupBy === "valve" ? MAJOR_HEAD_VALVE_TYPE_HEADER : MAJOR_HEAD_ITEM_TYPE_HEADER,
+      ),
+    [sidebarBaseRows, headers, indianImported, majorFilter, groupBy],
   );
 
   const fmt = (n: number) =>
@@ -1198,12 +1353,31 @@ export default function Home() {
                   {cardStats.total.count} item
                   {cardStats.total.count === 1 ? "" : "s"}
                 </span>
+                {cardStats.unlabeled.count > 0 && (
+                  <span className="block text-[10px] font-medium text-amber-300 mt-0.5">
+                    incl. {cardStats.unlabeled.count} not marked Indian/Imported (₹{fmt(cardStats.unlabeled.sum)})
+                  </span>
+                )}
                 {Math.abs(totalDiff) > 0.005 && (
                   <span className="block text-[10px] font-medium text-amber-300 mt-0.5">
                     ≠ Major+Minor by ₹{fmt(Math.abs(totalDiff))}
                   </span>
                 )}
               </div>
+
+              {cardStats.byHead.length > 0 && (
+                <div className="w-full bg-white/5 border border-white/10 rounded-lg p-3">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60 mb-1">
+                    By Major Head ({groupBy === "valve" ? "Valve Type" : "Item Type"})
+                  </span>
+                  {cardStats.byHead.map((h) => (
+                    <div key={h.head} className="flex justify-between gap-2 text-[10px] text-white/80 py-0.5">
+                      <span className="truncate" title={h.head}>{h.head}</span>
+                      <span className="shrink-0 tabular-nums">{fmt(h.sum)} <span className="text-white/50">({h.count})</span></span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <button
                 type="button"
@@ -1306,6 +1480,42 @@ export default function Home() {
           <ResizablePanel id="content" minSize="40%">
             <div className="flex h-full flex-col min-h-0 min-w-0">
               <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+                <div role="radiogroup" aria-label="Group rows by" className="mr-auto flex items-center gap-1 text-xs">
+                  <span className="text-muted-foreground">Group:</span>
+                  {GROUP_BY_OPTIONS.map((g) => (
+                    <button
+                      key={g.key}
+                      type="button"
+                      role="radio"
+                      aria-checked={groupBy === g.key}
+                      onClick={() => setGroupBy(g.key)}
+                      className={`rounded border px-2 py-1 ${
+                        groupBy === g.key
+                          ? "border-primary bg-primary/10 text-primary font-semibold"
+                          : "border-border text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+                <Button type="button" size="sm" variant="outline" onClick={handleDownloadPcsWgtTemplate}>
+                  Download weight template
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => pcsWgtFileRef.current?.click()}>
+                  Upload 1 PCS WGT
+                </Button>
+                <input
+                  ref={pcsWgtFileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (f) void handleUploadPcsWgt(f);
+                  }}
+                />
                 <Button type="button" size="sm" variant="outline" onClick={handleDownloadSupplierTemplate}>
                   Download supplier price template
                 </Button>
@@ -1400,6 +1610,8 @@ export default function Home() {
                     batchPresenceFilters={RAW_MATERIAL_BATCH_FILTERS}
                     warningRowIds={duplicateDerivedIds}
                     warningColumn="ITEM NAME (derived)"
+                    dangerRowIds={weightMissingIds}
+                    rowGroups={rowGroups}
                     fullHeight
                   />
               </div>
@@ -1435,6 +1647,8 @@ export default function Home() {
                     batchPresenceFilters={RAW_MATERIAL_BATCH_FILTERS}
                     warningRowIds={duplicateDerivedIds}
                     warningColumn="ITEM NAME (derived)"
+                    dangerRowIds={weightMissingIds}
+                    rowGroups={rowGroups}
                     fullHeight
                   />
               </div>

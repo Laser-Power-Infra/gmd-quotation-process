@@ -2,6 +2,14 @@ import type { GMDUpdateRow } from "@/lib/gmdUpdateSlice";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
 import { looseIncludes, squish } from "@gmd/dashboard/lib/squish";
 import { C_BATCH_HEADER, C_BATCH_VALUE } from "@/lib/gmd_lib/verify-bom-columns";
+import {
+  COST_BASIS_HEADER,
+  MAJOR_HEAD_ITEM_TYPE_HEADER,
+  MAJOR_HEAD_VALVE_TYPE_HEADER,
+  UNCLASSIFIED_HEAD,
+  COST_BASIS,
+  costBasisOf,
+} from "@/lib/gmd_lib/majorHead";
 
 // Pure helpers behind the Raw Material page: row building, casting costs, the
 // New Items filters, the stock-value sidebar and duplicate detection. Kept out
@@ -22,16 +30,39 @@ export type MajorFilter = "all" | "major" | "minor";
 // own per-row caches (global search text, sort keys) warm.
 const rowCache = new WeakMap<GMDUpdateRow, unknown[]>();
 
-/** The table row for an item: the sheet columns with the derived name inserted and the C-batch flag appended. */
+/**
+ * The table row for an item: the sheet columns with the derived name inserted,
+ * then the C-batch flag, both Major Heads and the cost basis appended (same
+ * order as the /raw_material route's headers).
+ */
 export function itemToRow(item: GMDUpdateRow): unknown[] {
   let row = rowCache.get(item);
   if (!row) {
     const r = dbItemToRow(item);
-    row = [...r.slice(0, 2), item.itemNameDerived, ...r.slice(2), item.cBatch];
+    row = [
+      ...r.slice(0, 2),
+      item.itemNameDerived,
+      ...r.slice(2),
+      item.cBatch,
+      item.majorHeadItemType ?? UNCLASSIFIED_HEAD,
+      item.majorHeadValveType ?? UNCLASSIFIED_HEAD,
+      costBasisOf(
+        getCastingKey(item.l8ItemCategory ?? "", item.l5Material ?? "") !== null,
+        item.pcsWgt,
+        item.cost,
+      ),
+    ];
     rowCache.set(item, row);
   }
   return row;
 }
+
+/** Headers appended after the C-batch column, in row order. */
+export const DERIVED_TAIL_HEADERS = [
+  MAJOR_HEAD_ITEM_TYPE_HEADER,
+  MAJOR_HEAD_VALVE_TYPE_HEADER,
+  COST_BASIS_HEADER,
+];
 
 // ---------------------------------------------------------------------------
 // Casting cost
@@ -49,6 +80,8 @@ export const CASTING_KEYS: CastingKey[] = [
   "GI",
 ];
 
+// Under L8 = CASTING the L5 material alone picks the rate. SS SPARES and
+// BRONZE ITEMS are machined castings and keep their rate too.
 const CASTING_RATE_MATCHERS: {
   key: CastingKey;
   l8: string[];
@@ -58,11 +91,13 @@ const CASTING_RATE_MATCHERS: {
   {
     key: "CS",
     l8: ["CASTING"],
-    l5: ["CARBON STEEL/CAST STEEL", "CARBIDE STEEL"],
+    l5: ["CARBON STEEL/CAST STEEL", "CAST STEEL", "CARBIDE STEEL"],
   },
   { key: "CI", l8: ["CASTING"], l5: ["CAST IRON"] },
-  { key: "SS", l8: ["SS SPARES"], l5: ["STAINLESS STEEL"] },
-  { key: "Bronze", l8: ["BRONZE ITEMS"], l5: ["BRONZE/BRASS/GUN METAL"] },
+  { key: "SS", l8: ["CASTING", "SS SPARES"], l5: ["STAINLESS STEEL"] },
+  { key: "Bronze", l8: ["CASTING", "BRONZE ITEMS"], l5: ["BRONZE/BRASS/GUN METAL"] },
+  { key: "MS", l8: ["CASTING"], l5: ["MILD STEEL"] },
+  { key: "GI", l8: ["CASTING"], l5: ["GALVANISED IRON", "GALVANIZED IRON"] },
 ];
 
 export function getCastingKey(l8: string, l5: string): CastingKey | null {
@@ -214,14 +249,14 @@ export interface CardStats {
   major: { count: number; sum: number };
   minor: { count: number; sum: number };
   /**
-   * Everything the current filters leave on screen. Not `indian + imported`:
-   * a row whose INDIAN/IMPORTED cell is blank or says something else counts in
-   * neither of those, so adding them up understates the stock on hand.
-   *
-   * Unlike the other cards this one excludes no toggle, because it is not one —
-   * it answers "what is the stock I am looking at worth".
+   * Same scope as the Indian/Imported cards (the Indian toggle excluded), so
+   * Indian + Imported + unlabeled = Total always holds. `unlabeled` counts the
+   * rows whose INDIAN/IMPORTED cell is blank or says something else.
    */
   total: { count: number; sum: number };
+  unlabeled: { count: number; sum: number };
+  /** Total broken down by `headHeader` (a Major Head column), same scope as `total`. */
+  byHead: { head: string; count: number; sum: number }[];
 }
 
 /** Stock value (available stock x cost) per sidebar card, cascading on the other toggle. */
@@ -230,6 +265,7 @@ export function computeCardStats(
   headers: string[],
   indianImported: IndianImportedFilter,
   majorFilter: MajorFilter,
+  headHeader?: string,
 ): CardStats {
   const stats: CardStats = {
     indian: { count: 0, sum: 0 },
@@ -237,6 +273,8 @@ export function computeCardStats(
     major: { count: 0, sum: 0 },
     minor: { count: 0, sum: 0 },
     total: { count: 0, sum: 0 },
+    unlabeled: { count: 0, sum: 0 },
+    byHead: [],
   };
   const stockValue = (row: unknown[]): number | null => {
     const stockStr = String(row[12] ?? "").trim();
@@ -287,16 +325,59 @@ export function computeCardStats(
     }
   }
 
-  // Grand total: both toggles applied, nothing excluded.
+  // Total: same scope as the Indian/Imported cards, so they add up to it.
+  const headIdx = headHeader ? headers.indexOf(headHeader) : -1;
+  const byHead = new Map<string, { head: string; count: number; sum: number }>();
   for (const row of sidebarBaseRows) {
-    if (!matchesSidebarNew(row, indianImported, majorFilter, headers)) continue;
+    if (!matchesSidebarNew(row, "all", majorFilter, headers, "indian")) continue;
     const value = stockValue(row);
     if (value === null) continue;
     stats.total.count++;
     stats.total.sum += value;
+    const imp = String(row[impIdx] ?? "").trim().toLowerCase();
+    if (imp !== "indian" && imp !== "imported") {
+      stats.unlabeled.count++;
+      stats.unlabeled.sum += value;
+    }
+    if (headIdx !== -1) {
+      const head = String(row[headIdx] ?? "").trim() || "UNCLASSIFIED";
+      const h = byHead.get(head) ?? { head, count: 0, sum: 0 };
+      h.count++;
+      h.sum += value;
+      byHead.set(head, h);
+    }
   }
+  stats.byHead = [...byHead.values()].sort((a, b) => b.sum - a.sum);
 
   return stats;
+}
+
+export interface GroupSummary {
+  count: number;
+  stockValue: number;
+  blankCost: number;
+  /** Castings (weight-priced items) with no 1 PCS WGT. */
+  weightMissing: number;
+  blankHsn: number;
+}
+
+/** Per-group header figures for the Major Head grouped view. */
+export function summarizeGroup(rows: unknown[][], headers: string[]): GroupSummary {
+  const stockIdx = headers.indexOf("Available Stock");
+  const costIdx = headers.indexOf("cost");
+  const hsnIdx = headers.indexOf("HSN CODE");
+  const basisIdx = headers.indexOf(COST_BASIS_HEADER);
+  const num = (v: unknown) => parseFloat(String(v ?? "").replace(/,/g, ""));
+  const out: GroupSummary = { count: rows.length, stockValue: 0, blankCost: 0, weightMissing: 0, blankHsn: 0 };
+  for (const row of rows) {
+    const stock = num(row[stockIdx]);
+    const cost = num(row[costIdx]);
+    if (!isNaN(stock) && !isNaN(cost)) out.stockValue += stock * cost;
+    if (String(row[costIdx] ?? "").trim() === "") out.blankCost++;
+    if (String(row[hsnIdx] ?? "").trim() === "") out.blankHsn++;
+    if (row[basisIdx] === COST_BASIS.weightMissing) out.weightMissing++;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

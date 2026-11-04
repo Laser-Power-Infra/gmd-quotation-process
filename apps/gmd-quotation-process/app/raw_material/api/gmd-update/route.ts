@@ -4,13 +4,15 @@ import { prisma } from "@/lib/prisma";
 import { CANONICAL_COLUMNS } from "@/lib/gmd_lib/sheet-columns";
 import { dbItemToRow } from "@/lib/gmd_lib/mapSheetRow";
 import { C_BATCH_HEADER } from "@/lib/gmd_lib/verify-bom-columns";
+import { DERIVED_TAIL_HEADERS, getCastingKey } from "@/lib/gmd_lib/rawMaterialView";
+import { MAJOR_HEAD_L2_TYPE, MAJOR_HEAD_L8_TYPE, costBasisOf, headOf, parseHeadMap } from "@/lib/gmd_lib/majorHead";
 
 export async function GET() {
   const denied = await denyIfNoAccess();
   if (denied) return denied;
   try {
     // The three reads are independent, so run them together.
-    const [items, bomLinks, allBoms] = await Promise.all([
+    const [items, bomLinks, allBoms, headRows] = await Promise.all([
     prisma.rawMaterial.findMany({
       orderBy: { createdAt: "asc" },
       select: {
@@ -62,7 +64,13 @@ export async function GET() {
     prisma.bom.findMany({
       select: { bomId: true, fullItem: { select: { itemCode: true } } },
     }),
+    prisma.lookupOption.findMany({
+      where: { type: { in: [MAJOR_HEAD_L8_TYPE, MAJOR_HEAD_L2_TYPE] }, isActive: true },
+      select: { type: true, value: true },
+    }),
     ]);
+    const l8Map = parseHeadMap(headRows.filter((r) => r.type === MAJOR_HEAD_L8_TYPE).map((r) => r.value));
+    const l2Map = parseHeadMap(headRows.filter((r) => r.type === MAJOR_HEAD_L2_TYPE).map((r) => r.value));
     const bomIdsByRmId = new Map<string, string[]>();
     for (const link of bomLinks) {
       const bId = link.bom?.bomId?.trim();
@@ -98,14 +106,23 @@ export async function GET() {
             items[0].syncedAt,
           )
         : null;
-    const headers = [...CANONICAL_COLUMNS.slice(0, 2), "ITEM NAME (derived)", ...CANONICAL_COLUMNS.slice(2), "BOM ID", "Vendor Reference", "Attachment", C_BATCH_HEADER];
+    const headers = [...CANONICAL_COLUMNS.slice(0, 2), "ITEM NAME (derived)", ...CANONICAL_COLUMNS.slice(2), "BOM ID", "Vendor Reference", "Attachment", C_BATCH_HEADER, ...DERIVED_TAIL_HEADERS];
     const rows = items.map((i) => {
+      const cost = i.cost != null ? Number(i.cost) : null;
       const r = dbItemToRow({
         ...i,
         bomId: (bomIdsByRmId.get(i.id) ?? []).join(", ") || null,
-        cost: i.cost != null ? Number(i.cost) : null,
+        cost,
       });
-      return [...r.slice(0, 2), i.itemNameDerived, ...r.slice(2), i.cBatch];
+      return [
+        ...r.slice(0, 2),
+        i.itemNameDerived,
+        ...r.slice(2),
+        i.cBatch,
+        headOf(l8Map, i.l8ItemCategory),
+        headOf(l2Map, i.l2ValveType),
+        costBasisOf(getCastingKey(i.l8ItemCategory ?? "", i.l5Material ?? "") !== null, i.pcsWgt, cost),
+      ];
     });
     const ids = items.map((item) => item.id);
     const transferredIds = items

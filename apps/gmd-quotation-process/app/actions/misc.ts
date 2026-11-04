@@ -1,5 +1,6 @@
 "use server";
 import { requireAccess, loginRequired } from "@/lib/access";
+import { getCastingKey } from "@/lib/gmd_lib/rawMaterialView";
 import { ERP_CLOSED_STATUSES, C_BATCH_VALUE } from "@/lib/erpItemStatus";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { prisma } from "@/lib/prisma";
@@ -247,29 +248,33 @@ export async function getBisStaleIdsAction() {
   }
 }
 
+// Cast rates are LookupOption rows of type GMD_CASTING_RATE with value
+// "<key>=<Rs/kg>;from=<yyyy-mm-dd>" (the ";from=" part is optional).
+async function loadCastingRates() {
+  const rows = await prisma.lookupOption.findMany({
+    where: { type: "GMD_CASTING_RATE" },
+  });
+  const rates: Record<string, string> = { DI: "", CS: "", CI: "", SS: "", Bronze: "", MS: "", GI: "" };
+  const dates: Record<string, string> = { DI: "", CS: "", CI: "", SS: "", Bronze: "", MS: "", GI: "" };
+  for (const row of rows) {
+    const [head, ...rest] = row.value.split(";");
+    const eq = head.indexOf("=");
+    if (eq === -1) continue;
+    const key = head.slice(0, eq).trim();
+    if (!(key in rates)) continue;
+    rates[key] = head.slice(eq + 1).trim();
+    const from = rest.find((p) => p.trim().startsWith("from="));
+    if (from) dates[key] = from.trim().slice(5);
+  }
+  return { rates, dates };
+}
+
 export async function getGMDCastingRatesAction() {
   "use server";
   await requireAccess();
   try {
-    const rows = await prisma.lookupOption.findMany({
-      where: { type: "GMD_CASTING_RATE" },
-    });
-    const rates: Record<string, string> = {
-      DI: "",
-      CS: "",
-      CI: "",
-      SS: "",
-      Bronze: "",
-      MS: "",
-      GI: "",
-    };
-    for (const row of rows) {
-      const eq = row.value.indexOf("=");
-      if (eq === -1) continue;
-      const key = row.value.slice(0, eq).trim();
-      if (key in rates) rates[key] = row.value.slice(eq + 1).trim();
-    }
-    return { success: true, data: rates };
+    const { rates, dates } = await loadCastingRates();
+    return { success: true, data: rates, dates };
   } catch (error: any) {
     console.error("Error fetching casting rates:", error);
     return {
@@ -279,15 +284,17 @@ export async function getGMDCastingRatesAction() {
   }
 }
 
-export async function saveGMDCastingRateAction(key: string, value: string) {
+export async function saveGMDCastingRateAction(key: string, value: string, from?: string) {
   "use server";
   await requireAccess();
   try {
     const type = "GMD_CASTING_RATE";
-    const rowValue = `${key}=${value}`;
     const existing = await prisma.lookupOption.findFirst({
       where: { type, value: { startsWith: `${key}=` } },
     });
+    const prevFrom = existing?.value.split(";").find((p) => p.startsWith("from="))?.slice(5) ?? "";
+    const date = from ?? prevFrom;
+    const rowValue = `${key}=${value}${date ? `;from=${date}` : ""}`;
     if (existing) {
       await prisma.lookupOption.update({
         where: { id: existing.id },
@@ -296,7 +303,8 @@ export async function saveGMDCastingRateAction(key: string, value: string) {
     } else {
       await prisma.lookupOption.create({ data: { type, value: rowValue } });
     }
-    return { success: true };
+    const recomputed = await recomputeCastingCosts();
+    return { success: true, recomputed };
   } catch (error: any) {
     console.error("Error saving casting rate:", error);
     return {
@@ -304,6 +312,36 @@ export async function saveGMDCastingRateAction(key: string, value: string) {
       error: error.message || "Failed to save casting rate.",
     };
   }
+}
+
+/**
+ * Persists COST = 1 PCS WGT x cast rate for every weight-priced item (see
+ * getCastingKey), so tiles, export and BOM costs read the same figure the
+ * table shows. Items with no weight or no rate are left as they are.
+ */
+export async function recomputeCastingCosts(): Promise<number> {
+  await requireAccess();
+  const { rates } = await loadCastingRates();
+  const items = await prisma.rawMaterial.findMany({
+    select: { id: true, l8ItemCategory: true, l5Material: true, pcsWgt: true, cost: true },
+  });
+  const updates: { id: string; cost: number }[] = [];
+  for (const it of items) {
+    const key = getCastingKey(it.l8ItemCategory ?? "", it.l5Material ?? "");
+    if (!key) continue;
+    const rate = parseFloat((rates[key] ?? "").replace(/,/g, ""));
+    const wgt = parseFloat(String(it.pcsWgt ?? "").replace(/,/g, ""));
+    if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(wgt) || wgt <= 0) continue;
+    const cost = Number((rate * wgt).toFixed(2));
+    if (it.cost != null && Number(it.cost) === cost) continue;
+    updates.push({ id: it.id, cost });
+  }
+  for (let i = 0; i < updates.length; i += 200) {
+    await prisma.$transaction(
+      updates.slice(i, i + 200).map((u) => prisma.rawMaterial.update({ where: { id: u.id }, data: { cost: u.cost } })),
+    );
+  }
+  return updates.length;
 }
 
 /**
