@@ -19,3 +19,7 @@ next-env.d.ts
 /public/offers
 /assets
 public/generated-images
+
+# Claude Code local state
+.claude/worktrees/
+.claude/settings.local.json
