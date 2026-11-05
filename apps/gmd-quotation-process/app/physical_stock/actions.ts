@@ -1,12 +1,20 @@
 "use server";
 import { requireAccess } from "@/lib/access";
 
-import { getSerialDimension, listCodeOptions, listPhysicalStock, saveSerialDimension, updatePhysicalStockField } from "@gmd/physical-stock/server";
+import {
+  getSerialDimension,
+  listCodeOptions,
+  listPhysicalStockFacet,
+  listPhysicalStockPage,
+  saveSerialDimension,
+  updatePhysicalStockField,
+  type StockTableQuery,
+} from "@gmd/physical-stock/server";
 import { pickFlange, standardFromFlange, type DimensionValues } from "@gmd/physical-stock/dimensions";
 import { prisma } from "@/lib/prisma";
-import { incomingFromForItems, inTransitForItems } from "@gmd/purchase/server";
 import { editableFieldsFor } from "@gmd/physical-stock/flags";
-import type { ActionResult, PhysicalStockRow } from "@gmd/physical-stock/types";
+import type { ActionResult, PhysicalStockPageData, PhysicalStockRow } from "@gmd/physical-stock/types";
+import type { TableQuery } from "@gmd/ui/components/data-table/types";
 import { stockPrisma } from "@/lib/stockPrisma";
 import { computeStockAllocation } from "@/lib/stockAllocation/load";
 import { getPhysicalStockFlags } from "@/lib/physical-stock-flags";
@@ -21,50 +29,45 @@ import {
 
 const code = (erp: string | null) => (erp ?? "").trim().toUpperCase();
 
-/** Rows plus per-row BOM ID options from the quotation DB BOM relations. */
-export async function load() {
+async function guarded<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
   try {
     await requireAccess();
-    const items = await listPhysicalStock();
-    const derivations = await derivePhysicalStockByCodes(items.map((i) => code(i.erp_code)));
-    const bomIdOptions: Record<string, string[]> = {};
-    for (const item of items) bomIdOptions[item.id] = derivations.get(code(item.erp_code))?.bomIds ?? [];
+    return { success: true, data: await fn() };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
 
-    // Ordered but not yet received, by ERP code. A failure here must not take
-    // the stock page down with it: the column falls back to blank (unknown).
-    let inTransit = new Map<string, number>();
-    let incomingFrom = new Map<string, string>();
+/** One filtered/sorted page plus the BOM ID options (quotation DB) of the rows on it. */
+export async function loadPage(query: TableQuery): Promise<ActionResult<PhysicalStockPageData>> {
+  return guarded(async () => {
+    const page = await listPhysicalStockPage(query as StockTableQuery, {
+      duplicates: (await getPhysicalStockFlags()).duplicateErpHighlight,
+    });
+    const derivations = await derivePhysicalStockByCodes(page.rows.map((r) => code(r.erp_code)));
+    const bomIdOptions: Record<string, string[]> = {};
+    for (const row of page.rows) bomIdOptions[row.id] = derivations.get(code(row.erp_code))?.bomIds ?? [];
+    // Order-wise allocation per stock row; a failure leaves the columns unknown (null).
+    let allocByStock: Map<string, PhysicalStockRow["allocations"]> | null = null;
     try {
-      const codes = items.map((i) => (i.erp_code ?? "").trim());
-      [inTransit, incomingFrom] = await Promise.all([inTransitForItems(codes), incomingFromForItems(codes)]);
-    } catch (err) {
-      console.error("[physical-stock] in-transit lookup failed", err);
-    }
-    // Order-wise allocation per stock row; failure leaves the column unknown (null).
-    const allocByStock = new Map<string, NonNullable<PhysicalStockRow["allocations"]>>();
-    let allocated = false;
-    try {
+      allocByStock = new Map();
       for (const a of (await computeStockAllocation()).allocations) allocByStock.set(a.stockId, [...(allocByStock.get(a.stockId) ?? []), a]);
-      allocated = true;
     } catch (err) {
       console.error("[physical-stock] allocation lookup failed", err);
+      allocByStock = null;
     }
-    const withInTransit = items.map((item) => ({
-      ...item,
-      allocations: allocated ? (allocByStock.get(item.id) ?? []) : null,
-      in_transit: inTransit.get((item.erp_code ?? "").trim()) ?? null,
-      incoming_from: incomingFrom.get((item.erp_code ?? "").trim()) ?? null,
-    }));
+    const rows = page.rows.map((row) => ({ ...row, allocations: allocByStock ? (allocByStock.get(row.id) ?? []) : null }));
+    return { ...page, rows, meta: { ...page.meta!, bomIdOptions } };
+  });
+}
 
-    // Table missing until the db-stock migration is deployed: the dialog falls back to generating.
-    const codeOptions = await listCodeOptions().catch((err) => {
-      console.error("[physical-stock] code options lookup failed", err);
-      return undefined;
-    });
-    return { success: true as const, data: { items: withInTransit, bomIdOptions, codeOptions } };
-  } catch (err) {
-    return { success: false as const, error: err instanceof Error ? err.message : String(err) };
-  }
+export async function loadFacet(field: string, query: TableQuery) {
+  return guarded(() => listPhysicalStockFacet(field, query as StockTableQuery));
+}
+
+/** New Item picker codes; empty until the db-stock migration and first hourly sync. */
+export async function loadCodeOptions() {
+  return guarded(listCodeOptions);
 }
 
 export async function updateField(id: string, field: string, value: string | null) {

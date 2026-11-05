@@ -8,9 +8,11 @@ import {
   FIELDS,
   addQty,
   availableQtyOrder,
+  buildEntryNo,
   buildSerial,
-  cascadedOptions,
   computeAvailableQty,
+  financialYear,
+  subtractQty,
   computeItemWiseValue,
   fieldOf,
   isGeneratedErpCode,
@@ -33,6 +35,9 @@ test("new-item identity and qty merge", () => {
   assert.equal(addQty("1,000", "5"), "1005");
   assert.equal(addQty(null, "5"), "5");
   assert.equal(addQty(null, ""), null);
+  assert.equal(subtractQty("1,000", "250"), "750");
+  assert.equal(subtractQty(null, "5"), "-5");
+  assert.equal(subtractQty("", null), null);
 });
 
 test("mergeRows adds qty and joins text fields", () => {
@@ -47,21 +52,6 @@ test("mergeRows adds qty and joins text fields", () => {
     remarks: "a, b",
     cost: "7",
   });
-});
-
-test("L dropdowns cascade on the row's other levels", () => {
-  const at = (h: string) => COLUMNS.indexOf(h as (typeof COLUMNS)[number]);
-  const mk = (l5: string, l8: string) => {
-    const r: unknown[] = COLUMNS.map(() => "");
-    r[at("L5- MATERIAL")] = l5;
-    r[at("L8 -ITEM CATEGORY")] = l8;
-    return r;
-  };
-  const rows = [mk("CAST IRON", "PATTERN"), mk("PLASTIC", "PATTERN"), mk("STAINLESS STEEL", "SPARES")];
-  assert.deepEqual(cascadedOptions("L5- MATERIAL", mk("", "pattern"), rows), ["CAST IRON", "PLASTIC"]);
-  // the edited level never narrows itself; an unseen combination gets the full list
-  assert.equal(cascadedOptions("L5- MATERIAL", mk("PVC", ""), rows).length, DROPDOWN_OPTIONS["L5- MATERIAL"]!.length);
-  assert.equal(cascadedOptions("L5- MATERIAL", mk("", "SCRAP"), rows).length, DROPDOWN_OPTIONS["L5- MATERIAL"]!.length);
 });
 
 test("qty and value math", () => {
@@ -96,6 +86,15 @@ test("buildSerial joins code, valve type short form, heat and number", () => {
   const row = { erp_code: "F001", l2_valve_type: "KNIFE GATE VALVE" };
   assert.equal(buildSerial(row, { heat_no: "3500", heat_seq: 6 }), "F001-KGV-3500-6");
   assert.equal(buildSerial({ erp_code: "F001" }, { heat_no: "3500", heat_seq: 6 }), "F001--3500-6");
+});
+
+test("entry numbers: financial year April to March, 5-digit counter", () => {
+  assert.equal(financialYear(new Date(2026, 10, 5)), "2627");
+  assert.equal(financialYear(new Date(2026, 3, 1)), "2627");
+  assert.equal(financialYear(new Date(2026, 2, 31)), "2526");
+  assert.equal(financialYear(new Date(2099, 11, 1)), "9900");
+  assert.equal(buildEntryNo("2627", 1), "SE-2627-00001");
+  assert.equal(buildEntryNo("2627", 123456), "SE-2627-123456");
 });
 
 test("valveTypeCode: mapped short forms, else initials", () => {

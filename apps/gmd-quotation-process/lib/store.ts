@@ -7,6 +7,7 @@ import dialogsReducer from "./dialogsSlice";
 import gmdUpdateReducer from "./gmdUpdateSlice";
 import supplyHistoryFiltersReducer from "./supplyHistoryFiltersSlice";
 import bisStatusFiltersReducer from "./bisStatusFiltersSlice";
+import physicalStockTableReducer from "@gmd/physical-stock/state";
 
 export const makeStore = () => {
   return configureStore({
@@ -19,6 +20,7 @@ export const makeStore = () => {
       gmdUpdate: gmdUpdateReducer,
       supplyHistoryFilters: supplyHistoryFiltersReducer,
       bisStatusFilters: bisStatusFiltersReducer,
+      physicalStockTable: physicalStockTableReducer,
     },
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({

@@ -11,13 +11,31 @@ import {
   computeItemWiseValue,
   computeMajorMinorMarking,
   fieldOf,
+  buildEntryNo,
   buildSerial,
+  financialYear,
+  subtractQty,
 } from "../columns";
 import { outOfTolerance } from "../dimensions";
 import type { DimensionStandard, DimensionValues } from "../dimensions";
 import { HEAT_DIM_KEYS, NEW_ITEM_FIELDS } from "../types";
-import { fgMatcher, type CodeOptions } from "../codeOptions";
-import type { ActionResult, FieldUpdate, HeatDims, HeatEntryRow, HeatQueueItem, HeatSerial, NewItemInput, PhysicalStockRow } from "../types";
+import type { CodeOptions } from "../codeOptions";
+import { DERIVED_INPUT_FIELDS, refreshDerived } from "./derived";
+
+export { listPhysicalStockFacet, listPhysicalStockPage } from "./query";
+export type { StockPageMeta, StockTableQuery } from "./query";
+export { refreshDerived } from "./derived";
+import type {
+  ActionResult,
+  FieldUpdate,
+  HeatDims,
+  HeatEntryRow,
+  HeatQueueItem,
+  HeatSerial,
+  NewItemInput,
+  PhysicalStockRow,
+  StockEntryRow,
+} from "../types";
 
 // Pure operations on the PhysicalStock table (stock DB). No auth, no flags
 // lookup: the host app's Server Actions own those and pass the allow-list in.
@@ -48,29 +66,6 @@ function heatColumns(row: StockWithHeats): Pick<PhysicalStockRow, "heat_no" | "s
   };
 }
 
-export async function listPhysicalStock(): Promise<PhysicalStockRow[]> {
-  const items = await stockPrisma.physicalStock.findMany({
-    orderBy: [{ form_date: "desc" }, { created_at: "desc" }, { id: "asc" }],
-    include: HEAT_ENTRIES,
-  });
-  // Table missing until the db-stock migration is deployed: no FG columns, the page still loads.
-  const fg = await stockPrisma.fgBomOption.findMany({ orderBy: { fgCode: "asc" } }).catch(() => []);
-  const matchFg = fgMatcher(fg);
-  return items.map((item) => {
-    const { created_at: _c, updated_at: _u, form_date, heat_entries: _h, ...rest } = item;
-    return {
-      ...rest,
-      form_date: form_date ? form_date.toISOString() : null,
-      ...heatColumns(item),
-      ...matchFg(item),
-      // Filled by the host app's load() from @gmd/purchase; null = not looked up.
-      in_transit: null,
-      allocations: null,
-      incoming_from: null,
-    };
-  });
-}
-
 /** Synced ERP-code options for the New Item picker (empty until the first hourly sync after the migration). */
 export async function listCodeOptions(): Promise<CodeOptions> {
   const [rm, bom] = await Promise.all([
@@ -86,23 +81,51 @@ export async function listCodeOptions(): Promise<CodeOptions> {
 }
 
 /**
- * Runs `write` with the next heat_seq for `heat_no` (highest + 1, shared by every
- * item under that heat). The unique (heat_no, heat_seq) index rejects a
- * concurrent writer that picked the same number (P2002): re-read and retry.
+ * Runs `write` with the next number (highest + 1 from `readMax`). A unique index
+ * rejects a concurrent writer that picked the same number (P2002): re-read and retry.
  */
-async function withHeatSeq<T>(heatNo: string, write: (heatSeq: number) => Promise<T>): Promise<T> {
+async function withNextSeq<T>(readMax: () => Promise<number | null>, write: (seq: number) => Promise<T>, failure: string): Promise<T> {
   for (let attempt = 0; attempt < 5; attempt++) {
-    const { _max } = await stockPrisma.heatEntry.aggregate({
-      where: { heat_no: heatNo },
-      _max: { heat_seq: true },
-    });
+    const seq = ((await readMax()) ?? 0) + 1;
     try {
-      return await write((_max.heat_seq ?? 0) + 1);
+      return await write(seq);
     } catch (err) {
       if ((err as { code?: string }).code !== "P2002") throw err;
     }
   }
-  throw new Error("Could not assign a heat serial number.");
+  throw new Error(failure);
+}
+
+/** Next heat_seq for `heat_no`: shared by every item under that heat. */
+const withHeatSeq = <T>(heatNo: string, write: (heatSeq: number) => Promise<T>) =>
+  withNextSeq(
+    async () => (await stockPrisma.heatEntry.aggregate({ where: { heat_no: heatNo }, _max: { heat_seq: true } }))._max.heat_seq,
+    write,
+    "Could not assign a heat serial number.",
+  );
+
+/** One numbered entry for a New Item submit, counted in the row (merged); the counter restarts each financial year. */
+async function recordEntry(stockId: string, input: NewItemInput, createdBy: string | null): Promise<string> {
+  const fy = financialYear();
+  const qty_type = input.dispatch_qty?.trim() ? "dispatch" : "received";
+  const entry = await withNextSeq(
+    async () => (await stockPrisma.stockEntry.aggregate({ where: { fy }, _max: { entry_seq: true } }))._max.entry_seq,
+    (entry_seq) =>
+      stockPrisma.stockEntry.create({
+        data: {
+          entry_no: buildEntryNo(fy, entry_seq),
+          fy,
+          entry_seq,
+          physical_stock_id: stockId,
+          qty_type,
+          qty: input[qty_type === "dispatch" ? "dispatch_qty" : "received_qty"]?.trim() || null,
+          created_by: createdBy,
+        },
+        select: { entry_no: true },
+      }),
+    "Could not assign an entry number.",
+  );
+  return entry.entry_no;
 }
 
 // ---- Heat entry (mobile form) -------------------------------------------
@@ -189,7 +212,9 @@ export async function addHeatEntries(stockId: string, heatNos: string[]): Promis
     // Sequential: withHeatSeq reads max(heat_seq) before each insert.
     for (const heat of heats) {
       const entry = await withHeatSeq(heat, (heat_seq) =>
-        stockPrisma.heatEntry.create({ data: { physical_stock_id: stockId, heat_no: heat, heat_seq } }),
+        stockPrisma.heatEntry.create({
+          data: { physical_stock_id: stockId, heat_no: heat, heat_seq, serial_no: buildSerial(row, { heat_no: heat, heat_seq }) },
+        }),
       );
       out.push(toEntryRow(row, entry));
     }
@@ -285,6 +310,8 @@ export async function updatePhysicalStockField(
         const merge = mergeRows(target, next);
         // No transaction (P2028 on this connection): update the target first so qty is never lost.
         await stockPrisma.physicalStock.update({ where: { id: target.id }, data: merge });
+        // Entries follow the quantity into the target instead of being cascade-deleted.
+        await stockPrisma.stockEntry.updateMany({ where: { physical_stock_id: id }, data: { physical_stock_id: target.id } });
         await stockPrisma.physicalStock.delete({ where: { id } });
         return {
           merged: {
@@ -296,8 +323,9 @@ export async function updatePhysicalStockField(
         } as FieldUpdate;
       }
     }
-    // The serial embeds erp_code and l2_valve_type: send the refreshed one with the edit.
-    return { ...changes, ...(row.heat_entries.length ? heatColumns(next) : {}) } as FieldUpdate;
+    // FG match and serials embed erp_code / the L columns: store them again and send them with the edit.
+    const derived = DERIVED_INPUT_FIELDS.has(field) ? (await refreshDerived([id])).get(id) : undefined;
+    return { ...changes, ...(row.heat_entries.length ? heatColumns(next) : {}), ...derived } as FieldUpdate;
   });
 }
 
@@ -314,14 +342,74 @@ async function generateUniqueErpCode(): Promise<string> {
   throw new Error("Could not generate a unique ERP code.");
 }
 
+/** Every entry booked against rows with this ERP code, newest first. */
+export async function listStockEntries(erpCode: string): Promise<StockEntryRow[]> {
+  const code = erpCode.trim();
+  if (!code) return [];
+  const entries = await stockPrisma.stockEntry.findMany({
+    where: { physical_stock: { erp_code: { equals: code, mode: "insensitive" } } },
+    orderBy: { created_at: "desc" },
+    include: { physical_stock: true },
+  });
+  return entries.map((e) => ({
+    id: e.id,
+    entry_no: e.entry_no,
+    created_at: e.created_at.toISOString(),
+    qty_type: e.qty_type === "dispatch" ? "dispatch" : "received",
+    qty: e.qty,
+    merged: e.merged,
+    created_by: e.created_by,
+    erp_code: e.physical_stock.erp_code,
+    location: e.physical_stock.location,
+    description: toQueueItem({ ...e.physical_stock, heat_entries: [] }).description,
+  }));
+}
+
+/**
+ * Counts an entry in its row (merged = true: qty added back) or takes it out
+ * (merged = false: qty subtracted). Applying the same state twice is refused.
+ */
+async function setStockEntryMerged(entryNo: string, merged: boolean): Promise<ActionResult<null>> {
+  return run(async () => {
+    const entry = await stockPrisma.stockEntry.findUnique({ where: { entry_no: entryNo }, include: { physical_stock: true } });
+    if (!entry) throw new Error(`Entry ${entryNo} not found.`);
+    if (entry.merged === merged) throw new Error(`Entry ${entryNo} is already ${merged ? "counted" : "reverted"}.`);
+    const row = entry.physical_stock;
+    const field = entry.qty_type === "dispatch" ? "dispatch_qty" : "received_qty";
+    const next = { ...row, [field]: merged ? addQty(row[field], entry.qty) : subtractQty(row[field], entry.qty) };
+    const changes: Record<string, string | null> = { [field]: next[field] };
+    const available = computeAvailableQty(next.received_qty, next.dispatch_qty);
+    if (available !== null) {
+      changes.available_qty = available;
+      changes.item_wise_value = computeItemWiseValue(row.cost, available);
+    }
+    // No transaction on this connection: flag first so a retry cannot apply twice, then undo the flag if the qty write fails.
+    await stockPrisma.stockEntry.update({ where: { id: entry.id }, data: { merged } });
+    try {
+      await stockPrisma.physicalStock.update({ where: { id: row.id }, data: changes });
+    } catch (err) {
+      await stockPrisma.stockEntry.update({ where: { id: entry.id }, data: { merged: !merged } }).catch(() => undefined);
+      throw err;
+    }
+    return null;
+  });
+}
+
+/** Takes an entry's quantity back out of its row (merged = false). */
+export const revertStockEntry = (entryNo: string) => setStockEntryMerged(entryNo, false);
+/** Counts a reverted entry again (merged = true). */
+export const restoreStockEntry = (entryNo: string) => setStockEntryMerged(entryNo, true);
+
 /**
  * New row with an auto-generated unique ERP code; values saved in capitals.
  * If a generated-code row already has the same location + L columns, its
- * received/dispatch qty is added to instead and no new code is minted.
+ * received/dispatch qty is added to instead and no new code is minted
+ * (`existing` tells which). Either way one StockEntry records the submit.
  */
 export async function createPhysicalStock(
   input: NewItemInput,
-): Promise<ActionResult<{ erp_code: string; merged: boolean }>> {
+  createdBy: string | null = null,
+): Promise<ActionResult<{ erp_code: string; existing: boolean; entry_no: string }>> {
   return run(async () => {
     const data: Record<string, string | boolean | number | null> = {};
     for (const f of NEW_ITEM_FIELDS) data[f] = input[f]?.trim().toUpperCase() || null;
@@ -354,7 +442,7 @@ export async function createPhysicalStock(
         changes.item_wise_value = computeItemWiseValue(match.cost, available);
       }
       await stockPrisma.physicalStock.update({ where: { id: match.id }, data: changes });
-      return { erp_code: match.erp_code!, merged: true };
+      return { erp_code: match.erp_code!, existing: true, entry_no: await recordEntry(match.id, input, createdBy) };
     }
 
     const erp_code = picked ?? (await generateUniqueErpCode());
@@ -363,8 +451,9 @@ export async function createPhysicalStock(
     if (available !== null) data.available_qty = available;
     const marking = computeMajorMinorMarking(data.l8_item_category as string | null);
     if (marking !== null) data.majorminor_marking = marking;
-    await stockPrisma.physicalStock.create({ data });
-    return { erp_code, merged: false };
+    const created = await stockPrisma.physicalStock.create({ data, select: { id: true } });
+    await refreshDerived([created.id]);
+    return { erp_code, existing: false, entry_no: await recordEntry(created.id, input, createdBy) };
   });
 }
 

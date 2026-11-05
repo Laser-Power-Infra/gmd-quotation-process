@@ -1,43 +1,44 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Download, Loader2, Plus } from "lucide-react";
+import { useDispatch, useSelector } from "react-redux";
+import { Copy, Download, Plus } from "lucide-react";
 import { toast } from "sonner";
-import GMDUpdateTable from "@gmd/dashboard/components/GMDUpdateTable";
-import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
-import {
-  BLANK_ONLY_HEADERS,
-  COLUMNS,
-  DROPDOWN_OPTIONS,
-  FIELDS,
-  NUMERIC_COLUMNS,
-  cascadedOptions,
-  rowToArray,
-} from "../columns";
+import { Button } from "@gmd/ui/components/button";
+import { DataTable } from "@gmd/ui/components/data-table/DataTable";
+import { FilterChips, type FilterChip } from "@gmd/ui/components/data-table/FilterChips";
+import { Pagination } from "@gmd/ui/components/data-table/Pagination";
+import { SearchField } from "@gmd/ui/components/data-table/SearchField";
+import { useServerTable } from "@gmd/ui/components/data-table/useServerTable";
+import { Segmented } from "@gmd/ui/components/segmented";
+import { BLANK, type DataColumn } from "@gmd/ui/components/data-table/types";
+import { cn } from "@gmd/ui/lib/utils";
 import type { PhysicalStockFlags, SidebarSection } from "../flags";
-import type { PhysicalStockActions, PhysicalStockRow } from "../types";
-import StockAnalyticsSidebar, { type MajorMinorKind, type StockCardKind } from "./StockAnalyticsSidebar";
+import { allocatedQty, allocationText, freeQty } from "../columns";
+import { CASCADE_FIELDS, columnsFor } from "../stockColumns";
+import {
+  clearFilters,
+  queryOf,
+  select,
+  selectStockTable,
+  setColumnSearch,
+  setDateRange,
+  setDuplicatesOnly,
+  setFilter,
+  setOrderText,
+  setStockMode,
+  setPage,
+  setPageSize,
+  setSearch,
+  setSort,
+  toggleCard,
+  toggleMajorMinor,
+  toggleSidebar,
+} from "../state/tableSlice";
+import type { PhysicalStockActions, PhysicalStockPageData, PhysicalStockRow } from "../types";
+import StockAnalyticsSidebar from "./StockAnalyticsSidebar";
 import NewItemDialog from "./NewItemDialog";
-import type { CodeOptions } from "../codeOptions";
-
-const HEADERS = [...COLUMNS] as string[];
-const BLANK_ONLY = new Set<string>(BLANK_ONLY_HEADERS);
-const AVAILABLE_IDX = COLUMNS.indexOf("AVAILABLE QTY.");
-const COST_IDX = COLUMNS.indexOf("COST");
-const MAJOR_IDX = COLUMNS.indexOf("MAJOR/MINOR MARKING");
-const LOCATION_IDX = COLUMNS.indexOf("location");
-const ALLOCATED_IDX = COLUMNS.indexOf("ALLOCATED QTY");
-const FREE_IDX = COLUMNS.indexOf("FREE QTY");
-type StockMode = "all" | "free" | "allocated";
-const CONTROL = "h-7 rounded border border-border bg-background px-2 text-[11px] text-foreground";
-
-function toNum(value: unknown): number {
-  const n = parseFloat(String(value ?? "").replace(/,/g, ""));
-  return Number.isFinite(n) ? n : 0;
-}
-
-const majorMinorKind = (value: unknown): MajorMinorKind =>
-  value === true ? "yes" : value === false ? "no" : "blank";
+import { AllocationsCell } from "./AllocationsCell";
 
 export interface PhysicalStockPageProps {
   flags: PhysicalStockFlags;
@@ -46,375 +47,329 @@ export interface PhysicalStockPageProps {
   showHeader?: boolean;
 }
 
+const count = new Intl.NumberFormat("en-IN");
+const duplicateClass = (r: PhysicalStockRow) => (r.is_duplicate ? "bg-secondary/70 data-[selected=true]:bg-secondary" : undefined);
+
 export function PhysicalStockPage({ flags, actions, showHeader = true }: PhysicalStockPageProps) {
-  const [items, setItems] = useState<PhysicalStockRow[]>([]);
-  const [bomIdOptions, setBomIdOptions] = useState<Record<string, string[]>>({});
-  const [codeOptions, setCodeOptions] = useState<CodeOptions | undefined>();
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  const dispatch = useDispatch();
+  const state = useSelector(selectStockTable);
   const [showNewDialog, setShowNewDialog] = useState(false);
-  const [statsRows, setStatsRows] = useState<unknown[][]>([]);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [cardFilter, setCardFilter] = useState<StockCardKind | null>(null);
-  const [majorMinorFilter, setMajorMinorFilter] = useState<Set<MajorMinorKind>>(new Set());
-  const [locationFilter, setLocationFilter] = useState("");
-  const [orderText, setOrderText] = useState("");
-  const [stockMode, setStockMode] = useState<StockMode>("all");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const { loadPage, loadFacet, loadCodeOptions, updateField, create, revertEntry, updateBomId } = actions;
 
-  const { load, updateField, create, updateBomId } = actions;
+  const query = useMemo(() => queryOf(state), [state]);
+  const queryKey = JSON.stringify(query);
+  const filterKey = JSON.stringify({ filters: query.filters, dateRanges: query.dateRanges, columnSearch: query.columnSearch, search: query.search, extra: query.extra });
+  // A column's facet ignores that column's own filters (the server skips them too), so picking a value keeps its list.
+  const facetKey = useCallback(
+    (key: string) => {
+      const omit = <T,>(o: Record<string, T> | undefined) => Object.fromEntries(Object.entries(o ?? {}).filter(([k]) => k !== key));
+      return JSON.stringify({ filters: omit(query.filters), dateRanges: omit(query.dateRanges), columnSearch: omit(query.columnSearch), search: query.search, extra: query.extra });
+    },
+    [query],
+  );
 
-  const { editableColumns, blankOnlyColumns, dropdownOptions, showSection } = useMemo(() => {
-    const hiddenSidebar = new Set<string>(flags.hiddenSidebar);
-    // ERP CODE and the L/Dia dropdowns may only fill a blank cell, and only
-    // when the app put them in editableColumns (the admin/developer gate).
-    const blankOnly = flags.editableColumns.filter((h) => BLANK_ONLY.has(h));
-    const dropdowns: Record<string, string[]> = {};
-    for (const h of blankOnly) {
-      const options = DROPDOWN_OPTIONS[h];
-      if (options) dropdowns[h] = [...options];
-    }
-    return {
-      editableColumns: flags.editableColumns.filter(
-        (h) => !BLANK_ONLY.has(h) && (h !== "BOM ID" || updateBomId),
-      ),
-      blankOnlyColumns: blankOnly,
-      dropdownOptions: dropdowns,
-      showSection: (s: SidebarSection) => !hiddenSidebar.has(s),
-    };
-  }, [flags, updateBomId]);
+  const columns = useMemo(
+    () => columnsFor(flags, { bomId: Boolean(updateBomId), cells: { allocations: (row) => <AllocationsCell list={row.allocations} /> } }),
+    [flags, updateBomId],
+  );
+  const showSection = useCallback((s: SidebarSection) => !flags.hiddenSidebar.includes(s), [flags]);
 
-  const loadData = useCallback(async () => {
-    try {
-      const res = await load();
-      if (res.success) {
-        setItems(res.data.items);
-        setBomIdOptions(res.data.bomIdOptions ?? {});
-        setCodeOptions(res.data.codeOptions);
-      } else {
-        toast.error(res.error || "Failed to load physical stock data.");
-      }
-    } catch {
-      toast.error("Failed to load physical stock data.");
-    } finally {
-      setLoading(false);
-    }
-  }, [load]);
+  const table = useServerTable<PhysicalStockPageData>({
+    queryKey,
+    filterKey,
+    facetKey,
+    fetchPage: async () => {
+      const res = await loadPage(query);
+      if (!res.success) throw new Error(res.error || "Failed to load physical stock.");
+      return res.data;
+    },
+    fetchFacet: async (key) => {
+      const res = await loadFacet(key, query);
+      if (!res.success) throw new Error(res.error);
+      return res.data;
+    },
+  });
+  const { data, setData, refresh } = table;
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (table.error) toast.error(table.error);
+  }, [table.error]);
 
   // A "New" button rendered outside this component (e.g. the app navbar) asks
   // the table to reload through this event.
   useEffect(() => {
-    const onCreated = () => loadData();
+    const onCreated = () => void refresh();
     window.addEventListener("physical-stock:created", onCreated);
     return () => window.removeEventListener("physical-stock:created", onCreated);
-  }, [loadData]);
+  }, [refresh]);
 
-  const rows = useMemo(() => items.map(rowToArray), [items]);
-  const ids = useMemo(() => items.map((i) => i.id), [items]);
-  const rowDropdownOptions = useCallback(
-    (header: string, row: unknown[]) => cascadedOptions(header, row, rows),
-    [rows],
+  const onSelect = useCallback((id: string | null) => dispatch(select(id)), [dispatch]);
+
+  const patchRow = useCallback(
+    (id: string, changes: Partial<PhysicalStockRow>) =>
+      setData((prev) => prev && { ...prev, rows: prev.rows.map((r) => (r.id === id ? { ...r, ...changes } : r)) }),
+    [setData],
   );
 
-  // Stat-card filter narrows the table only; the sidebar totals ignore it so
-  // toggling a card never changes the qty/value figures.
-  const cardFilteredRows = useMemo(() => {
-    if (!cardFilter) return rows;
-    const rowsOut: unknown[][] = [];
-    for (const row of rows) {
-      const qty = toNum(row[AVAILABLE_IDX]);
-      if (cardFilter === "qty" && qty <= 0) continue;
-      if (cardFilter === "value" && toNum(row[COST_IDX]) * qty <= 0) continue;
-      rowsOut.push(row);
-    }
-    return rowsOut;
-  }, [rows, cardFilter]);
-
-  const cardDisplayFilter = useCallback(
-    (row: unknown[]) => {
-      if (!cardFilter) return true;
-      const qty = toNum(row[AVAILABLE_IDX]);
-      return cardFilter === "qty" ? qty > 0 : toNum(row[COST_IDX]) * qty > 0;
-    },
-    [cardFilter],
-  );
-
-  const majorMinorCounts = useMemo(() => {
-    const counts: Record<MajorMinorKind, number> = { yes: 0, no: 0, blank: 0 };
-    for (const row of cardFilteredRows) counts[majorMinorKind(row[MAJOR_IDX])]++;
-    return counts;
-  }, [cardFilteredRows]);
-
-  // Major/Minor filter narrows the table without touching other filters.
-  // Location / order text / free-allocated filters live here too, so the sidebar sums follow them.
-  const locations = useMemo(
-    () => [...new Set(items.map((i) => (i.location ?? "").trim()).filter(Boolean))].sort(),
-    [items],
-  );
-  const tableRows = useMemo(() => {
-    const q = orderText.trim().toLowerCase();
-    const rowsOut: unknown[][] = [];
-    const idsOut: string[] = [];
-    for (let i = 0; i < rows.length; i++) {
-      if (majorMinorFilter.size && !majorMinorFilter.has(majorMinorKind(rows[i][MAJOR_IDX]))) continue;
-      if (locationFilter && String(rows[i][LOCATION_IDX] ?? "").trim() !== locationFilter) continue;
-      if (stockMode === "free" && !(toNum(rows[i][FREE_IDX]) > 0)) continue;
-      if (stockMode === "allocated" && !(toNum(rows[i][ALLOCATED_IDX]) > 0)) continue;
-      if (q && !items[i].allocations?.some((a) => (a.contractNo + " " + a.party).toLowerCase().includes(q))) continue;
-      rowsOut.push(rows[i]);
-      idsOut.push(ids[i]);
-    }
-    return { rows: rowsOut, ids: idsOut };
-  }, [rows, ids, items, majorMinorFilter, locationFilter, orderText, stockMode]);
-
-  const toggleMajorMinor = useCallback((kind: MajorMinorKind) => {
-    setMajorMinorFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(kind)) next.delete(kind);
-      else next.add(kind);
-      return next;
-    });
-  }, []);
-
-  // Sums follow the table's own column/global filters, but not the stat-card
-  // drill-down (the table reports rows before applying displayOnlyRowFilter).
-  const { availableQty, availableValue } = useMemo(() => {
-    let qty = 0;
-    let value = 0;
-    for (const row of statsRows) {
-      const available = toNum(row[AVAILABLE_IDX]);
-      qty += available;
-      value += toNum(row[COST_IDX]) * available;
-    }
-    return { availableQty: qty, availableValue: value };
-  }, [statsRows]);
-
-  const itemByRow = useMemo(() => new Map(rows.map((r, i) => [r, items[i]])), [rows, items]);
-
-  // One column set per order, as wide as the busiest exported row.
-  const exportCsv = useCallback(() => {
-    const out = statsRows.filter(cardDisplayFilter);
-    const max = Math.max(0, ...out.map((r) => itemByRow.get(r)?.allocations?.length ?? 0));
-    const orderHeaders = Array.from({ length: max }, (_, n) =>
-      ["contract", "PO", "party", "item", "qty", "stage", "date"].map((h) => `Order ${n + 1} ${h}`),
-    ).flat();
-    const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const lines = [[...HEADERS, ...orderHeaders].map(esc).join(",")];
-    for (const r of out) {
-      const orders = (itemByRow.get(r)?.allocations ?? []).flatMap((a) => [
-        a.contractNo, a.poNo, a.party, a.itemCode, a.qty, a.stage, a.allocatedAt?.slice(0, 10),
-      ]);
-      lines.push([...r, ...orders].map(esc).join(","));
-    }
-    const url = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Physical_Stock_${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [statsRows, cardDisplayFilter, itemByRow]);
-
-  const renderAllocations = useCallback(
-    (row: unknown[], id: string) => {
-      const list = itemByRow.get(row)?.allocations;
-      if (!list?.length) return null;
-      const open = expanded.has(id);
-      return (
-        <div className="text-[11px]">
-          <button
-            type="button"
-            className="flex items-center gap-1 text-emerald-500 hover:underline"
-            onClick={() =>
-              setExpanded((prev) => {
-                const next = new Set(prev);
-                if (!next.delete(id)) next.add(id);
-                return next;
-              })
-            }
-          >
-            {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-            {list.length} order{list.length > 1 ? "s" : ""}
-          </button>
-          {open && (
-            <table className="mt-1 border-collapse whitespace-nowrap">
-              <thead>
-                <tr className="text-muted-foreground">
-                  {["Contract", "PO", "Party", "Item", "Qty", "Stage", "Date"].map((h) => (
-                    <th key={h} className="px-1 text-left font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {list.map((a, n) => (
-                  <tr key={n}>
-                    <td className="px-1">{a.contractNo}</td>
-                    <td className="px-1">{a.poNo ?? ""}</td>
-                    <td className="px-1">{a.party}</td>
-                    <td className="px-1">{a.itemCode}</td>
-                    <td className="px-1 text-right">{a.qty}</td>
-                    <td className="px-1">{a.stage}</td>
-                    <td className="px-1">{a.allocatedAt?.slice(0, 10) ?? ""}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      );
-    },
-    [itemByRow, expanded],
-  );
-
-  const mergeRow = useCallback((id: string, changes: Partial<PhysicalStockRow>) => {
-    setItems((prev) => prev.map((row) => (row.id === id ? { ...row, ...changes } : row)));
-  }, []);
-
-  const handleCellUpdate = useCallback(
-    async (id: string, colIndex: number, value: string) => {
-      const header = COLUMNS[colIndex];
-      const toastId = toast.loading(`Updating ${header}...`);
-      const res = await updateField(id, FIELDS[colIndex], value);
-      if (res.success && res.data.merged) {
+  const onEdit = useCallback(
+    async (row: PhysicalStockRow, column: DataColumn<PhysicalStockRow>, value: string) => {
+      const toastId = toast.loading(`Saving ${column.label}…`);
+      if (column.key === "bom_id") {
+        const res = await updateBomId!(row.id, value || null);
+        if (!res.success) {
+          toast.error(res.error || "Could not save BOM ID", { id: toastId });
+          return false;
+        }
+        patchRow(row.id, res.data);
+        toast.success("BOM ID saved", { id: toastId });
+        return true;
+      }
+      const res = await updateField(row.id, column.key, value);
+      if (!res.success) {
+        toast.error(res.error || `Could not save ${column.label}`, { id: toastId });
+        return false;
+      }
+      if (res.data.merged) {
         const m = res.data.merged;
         toast.success(
           `Merged into ERP ${m.erp_code}: location and L columns matched. Received ${m.received_qty ?? 0}, dispatch ${m.dispatch_qty ?? 0}, available ${m.available_qty ?? 0}.`,
           { id: toastId, duration: 8000 },
         );
-        await loadData();
-      } else if (res.success) {
-        mergeRow(id, res.data);
-        toast.success(`${header} updated`, { id: toastId });
-      } else {
-        toast.error(res.error || `Failed to update ${header}`, { id: toastId });
+        void refresh();
+        return true;
       }
+      patchRow(row.id, res.data);
+      toast.success(`${column.label} saved`, { id: toastId });
+      return true;
     },
-    [updateField, mergeRow, loadData],
+    [updateBomId, updateField, patchRow, refresh],
   );
 
-  const handleSelectBomId = useCallback(
-    async (id: string, bomId: string | null) => {
-      if (!updateBomId) return;
-      const toastId = toast.loading("Saving BOM ID...");
-      const res = await updateBomId(id, bomId);
-      if (res.success) {
-        mergeRow(id, res.data);
-        toast.success("BOM ID saved", { id: toastId });
-      } else {
-        toast.error(res.error || "Failed to save BOM ID", { id: toastId });
+  // Select editors: BOM IDs come with the page; L / Dia lists cascade on the row's other levels.
+  const editOptions = useCallback(
+    async (row: PhysicalStockRow, column: DataColumn<PhysicalStockRow>): Promise<readonly string[]> => {
+      if (column.key === "bom_id") return data?.meta?.bomIdOptions?.[row.id] ?? [];
+      const filters: Record<string, string[]> = {};
+      for (const f of CASCADE_FIELDS) {
+        const v = String(row[f] ?? "").trim();
+        if (f !== column.key && v) filters[f] = [v];
       }
+      const res = await loadFacet(column.key, { page: 1, pageSize: 1, sort: null, search: "", filters });
+      const seen = res.success ? res.data.filter((v) => v !== BLANK) : [];
+      // Only options seen with this combination; a new combination gets the full list.
+      const narrowed = (column.options ?? []).filter((o) => seen.includes(o));
+      return narrowed.length ? narrowed : (column.options ?? []);
     },
-    [updateBomId, mergeRow],
+    [data, loadFacet],
   );
 
+  const chips = useMemo<FilterChip[]>(() => {
+    const out: FilterChip[] = [];
+    for (const [key, values] of Object.entries(state.filters)) {
+      const label = columns.find((c) => c.key === key)?.label ?? key;
+      for (const value of values) out.push({ key, label, value });
+    }
+    for (const [key, value] of Object.entries(state.columnSearch)) {
+      const label = columns.find((c) => c.key === key)?.label ?? key;
+      out.push({ key, label, value: `contains “${value}”`, search: true });
+    }
+    for (const [key, range] of Object.entries(state.dateRanges)) {
+      const label = columns.find((c) => c.key === key)?.label ?? key;
+      out.push({ key, label, value: `${range.from || "start"} to ${range.to || "today"}`, date: true });
+    }
+    return out;
+  }, [state.filters, state.dateRanges, state.columnSearch, columns]);
+  const hasFilters = chips.length > 0 || Boolean(state.search) || Boolean(state.card) || state.majorMinor.length > 0 || state.duplicatesOnly;
+
+  const total = data?.total ?? 0;
+  const meta = data?.meta;
+
+  // Allocation views exist only where the host filled allocations (quotation app); they narrow the loaded page.
+  const hasAllocations = Boolean(data?.rows.some((r) => r.allocations !== null));
+  const visibleRows = useMemo(() => {
+    const rows = data?.rows ?? [];
+    if (!hasAllocations) return rows;
+    const q = state.orderText.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (state.stockMode === "free" && !((freeQty(r) ?? 0) > 0)) return false;
+      if (state.stockMode === "allocated" && !((allocatedQty(r) ?? 0) > 0)) return false;
+      if (q && !r.allocations?.some((a) => `${a.contractNo} ${a.party}`.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [data, hasAllocations, state.stockMode, state.orderText]);
+
+  // Every page under the current filters and sort, one column set per order as wide as the busiest row.
+  const [exporting, setExporting] = useState(false);
+  const exportCsv = useCallback(async () => {
+    setExporting(true);
+    try {
+      const all: PhysicalStockRow[] = [];
+      for (let page = 1; ; page++) {
+        const res = await loadPage({ ...query, page, pageSize: 200 });
+        if (!res.success) throw new Error(res.error);
+        all.push(...res.data.rows);
+        if (all.length >= res.data.total || res.data.rows.length === 0) break;
+      }
+      const max = Math.max(0, ...all.map((r) => r.allocations?.length ?? 0));
+      const orderHeaders = Array.from({ length: max }, (_, n) => ["contract", "PO", "party", "item", "qty", "stage", "date"].map((h) => `Order ${n + 1} ${h}`)).flat();
+      const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const cell = (r: PhysicalStockRow, c: DataColumn<PhysicalStockRow>) =>
+        c.key === "allocations" ? (r.allocations ?? []).map(allocationText).join("; ") : c.key === "allocated_qty" ? allocatedQty(r) : c.key === "free_qty" ? freeQty(r) : (r as unknown as Record<string, unknown>)[c.key];
+      const lines = [[...columns.map((c) => c.label), ...orderHeaders].map(esc).join(",")];
+      for (const r of all) {
+        const orders = (r.allocations ?? []).flatMap((a) => [a.contractNo, a.poNo, a.party, a.itemCode, a.qty, a.stage, a.allocatedAt?.slice(0, 10)]);
+        lines.push([...columns.map((c) => cell(r, c)), ...orders].map(esc).join(","));
+      }
+      const url = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Physical_Stock_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }, [loadPage, query, columns]);
   const showNew = showHeader && flags.newItem && create;
 
   return (
-    <main className="flex flex-col bg-background h-[calc(100vh-64px)] overflow-hidden">
-      <div className="flex-1 flex flex-col min-h-0 p-6 overflow-hidden">
+    <main className="flex h-[calc(100vh-64px)] flex-col overflow-hidden bg-background">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-6">
         {showHeader && (
-          <GMDUpdateHeader
-            totalRows={items.length}
-            title="Physical Stock"
-            actions={
-              showNew && (
-                <button
-                  type="button"
-                  onClick={() => setShowNewDialog(true)}
-                  className="flex items-center gap-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-400/30 rounded px-3 py-1.5 text-[11px] font-semibold text-emerald-400 dark:text-emerald-300 transition-all"
-                >
-                  <Plus size={12} />
-                  New
-                </button>
-              )
-            }
-          />
+          <header className="flex items-baseline gap-3">
+            <h1 className="text-lg font-semibold tracking-tight">Physical Stock</h1>
+            <span className="text-sm tabular-nums text-muted-foreground">{data ? `${count.format(total)} items` : ""}</span>
+          </header>
         )}
         {showNew && (
           <NewItemDialog
             open={showNewDialog}
             onOpenChange={setShowNewDialog}
-            rows={items}
-            codeOptions={codeOptions}
+            loadFacet={loadFacet}
+            loadCodeOptions={loadCodeOptions}
             create={create}
-            onCreated={loadData}
+            revertEntry={revertEntry}
+            onCreated={() => void refresh()}
           />
         )}
-        {loading ? (
-          <div className="flex flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
-            <Loader2 size={14} className="animate-spin" />
-            Loading physical stock...
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 flex gap-4 mt-4">
-            <StockAnalyticsSidebar
-              show={showSection}
-              availableQty={availableQty}
-              availableValue={availableValue}
-              collapsed={sidebarCollapsed}
-              onToggle={() => setSidebarCollapsed((c) => !c)}
-              activeCard={cardFilter}
-              onCardClick={(kind) => setCardFilter((prev) => (prev === kind ? null : kind))}
-              majorMinorSelection={majorMinorFilter}
-              majorMinorCounts={majorMinorCounts}
-              onToggleMajorMinor={toggleMajorMinor}
-            />
-            <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
-              <GMDUpdateTable
-                headers={HEADERS}
-                rows={tableRows.rows}
-                ids={tableRows.ids}
-                selectedIndex={selectedIndex}
-                onSelect={setSelectedIndex}
-                title="Physical Stock"
-                editable
-                editableColumns={editableColumns}
-                blankOnlyEditableColumns={blankOnlyColumns}
-                blankOnlyUnlockedBy="ERP CODE"
-                fixedDropdownOptions={dropdownOptions}
-                rowDropdownOptions={rowDropdownOptions}
-                hiddenColumns={flags.hiddenColumns}
-                numericColumns={NUMERIC_COLUMNS}
-                bomIdOptionsById={updateBomId ? bomIdOptions : undefined}
-                onSelectBomId={updateBomId ? handleSelectBomId : undefined}
-                onCellUpdate={handleCellUpdate}
-                displayOnlyRowFilter={cardDisplayFilter}
-                customCell={{ column: "ALLOCATIONS", render: renderAllocations }}
-                toolbarExtra={
-                  <div className="flex items-center gap-2">
-                    <select className={CONTROL} value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}>
-                      <option value="">All locations</option>
-                      {locations.map((l) => (
-                        <option key={l} value={l}>{l}</option>
-                      ))}
-                    </select>
-                    <input
-                      className={`${CONTROL} w-40`}
-                      placeholder="Contract no / party"
-                      value={orderText}
-                      onChange={(e) => setOrderText(e.target.value)}
-                    />
-                    <select className={CONTROL} value={stockMode} onChange={(e) => setStockMode(e.target.value as StockMode)}>
-                      <option value="all">All</option>
-                      <option value="free">Free stock only</option>
-                      <option value="allocated">Allocated only</option>
-                    </select>
-                    <button type="button" onClick={exportCsv} className={`${CONTROL} flex items-center gap-1`}>
-                      <Download size={12} />
-                      CSV
-                    </button>
-                  </div>
+        <div className="flex min-h-0 flex-1 gap-4">
+          <StockAnalyticsSidebar
+            show={showSection}
+            availableQty={meta?.totals.availableQty ?? 0}
+            availableValue={meta?.totals.availableValue ?? 0}
+            collapsed={state.sidebarCollapsed}
+            onToggle={() => dispatch(toggleSidebar())}
+            activeCard={state.card}
+            onCardClick={(kind) => dispatch(toggleCard(kind))}
+            majorMinorSelection={new Set(state.majorMinor)}
+            majorMinorCounts={meta?.majorMinorCounts ?? { yes: 0, no: 0, blank: 0 }}
+            onToggleMajorMinor={(kind) => dispatch(toggleMajorMinor(kind))}
+          />
+          <section className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <SearchField value={state.search} onCommit={(v) => dispatch(setSearch(v))} busy={table.refreshing} placeholder="Search stock" />
+              <FilterChips
+                chips={chips}
+                onRemove={(chip) =>
+                  chip.date
+                    ? dispatch(setDateRange({ key: chip.key, range: undefined }))
+                    : chip.search
+                      ? dispatch(setColumnSearch({ key: chip.key, value: "" }))
+                      : dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => v !== chip.value) }))
                 }
-                onFilteredRowsChange={setStatsRows}
-                duplicateErpHighlight={flags.duplicateErpHighlight}
-                fullHeight
+                onClear={() => dispatch(clearFilters())}
               />
+              <div className="ml-auto flex items-center gap-2">
+                {hasAllocations && (
+                  <>
+                    <input
+                      value={state.orderText}
+                      onChange={(e) => dispatch(setOrderText(e.target.value))}
+                      placeholder="Contract no / party"
+                      aria-label="Narrow by contract no or party"
+                      className="h-8 w-44 rounded-lg border border-input bg-background px-2.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 dark:bg-input/30"
+                    />
+                    <Segmented
+                      label="Stock view"
+                      options={[
+                        { value: "all", label: "All" },
+                        { value: "free", label: "Free" },
+                        { value: "allocated", label: "Allocated" },
+                      ]}
+                      value={state.stockMode}
+                      onChange={(v) => dispatch(setStockMode(v))}
+                    />
+                  </>
+                )}
+                <Button variant="outline" size="sm" onClick={() => void exportCsv()} disabled={exporting || !total}>
+                  <Download />
+                  {exporting ? "Exporting…" : "CSV"}
+                </Button>
+                {flags.duplicateErpHighlight && (
+                  <button
+                    type="button"
+                    aria-pressed={state.duplicatesOnly}
+                    onClick={() => dispatch(setDuplicatesOnly(!state.duplicatesOnly))}
+                    className={cn(
+                      "flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-[background-color,color,border-color,transform] duration-100 outline-none focus-visible:ring-2 focus-visible:ring-ring/50 active:scale-[0.97] motion-reduce:transition-none",
+                      state.duplicatesOnly
+                        ? "border-amber-400/60 bg-amber-400/15 text-amber-700 dark:text-amber-300"
+                        : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Copy size={12} />
+                    Duplicates only
+                  </button>
+                )}
+                {showNew && (
+                  <Button size="sm" onClick={() => setShowNewDialog(true)}>
+                    <Plus />
+                    New item
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+            <DataTable
+              columns={columns}
+              rows={visibleRows}
+              rowId={(r) => r.id}
+              sort={state.sort}
+              onSortChange={(s) => dispatch(setSort(s))}
+              filters={state.filters}
+              onFilterChange={(key, values) => dispatch(setFilter({ key, values }))}
+              dateRanges={state.dateRanges}
+              onDateRangeChange={(key, range) => dispatch(setDateRange({ key, range }))}
+              columnSearch={state.columnSearch}
+              onColumnSearchChange={(key, value) => dispatch(setColumnSearch({ key, value }))}
+              facetOptions={table.getFacetOptions}
+              onFacetOpen={(key) => void table.requestFacet(key)}
+              selectedId={state.selectedId}
+              onSelect={onSelect}
+              onEdit={onEdit}
+              editOptions={editOptions}
+              rowClassName={duplicateClass}
+              loading={table.loading}
+              refreshing={table.refreshing}
+              error={table.error}
+              onRetry={() => void refresh()}
+              hasFilters={hasFilters}
+              onClearFilters={() => dispatch(clearFilters())}
+              onPageStep={(d) => {
+                const next = state.page + d;
+                if (next >= 1 && next <= Math.ceil(total / state.pageSize)) dispatch(setPage(next));
+              }}
+            />
+            <Pagination
+              page={state.page}
+              pageSize={state.pageSize}
+              total={total}
+              onPageChange={(p) => dispatch(setPage(p))}
+              onPageSizeChange={(s) => dispatch(setPageSize(s))}
+            />
+          </section>
+        </div>
       </div>
     </main>
   );

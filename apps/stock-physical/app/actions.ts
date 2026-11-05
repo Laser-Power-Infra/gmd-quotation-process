@@ -3,14 +3,18 @@
 import {
   createPhysicalStock,
   listCodeOptions,
-  listPhysicalStock,
+  listPhysicalStockFacet,
+  listPhysicalStockPage,
+  restoreStockEntry,
+  revertStockEntry,
   updatePhysicalStockField,
+  type StockTableQuery,
 } from "@gmd/physical-stock/server";
-import { incomingFromForItems, inTransitForItems } from "@gmd/purchase/server";
 import { editableFieldsFor } from "@gmd/physical-stock/flags";
 import type { NewItemInput } from "@gmd/physical-stock/types";
+import type { TableQuery } from "@gmd/ui/components/data-table/types";
 import { getPhysicalStockFlags } from "@/lib/physical-stock-flags";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser, isPrivileged } from "@/lib/auth-helpers";
 
 // Auth is checked here too: proxy.ts does not protect Server Action endpoints.
 // Flags are evaluated again inside every action: the UI hiding a control is
@@ -21,39 +25,30 @@ async function unauthorized() {
   return (await getCurrentUser()) ? null : { success: false as const, error: "Unauthorized" };
 }
 
-export async function load() {
+async function guarded<T>(fn: () => Promise<T>) {
   const denied = await unauthorized();
   if (denied) return denied;
   try {
-    const items = await listPhysicalStock();
-    // Ordered but not yet received, by ERP code. A failure here must not take
-    // the stock page down with it: the column falls back to blank (unknown).
-    let inTransit = new Map<string, number>();
-    let incomingFrom = new Map<string, string>();
-    try {
-      const codes = items.map((i) => (i.erp_code ?? "").trim());
-      [inTransit, incomingFrom] = await Promise.all([inTransitForItems(codes), incomingFromForItems(codes)]);
-    } catch (err) {
-      console.error("[physical-stock] in-transit lookup failed", err);
-    }
-    return {
-      success: true as const,
-      data: {
-        codeOptions: await listCodeOptions().catch((err) => {
-          // Table missing until the db-stock migration is deployed: the dialog falls back to generating.
-          console.error("[physical-stock] code options lookup failed", err);
-          return undefined;
-        }),
-        items: items.map((item) => ({
-          ...item,
-          in_transit: inTransit.get((item.erp_code ?? "").trim()) ?? null,
-          incoming_from: incomingFrom.get((item.erp_code ?? "").trim()) ?? null,
-        })),
-      },
-    };
+    return { success: true as const, data: await fn() };
   } catch (err) {
     return { success: false as const, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+/** One filtered/sorted page; in-transit, heat and FG columns come from SQL. */
+export async function loadPage(query: TableQuery) {
+  return guarded(async () =>
+    listPhysicalStockPage(query as StockTableQuery, { duplicates: (await getPhysicalStockFlags()).duplicateErpHighlight }),
+  );
+}
+
+export async function loadFacet(field: string, query: TableQuery) {
+  return guarded(() => listPhysicalStockFacet(field, query as StockTableQuery));
+}
+
+/** New Item picker codes; empty until the db-stock migration and first hourly sync. */
+export async function loadCodeOptions() {
+  return guarded(listCodeOptions);
 }
 
 export async function updateField(id: string, field: string, value: string | null) {
@@ -62,11 +57,23 @@ export async function updateField(id: string, field: string, value: string | nul
   return updatePhysicalStockField(id, field, value, editableFieldsFor(await getPhysicalStockFlags()));
 }
 
+/** Admin / developer only: takes an entry's quantity back out of stock. */
+export async function revertEntry(entryNo: string) {
+  if (!(await isPrivileged())) return { success: false as const, error: "Only an admin or developer can revert an entry." };
+  return revertStockEntry(entryNo);
+}
+
+/** Admin / developer only: counts a reverted entry again. */
+export async function restoreEntry(entryNo: string) {
+  if (!(await isPrivileged())) return { success: false as const, error: "Only an admin or developer can restore an entry." };
+  return restoreStockEntry(entryNo);
+}
+
 export async function create(input: NewItemInput) {
-  const denied = await unauthorized();
-  if (denied) return denied;
+  const user = await getCurrentUser();
+  if (!user) return { success: false as const, error: "Unauthorized" };
   if (!(await getPhysicalStockFlags()).newItem) {
     return { success: false as const, error: "Not allowed in this app." };
   }
-  return createPhysicalStock(input);
+  return createPhysicalStock(input, user.email ?? null);
 }

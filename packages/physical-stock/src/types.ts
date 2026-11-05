@@ -1,4 +1,6 @@
 import type { CodeOptions } from "./codeOptions";
+import type { TablePage, TableQuery } from "@gmd/ui/components/data-table/types";
+import type { StockPageMeta } from "./server/query";
 
 export interface PhysicalStockRow {
   id: string;
@@ -6,6 +8,8 @@ export interface PhysicalStockRow {
   form_date: string | null;
   erp_code: string | null;
   location: string | null;
+  /** Derived from entries: every entry no of this row, oldest first, comma-joined. */
+  entry_no: string | null;
   l2_valve_type: string | null;
   dimension: string | null;
   l7_dimension: string | null;
@@ -53,9 +57,11 @@ export interface PhysicalStockRow {
   in_transit: number | null;
   /** Open PO lines behind `in_transit` (supplier, PO no/date, due, pending/received); filled like it. */
   incoming_from: string | null;
-  /** Orders holding this stock (host fills it from the allocation engine); null = not looked up, like `in_transit`. */
+  /** Same location + L columns as another row with a different ERP code (only sent when the flag is on). */
+  is_duplicate?: boolean;
+  /** Orders holding this stock (the quotation host fills it from its allocation engine); null = not looked up. */
   allocations: StockAllocationRow[] | null;
-  /** Derived columns, rendered by rowToArray from `allocations`; never stored. */
+  /** Rendered from `allocations`; never stored. */
   allocated_qty?: never;
   free_qty?: never;
 }
@@ -107,13 +113,8 @@ export type ActionResult<T> =
   | { success: true; data: T }
   | { success: false; error: string };
 
-export interface PhysicalStockData {
-  items: PhysicalStockRow[];
-  /** ERP-code options for the New Item picker (synced RM / CREATE BOM snapshot). */
-  codeOptions?: CodeOptions;
-  /** Per-row BOM ID dropdown options; only apps with updateBomId send them. */
-  bomIdOptions?: Record<string, string[]>;
-}
+/** One page of the table plus the sidebar figures; apps with updateBomId add per-row BOM ID options. */
+export type PhysicalStockPageData = TablePage<PhysicalStockRow, StockPageMeta & { bomIdOptions?: Record<string, string[]> }>;
 
 export const NEW_ITEM_FIELDS = [
   "location",
@@ -131,6 +132,32 @@ export const NEW_ITEM_FIELDS = [
 /** `erp_code` is a picked RM / BOM code; absent means generate one. */
 export type NewItemInput = Partial<Record<(typeof NEW_ITEM_FIELDS)[number], string>> & { erp_code?: string };
 
+/** One New Item submit booked against a stock row, as the Entry History page lists it. */
+export interface StockEntryRow {
+  id: string;
+  entry_no: string;
+  /** ISO string. */
+  created_at: string;
+  qty_type: "received" | "dispatch";
+  qty: string | null;
+  /** Counted in the row; false = reverted. */
+  merged: boolean;
+  created_by: string | null;
+  erp_code: string | null;
+  location: string | null;
+  /** Valve type / dia / component / material / std / PN of the row. */
+  description: string;
+}
+
+/** Server Actions behind the Entry History page. */
+export interface EntryHistoryActions {
+  loadEntries: (erpCode: string) => Promise<ActionResult<StockEntryRow[]>>;
+  /** Admin / developer only. */
+  revertEntry?: (entryNo: string) => Promise<ActionResult<null>>;
+  /** Admin / developer only: counts a reverted entry again. */
+  restoreEntry?: (entryNo: string) => Promise<ActionResult<null>>;
+}
+
 /** Set when editing a blank-ERP row folded it into an existing item (the edited row is deleted). */
 export interface MergeInfo {
   erp_code: string;
@@ -143,13 +170,19 @@ export type FieldUpdate = Partial<PhysicalStockRow> & { merged?: MergeInfo };
 
 /** Server Actions the host app passes in. Optional ones switch features on. */
 export interface PhysicalStockActions {
-  load: () => Promise<ActionResult<PhysicalStockData>>;
+  loadPage: (query: TableQuery) => Promise<ActionResult<PhysicalStockPageData>>;
+  /** Distinct values of one field under the other filters (facets, cascading edit dropdowns). */
+  loadFacet: (field: string, query: TableQuery) => Promise<ActionResult<string[]>>;
+  /** ERP-code options for the New Item picker, fetched when the dialog opens. */
+  loadCodeOptions?: () => Promise<ActionResult<CodeOptions>>;
   updateField: (
     id: string,
     field: string,
     value: string | null,
   ) => Promise<ActionResult<FieldUpdate>>;
-  create?: (input: NewItemInput) => Promise<ActionResult<{ erp_code: string; merged: boolean }>>;
+  create?: (input: NewItemInput) => Promise<ActionResult<{ erp_code: string; existing: boolean; entry_no: string }>>;
+  /** Takes one entry's quantity back out of its row and marks the entry reverted. */
+  revertEntry?: (entryNo: string) => Promise<ActionResult<null>>;
   updateBomId?: (
     id: string,
     bomId: string | null,

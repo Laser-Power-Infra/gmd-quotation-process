@@ -7,6 +7,7 @@
 import { prisma } from "@/lib/prisma";
 import { stockPrisma } from "@/lib/stockPrisma";
 import { flattenCreateBoms } from "@/lib/physicalStockCodeOptions";
+import { refreshDerived } from "@gmd/physical-stock/server";
 
 const CHUNK = 2000;
 const chunks = <T>(rows: T[]) =>
@@ -74,5 +75,7 @@ export async function syncPhysicalStockCodeOptions(): Promise<CodeOptionsSyncRes
     stockPrisma.fgBomOption.deleteMany(),
     ...chunks(fgRows).map((data) => stockPrisma.fgBomOption.createMany({ data })),
   ]);
+  // FG ITEM CODE / PRODUCTION ITEM are stored on PhysicalStock so the page can filter them in SQL.
+  await refreshDerived();
   return { rmCodes: rmRows.length, bomCodes: bomRows.length, fgBomCodes: fgRows.length };
 }
