@@ -58,12 +58,17 @@ model PhysicalStock {
   // Derived from RawMaterial.majorMarking by erpItemCode match: true = major
   // ('true'), false = minor ('false'), null when no RawMaterial matches.
   majorminor_marking             Boolean?
+  // Derived by refreshDerived() (@gmd/physical-stock/server) from FgBomOption + the L columns,
+  // stored so the stock page can filter/sort them in SQL.
+  fg_item_code                   String?
+  production_item                String?
     form_date                           DateTime @default(now())
   created_at                     DateTime @default(now())
   updated_at                     DateTime @updatedAt
   // Set from the mobile heat-entry form once every heat of this row is entered.
   heat_done                      Boolean  @default(false)
   heat_entries                   HeatEntry[]
+  entries                        StockEntry[]
 
   @@index([erp_code])
 }
@@ -72,6 +77,26 @@ model PhysicalStock {
 // Serial number = erp_code-<L2 valve type short form>-heat_no-heat_seq. heat_no is typed
 // by the user; heat_seq counts up per heat_no across all rows (serial_no is
 // built in listPhysicalStock, not stored).
+// One New Item submit: a numbered booking of quantity against a stock row,
+// whether the submit created the row or added to an existing one.
+// entry_no = SE-<financial year, e.g. 2627>-<5-digit counter per year>.
+model StockEntry {
+  id                String        @id @default(cuid())
+  entry_no          String        @unique
+  fy                String
+  entry_seq         Int
+  physical_stock_id String
+  physical_stock    PhysicalStock @relation(fields: [physical_stock_id], references: [id], onDelete: Cascade)
+  qty_type          String // "received" | "dispatch"
+  qty               String?
+  merged            Boolean       @default(true) // counted in the row; false = reverted, its qty taken back out
+  created_by        String? // user email; null for hosts without a login
+  created_at        DateTime      @default(now())
+
+  @@unique([fy, entry_seq])
+  @@index([physical_stock_id])
+}
+
 model HeatEntry {
   id                String        @id @default(cuid())
   physical_stock_id String
@@ -80,6 +105,8 @@ model HeatEntry {
   heat_seq          Int
   // Google Drive file id of the printed serial sheet; null = serial reserved, sheet not yet uploaded.
   sheet_file_id     String?
+  // erp_code-<valve type short form>-heat_no-heat_seq, stored for SQL filtering; refreshDerived() keeps it current.
+  serial_no         String?
   // Flange dims typed on the heat-entry page with the sheet (free text, mm / count).
   od                String?
   id_mm             String?

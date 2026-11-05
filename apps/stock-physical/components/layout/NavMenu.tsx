@@ -12,6 +12,7 @@ const TAB_ACTIVE =
 const NAV = [
   { label: "Physical Stock", href: "/" },
   { label: "Heat Entry", href: "/heat-entry" },
+  { label: "Entry History", href: "/history" },
 ];
 
 export default function NavMenu() {

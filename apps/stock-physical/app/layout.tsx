@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@gmd/ui/components/sonner";
 import Navbar from "@/components/layout/Navbar";
 import { ThemeProvider } from "@/components/layout/ThemeProvider";
+import StoreProvider from "./StoreProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,8 +30,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="gmd-theme" disableTransitionOnChange>
-          <Navbar />
-          {children}
+          <StoreProvider>
+            <Navbar />
+            {children}
+          </StoreProvider>
           <Toaster />
         </ThemeProvider>
       </body>

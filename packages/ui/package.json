@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "exports": {
+    "./components/data-table/types": "./src/components/data-table/types.ts",
+    "./components/data-table/useServerTable": "./src/components/data-table/useServerTable.ts",
+    "./components/data-table/format": "./src/components/data-table/format.ts",
     "./components/*": "./src/components/*.tsx",
     "./lib/*": "./src/lib/*.ts",
     "./styles.css": "./src/styles.css"

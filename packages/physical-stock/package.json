@@ -11,14 +11,19 @@
     "./dimensions": "./src/dimensions.ts",
     "./flags": "./src/flags.ts",
     "./types": "./src/types.ts",
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./state": "./src/state/tableSlice.ts",
+    "./stock-columns": "./src/stockColumns.ts",
+    "./history": "./src/ui/EntryHistoryPage.tsx",
+    "./state/history": "./src/state/historySlice.ts"
   },
   "dependencies": {
-    "@gmd/dashboard": "workspace:*",
     "@gmd/db-stock": "workspace:*",
     "@gmd/ui": "workspace:*",
     "@googleapis/sheets": "^18.0.1",
+    "@reduxjs/toolkit": "^2.12.0",
     "lucide-react": "^1.23.0",
+    "react-redux": "^9.3.0",
     "server-only": "^0.0.1",
     "sonner": "^2.0.7"
   },

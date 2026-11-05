@@ -6,6 +6,7 @@ export const COLUMNS = [
   "DATE",
   "ERP CODE",
   "location",
+  "ENTRY NO",
   "L2-VALVE TYPE",
   "Dia",
   "L4-COMPONENT",
@@ -48,12 +49,12 @@ export const COLUMNS = [
 
 export type PhysicalStockHeader = (typeof COLUMNS)[number];
 
-// FIELDS[i] is the DB field of COLUMNS[i]: cell edits look the field up by
-// column index and rowToArray renders cells in the same order.
+// FIELDS[i] is the DB field of COLUMNS[i].
 export const FIELDS = [
   "form_date",
   "erp_code",
   "location",
+  "entry_no",
   "l2_valve_type",
   "dimension",
   "l4_component",
@@ -396,13 +397,6 @@ export const BLANK_ONLY_HEADERS = [
   "L8 -ITEM CATEGORY",
 ] as const satisfies readonly EditableHeader[];
 
-export function rowToArray(row: PhysicalStockRow): unknown[] {
-  // item wise-value is shown from the current cost, which the BOM job refreshes hourly.
-  return FIELDS.map((field) =>
-    field === "item_wise_value" ? computeItemWiseValue(row.cost, row.available_qty) : row[field] ?? "",
-  );
-}
-
 function parseNum(value: unknown): number | null {
   const s = String(value ?? "").replace(/,/g, "").trim();
   if (s === "") return null;
@@ -413,30 +407,6 @@ function parseNum(value: unknown): number | null {
 /** `cost (BOM master) * available qty`, two decimals; a blank operand counts as 0. */
 export function computeItemWiseValue(cost: unknown, availableQty: unknown): string {
   return ((parseNum(cost) ?? 0) * (parseNum(availableQty) ?? 0)).toFixed(2);
-}
-
-// L levels a row's dropdowns cascade on (L7-PN has no fixed list but still narrows the others).
-const CASCADE_IDX = (
-  ["L2-VALVE TYPE", "Dia", "L4-COMPONENT", "L5- MATERIAL", "L6-STD", "L7-PN", "L8 -ITEM CATEGORY"] as const
-).map((h) => COLUMNS.indexOf(h));
-const normCell = (v: unknown) => String(v ?? "").trim().replace(/\s+/g, " ").toUpperCase();
-
-/**
- * Options of L dropdown `header` on `row`: only values that occur in some stock
- * row together with every other L level already filled on `row`. The level
- * being edited never narrows itself; no match (a new combination) gives the full list.
- */
-export function cascadedOptions(header: string, row: readonly unknown[], rows: readonly (readonly unknown[])[]): string[] {
-  const all = DROPDOWN_OPTIONS[header as PhysicalStockHeader] ?? [];
-  const self = COLUMNS.indexOf(header as PhysicalStockHeader);
-  const picked = CASCADE_IDX.filter((i) => i !== self && normCell(row[i])).map((i) => [i, normCell(row[i])] as const);
-  if (!picked.length) return [...all];
-  const seen = new Set<string>();
-  for (const r of rows) {
-    if (picked.every(([i, v]) => normCell(r[i]) === v)) seen.add(normCell(r[self]));
-  }
-  const out = all.filter((o) => seen.has(normCell(o)));
-  return out.length ? out : [...all];
 }
 
 // L2-VALVE TYPE short forms that are not plain word initials.
@@ -463,6 +433,16 @@ export function buildSerial(
   return [r.erp_code, valveTypeCode(r.l2_valve_type), e.heat_no, e.heat_seq].map((v) => String(v ?? "").trim()).join("-");
 }
 
+/** Indian financial year (April to March) as two-digit start and end years: 5 Nov 2026 -> "2627", 10 Feb 2026 -> "2526". */
+export function financialYear(date = new Date()): string {
+  const start = date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1;
+  const yy = (y: number) => String(y % 100).padStart(2, "0");
+  return `${yy(start)}${yy(start + 1)}`;
+}
+
+/** Stock entry number: SE-<financial year>-<5-digit counter within that year>. */
+export const buildEntryNo = (fy: string, seq: number) => `SE-${fy}-${String(seq).padStart(5, "0")}`;
+
 /** Codes minted by createPhysicalStock: 3 letters + 6 digits. */
 /** Sort key for the heat-entry queue: numeric available_qty > 0 ascending; zero, negative, blank and non-numeric last. */
 export function availableQtyOrder(qty: unknown): number {
@@ -488,6 +468,13 @@ export function addQty(a: unknown, b: unknown): string | null {
   const x = parseNum(a);
   const y = parseNum(b);
   return x === null && y === null ? null : String((x ?? 0) + (y ?? 0));
+}
+
+/** `a - b` as a qty string; a blank operand counts as 0, both blank stays blank. */
+export function subtractQty(a: unknown, b: unknown): string | null {
+  const x = parseNum(a);
+  const y = parseNum(b);
+  return x === null && y === null ? null : String((x ?? 0) - (y ?? 0));
 }
 
 // Text fields whose values are kept side by side (comma separated) on a merge.

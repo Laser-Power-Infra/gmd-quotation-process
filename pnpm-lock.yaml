@@ -412,6 +412,9 @@ importers:
       '@googleapis/drive':
         specifier: ^26.0.2
         version: 26.0.2
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0
@@ -439,6 +442,9 @@ importers:
       react-dom:
         specifier: 19.2.4
         version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
@@ -628,9 +634,6 @@ importers:
 
   packages/physical-stock:
     dependencies:
-      '@gmd/dashboard':
-        specifier: workspace:*
-        version: link:../dashboard
       '@gmd/db-stock':
         specifier: workspace:*
         version: link:../db-stock
@@ -640,6 +643,9 @@ importers:
       '@googleapis/sheets':
         specifier: ^18.0.1
         version: 18.1.1
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
       lucide-react:
         specifier: ^1.23.0
         version: 1.52.0(@types/react@19.3.0)(react@19.2.4)
@@ -649,6 +655,9 @@ importers:
       react-dom:
         specifier: ^19
         version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
