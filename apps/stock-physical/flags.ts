@@ -32,6 +32,9 @@ export const physicalStockHiddenColumns = flag<PhysicalStockHeader[]>({
     "DRAWING/ TECHNICAL DATA",
     "COST",
     "BOM ID",
+    "ALLOCATED QTY",
+    "FREE QTY",
+    "ALLOCATIONS",
   ],
 });
 

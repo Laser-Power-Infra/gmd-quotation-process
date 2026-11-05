@@ -11,9 +11,10 @@ import {
   selectEnquiryQuery,
   selectEnquirySummary,
 } from "@/lib/enquiriesSlice";
+import { setEnquiryStage } from "@/lib/enquiriesSlice";
 import { setFilter } from "@/lib/filtersSlice";
 import { setPage } from "@/lib/paginationSlice";
-import { setClosedBomIds } from "@/lib/uiSlice";
+import { setAnalyticsOn, setAnalyticsSidebarCollapsed, setClosedBomIds } from "@/lib/uiSlice";
 import type { DropdownOptions } from "@/lib/types";
 import type { EnquiryPageResult } from "@/lib/enquiryQuery";
 import { EMPTY_ENQUIRY_SUMMARY, enquiryFilterKey, enquiryQueryKey } from "@/lib/enquiryQuery";
@@ -28,7 +29,6 @@ interface DashboardContainerProps {
   initialQueryKey: string;
   dropdownOptions: DropdownOptions;
   nextDocketNumber: string;
-  enquiriesList: { id: string; docketNumber: string; partyName: string }[];
   autoSentDockets?: string[];
   autoPendingDockets?: string[];
 }
@@ -38,13 +38,39 @@ export default function DashboardContainer({
   initialQueryKey,
   dropdownOptions,
   nextDocketNumber,
-  enquiriesList,
   autoSentDockets,
   autoPendingDockets,
 }: DashboardContainerProps) {
   const dispatch = useAppDispatch();
 
   const filters = useAppSelector((s) => s.filters);
+  // The sidebar starts collapsed below 1600 px so the table fits; the user's own choice is remembered.
+  const sidebarCollapsed = useAppSelector((s) => s.ui.isAnalyticsSidebarCollapsed);
+  const sidebarApplied = useRef<boolean | null>(null); // what the rule set; only a different value is the user's choice
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = localStorage.getItem("analytics-sidebar-collapsed"); } catch { /* blocked: use the width rule */ }
+    const initial = saved === null ? window.innerWidth < 1600 : saved === "1";
+    sidebarApplied.current = initial;
+    dispatch(setAnalyticsSidebarCollapsed(initial));
+  }, [dispatch]);
+  useEffect(() => {
+    if (sidebarApplied.current === null || !!sidebarCollapsed === sidebarApplied.current) return;
+    sidebarApplied.current = !!sidebarCollapsed;
+    try { localStorage.setItem("analytics-sidebar-collapsed", sidebarCollapsed ? "1" : "0"); } catch { /* not remembered */ }
+  }, [sidebarCollapsed]);
+  // Analytics switch: off = plain table. Read after mount so the server render stays "on".
+  const analyticsOn = useAppSelector((s) => s.ui.analyticsOn);
+  useEffect(() => {
+    let saved: string | null = null;
+    try { saved = localStorage.getItem("quotation-analytics-on"); } catch { /* blocked: stay on */ }
+    if (saved === "0") dispatch(setAnalyticsOn(false));
+  }, [dispatch]);
+  const changeAnalytics = (on: boolean) => {
+    dispatch(setAnalyticsOn(on));
+    if (!on) dispatch(setEnquiryStage("")); // its tile is hidden, so nothing could un-click it
+    try { localStorage.setItem("quotation-analytics-on", on ? "1" : "0"); } catch { /* not remembered */ }
+  };
   const pageEnquiries = useAppSelector(selectAllEnquiries);
   const pageState = useAppSelector((s) => s.enquiries.page);
   const summary = useAppSelector(selectEnquirySummary) ?? initialPage.summary ?? EMPTY_ENQUIRY_SUMMARY;
@@ -147,13 +173,6 @@ export default function DashboardContainer({
     dispatch(setClosedBomIds(derivedClosedBomIds));
   }, [derivedClosedBomIds, dispatch]);
 
-  // Already fetched server-side for the Add Items dropdown; reuse it instead of
-  // making the table fetch the same list again on mount.
-  const docketNumbers = useMemo(
-    () => enquiriesList.map((e) => e.docketNumber),
-    [enquiriesList],
-  );
-
   const formattedSum = formatIndianNumber(summary.totalValueGst, 2);
   const formattedExclSum = formatIndianNumber(summary.totalValueExclGst, 2);
   const formattedTotalCost = formatIndianNumber(summary.totalCost, 2);
@@ -166,7 +185,7 @@ export default function DashboardContainer({
 
   return (
     <div className="flex flex-col lg:flex-row gap-3 flex-1 min-h-0 w-full overflow-hidden transition-all duration-300">
-      <QuotationAnalyticsSidebar
+      {analyticsOn && <QuotationAnalyticsSidebar
         selectedPartyNames={selectedPartyNames}
         selectedUtilities={selectedUtilities}
         selectedEnquiryTypes={selectedEnquiryTypes}
@@ -182,12 +201,12 @@ export default function DashboardContainer({
         onClearAll={clearAllAnalytics}
         hasActiveAnalyticsFilters={hasActiveAnalyticsFilters}
         facetCounts={summary.facetCounts ?? {}}
-      />
+      />}
       {/* overflow-y-auto, not hidden: on a short viewport the stat strip + header +
           stage tiles can exceed the height, and clipping them left no way to reach
           the table. The table keeps its own min height so it never collapses to zero. */}
       <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0 overflow-y-auto overflow-x-hidden transition-all duration-300">
-        <div className="shrink-0">
+        {analyticsOn && <div className="shrink-0">
           <QuotationTotalValueCard
             formattedSum={formattedSum}
             formattedExclSum={formattedExclSum}
@@ -206,19 +225,19 @@ export default function DashboardContainer({
               selectedSizes.length
             }
           />
-        </div>
+        </div>}
         <div className="shrink-0">
           <DashboardHeader
-            enquiries={enquiriesList}
             nextDocketNumber={nextDocketNumber}
             dropdownOptions={dropdownOptions}
             initialSummary={initialPage.summary}
+            analyticsOn={analyticsOn}
+            onAnalyticsChange={changeAnalytics}
           />
         </div>
         <div className="bg-card rounded-lg border border-border shadow-sm flex flex-col flex-1 min-h-[26rem] overflow-hidden">
           <EnquiryTable
             dropdownOptions={dropdownOptions}
-            initialDocketNumbers={docketNumbers}
             autoSentDockets={autoSentDockets}
             autoPendingDockets={autoPendingDockets}
           />

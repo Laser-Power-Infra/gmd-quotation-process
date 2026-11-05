@@ -1,4 +1,4 @@
-import type { PhysicalStockRow } from "./types";
+import type { PhysicalStockRow, StockAllocationRow } from "./types";
 
 // Plain TS, safe to import from client and server code.
 
@@ -45,6 +45,10 @@ export const COLUMNS = [
   // Derived from the FG item master (see fgMatcher); last for the same index reason.
   "FG ITEM CODE",
   "PRODUCTION ITEM",
+  // Filled by the quotation host from its allocation engine (another DB): shown, not filtered in SQL.
+  "ALLOCATED QTY",
+  "FREE QTY",
+  "ALLOCATIONS",
 ] as const;
 
 export type PhysicalStockHeader = (typeof COLUMNS)[number];
@@ -90,6 +94,9 @@ export const FIELDS = [
   "incoming_from",
   "fg_item_code",
   "production_item",
+  "allocated_qty",
+  "free_qty",
+  "allocations",
 ] as const satisfies readonly (keyof PhysicalStockRow)[];
 
 export type PhysicalStockField = (typeof FIELDS)[number];
@@ -111,7 +118,12 @@ export const NUMERIC_COLUMNS: ReadonlySet<string> = new Set([
   "shortage qty",
   "",
   "COST",
+  "ALLOCATED QTY",
+  "FREE QTY",
 ]);
+
+/** Columns the host computes per row outside the stock DB: no SQL filter, facet or sort. */
+export const CLIENT_ONLY_FIELDS: ReadonlySet<string> = new Set(["allocated_qty", "free_qty", "allocations"]);
 
 /**
  * Every column an app may make editable. The set is fixed (not per app): both
@@ -432,6 +444,19 @@ export function buildSerial(
 ): string {
   return [r.erp_code, valveTypeCode(r.l2_valve_type), e.heat_no, e.heat_seq].map((v) => String(v ?? "").trim()).join("-");
 }
+
+/** Open allocations only (dispatched ones already left the shed); null when not looked up. */
+export function allocatedQty(row: PhysicalStockRow): number | null {
+  return row.allocations && row.allocations.filter((a) => a.stage !== "Dispatched").reduce((n, a) => n + a.qty, 0);
+}
+
+/** available - allocated, floored at 0; null when allocations were not looked up. */
+export function freeQty(row: PhysicalStockRow): number | null {
+  const allocated = allocatedQty(row);
+  return allocated === null ? null : Math.max(0, (parseNum(row.available_qty) ?? 0) - allocated);
+}
+
+export const allocationText = (a: StockAllocationRow) => `${a.contractNo} ×${a.qty} (${a.stage})`;
 
 /** Indian financial year (April to March) as two-digit start and end years: 5 Nov 2026 -> "2627", 10 Feb 2026 -> "2526". */
 export function financialYear(date = new Date()): string {

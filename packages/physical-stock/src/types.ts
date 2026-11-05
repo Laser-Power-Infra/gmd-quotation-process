@@ -59,6 +59,24 @@ export interface PhysicalStockRow {
   incoming_from: string | null;
   /** Same location + L columns as another row with a different ERP code (only sent when the flag is on). */
   is_duplicate?: boolean;
+  /** Orders holding this stock (the quotation host fills it from its allocation engine); null = not looked up. */
+  allocations: StockAllocationRow[] | null;
+  /** Rendered from `allocations`; never stored. */
+  allocated_qty?: never;
+  free_qty?: never;
+}
+
+export type StockAllocationStage = "Booked" | "Offered" | "Inspection done" | "Dispatched";
+
+// Structural subset of the host's `Allocation` so the host can pass its objects straight through.
+export interface StockAllocationRow {
+  contractNo: string;
+  itemCode: string;
+  party: string;
+  poNo: string | null;
+  qty: number;
+  stage: StockAllocationStage;
+  allocatedAt: string | null;
 }
 
 /** Flange dims typed per serial on the heat-entry page; labels in DIMENSION_FIELDS (dimensions.ts). */

@@ -252,3 +252,23 @@ model FgBomOption {
 
   @@index([fgCode])
 }
+
+// Persisted allocation: a manual booking, or an Offer Now row locked by "Offer sent = Y".
+// Keys are plain text: ContractReview lives in another database.
+model StockAllocation {
+  id          String   @id @default(cuid())
+  erpCode     String
+  location    String? // KGP / BALTIKURI; null = any
+  contractNo  String
+  itemCode    String // contract line item code
+  qty         Float
+  source      String // "manual" | "locked"
+  basis       String? // "Finished" | "Assemble" | "Actuator to map" (locked rows)
+  remarks     String?
+  allocatedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([erpCode])
+  @@index([contractNo, itemCode])
+}

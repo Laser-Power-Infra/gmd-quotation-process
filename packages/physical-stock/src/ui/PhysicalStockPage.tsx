@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { Copy, Plus } from "lucide-react";
+import { Copy, Download, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@gmd/ui/components/button";
 import { DataTable } from "@gmd/ui/components/data-table/DataTable";
@@ -10,9 +10,11 @@ import { FilterChips, type FilterChip } from "@gmd/ui/components/data-table/Filt
 import { Pagination } from "@gmd/ui/components/data-table/Pagination";
 import { SearchField } from "@gmd/ui/components/data-table/SearchField";
 import { useServerTable } from "@gmd/ui/components/data-table/useServerTable";
+import { Segmented } from "@gmd/ui/components/segmented";
 import { BLANK, type DataColumn } from "@gmd/ui/components/data-table/types";
 import { cn } from "@gmd/ui/lib/utils";
 import type { PhysicalStockFlags, SidebarSection } from "../flags";
+import { allocatedQty, allocationText, freeQty } from "../columns";
 import { CASCADE_FIELDS, columnsFor } from "../stockColumns";
 import {
   clearFilters,
@@ -23,6 +25,8 @@ import {
   setDateRange,
   setDuplicatesOnly,
   setFilter,
+  setOrderText,
+  setStockMode,
   setPage,
   setPageSize,
   setSearch,
@@ -34,6 +38,7 @@ import {
 import type { PhysicalStockActions, PhysicalStockPageData, PhysicalStockRow } from "../types";
 import StockAnalyticsSidebar from "./StockAnalyticsSidebar";
 import NewItemDialog from "./NewItemDialog";
+import { AllocationsCell } from "./AllocationsCell";
 
 export interface PhysicalStockPageProps {
   flags: PhysicalStockFlags;
@@ -63,7 +68,10 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
     [query],
   );
 
-  const columns = useMemo(() => columnsFor(flags, { bomId: Boolean(updateBomId) }), [flags, updateBomId]);
+  const columns = useMemo(
+    () => columnsFor(flags, { bomId: Boolean(updateBomId), cells: { allocations: (row) => <AllocationsCell list={row.allocations} /> } }),
+    [flags, updateBomId],
+  );
   const showSection = useCallback((s: SidebarSection) => !flags.hiddenSidebar.includes(s), [flags]);
 
   const table = useServerTable<PhysicalStockPageData>({
@@ -175,6 +183,55 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
 
   const total = data?.total ?? 0;
   const meta = data?.meta;
+
+  // Allocation views exist only where the host filled allocations (quotation app); they narrow the loaded page.
+  const hasAllocations = Boolean(data?.rows.some((r) => r.allocations !== null));
+  const visibleRows = useMemo(() => {
+    const rows = data?.rows ?? [];
+    if (!hasAllocations) return rows;
+    const q = state.orderText.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (state.stockMode === "free" && !((freeQty(r) ?? 0) > 0)) return false;
+      if (state.stockMode === "allocated" && !((allocatedQty(r) ?? 0) > 0)) return false;
+      if (q && !r.allocations?.some((a) => `${a.contractNo} ${a.party}`.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [data, hasAllocations, state.stockMode, state.orderText]);
+
+  // Every page under the current filters and sort, one column set per order as wide as the busiest row.
+  const [exporting, setExporting] = useState(false);
+  const exportCsv = useCallback(async () => {
+    setExporting(true);
+    try {
+      const all: PhysicalStockRow[] = [];
+      for (let page = 1; ; page++) {
+        const res = await loadPage({ ...query, page, pageSize: 200 });
+        if (!res.success) throw new Error(res.error);
+        all.push(...res.data.rows);
+        if (all.length >= res.data.total || res.data.rows.length === 0) break;
+      }
+      const max = Math.max(0, ...all.map((r) => r.allocations?.length ?? 0));
+      const orderHeaders = Array.from({ length: max }, (_, n) => ["contract", "PO", "party", "item", "qty", "stage", "date"].map((h) => `Order ${n + 1} ${h}`)).flat();
+      const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+      const cell = (r: PhysicalStockRow, c: DataColumn<PhysicalStockRow>) =>
+        c.key === "allocations" ? (r.allocations ?? []).map(allocationText).join("; ") : c.key === "allocated_qty" ? allocatedQty(r) : c.key === "free_qty" ? freeQty(r) : (r as unknown as Record<string, unknown>)[c.key];
+      const lines = [[...columns.map((c) => c.label), ...orderHeaders].map(esc).join(",")];
+      for (const r of all) {
+        const orders = (r.allocations ?? []).flatMap((a) => [a.contractNo, a.poNo, a.party, a.itemCode, a.qty, a.stage, a.allocatedAt?.slice(0, 10)]);
+        lines.push([...columns.map((c) => cell(r, c)), ...orders].map(esc).join(","));
+      }
+      const url = URL.createObjectURL(new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Physical_Stock_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExporting(false);
+    }
+  }, [loadPage, query, columns]);
   const showNew = showHeader && flags.newItem && create;
 
   return (
@@ -225,6 +282,31 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
                 onClear={() => dispatch(clearFilters())}
               />
               <div className="ml-auto flex items-center gap-2">
+                {hasAllocations && (
+                  <>
+                    <input
+                      value={state.orderText}
+                      onChange={(e) => dispatch(setOrderText(e.target.value))}
+                      placeholder="Contract no / party"
+                      aria-label="Narrow by contract no or party"
+                      className="h-8 w-44 rounded-lg border border-input bg-background px-2.5 text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/40 dark:bg-input/30"
+                    />
+                    <Segmented
+                      label="Stock view"
+                      options={[
+                        { value: "all", label: "All" },
+                        { value: "free", label: "Free" },
+                        { value: "allocated", label: "Allocated" },
+                      ]}
+                      value={state.stockMode}
+                      onChange={(v) => dispatch(setStockMode(v))}
+                    />
+                  </>
+                )}
+                <Button variant="outline" size="sm" onClick={() => void exportCsv()} disabled={exporting || !total}>
+                  <Download />
+                  {exporting ? "Exporting…" : "CSV"}
+                </Button>
                 {flags.duplicateErpHighlight && (
                   <button
                     type="button"
@@ -251,7 +333,7 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
             </div>
             <DataTable
               columns={columns}
-              rows={data?.rows ?? []}
+              rows={visibleRows}
               rowId={(r) => r.id}
               sort={state.sort}
               onSortChange={(s) => dispatch(setSort(s))}

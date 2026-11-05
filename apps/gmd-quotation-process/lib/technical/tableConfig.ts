@@ -159,6 +159,8 @@ const FLANGE_COLUMNS = [
   "BOLT WEIGHT FOR AS (KG)",
   "BOLT COST",
   "NUT COST",
+  "GASKET WEIGHT (KG)",
+  "GASKET COST",
 ];
 
 const FLANGE_NUMERIC = new Set([
@@ -201,6 +203,8 @@ const FLANGE_NUMERIC = new Set([
   "BOLT WEIGHT FOR AS (KG)",
   "BOLT COST",
   "NUT COST",
+  "GASKET WEIGHT (KG)",
+  "GASKET COST",
 ]);
 
 /** How many of Flange's leading columns come from the sheet (A..Y). */

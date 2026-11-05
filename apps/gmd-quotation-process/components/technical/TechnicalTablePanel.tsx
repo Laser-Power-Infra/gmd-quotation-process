@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { DatabaseZap } from "lucide-react";
 
 import GMDUpdateTable from "@gmd/dashboard/components/GMDUpdateTable";
@@ -42,7 +43,10 @@ export default function TechnicalTablePanel({
   const [state, setState] = useState<EngineeringDataState>({
     status: "loading",
   });
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  // `?row=<rowIndex>` (from a CF set line's cost tooltip) pre-selects that row.
+  // shortcut: assumes rows are contiguous from 0 so table index == rowIndex; map via a rowIndex column if sync ever leaves gaps.
+  const rowParam = parseInt(useSearchParams().get("row") ?? "", 10);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(Number.isFinite(rowParam) ? rowParam : null);
   // Bumped by Sync (and by ErrorState's Retry) to re-read this tab from the DB.
   const [reloadNonce, setReloadNonce] = useState(0);
 

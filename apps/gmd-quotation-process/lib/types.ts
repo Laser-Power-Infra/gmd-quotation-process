@@ -17,6 +17,9 @@ export interface EnquiryItemData {
   others: string[];
   productCost: number | null;
   costRefCode: string | null;
+  /** Set on the CF set line under a valve (flanges + gaskets + bolts + nuts). */
+  parentItemId?: string | null;
+  cfSetBreakdown?: unknown;
   cost: number | null;
   stockStatus: string | null;
   discount: number | null;
@@ -98,6 +101,11 @@ export interface EnquiryData {
   sendAssigneeId?: string | null;
   attachments: AttachmentData[];
   items: EnquiryItemData[];
+  /** Page rows carry only the first matching item until the rest load (itemsLoaded). */
+  itemsLoaded?: boolean;
+  /** Items matching the filters / all items with incomplete details, counted by SQL. */
+  itemCount?: number;
+  incompleteItemCount?: number;
 }
 
 export interface DropdownOptions {
@@ -192,7 +200,11 @@ export interface FiltersState {
 export interface UiState {
   expandedRows: Record<string, boolean>;
   columnWidths: Record<number, number>;
+  /** Keys from ENQUIRY_COLUMNS shown in the Quotations table. */
+  visibleColumns: string[];
   isAnalyticsSidebarCollapsed?: boolean;
+  /** Quotations page analytics switch: off = plain table view. */
+  analyticsOn: boolean;
   generatedImages: Record<string, { url: string | null; driveFileId: string | null }>;
   selectedEnquiryIds: string[];
   /** BOM IDs whose VerifyBom.cBatch = "C" (server-derived, seeded on hydration). */

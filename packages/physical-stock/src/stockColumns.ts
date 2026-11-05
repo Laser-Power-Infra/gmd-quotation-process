@@ -1,5 +1,6 @@
 import type { DataColumn } from "@gmd/ui/components/data-table/types";
-import { BLANK_ONLY_HEADERS, COLUMNS, DROPDOWN_OPTIONS, FIELDS, NUMERIC_COLUMNS, type PhysicalStockHeader } from "./columns";
+import type { ReactNode } from "react";
+import { BLANK_ONLY_HEADERS, CLIENT_ONLY_FIELDS, COLUMNS, DROPDOWN_OPTIONS, FIELDS, NUMERIC_COLUMNS, allocatedQty, freeQty, type PhysicalStockHeader } from "./columns";
 import type { PhysicalStockFlags } from "./flags";
 import type { PhysicalStockRow } from "./types";
 
@@ -59,6 +60,9 @@ const LABELS: Record<PhysicalStockHeader, string> = {
   "INCOMING FROM": "Incoming from",
   "FG ITEM CODE": "FG item code",
   "PRODUCTION ITEM": "Production item",
+  "ALLOCATED QTY": "Allocated",
+  "FREE QTY": "Free",
+  ALLOCATIONS: "Orders",
 };
 
 const STICKY = new Set<PhysicalStockHeader>(["ERP CODE", "location"]);
@@ -77,8 +81,8 @@ export const STOCK_COLUMNS: StockColumn[] = COLUMNS.map((header, i) => ({
   label: LABELS[header],
   kind:
     header === "DATE" ? "date" : header === "MAJOR/MINOR MARKING" ? "boolean" : NUMERIC_COLUMNS.has(header) ? "number" : "text",
-  filter: true,
-  sortable: true,
+  filter: !CLIENT_ONLY_FIELDS.has(FIELDS[i]),
+  sortable: !CLIENT_ONLY_FIELDS.has(FIELDS[i]),
   edit: editOf(header),
   sticky: STICKY.has(header),
 }));
@@ -100,7 +104,10 @@ const isBlank = (v: unknown) => !String(v ?? "").trim();
  * Columns the table renders for this app: hidden ones dropped, editability
  * resolved from the flags (BOM ID only when the host can save it).
  */
-export function columnsFor(flags: PhysicalStockFlags, opts: { bomId: boolean }): DataColumn<PhysicalStockRow>[] {
+export function columnsFor(
+  flags: PhysicalStockFlags,
+  opts: { bomId: boolean; cells?: Partial<Record<keyof PhysicalStockRow, (row: PhysicalStockRow) => ReactNode>> },
+): DataColumn<PhysicalStockRow>[] {
   const hidden = new Set<string>(flags.hiddenColumns);
   const editable = new Set<string>(flags.editableColumns);
   return STOCK_COLUMNS.filter((c) => !hidden.has(c.header)).map((c) => {
@@ -114,6 +121,12 @@ export function columnsFor(flags: PhysicalStockFlags, opts: { bomId: boolean }):
       align: c.kind === "number" ? "right" : "left",
     };
     if (c.field === "majorminor_marking") col.render = (row) => (row.majorminor_marking === true ? "Major" : row.majorminor_marking === false ? "Minor" : "");
+    if (c.field === "allocated_qty") col.render = (row) => allocatedQty(row)?.toLocaleString("en-IN") ?? "";
+    if (c.field === "free_qty") col.render = (row) => freeQty(row)?.toLocaleString("en-IN") ?? "";
+    if (c.field === "allocations") col.width = 180;
+    // Host-rendered cells (client components stay out of this plain file).
+    const cell = opts.cells?.[c.field];
+    if (cell) col.render = cell;
     const on = c.edit && editable.has(c.header) && (c.header !== "BOM ID" || opts.bomId);
     if (!on) return col;
     col.edit = c.edit === "select" ? "select" : "text";

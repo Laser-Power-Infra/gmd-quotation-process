@@ -81,8 +81,8 @@ export default function CellSelect({
 }: CellSelectProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [search, setSearch] = useState("");
-  // A page holds ~1,100 of these. Until one is opened it is a plain button, so the
-  // Radix popover tree is never built for cells the user does not touch.
+  // A page holds ~1,100 of these. Until one is opened it is a plain button (no chevron
+  // svg), so the Radix popover tree is never built for cells the user does not touch.
   const [mounted, setMounted] = useState(defaultOpen);
 
   const usableOptions = useMemo(
@@ -115,7 +115,7 @@ export default function CellSelect({
     className,
   );
 
-  const triggerInner = (
+  const inner = (chevron: boolean) => (
     <>
       {chipLabel && <span className="shrink-0">{chipLabel}:</span>}
       <span
@@ -128,7 +128,7 @@ export default function CellSelect({
       >
         {triggerLabel}
       </span>
-      <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0 ml-1" />
+      {chevron && <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0 ml-1" />}
     </>
   );
 
@@ -145,7 +145,7 @@ export default function CellSelect({
           setOpen(true);
         }}
       >
-        {triggerInner}
+        {inner(false)}
       </button>
     );
   }
@@ -163,7 +163,7 @@ export default function CellSelect({
       }}
     >
       <PopoverTrigger type="button" title={title} disabled={disabled} className={triggerClassName}>
-        {triggerInner}
+        {inner(true)}
       </PopoverTrigger>
 
       <PopoverContent

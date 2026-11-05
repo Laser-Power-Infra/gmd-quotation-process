@@ -3,7 +3,7 @@ import type { PaginationState } from "./types";
 
 const initialState: PaginationState = {
   currentPage: 1,
-  pageSize: 50,
+  pageSize: 25,
 };
 
 const paginationSlice = createSlice({

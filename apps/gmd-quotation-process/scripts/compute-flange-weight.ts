@@ -22,6 +22,7 @@ import {
   resolveNominalBoltDiameter,
   toFixedString,
 } from "../lib/technical/formulas";
+import { gasketFields } from "../lib/cfSet";
 
 /**
  * Backfill `Flange.totalWeightKg` (+ `totalWeightTolerancePlus`,
@@ -39,7 +40,8 @@ import {
  * get a blank cost. Bolt/nut cost = weight × the material's per-kg rate (SS/GI/
  * MS/CS); a missing rate leaves those lines blank. Because the engineering sync
  * treats these columns as app-managed (see `sheetColumnCount`), the values
- * survive every sync.
+ * survive every sync. `gasketWeightKg` (ring, 3 mm, 1.5 g/cc) and `gasketCost`
+ * (= weight x CF_GASKET_RATE RUBBER) are filled the same way.
  */
 
 const pool = new Pool({ connectionString: process.env.QUOTATION_DATABASE_URL });
@@ -60,7 +62,8 @@ async function main() {
       : "DRY RUN — no changes will be made",
   );
 
-  const [densityRows, rateRows, flanges] = await Promise.all([
+  const [gasketRateRow, densityRows, rateRows, flanges] = await Promise.all([
+    prisma.lookupOption.findFirst({ where: { type: "CF_GASKET_RATE", value: { startsWith: "RUBBER=" } } }),
     prisma.density.findMany({ select: { material: true, densityGmCm3: true } }),
     prisma.lookupOption.findMany({
       where: { type: "GMD_CASTING_RATE" },
@@ -100,6 +103,7 @@ async function main() {
   let nutWeightComputed = 0;
   let boltCostComputed = 0;
   let nutCostComputed = 0;
+  const gasketRate = parseNumber(gasketRateRow?.value.split(";")[0].slice("RUBBER=".length));
   let updated = 0;
   let unchanged = 0;
   const skipped: Skipped[] = [];
@@ -178,6 +182,9 @@ async function main() {
     if (boltCost != null) boltCostComputed++;
     if (nutCost != null) nutCostComputed++;
 
+    // Gasket: weight from geometry, cost = weight x the RUBBER rate (blank until the rate is filled).
+    const { gasketWeightKg: gasketKgStr, gasketCost: gasketCostStr } = gasketFields(flange, gasketRate);
+
     // Weight / cost need a density and the ring dimensions.
     let densityVal: number | null = null;
     let densityStr = "";
@@ -251,6 +258,8 @@ async function main() {
     if (String(flange.nutWeight ?? "").trim() !== nutWeightStr) data.nutWeight = nutWeightStr;
     if (String(flange.boltCost ?? "").trim() !== boltCostStr) data.boltCost = boltCostStr;
     if (String(flange.nutCost ?? "").trim() !== nutCostStr) data.nutCost = nutCostStr;
+    if (String(flange.gasketWeightKg ?? "").trim() !== gasketKgStr) data.gasketWeightKg = gasketKgStr;
+    if (String(flange.gasketCost ?? "").trim() !== gasketCostStr) data.gasketCost = gasketCostStr;
 
     if (Object.keys(data).length === 0) {
       unchanged++;

@@ -10,9 +10,13 @@ import {
   facetCountSql,
   facetExpression,
   FIRST_ITEM_JOIN_SQL,
+  firstItemIdsSql,
+  itemCountsSql,
   SIDEBAR_COUNT_FIELDS,
   STAGE_SQL,
+  summaryTotalsSql,
 } from "@/lib/enquiry-query";
+import type { EnquiryItemData } from "@/lib/types";
 import type {
   ClosureCounts,
   EnquiryFacetResult,
@@ -49,12 +53,6 @@ function clampPageSize(value: number): number {
   return Math.min(MAX_PAGE_SIZE, Math.max(1, Math.trunc(value)));
 }
 
-function toNumber(value: unknown): number | null {
-  if (value == null || value === "") return null;
-  const n = parseFloat(String(value).replace(/,/g, "").trim());
-  return Number.isNaN(n) ? null : n;
-}
-
 /**
  * One page of the quotation dashboard: filtered/sorted enquiry ids from SQL,
  * then only those enquiries hydrated with their items.
@@ -80,7 +78,7 @@ export async function fetchEnquiryPage(
   // Tiles keep their counts while one is active, so drop the stage filter here.
   const stageWhere = buildEnquiryWhereSql({ ...query, selectedEnquiryIds: [] }, { skipField: "stage" });
 
-  const [idRows, countRows, scopedCountRows, totalRows, itemRows, closureRows, ageRows, ownerRows, facetRows] =
+  const [idRows, countRows, scopedCountRows, totalRows, totalsRows, closureRows, ageRows, ownerRows, facetRows] =
     await Promise.all([
       prisma.$queryRaw<{ id: string }[]>`
         SELECT e.id FROM "Enquiry" e
@@ -100,16 +98,8 @@ export async function fetchEnquiryPage(
       includeSummary ? prisma.enquiry.count() : Promise.resolve(undefined),
       includeSummary
         ? prisma.$queryRaw<
-            { gst: string | null; excl: string | null; cost: string | null; qty: string | null }[]
-          >`
-            SELECT i."totalValue" AS gst, i."itemWiseTotalValue" AS excl, i."cost" AS cost, i."quantity" AS qty
-            FROM "EnquiryItem" i
-            JOIN "Enquiry" e ON e.id = i."enquiryId"
-            WHERE ${scopedWhere} AND ${itemWhere}
-              AND coalesce(btrim(e."duplicate"), '') <> 'Yes'
-              AND coalesce(btrim(i."cBatch"), '') <> 'C'
-              AND coalesce(btrim(i."nBatch"), '') <> 'N'
-          `
+            { items: number; gst: number; excl: number; cost: number; qty: number }[]
+          >(summaryTotalsSql(query, scopedWhere))
         : Promise.resolve(undefined),
       includeSummary
         ? prisma.$queryRaw<{ status: string | null; count: number }[]>`
@@ -158,102 +148,30 @@ export async function fetchEnquiryPage(
 
   let enquiries: EnquiryPageResult["enquiries"] = [];
   if (ids.length > 0) {
-    // Cost sanity warnings for this page's items only; runs alongside the loads below.
-    const warnRowsPromise = prisma.$queryRaw<{ id: string; warnings: string[] }[]>`
-      SELECT i.id, ${costWarningsSql(Prisma.sql`i`)} AS warnings
-      FROM "EnquiryItem" i WHERE i."enquiryId" = ANY(${ids}::text[])
-    `.catch((error) => {
-      console.warn("[enquiryQuery] cost warnings failed:", error);
-      return [];
-    });
-    const rows = await prisma.enquiry.findMany({
-      where: { id: { in: ids } },
-      include: {
-        items: { orderBy: { position: "asc" } },
-        attachments: true,
-      },
-    });
+    // Only each docket's first matching item travels with the page; the rest load on expand.
+    const [rows, firstRows, countRows2] = await Promise.all([
+      prisma.enquiry.findMany({ where: { id: { in: ids } }, include: { attachments: true } }),
+      prisma.$queryRaw<{ id: string }[]>(firstItemIdsSql(query, ids)),
+      prisma.$queryRaw<{ enquiryId: string; itemCount: number; incompleteItemCount: number }[]>(
+        itemCountsSql(query, ids),
+      ),
+    ]);
     const order = new Map(ids.map((id, index) => [id, index]));
     rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-
-    // BOM availability / NO-USE / closed lookups, for this page's item codes only.
-    let bomMap: Map<string, string[]> = new Map();
-    let noUseSet: Set<string> = new Set();
-    let closedBomSet: Set<string> = new Set();
-    try {
-      const codes = [
-        ...new Set(
-          rows.flatMap((e) =>
-            e.items
-              .map((i) => i.erpItemCode)
-              .filter((c): c is string => !!c && c.trim() !== ""),
-          ),
-        ),
-      ];
-      if (codes.length > 0) {
-        bomMap = await getBatchDistinctBomIds(codes);
-        const bomIds = [...new Set([...bomMap.values()].flat())];
-        noUseSet = await getNoUseBomIdSet(bomIds);
-        closedBomSet = await getClosedBomIdSet(bomIds);
-      }
-    } catch (error) {
-      console.warn("[enquiryQuery] BOM availability batch failed:", error);
-    }
-
-    const costWarnings = new Map<string, string[]>();
-    for (const r of await warnRowsPromise) if (r.warnings.length > 0) costWarnings.set(r.id, r.warnings);
-
+    const first = await hydrateItems({ id: { in: firstRows.map((r) => r.id) } });
+    const counts = new Map(countRows2.map((r) => [r.enquiryId, r]));
     enquiries = rows.map((enquiry) => ({
       ...enquiry,
-      items: enquiry.items.map((item) => {
-        const code = item.erpItemCode;
-        const availableBomIds = code
-          ? (bomMap.get(code) ?? []).filter((id) => !noUseSet.has(id))
-          : (item.availableBomIds ?? []);
-        const selectedBomId = item.bomId;
-        const visibleBomIds = [
-          ...new Set([
-            ...(availableBomIds ?? []),
-            ...(selectedBomId ? [selectedBomId] : []),
-          ]),
-        ];
-        return {
-          ...item,
-          availableBomIds,
-          closedBomIds: visibleBomIds.filter((id) => closedBomSet.has(id)),
-          costWarnings: costWarnings.get(item.id) ?? [],
-          quantity: item.quantity != null ? Number(item.quantity) : 0,
-          productCost: item.productCost != null ? Number(item.productCost) : null,
-          cost: item.cost != null ? Number(item.cost) : null,
-          discount: item.discount != null ? Number(item.discount) : null,
-          vaPercent: item.vaPercent != null ? Number(item.vaPercent) : null,
-          quotedRate: item.quotedRate || null,
-        };
-      }),
+      items: first.filter((i) => i.enquiryId === enquiry.id),
+      itemsLoaded: false,
+      itemCount: counts.get(enquiry.id)?.itemCount ?? 0,
+      incompleteItemCount: counts.get(enquiry.id)?.incompleteItemCount ?? 0,
     }));
   }
 
   let summary: EnquirySummary | null = null;
-  if (includeSummary && itemRows && closureRows) {
-    let totalValueGst = 0;
-    let totalValueExclGst = 0;
-    let totalCost = 0;
-    let totalQuantity = 0;
-    for (const row of itemRows) {
-      const gst = toNumber(row.gst);
-      if (gst !== null && gst !== 0) totalValueGst += gst;
-      const excl = toNumber(row.excl);
-      if (excl !== null && excl !== 0) totalValueExclGst += excl;
-
-      const cost = toNumber(row.cost);
-      if (cost !== null && cost > 0) {
-        const qty = toNumber(row.qty);
-        totalCost += cost * (qty !== null && qty > 0 ? qty : 1);
-      }
-      const qty = toNumber(row.qty);
-      if (qty !== null && qty > 0) totalQuantity += qty;
-    }
-
+  if (includeSummary && totalsRows && closureRows) {
+    const totals = totalsRows[0];
     const closureCounts: ClosureCounts = {};
     let notSentCount = 0;
     for (const row of closureRows) {
@@ -278,11 +196,11 @@ export async function fetchEnquiryPage(
 
     summary = {
       filteredEnquiries: scopedCountRows ? Number(scopedCountRows[0]?.count ?? 0) : total,
-      analyticsItems: itemRows.length,
-      totalValueGst,
-      totalValueExclGst,
-      totalCost,
-      totalQuantity,
+      analyticsItems: Number(totals?.items ?? 0),
+      totalValueGst: Number(totals?.gst ?? 0),
+      totalValueExclGst: Number(totals?.excl ?? 0),
+      totalCost: Number(totals?.cost ?? 0),
+      totalQuantity: Number(totals?.qty ?? 0),
       closureCounts,
       notSentCount,
       totalEnquiries: totalRows ?? 0,
@@ -310,6 +228,74 @@ export async function fetchEnquiryPage(
   return { enquiries, total, summary };
 }
 
+/** Items matching `where`, in docket order, with BOM availability, closed BOMs and cost warnings. */
+async function hydrateItems(where: Prisma.EnquiryItemWhereInput) {
+  const items = await prisma.enquiryItem.findMany({
+    where,
+    orderBy: [{ enquiryId: "asc" }, { position: "asc" }],
+  });
+  if (items.length === 0) return [];
+  // Cost sanity warnings for these items only; runs alongside the BOM lookups below.
+  const warnRowsPromise = prisma.$queryRaw<{ id: string; warnings: string[] }[]>`
+    SELECT i.id, ${costWarningsSql(Prisma.sql`i`)} AS warnings
+    FROM "EnquiryItem" i WHERE i.id = ANY(${items.map((i) => i.id)}::text[])
+  `.catch((error) => {
+    console.warn("[enquiryQuery] cost warnings failed:", error);
+    return [];
+  });
+
+  // BOM availability / NO-USE / closed lookups, for these item codes only.
+  let bomMap: Map<string, string[]> = new Map();
+  let noUseSet: Set<string> = new Set();
+  let closedBomSet: Set<string> = new Set();
+  try {
+    const codes = [
+      ...new Set(items.map((i) => i.erpItemCode).filter((c): c is string => !!c && c.trim() !== "")),
+    ];
+    if (codes.length > 0) {
+      bomMap = await getBatchDistinctBomIds(codes);
+      const bomIds = [...new Set([...bomMap.values()].flat())];
+      noUseSet = await getNoUseBomIdSet(bomIds);
+      closedBomSet = await getClosedBomIdSet(bomIds);
+    }
+  } catch (error) {
+    console.warn("[enquiryQuery] BOM availability batch failed:", error);
+  }
+
+  const costWarnings = new Map<string, string[]>();
+  for (const r of await warnRowsPromise) if (r.warnings.length > 0) costWarnings.set(r.id, r.warnings);
+
+  return items.map((item) => {
+    const code = item.erpItemCode;
+    const availableBomIds = code
+      ? (bomMap.get(code) ?? []).filter((id) => !noUseSet.has(id))
+      : (item.availableBomIds ?? []);
+    const selectedBomId = item.bomId;
+    const visibleBomIds = [
+      ...new Set([...(availableBomIds ?? []), ...(selectedBomId ? [selectedBomId] : [])]),
+    ];
+    return {
+      ...item,
+      availableBomIds,
+      closedBomIds: visibleBomIds.filter((id) => closedBomSet.has(id)),
+      costWarnings: costWarnings.get(item.id) ?? [],
+      quantity: item.quantity != null ? Number(item.quantity) : 0,
+      productCost: item.productCost != null ? Number(item.productCost) : null,
+      cost: item.cost != null ? Number(item.cost) : null,
+      discount: item.discount != null ? Number(item.discount) : null,
+      vaPercent: item.vaPercent != null ? Number(item.vaPercent) : null,
+      quotedRate: item.quotedRate || null,
+    };
+  });
+}
+
+/** Every item of the given dockets (unfiltered; the table filters them) - loaded when a docket is expanded or bulk-edited. */
+export async function fetchEnquiryItems(enquiryIds: string[]): Promise<EnquiryItemData[]> {
+  await requireAccess();
+  if (enquiryIds.length === 0) return [];
+  return hydrateItems({ enquiryId: { in: enquiryIds } });
+}
+
 /**
  * Every docket number, unfiltered - for the "original docket" picker, which
  * must reach dockets outside the table's current page and filters.
@@ -320,6 +306,27 @@ export async function fetchDocketNumbers(): Promise<string[]> {
     SELECT "docketNumber" FROM "Enquiry" ORDER BY "createdAt" DESC
   `;
   return rows.map((r) => r.docketNumber);
+}
+
+/** Docket list for the Add Items dropdown, loaded when the dialog opens. */
+export async function fetchDocketList(): Promise<{ id: string; docketNumber: string; partyName: string }[]> {
+  await requireAccess();
+  return prisma.enquiry.findMany({
+    select: { id: true, docketNumber: true, partyName: true },
+    orderBy: { docketNumber: "asc" },
+  });
+}
+
+/** Image map (imageKey -> url/driveFileId) for the table thumbnails. */
+export async function fetchGeneratedImageMap(): Promise<Record<string, { url: string | null; driveFileId: string | null }>> {
+  await requireAccess();
+  const rows = await prisma.generatedImage.findMany({
+    where: { OR: [{ url: { not: null } }, { driveFileId: { not: null } }] },
+    select: { imageKey: true, url: true, driveFileId: true },
+  });
+  const map: Record<string, { url: string | null; driveFileId: string | null }> = {};
+  for (const r of rows) map[r.imageKey] = { url: r.url ?? null, driveFileId: r.driveFileId ?? null };
+  return map;
 }
 
 /** Distinct values for one cascading dropdown, excluding its own filter. */

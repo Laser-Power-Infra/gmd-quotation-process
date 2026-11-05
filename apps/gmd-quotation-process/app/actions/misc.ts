@@ -7,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 import { getUtilityDefaultStates } from "@/lib/lookup";
 import { uploadFileToDrive } from "@/lib/gdrive";
 import { serializeItem, serializeEnquiry } from "@/lib/costCalculator";
+import { loadRates } from "@/lib/rateLookup";
+import { recomputeCfSets } from "@/lib/cfSetItem";
 import { makeImageKey } from "@/lib/imageKey";
 import { buildDensityMap, computeBoltVolumeMm3, computeBoltWeightKg, computeNutBoltCost, computeNutWeightKg, encodeBoltWeight, parseNumber, resolveBoltMaterial, resolveBoltRateKey, resolveMocDensity } from "@/lib/technical/formulas";
 
@@ -248,26 +250,8 @@ export async function getBisStaleIdsAction() {
   }
 }
 
-// Cast rates are LookupOption rows of type GMD_CASTING_RATE with value
-// "<key>=<Rs/kg>;from=<yyyy-mm-dd>" (the ";from=" part is optional).
-async function loadCastingRates() {
-  const rows = await prisma.lookupOption.findMany({
-    where: { type: "GMD_CASTING_RATE" },
-  });
-  const rates: Record<string, string> = { DI: "", CS: "", CI: "", SS: "", Bronze: "", MS: "", GI: "" };
-  const dates: Record<string, string> = { DI: "", CS: "", CI: "", SS: "", Bronze: "", MS: "", GI: "" };
-  for (const row of rows) {
-    const [head, ...rest] = row.value.split(";");
-    const eq = head.indexOf("=");
-    if (eq === -1) continue;
-    const key = head.slice(0, eq).trim();
-    if (!(key in rates)) continue;
-    rates[key] = head.slice(eq + 1).trim();
-    const from = rest.find((p) => p.trim().startsWith("from="));
-    if (from) dates[key] = from.trim().slice(5);
-  }
-  return { rates, dates };
-}
+const CASTING_KEYS = ["DI", "CS", "CI", "SS", "Bronze", "MS", "GI"] as const;
+const loadCastingRates = () => loadRates("GMD_CASTING_RATE", CASTING_KEYS);
 
 export async function getGMDCastingRatesAction() {
   "use server";
@@ -304,6 +288,7 @@ export async function saveGMDCastingRateAction(key: string, value: string, from?
       await prisma.lookupOption.create({ data: { type, value: rowValue } });
     }
     const recomputed = await recomputeCastingCosts();
+    await recomputeCfSets(); // CF rates fall back to casting rates
     return { success: true, recomputed };
   } catch (error: any) {
     console.error("Error saving casting rate:", error);

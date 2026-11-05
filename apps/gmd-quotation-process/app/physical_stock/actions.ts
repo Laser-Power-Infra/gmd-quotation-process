@@ -16,6 +16,7 @@ import { editableFieldsFor } from "@gmd/physical-stock/flags";
 import type { ActionResult, PhysicalStockPageData, PhysicalStockRow } from "@gmd/physical-stock/types";
 import type { TableQuery } from "@gmd/ui/components/data-table/types";
 import { stockPrisma } from "@/lib/stockPrisma";
+import { computeStockAllocation } from "@/lib/stockAllocation/load";
 import { getPhysicalStockFlags } from "@/lib/physical-stock-flags";
 import {
   costForPhysicalStockBom,
@@ -46,7 +47,17 @@ export async function loadPage(query: TableQuery): Promise<ActionResult<Physical
     const derivations = await derivePhysicalStockByCodes(page.rows.map((r) => code(r.erp_code)));
     const bomIdOptions: Record<string, string[]> = {};
     for (const row of page.rows) bomIdOptions[row.id] = derivations.get(code(row.erp_code))?.bomIds ?? [];
-    return { ...page, meta: { ...page.meta!, bomIdOptions } };
+    // Order-wise allocation per stock row; a failure leaves the columns unknown (null).
+    let allocByStock: Map<string, PhysicalStockRow["allocations"]> | null = null;
+    try {
+      allocByStock = new Map();
+      for (const a of (await computeStockAllocation()).allocations) allocByStock.set(a.stockId, [...(allocByStock.get(a.stockId) ?? []), a]);
+    } catch (err) {
+      console.error("[physical-stock] allocation lookup failed", err);
+      allocByStock = null;
+    }
+    const rows = page.rows.map((row) => ({ ...row, allocations: allocByStock ? (allocByStock.get(row.id) ?? []) : null }));
+    return { ...page, rows, meta: { ...page.meta!, bomIdOptions } };
   });
 }
 

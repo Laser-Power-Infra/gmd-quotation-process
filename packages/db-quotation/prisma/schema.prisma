@@ -145,9 +145,13 @@ model EnquiryItem {
   extension            String?
   bypass               String?
   others               String[] @default([])
-  // Flat cost added for the ticked Others (flange/gasket/nut-bolt); null when
-  // a ticked component had no technical cost (drives the cost warning).
+  // Legacy flat Others cost (no longer written; the CF set is a child item now).
   othersCost           Decimal?
+  // CF set: child line under a valve (flanges + gaskets + bolts + nuts) and its quote-time breakdown.
+  parentItemId         String?
+  parentItem           EnquiryItem?  @relation("CfSetChild", fields: [parentItemId], references: [id], onDelete: Cascade)
+  cfSetChildren        EnquiryItem[] @relation("CfSetChild")
+  cfSetBreakdown       Json?
   productCost          Decimal?
   costRefCode          String?
   cost                 Decimal?
@@ -189,6 +193,7 @@ model EnquiryItem {
 
   // The dashboard stage CASE runs four correlated EXISTS on this FK per Enquiry row.
   @@index([enquiryId])
+  @@unique([parentItemId])
 }
 
 model GmdItemCode {
@@ -1039,6 +1044,7 @@ model Flange {
   boltCost                          String?
   nutCost                           String?
   gasketCost                        String?
+  gasketWeightKg                    String?
   @@index([syncedAt])
   @@map("flange")
 }

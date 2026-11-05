@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma, stockPrisma } from "@gmd/db-stock";
 import { BLANK, type TablePage, type TableQuery, type TableSort } from "@gmd/ui/components/data-table/types";
+import { CLIENT_ONLY_FIELDS } from "../columns";
 import { STOCK_COLUMNS } from "../stockColumns";
 import type { MajorMinorKind, StockQueryExtra } from "../state/tableSlice";
 import type { PhysicalStockRow } from "../types";
@@ -41,6 +42,9 @@ const DERIVED: Partial<Record<keyof PhysicalStockRow, { text: Prisma.Sql; raw?: 
 };
 
 const exprOf = (field: string) => DERIVED[field as keyof PhysicalStockRow] ?? { text: col(field) };
+/** Columns that exist in the stock DB (the host-computed allocation columns do not). */
+const DB_COLUMNS = STOCK_COLUMNS.filter((c) => !CLIENT_ONLY_FIELDS.has(c.field));
+const inDb = (field: string) => DB_COLUMNS.some((c) => c.field === field);
 
 /** Rows sharing location + every L column but holding a different ERP code: the same stock counted twice. */
 const DUPLICATE_KEYS = ["location", "l2_valve_type", "dimension", "l7_dimension", "l4_component", "l5_material", "l6_std", "l8_item_category"];
@@ -63,12 +67,12 @@ export type StockTableQuery = TableQuery & { extra?: Partial<StockQueryExtra> };
 export function buildWhere(query: StockTableQuery, skip?: string): Prisma.Sql {
   const parts: Prisma.Sql[] = [];
   for (const [field, values] of Object.entries(query.filters)) {
-    if (field === skip || !values?.length || !STOCK_COLUMNS.some((c) => c.field === field)) continue;
+    if (field === skip || !values?.length || !inDb(field)) continue;
     const t = text(exprOf(field).text);
     parts.push(sql`(${Prisma.join(values.map((v) => (v === BLANK ? sql`${t} = ''` : sql`${t} = ${v}`)), " OR ")})`);
   }
   for (const [field, value] of Object.entries(query.columnSearch ?? {})) {
-    if (field === skip || !value.trim() || !STOCK_COLUMNS.some((c) => c.field === field)) continue;
+    if (field === skip || !value.trim() || !inDb(field)) continue;
     parts.push(sql`regexp_replace(${text(exprOf(field).text)}, '\s', '', 'g') ILIKE ${`%${escapeLike(squish(value))}%`}`);
   }
   for (const [field, range] of Object.entries(query.dateRanges ?? {})) {
@@ -80,7 +84,7 @@ export function buildWhere(query: StockTableQuery, skip?: string): Prisma.Sql {
   }
   const search = query.search.trim();
   if (search) {
-    const all = Prisma.join(STOCK_COLUMNS.map((c) => text(exprOf(c.field).text)), " || ' ' || ");
+    const all = Prisma.join(DB_COLUMNS.map((c) => text(exprOf(c.field).text)), " || ' ' || ");
     parts.push(sql`regexp_replace(${all}, '\\s', '', 'g') ILIKE ${`%${escapeLike(squish(search))}%`}`);
   }
   const extra = query.extra ?? {};
@@ -96,7 +100,7 @@ export function buildWhere(query: StockTableQuery, skip?: string): Prisma.Sql {
 const FALLBACK_ORDER = sql`p.form_date DESC, p.created_at DESC, p.id ASC`;
 
 export function buildOrderBy(sort: TableSort | null): Prisma.Sql {
-  const column = sort && STOCK_COLUMNS.find((c) => c.field === sort.key);
+  const column = sort && DB_COLUMNS.find((c) => c.field === sort.key);
   if (!sort || !column || !column.sortable) return FALLBACK_ORDER;
   const dir = Prisma.raw(sort.dir === "asc" ? "ASC" : "DESC");
   const e = exprOf(sort.key);
@@ -160,6 +164,8 @@ export async function listPhysicalStockPage(
       ...rest,
       form_date: form_date ? form_date.toISOString() : null,
       in_transit: in_transit === null ? null : Number(in_transit),
+      // The quotation host fills these from its allocation engine; null = not looked up.
+      allocations: null,
     })),
     total: agg.total,
     meta: { totals: { availableQty: agg.qty, availableValue: agg.value }, majorMinorCounts },
@@ -168,7 +174,7 @@ export async function listPhysicalStockPage(
 
 /** Distinct values of `field` under every other active filter; empty cells come first as BLANK. */
 export async function listPhysicalStockFacet(field: string, query: StockTableQuery): Promise<string[]> {
-  if (!STOCK_COLUMNS.some((c) => c.field === field)) return [];
+  if (!inDb(field)) return [];
   const rows = await stockPrisma.$queryRaw<{ v: string }[]>`SELECT DISTINCT ${text(exprOf(field).text)} AS v
     FROM "PhysicalStock" p WHERE ${buildWhere(query, field)} ORDER BY 1 LIMIT ${FACET_LIMIT}`;
   const values = rows.map((r) => r.v);

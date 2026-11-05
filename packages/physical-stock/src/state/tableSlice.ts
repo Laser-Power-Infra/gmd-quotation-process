@@ -19,6 +19,9 @@ export interface StockTableState {
   card: StockCardKind | null;
   majorMinor: MajorMinorKind[];
   duplicatesOnly: boolean;
+  /** Allocation views (quotation host only): narrow the loaded page, not the server query. */
+  stockMode: "all" | "free" | "allocated";
+  orderText: string;
   selectedId: string | null;
   sidebarCollapsed: boolean;
 }
@@ -34,6 +37,8 @@ const initialState: StockTableState = {
   card: null,
   majorMinor: [],
   duplicatesOnly: false,
+  stockMode: "all",
+  orderText: "",
   selectedId: null,
   sidebarCollapsed: false,
 };
@@ -69,7 +74,15 @@ const slice = createSlice({
       s.card = null;
       s.majorMinor = [];
       s.duplicatesOnly = false;
+      s.stockMode = "all";
+      s.orderText = "";
       s.page = 1;
+    },
+    setStockMode(s, a: PayloadAction<StockTableState["stockMode"]>) {
+      s.stockMode = a.payload;
+    },
+    setOrderText(s, a: PayloadAction<string>) {
+      s.orderText = a.payload;
     },
     setSort(s, a: PayloadAction<TableSort | null>) {
       s.sort = a.payload;
@@ -117,6 +130,8 @@ export const {
   toggleCard,
   toggleMajorMinor,
   setDuplicatesOnly,
+  setStockMode,
+  setOrderText,
   select,
   toggleSidebar,
 } = slice.actions;

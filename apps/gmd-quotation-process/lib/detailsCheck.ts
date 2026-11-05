@@ -13,6 +13,8 @@ export function isEmptyDetail(value: string | null | undefined): boolean {
 }
 
 export function missingDetails(item: Partial<Record<DetailsField, string | null>>): DetailsField[] {
+  // The CF set child line is system-made and has no operation type to fill.
+  if (item.itemType === "CF SET") return [];
   return DETAILS_FIELDS.filter((f) => isEmptyDetail(item[f]));
 }
 
@@ -52,7 +54,7 @@ export function pnFromName(name: string | null | undefined): string | null {
 export interface AutoFillChange {
   itemId: string;
   itemName: string;
-  field: "itemType" | "moc" | "size" | "pnRating" | "operationType" | "extension" | "bypass";
+  field: "itemType" | "moc" | "size" | "pnRating" | "operationType" | "extension" | "bypass" | "others";
   oldValue: string;
   newValue: string;
   /** Set for itemType/moc: where the value came from (keyword/ai), saved to <field>Source. */
