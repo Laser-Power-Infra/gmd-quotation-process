@@ -60,7 +60,32 @@ async function loadBomRows(where: Prisma.BomWhereInput): Promise<BomRow[]> {
   return rows;
 }
 
-/** BOM linkage for one (itemCode, bomId): its type and first raw-material component. */
+type BomComponentCodes = {
+  rawMaterial: { erpItemCode: string | null } | null;
+  fullItem: { itemCode: string | null } | null;
+};
+
+/**
+ * The component code that carries a BOM's cost: the first raw material, else the
+ * first other item (many Verify BOM rows consume a finished/semi item, not an RM).
+ * A component pointing back at the BOM's own item is ignored.
+ */
+export function pickBomComponentCode(
+  ownItemCode: string,
+  components: BomComponentCodes[],
+): string | null {
+  for (const c of components) {
+    const rm = c.rawMaterial?.erpItemCode?.trim();
+    if (rm) return rm;
+  }
+  for (const c of components) {
+    const fi = c.fullItem?.itemCode?.trim();
+    if (fi && fi !== ownItemCode.trim()) return fi;
+  }
+  return null;
+}
+
+/** BOM linkage for one (itemCode, bomId): its type and the component code that carries the cost. */
 export async function findBomForItem(
   itemCode: string,
   bomId: string,
@@ -71,10 +96,11 @@ export async function findBomForItem(
       bomId: true,
       bomIdType: true,
       components: {
-        where: { rawMaterial: { erpItemCode: { not: null } } },
         orderBy: { createdAt: "asc" },
-        take: 1,
-        select: { rawMaterial: { select: { erpItemCode: true } } },
+        select: {
+          rawMaterial: { select: { erpItemCode: true } },
+          fullItem: { select: { itemCode: true } },
+        },
       },
     },
   });
@@ -82,7 +108,7 @@ export async function findBomForItem(
   return {
     bomId: bom.bomId,
     bomIdType: bom.bomIdType,
-    rmItemCode: bom.components[0]?.rawMaterial?.erpItemCode ?? null,
+    rmItemCode: pickBomComponentCode(itemCode, bom.components),
   };
 }
 

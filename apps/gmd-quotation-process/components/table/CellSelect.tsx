@@ -27,7 +27,7 @@ const TRIGGER_DEFAULT =
   "w-full h-7 rounded border border-border bg-background px-2 py-0.5 text-[10px] text-left flex items-center justify-between hover:bg-accent normal-case";
 
 const TRIGGER_CHIP =
-  "flex items-center gap-1 text-[9px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5 hover:bg-accent min-w-0";
+  "flex items-center gap-1 h-5 text-[10px] text-muted-foreground bg-background border border-border rounded px-1 py-0 hover:bg-accent min-w-0";
 
 export interface CellSelectProps {
   value: string;
@@ -121,7 +121,7 @@ export default function CellSelect({
       <span
         className={cn(
           "truncate",
-          chipLabel && "flex-1 text-left text-xs text-foreground font-medium",
+          chipLabel && "flex-1 text-left text-[10px] text-foreground font-medium",
           !chipLabel && !value && placeholder === undefined && "text-muted-foreground",
         )}
         title={triggerLabel}

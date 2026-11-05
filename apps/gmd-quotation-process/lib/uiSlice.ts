@@ -3,7 +3,7 @@ import type { UiState } from "./types";
 
 // Positions match ENQUIRY_COLUMNS in lib/enquiryColumns.ts.
 export const DEFAULT_COLUMN_WIDTHS: Record<number, number> = {
-  0: 320,
+  0: 360,
   1: 150,
   2: 210,
   3: 180,

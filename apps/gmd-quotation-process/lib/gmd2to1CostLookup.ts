@@ -162,6 +162,19 @@ export async function buildRawMaterialsCostMap(
     }
   }
 
+  // A BOM component can be another item (FullItem), whose cost lives on FullItem.
+  const missing = rmCodes.filter((c) => !costMap.has(c));
+  if (missing.length > 0) {
+    const items = await prisma.fullItem.findMany({
+      where: { itemCode: { in: missing } },
+      select: { itemCode: true, cost: true },
+    });
+    for (const fi of items) {
+      const numericCost = parseNumericCost(fi.cost);
+      if (fi.itemCode && numericCost !== null && numericCost > 0) costMap.set(fi.itemCode, numericCost);
+    }
+  }
+
   return costMap;
 }
 

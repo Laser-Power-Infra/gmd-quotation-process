@@ -26,7 +26,7 @@ export interface DocketRowActions {
   edit: (id: string) => void;
 }
 
-const TD = "border-r border-b border-border align-top py-1.5 px-2.5 text-xs";
+const TD = "border-r border-b border-border align-top py-1 px-2.5 text-[11px]";
 const BLANK_CHIP = "border-red-300 bg-red-50 text-red-700 dark:border-red-500/40 dark:bg-red-500/10 dark:text-red-300";
 
 function copy(value: string) {
@@ -84,7 +84,7 @@ function DocketRowImpl({
       <td
         onClick={open}
         style={{ left: 0 }}
-        className={`${TD} sticky z-20 bg-background shadow-[inset_-1px_0_0_var(--border)] cursor-pointer`}
+        className={`${TD} sticky z-20 bg-background [tr:hover>&]:bg-muted shadow-[inset_-1px_0_0_var(--border),inset_0_-1px_0_var(--border)] cursor-pointer`}
       >
         <div className="flex items-center gap-1.5">
           <div className="min-w-0 flex-1">
@@ -96,10 +96,10 @@ function DocketRowImpl({
                   className="inline-flex shrink-0 items-center justify-center p-0.5 hover:bg-muted rounded text-muted-foreground cursor-pointer"
                   aria-label={isExpanded ? "Collapse items" : "Expand items"}
                 >
-                  {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                 </button>
               )}
-              <span className="font-semibold text-[#0f62fe] dark:text-blue-300 truncate">{enquiry.docketNumber}</span>
+              <span className="font-semibold text-[#0f62fe] dark:text-blue-300 shrink-0 whitespace-nowrap" title={enquiry.docketNumber}>{enquiry.docketNumber}</span>
               {incomplete > 0 && (
                 <button
                   type="button"

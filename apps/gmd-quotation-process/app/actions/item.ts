@@ -787,7 +787,29 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
       bomMap.set(r.itemCode, { bomId: r.bomId, rmItemCode: r.rmItemCode });
     }
 
-    const rmCodes = [...new Set(bomRows.map((r) => r.rmItemCode))];
+    const items = await prisma.enquiryItem.findMany({
+      where: { id: { in: itemIds } },
+      select: { id: true, itemName: true, size: true, pnRating: true, erpItemCode: true, productCost: true, bomId: true, costRefCode: true, availableStock: true, bomType: true },
+    });
+
+    // Verify BOM first: the row's own BOM ID, else its only usable BOM ID.
+    // The Item Creation sheet (bomMap) is the fallback.
+    const verifyPick = new Map<string, { bomId: string; bomIdType: string | null; rmItemCode: string }>();
+    for (const it of items) {
+      if (!it.erpItemCode) continue;
+      let pickId = it.bomId?.trim() || null;
+      if (!pickId) {
+        const ids = await getDistinctBomIds(it.erpItemCode);
+        const noUse = await getNoUseBomIdSet(ids);
+        const usable = ids.filter((id) => !noUse.has(id));
+        if (usable.length === 1) pickId = usable[0];
+      }
+      if (!pickId) continue;
+      const row = await findBomForItem(it.erpItemCode, pickId);
+      if (row?.rmItemCode) verifyPick.set(it.id, { bomId: row.bomId, bomIdType: row.bomIdType, rmItemCode: row.rmItemCode });
+    }
+
+    const rmCodes = [...new Set([...bomRows.map((r) => r.rmItemCode), ...[...verifyPick.values()].map((p) => p.rmItemCode)])];
     // Raw Materials primary, SupplyHistory fallback (commented out primary supply path per requirement)
     const stockMap = await getRmStockMap(rmCodes);
     const rmTypeMap = await getRmTypeMap(rmCodes);
@@ -801,11 +823,6 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
         if (!costMap.has(k)) costMap.set(k, v);
       }
     }
-
-    const items = await prisma.enquiryItem.findMany({
-      where: { id: { in: itemIds } },
-      select: { id: true, itemName: true, size: true, pnRating: true, erpItemCode: true, productCost: true, bomId: true, costRefCode: true, availableStock: true, bomType: true },
-    });
 
     const updatedItems: ReturnType<typeof serializeItem>[] = [];
     let updated = 0;
@@ -918,7 +935,10 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
       const needBomType = !item.bomType;
       // If nothing needed, skip entirely
       if (!needProductCost && !needStock && !needBomType) continue;
-      const bom = bomMap.get(item.erpItemCode);
+      const pick = verifyPick.get(item.id);
+      const sheetBom = bomMap.get(item.erpItemCode);
+      // A row with a picked BOM ID only uses the sheet when the sheet names that same BOM.
+      const bom = pick ?? (sheetBom && (!item.bomId || sheetBom.bomId === item.bomId) ? sheetBom : undefined);
       if (!bom) {
         if (needProductCost) noBomItemCodes.add(item.erpItemCode);
         continue;
@@ -934,16 +954,14 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
           noCostRmCodes.add(bom.rmItemCode);
         }
 
-        const dataToUpdate: any = {
-          bomId: bom.bomId,
-          rmItemCode: bom.rmItemCode,
-        };
+        // Never overwrite a BOM ID already on the row (e.g. picked from the dropdown).
+        const dataToUpdate: any = { rmItemCode: bom.rmItemCode };
+        if (!item.bomId) dataToUpdate.bomId = bom.bomId;
         {
           const rmTypeVal = rmTypeMap.get(bom.rmItemCode);
           if (rmTypeVal !== undefined) dataToUpdate.rmType = rmTypeVal;
         }
-        if (needBomType) dataToUpdate.bomType = DIRECT_M2M;
-        else dataToUpdate.bomType = DIRECT_M2M; // primary always ensures bomType, but guarded above for fallback only
+        dataToUpdate.bomType = pick?.bomIdType || DIRECT_M2M;
         if (needStock) {
           const stock = stockMap.get(bom.rmItemCode);
           if (stock !== undefined && stock.trim() !== "") {

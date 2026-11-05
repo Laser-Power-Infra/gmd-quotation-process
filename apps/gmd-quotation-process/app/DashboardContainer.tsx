@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { shallowEqual } from "react-redux";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import {
@@ -19,7 +19,7 @@ import type { DropdownOptions } from "@/lib/types";
 import type { EnquiryPageResult } from "@/lib/enquiryQuery";
 import { EMPTY_ENQUIRY_SUMMARY, enquiryFilterKey, enquiryQueryKey } from "@/lib/enquiryQuery";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
-import EnquiryTable from "@/components/table/EnquiryTable";
+import EnquiryTable, { MIN_SCALE } from "@/components/table/EnquiryTable";
 import QuotationAnalyticsSidebar from "@/components/dashboard/QuotationAnalyticsSidebar";
 import QuotationTotalValueCard from "@/components/dashboard/QuotationTotalValueCard";
 import { formatIndianNumber } from "@/lib/formatCurrency";
@@ -61,6 +61,19 @@ export default function DashboardContainer({
   }, [sidebarCollapsed]);
   // Analytics switch: off = plain table. Read after mount so the server render stays "on".
   const analyticsOn = useAppSelector((s) => s.ui.analyticsOn);
+  // Drag-bar scale (0.6-1) for everything above the table; read after mount like the other switches.
+  const [scale, setScaleState] = useState(1);
+  useEffect(() => {
+    try {
+      const v = parseFloat(localStorage.getItem("quotation-analytics-scale") ?? "");
+      if (v >= MIN_SCALE && v <= 1) setScaleState(v);
+    } catch { /* blocked: stay full size */ }
+  }, []);
+  const setScale = (v: number) => {
+    setScaleState(v);
+    try { localStorage.setItem("quotation-analytics-scale", String(v)); } catch { /* not remembered */ }
+  };
+  const zoomStyle = analyticsOn && scale < 1 ? { zoom: scale } : undefined;
   useEffect(() => {
     let saved: string | null = null;
     try { saved = localStorage.getItem("quotation-analytics-on"); } catch { /* blocked: stay on */ }
@@ -206,7 +219,8 @@ export default function DashboardContainer({
           stage tiles can exceed the height, and clipping them left no way to reach
           the table. The table keeps its own min height so it never collapses to zero. */}
       <div className="flex-1 min-w-0 flex flex-col gap-2 min-h-0 overflow-y-auto overflow-x-hidden transition-all duration-300">
-        {analyticsOn && <div className="shrink-0">
+        <div className="shrink-0 flex flex-col gap-2" style={zoomStyle}>
+        {analyticsOn && <div>
           <QuotationTotalValueCard
             formattedSum={formattedSum}
             formattedExclSum={formattedExclSum}
@@ -226,7 +240,7 @@ export default function DashboardContainer({
             }
           />
         </div>}
-        <div className="shrink-0">
+        <div>
           <DashboardHeader
             nextDocketNumber={nextDocketNumber}
             dropdownOptions={dropdownOptions}
@@ -235,11 +249,14 @@ export default function DashboardContainer({
             onAnalyticsChange={changeAnalytics}
           />
         </div>
+        </div>
         <div className="bg-card rounded-lg border border-border shadow-sm flex flex-col flex-1 min-h-[26rem] overflow-hidden">
           <EnquiryTable
             dropdownOptions={dropdownOptions}
             autoSentDockets={autoSentDockets}
             autoPendingDockets={autoPendingDockets}
+            scale={scale}
+            onScaleChange={setScale}
           />
         </div>
       </div>
