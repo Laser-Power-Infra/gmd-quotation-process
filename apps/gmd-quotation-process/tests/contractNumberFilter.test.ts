@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { matchesMulti, enquiryPassesFilters } from '../lib/filterUtils.js'
-import { BLANK } from '../components/table/MultiSelectFilter.js'
+import { BLANK } from "@gmd/ui/components/multi-select-filter"
 import type { EnquiryData, FiltersState } from '../lib/types.js'
 
 const baseFilters = {

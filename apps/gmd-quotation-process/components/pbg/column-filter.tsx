@@ -2,7 +2,7 @@
 
 import type { ColumnDef } from "@/lib/pbg/pbg-columns";
 import type { ColumnFilter } from "@/lib/pbg/pbg-filter";
-import { MultiSelect } from "@/components/pbg/multi-select";
+import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
 
 type ColumnFilterPopoverProps = {
   def: ColumnDef;
@@ -128,8 +128,11 @@ export function ColumnFilterPopover({
           <span className="mb-1 block text-[11px] font-medium text-slate-500">
             Values
           </span>
-          <MultiSelect
+          <MultiSelectFilter
+            label="values"
+            allLabel="All"
             options={valueOptions}
+            cascadedOptions={[]}
             selected={filter.selected ?? []}
             onChange={(values) => patch({ selected: values })}
           />

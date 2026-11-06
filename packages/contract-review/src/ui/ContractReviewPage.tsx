@@ -1,5 +1,6 @@
 "use client";
 
+import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
@@ -291,23 +292,9 @@ export function ContractReviewPage({
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [balBillFilter, setBalBillFilter] = useState<BalBillFilter>("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [clearanceOpen, setClearanceOpen] = useState(false);
-  const clearanceRef = useRef<HTMLDivElement>(null);
-  const [itemOpen, setItemOpen] = useState(false);
-  const itemRef = useRef<HTMLDivElement>(null);
-  const itemMenuRef = useRef<HTMLDivElement>(null);
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [tileItems, setTileItems] = useState<string[]>([]);
-  const [tileSize, setTileSize] = useState("");
-  const [pnOpen, setPnOpen] = useState(false);
-  const pnRef = useRef<HTMLDivElement>(null);
-  const pnMenuRef = useRef<HTMLDivElement>(null);
-  const [mcOpen, setMcOpen] = useState(false);
-  const mcRef = useRef<HTMLDivElement>(null);
-  const mcMenuRef = useRef<HTMLDivElement>(null);
-  const [inspectionOpen, setInspectionOpen] = useState(false);
-  const inspectionRef = useRef<HTMLDivElement>(null);
-  const inspectionMenuRef = useRef<HTMLDivElement>(null);
+  const [tileSize, setTileSize] = useState<string[]>([]);
   const [activeRateTile, setActiveRateTile] = useState<RateTileKey | null>(
     null,
   );
@@ -814,51 +801,6 @@ export function ContractReviewPage({
     getAllRows,
     handlePresenceChange,
   ]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (
-        clearanceRef.current &&
-        !clearanceRef.current.contains(e.target as Node)
-      ) {
-        setClearanceOpen(false);
-      }
-      if (itemRef.current && !itemRef.current.contains(e.target as Node)) {
-        setItemOpen(false);
-      }
-      if (pnRef.current && !pnRef.current.contains(e.target as Node)) {
-        setPnOpen(false);
-      }
-      if (mcRef.current && !mcRef.current.contains(e.target as Node)) {
-        setMcOpen(false);
-      }
-      if (
-        inspectionRef.current &&
-        !inspectionRef.current.contains(e.target as Node)
-      ) {
-        setInspectionOpen(false);
-      }
-    }
-    if (clearanceOpen || itemOpen || pnOpen || mcOpen || inspectionOpen)
-      document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [clearanceOpen, itemOpen, pnOpen, mcOpen, inspectionOpen]);
-
-  // Bring the dropdown popover fully into the sidebar's visible area on open,
-  // so its scrollable list (including the last value) is reachable.
-  useEffect(() => {
-    if (itemOpen) itemMenuRef.current?.scrollIntoView({ block: "nearest" });
-  }, [itemOpen]);
-  useEffect(() => {
-    if (pnOpen) pnMenuRef.current?.scrollIntoView({ block: "nearest" });
-  }, [pnOpen]);
-  useEffect(() => {
-    if (mcOpen) mcMenuRef.current?.scrollIntoView({ block: "nearest" });
-  }, [mcOpen]);
-  useEffect(() => {
-    if (inspectionOpen)
-      inspectionMenuRef.current?.scrollIntoView({ block: "nearest" });
-  }, [inspectionOpen]);
 
   // Single source of truth: sidebar CLEARANCE STATUS mirrors column multiFilters["CLEARANCE STATUS"]
   const clearanceFilter = multiFilters["CLEARANCE STATUS"] ?? [];
@@ -1539,7 +1481,7 @@ export function ContractReviewPage({
 
   const hasTileFilter =
     tileItems.length > 0 ||
-    tileSize !== "" ||
+    tileSize.length > 0 ||
     tilePns.length > 0 ||
     mcFilter.length > 0 ||
     inspectionFilter.length > 0;
@@ -1570,7 +1512,7 @@ export function ContractReviewPage({
             filterActions.onMultiFilter(col, []);
           }
           if (byCol["STATUS"]) {
-            setStatusFilter("all");
+            setStatusFilter([]);
           }
           setActivePath([]);
         } else {
@@ -1579,9 +1521,7 @@ export function ContractReviewPage({
           }
           if (byCol["STATUS"]) {
             setStatusFilter(
-              byCol["STATUS"].includes("(Blank)")
-                ? "Blanks"
-                : byCol["STATUS"][0],
+              byCol["STATUS"].map((v) => (v === "(Blank)" ? "Blanks" : v)),
             );
           }
           // Real node ids only: a tree-level scope is not a node, so it must
@@ -1749,103 +1689,33 @@ export function ContractReviewPage({
             <span className="text-[11px] font-semibold text-white/60">
               STATUS
             </span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full text-xs border border-border rounded bg-background text-[#0a2540] dark:text-foreground px-2 py-1.5 outline-none cursor-pointer"
-            >
-              <option value="all">All ({statusCounts.all})</option>
-              {statusOptions.map((opt) => (
-                <option key={opt} value={opt}>
-                  {opt} ({statusCounts[opt] ?? 0})
-                </option>
-              ))}
-            </select>
+            <MultiSelectFilter
+              label="STATUS"
+              allLabel={`All (${statusCounts.all})`}
+              options={statusOptions}
+              cascadedOptions={[]}
+              selected={statusFilter}
+              onChange={setStatusFilter}
+              counts={statusCounts}
+              className="text-xs text-[#0a2540] dark:text-foreground"
+            />
           </div>
           </>)}
           {isEnabled("CLEARANCE STATUS") && (<>
-          <div className="flex flex-col gap-1.5" ref={clearanceRef}>
+          <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold text-white/60">
               CLEARANCE STATUS
             </span>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setClearanceOpen((v) => !v)}
-                className="w-full text-xs border border-border rounded bg-background text-[#0a2540] dark:text-foreground px-2 py-1.5 text-left outline-none cursor-pointer flex items-center justify-between gap-1"
-              >
-                <span className="truncate">
-                  {clearanceFilter.length === 0
-                    ? `All (${clearanceCounts.all ?? 0})`
-                    : `${clearanceFilter.length} selected`}
-                </span>
-                <span className="text-[10px] text-[#0a2540]/60 dark:text-muted-foreground shrink-0">
-                  {clearanceOpen ? "▲" : "▼"}
-                </span>
-              </button>
-              {clearanceOpen && (
-                <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border border-border rounded shadow-lg overflow-hidden">
-                  <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-border bg-muted/50">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        filterActions.onMultiFilter("CLEARANCE STATUS", [
-                          ...clearanceOptions,
-                        ])
-                      }
-                      className="text-blue-600 dark:text-blue-300 font-bold hover:underline cursor-pointer"
-                    >
-                      Select All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        filterActions.onMultiFilter("CLEARANCE STATUS", [])
-                      }
-                      className="text-red-600 dark:text-red-300 font-semibold hover:underline cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto py-1">
-                    {clearanceOptions.length === 0 ? (
-                      <div className="px-2 py-2 text-[11px] text-muted-foreground">
-                        No options
-                      </div>
-                    ) : (
-                      clearanceOptions.map((opt) => (
-                        <label
-                          key={opt}
-                          className="flex items-center gap-1.5 px-2 py-1 hover:bg-muted/60 cursor-pointer text-[11px] text-[#0a2540] dark:text-foreground"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={clearanceFilter.includes(opt)}
-                            onChange={() => {
-                              filterActions.onMultiFilter(
-                                "CLEARANCE STATUS",
-                                clearanceFilter.includes(opt)
-                                  ? clearanceFilter.filter((v) => v !== opt)
-                                  : [...clearanceFilter, opt],
-                              );
-                            }}
-                            className="accent-blue-600 shrink-0"
-                          />
-                          <span
-                            className={`truncate flex-1 ${opt === "(Blank)" ? "italic text-muted-foreground" : ""}`}
-                          >
-                            {opt}
-                          </span>
-                          <span className="text-[10px] text-[#0a2540]/50 dark:text-muted-foreground shrink-0">
-                            ({clearanceCounts[opt] ?? 0})
-                          </span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            <MultiSelectFilter
+              label="CLEARANCE STATUS"
+              allLabel={`All (${clearanceCounts.all ?? 0})`}
+              options={clearanceOptions}
+              cascadedOptions={[]}
+              selected={clearanceFilter}
+              onChange={(v) => filterActions.onMultiFilter("CLEARANCE STATUS", v)}
+              counts={clearanceCounts}
+              className="text-xs text-[#0a2540] dark:text-foreground"
+            />
           </div>
           </>)}
           </>)}
@@ -1856,82 +1726,20 @@ export function ContractReviewPage({
           </span>
 
           {isEnabled("Item") && (<>
-          <div className="flex flex-col gap-1.5" ref={itemRef}>
+          <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold text-white/60">
               Item
             </span>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setItemOpen((v) => !v)}
-                className="w-full text-xs border border-border rounded bg-background text-[#0a2540] dark:text-foreground px-2 py-1.5 text-left outline-none cursor-pointer flex items-center justify-between gap-1"
-              >
-                <span className="truncate">
-                  {tileItems.length === 0
-                    ? `All (${fmt(tileAllCounts.itemBalBill)})`
-                    : `${tileItems.length} selected`}
-                </span>
-                <span className="text-[10px] text-[#0a2540]/60 dark:text-muted-foreground shrink-0">
-                  {itemOpen ? "▲" : "▼"}
-                </span>
-              </button>
-              {itemOpen && (
-                <div
-                  ref={itemMenuRef}
-                  className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border border-border rounded shadow-lg overflow-hidden"
-                >
-                  <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-border bg-muted/50">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setTileItems(itemOptions.map((o) => o.value))
-                      }
-                      className="text-blue-600 dark:text-blue-300 font-bold hover:underline cursor-pointer"
-                    >
-                      Select All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTileItems([])}
-                      className="text-red-600 dark:text-red-300 font-semibold hover:underline cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto overscroll-contain py-1">
-                    {itemOptions.length === 0 ? (
-                      <div className="px-2 py-2 text-[11px] text-muted-foreground">
-                        No options
-                      </div>
-                    ) : (
-                      itemOptions.map((o) => (
-                        <label
-                          key={o.value}
-                          className="flex items-center gap-1.5 px-2 py-1 hover:bg-muted/60 cursor-pointer text-[11px] text-[#0a2540] dark:text-foreground"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={tileItems.includes(o.value)}
-                            onChange={() => {
-                              setTileItems((prev) =>
-                                prev.includes(o.value)
-                                  ? prev.filter((v) => v !== o.value)
-                                  : [...prev, o.value],
-                              );
-                            }}
-                            className="accent-blue-600 shrink-0"
-                          />
-                          <span className="truncate flex-1">{o.value}</span>
-                          <span className="text-[10px] text-[#0a2540]/60 dark:text-muted-foreground font-mono shrink-0">
-                            ({fmt(o.sum ?? 0)})
-                          </span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            <MultiSelectFilter
+              label="Item"
+              allLabel={`All (${fmt(tileAllCounts.itemBalBill)})`}
+              options={itemOptions.map((o) => o.value)}
+              cascadedOptions={[]}
+              selected={tileItems}
+              onChange={setTileItems}
+              optionLabels={Object.fromEntries(itemOptions.map((o) => [o.value, `${o.value} (${fmt(o.sum ?? 0)})`]))}
+              className="text-xs text-[#0a2540] dark:text-foreground"
+            />
           </div>
           </>)}
 
@@ -1940,278 +1748,68 @@ export function ContractReviewPage({
             <span className="text-[11px] font-semibold text-white/60">
               Size
             </span>
-            <select
-              value={tileSize}
-              onChange={(e) => setTileSize(e.target.value)}
-              className="w-full text-xs border border-border rounded bg-background text-[#0a2540] dark:text-foreground px-2 py-1.5 outline-none cursor-pointer"
-            >
-              <option value="">All ({tileAllCounts.size})</option>
-              {sizeOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.value} ({o.count})
-                </option>
-              ))}
-            </select>
+            <MultiSelectFilter
+              label="Size"
+              allLabel={`All (${tileAllCounts.size})`}
+              options={sizeOptions.map((o) => o.value)}
+              cascadedOptions={[]}
+              selected={tileSize}
+              onChange={setTileSize}
+              counts={Object.fromEntries(sizeOptions.map((o) => [o.value, o.count]))}
+              className="text-xs text-[#0a2540] dark:text-foreground"
+            />
           </div>
           </>)}
 
           {isEnabled("PN RATING") && (<>
-          <div className="flex flex-col gap-1.5" ref={pnRef}>
+          <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold text-white/60">
               PN Rating
             </span>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setPnOpen((v) => !v)}
-                className="w-full text-xs border border-border rounded bg-background text-[#0a2540] dark:text-foreground px-2 py-1.5 text-left outline-none cursor-pointer flex items-center justify-between gap-1"
-              >
-                <span className="truncate">
-                  {tilePns.length === 0
-                    ? `All (${tileAllCounts.pn})`
-                    : `${tilePns.length} selected`}
-                </span>
-                <span className="text-[10px] text-[#0a2540]/60 dark:text-muted-foreground shrink-0">
-                  {pnOpen ? "▲" : "▼"}
-                </span>
-              </button>
-              {pnOpen && (
-                <div
-                  ref={pnMenuRef}
-                  className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border border-border rounded shadow-lg overflow-hidden"
-                >
-                  <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-border bg-muted/50">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        filterActions.onMultiFilter(
-                          "PN RATING",
-                          pnOptions.map((o) => o.value),
-                        )
-                      }
-                      className="text-blue-600 dark:text-blue-300 font-bold hover:underline cursor-pointer"
-                    >
-                      Select All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => filterActions.onMultiFilter("PN RATING", [])}
-                      className="text-red-600 dark:text-red-300 font-semibold hover:underline cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto overscroll-contain py-1">
-                    {pnOptions.length === 0 ? (
-                      <div className="px-2 py-2 text-[11px] text-muted-foreground">
-                        No options
-                      </div>
-                    ) : (
-                      pnOptions.map((o) => (
-                        <label
-                          key={o.value}
-                          className="flex items-center gap-1.5 px-2 py-1 hover:bg-muted/60 cursor-pointer text-[11px] text-[#0a2540] dark:text-foreground"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={tilePns.includes(o.value)}
-                            onChange={() => {
-                              filterActions.onMultiFilter(
-                                "PN RATING",
-                                tilePns.includes(o.value)
-                                  ? tilePns.filter((v) => v !== o.value)
-                                  : [...tilePns, o.value],
-                              );
-                            }}
-                            className="accent-blue-600 shrink-0"
-                          />
-                          <span className="truncate flex-1">{o.value}</span>
-                          <span className="text-[10px] text-[#0a2540]/50 dark:text-muted-foreground shrink-0">
-                            ({o.count})
-                          </span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            <MultiSelectFilter
+              label="PN Rating"
+              allLabel={`All (${tileAllCounts.pn})`}
+              options={pnOptions.map((o) => o.value)}
+              cascadedOptions={[]}
+              selected={tilePns}
+              onChange={(v) => filterActions.onMultiFilter("PN RATING", v)}
+              counts={Object.fromEntries(pnOptions.map((o) => [o.value, o.count]))}
+              className="text-xs text-[#0a2540] dark:text-foreground"
+            />
           </div>
           </>)}
           {isEnabled("MC Received/Pending") && (<>
-          <div className="flex flex-col gap-1.5" ref={mcRef}>
+          <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold text-white/60">
               MC Received/Pending
             </span>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setMcOpen((v) => !v)}
-                className="w-full text-xs border border-border rounded bg-background text-[#0a2540] dark:text-foreground px-2 py-1.5 text-left outline-none cursor-pointer flex items-center justify-between gap-1"
-              >
-                <span className="truncate">
-                  {mcFilter.length === 0
-                    ? `All (${mcCounts.all ?? 0})`
-                    : `${mcFilter.length} selected`}
-                </span>
-                <span className="text-[10px] text-[#0a2540]/60 dark:text-muted-foreground shrink-0">
-                  {mcOpen ? "▲" : "▼"}
-                </span>
-              </button>
-              {mcOpen && (
-                <div
-                  ref={mcMenuRef}
-                  className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border border-border rounded shadow-lg overflow-hidden"
-                >
-                  <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-border bg-muted/50">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        filterActions.onMultiFilter(
-                          "MC Received/Pending",
-                          mcOptions.map((o) => o),
-                        )
-                      }
-                      className="text-blue-600 dark:text-blue-300 font-bold hover:underline cursor-pointer"
-                    >
-                      Select All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        filterActions.onMultiFilter("MC Received/Pending", [])
-                      }
-                      className="text-red-600 dark:text-red-300 font-semibold hover:underline cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto overscroll-contain py-1">
-                    {mcOptions.length === 0 ? (
-                      <div className="px-2 py-2 text-[11px] text-muted-foreground">
-                        No options
-                      </div>
-                    ) : (
-                      mcOptions.map((o) => (
-                        <label
-                          key={o}
-                          className="flex items-center gap-1.5 px-2 py-1 hover:bg-muted/60 cursor-pointer text-[11px] text-[#0a2540] dark:text-foreground"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={mcFilter.includes(o)}
-                            onChange={() => {
-                              filterActions.onMultiFilter(
-                                "MC Received/Pending",
-                                mcFilter.includes(o)
-                                  ? mcFilter.filter((v) => v !== o)
-                                  : [...mcFilter, o],
-                              );
-                            }}
-                            className="accent-blue-600 shrink-0"
-                          />
-                          <span
-                            className={`truncate flex-1 ${o === "(Blank)" ? "italic text-muted-foreground" : ""}`}
-                          >
-                            {o}
-                          </span>
-                          <span className="text-[10px] text-[#0a2540]/50 dark:text-muted-foreground shrink-0">
-                            ({mcCounts[o] ?? 0})
-                          </span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            <MultiSelectFilter
+              label="MC Received/Pending"
+              allLabel={`All (${mcCounts.all ?? 0})`}
+              options={mcOptions}
+              cascadedOptions={[]}
+              selected={mcFilter}
+              onChange={(v) => filterActions.onMultiFilter("MC Received/Pending", v)}
+              counts={mcCounts}
+              className="text-xs text-[#0a2540] dark:text-foreground"
+            />
           </div>
           </>)}
           {isEnabled("Inspection") && (<>
-          <div className="flex flex-col gap-1.5" ref={inspectionRef}>
+          <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-semibold text-white/60">
               Inspection
             </span>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setInspectionOpen((v) => !v)}
-                className="w-full text-xs border border-border rounded bg-background text-[#0a2540] dark:text-foreground px-2 py-1.5 text-left outline-none cursor-pointer flex items-center justify-between gap-1"
-              >
-                <span className="truncate">
-                  {inspectionFilter.length === 0
-                    ? `All (${inspectionCounts.all ?? 0})`
-                    : `${inspectionFilter.length} selected`}
-                </span>
-                <span className="text-[10px] text-[#0a2540]/60 dark:text-muted-foreground shrink-0">
-                  {inspectionOpen ? "▲" : "▼"}
-                </span>
-              </button>
-              {inspectionOpen && (
-                <div
-                  ref={inspectionMenuRef}
-                  className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border border-border rounded shadow-lg overflow-hidden"
-                >
-                  <div className="flex justify-between items-center px-2 py-1.5 text-[10px] border-b border-border bg-muted/50">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        filterActions.onMultiFilter(
-                          "Inspection",
-                          inspectionOptions.map((o) => o),
-                        )
-                      }
-                      className="text-blue-600 dark:text-blue-300 font-bold hover:underline cursor-pointer"
-                    >
-                      Select All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => filterActions.onMultiFilter("Inspection", [])}
-                      className="text-red-600 dark:text-red-300 font-semibold hover:underline cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto overscroll-contain py-1">
-                    {inspectionOptions.length === 0 ? (
-                      <div className="px-2 py-2 text-[11px] text-muted-foreground">
-                        No options
-                      </div>
-                    ) : (
-                      inspectionOptions.map((o) => (
-                        <label
-                          key={o}
-                          className="flex items-center gap-1.5 px-2 py-1 hover:bg-muted/60 cursor-pointer text-[11px] text-[#0a2540] dark:text-foreground"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={inspectionFilter.includes(o)}
-                            onChange={() => {
-                              filterActions.onMultiFilter(
-                                "Inspection",
-                                inspectionFilter.includes(o)
-                                  ? inspectionFilter.filter((v) => v !== o)
-                                  : [...inspectionFilter, o],
-                              );
-                            }}
-                            className="accent-blue-600 shrink-0"
-                          />
-                          <span
-                            className={`truncate flex-1 ${o === "(Blank)" ? "italic text-muted-foreground" : ""}`}
-                          >
-                            {o}
-                          </span>
-                          <span className="text-[10px] text-[#0a2540]/50 dark:text-muted-foreground shrink-0">
-                            ({inspectionCounts[o] ?? 0})
-                          </span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
+            <MultiSelectFilter
+              label="Inspection"
+              allLabel={`All (${inspectionCounts.all ?? 0})`}
+              options={inspectionOptions}
+              cascadedOptions={[]}
+              selected={inspectionFilter}
+              onChange={(v) => filterActions.onMultiFilter("Inspection", v)}
+              counts={inspectionCounts}
+              className="text-xs text-[#0a2540] dark:text-foreground"
+            />
           </div>
           </>)}
           </>)}
@@ -2508,7 +2106,7 @@ export function ContractReviewPage({
                 externalFiltersActive={
                   hasTileFilter ||
                   balBillFilter !== "all" ||
-                  statusFilter !== "all" ||
+                  statusFilter.length > 0 ||
                   clearanceFilter.length > 0
                 }
                 filterState={filterState}
@@ -2525,10 +2123,10 @@ export function ContractReviewPage({
                 bomIdCategoryFilter
                 onReset={() => {
                   setTileItems([]);
-                  setTileSize("");
+                  setTileSize([]);
                   setActiveRateTile(null);
                   setBalBillFilter("all");
-                  setStatusFilter("all");
+                  setStatusFilter([]);
                   setActivePath([]);
                   // Grouped columns render their filters inside the collapsed
                   // parent header, so every child must be cleared here too.

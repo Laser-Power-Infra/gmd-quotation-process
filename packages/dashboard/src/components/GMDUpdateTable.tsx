@@ -4,6 +4,7 @@ import { Fragment, useState, useMemo, useRef, useCallback, useEffect, type React
 import { ChevronUp, ChevronDown, ArrowUpDown, Search, RotateCcw, X, Download, Files, FileText, ExternalLink, Copy, Upload, Eye, Paperclip, Trash2, ImageIcon, Check, Highlighter, AlertTriangle, Loader2 } from "lucide-react";
 import GMDUpdateStatusBadge from "./GMDUpdateStatusBadge";
 import { looseIncludes, squish } from "../lib/squish";
+import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter";
 import type { ContractReviewImage } from "../lib/types";
 import {
   STATUS_COLUMNS,
@@ -714,136 +715,48 @@ function MultiSelect({
   extraOptions?: ExtraFilterOption[];
   onOpen?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const extraValues = useMemo(
-    () => new Set((extraOptions ?? []).map((o) => o.value)),
-    [extraOptions],
-  );
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
+  const { allOptions, labels, counts, hints } = useMemo(() => {
+    const extras = extraOptions ?? [];
+    const extraValues = new Set(extras.map((o) => o.value));
+    const labels: Record<string, string> = { ...optionLabels };
+    for (const o of extras) labels[o.value] = o.label;
+    const counts: Record<string, number> = {};
+    const hints: Record<string, string> = {};
+    for (const [k, m] of Object.entries(optionMeta ?? {})) {
+      counts[k] = m.count;
+      hints[k] = `${m.partyName || "—"} · ${m.sumLabel}`;
     }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+    return {
+      allOptions: [
+        ...extras.map((o) => o.value),
+        ...options.filter((o) => !extraValues.has(o) && o !== "(Blank)"),
+      ],
+      labels,
+      counts,
+      hints,
+    };
+  }, [options, optionMeta, optionLabels, extraOptions]);
 
+  // Stored filter values keep the literal "(Blank)"; the shared component uses BLANK.
   return (
-    <div ref={ref} className="relative flex-1 min-w-0">
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          const next = !open;
-          setOpen(next);
-          if (next) onOpen?.();
-        }}
-        className="w-full text-[10px] border border-border rounded bg-card text-foreground px-1 py-0.5 text-left outline-none cursor-pointer truncate"
-      >
-        {selected.length ? `${selected.length} selected` : "All"}
-      </button>
-      {open && (
-        <div
-          className={`absolute top-full left-0 z-50 mt-1 bg-card border border-border rounded shadow-lg ${
-            optionMeta ? "min-w-64 max-w-104" : "w-48"
-          }`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="flex justify-between items-center px-1 py-1.5 text-[10px] border-b border-border">
-            <button
-              type="button"
-              onClick={() => onChange([...options])}
-              className="text-blue-600 dark:text-blue-300 font-bold hover:underline cursor-pointer"
-            >
-              Select All
-            </button>
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className="text-red-600 dark:text-red-300 font-semibold hover:underline cursor-pointer"
-            >
-              Clear
-            </button>
-          </div>
-          <div className="max-h-48 overflow-y-auto">
-            {!hideBlank && (
-              <label className="flex items-center gap-1.5 px-2 py-1 hover:bg-muted/60 cursor-pointer text-[10px]">
-                <input
-                  type="checkbox"
-                  checked={selected.includes("(Blank)")}
-                  onChange={() => {
-                    const next = selected.includes("(Blank)")
-                      ? selected.filter((v) => v !== "(Blank)")
-                      : [...selected, "(Blank)"];
-                    onChange(next);
-                  }}
-                  className="accent-blue-600 dark:accent-primary"
-                />
-                <span className="italic text-muted-foreground">(Blank)</span>
-              </label>
-            )}
-            {extraOptions?.map((o) => (
-              <label
-                key={o.value}
-                className="flex items-center gap-1.5 px-2 py-1 hover:bg-amber-50 dark:hover:bg-amber-500/10 cursor-pointer text-[10px]"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(o.value)}
-                  onChange={() => {
-                    const next = selected.includes(o.value)
-                      ? selected.filter((v) => v !== o.value)
-                      : [...selected, o.value];
-                    onChange(next);
-                  }}
-                  className="accent-amber-600 dark:accent-amber-400"
-                />
-                <span className="flex-1 min-w-0 truncate font-semibold text-amber-700 dark:text-amber-400">
-                  {o.label}
-                </span>
-              </label>
-            ))}
-            {options
-              .filter((opt) => !extraValues.has(opt))
-              .map((opt) => {
-              const meta = optionMeta?.[opt];
-              return (
-                <label
-                  key={opt}
-                  className="flex items-center gap-1.5 px-2 py-1 hover:bg-muted/60 cursor-pointer text-[10px]"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(opt)}
-                    onChange={() => {
-                      const next = selected.includes(opt)
-                        ? selected.filter((v) => v !== opt)
-                        : [...selected, opt];
-                      onChange(next);
-                    }}
-                    className="accent-blue-600 dark:accent-primary"
-                  />
-                  <span className="flex-1 min-w-0 leading-tight">
-                    <span className="block truncate font-medium">{optionLabels?.[opt] ?? opt}</span>
-                    {meta && (
-                      <>
-                        <span className="block text-[9px] text-foreground/60 truncate">
-                          {meta.partyName || "—"}
-                        </span>
-                        <span className="block text-[9px] text-foreground/80">
-                          {meta.count} · {meta.sumLabel}
-                        </span>
-                      </>
-                    )}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </div>
-      )}
+    <div className="relative flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+      <MultiSelectFilter
+        label="values"
+        allLabel="All"
+        options={allOptions}
+        cascadedOptions={[]}
+        selected={selected.map((v) => (v === "(Blank)" ? BLANK : v))}
+        onChange={(vals) =>
+          onChange(vals.map((v) => (v === BLANK ? "(Blank)" : v)))
+        }
+        counts={optionMeta ? counts : undefined}
+        optionLabels={labels}
+        optionHints={optionMeta ? hints : undefined}
+        includeBlank={!hideBlank}
+        onOpen={onOpen}
+        className="h-auto py-0.5 px-1 bg-card"
+        panelClassName={optionMeta ? "w-72" : undefined}
+      />
     </div>
   );
 }
@@ -1805,7 +1718,7 @@ castingRateInputs,
         if (colName === BOM_ID_COLUMN && bomIdCategoryFilter) {
           if (!opts.id) continue;
           const cat = getBomIdCategory(bomIdOptionsById?.[opts.id]);
-          if (cat !== filterVal) return false;
+          if (!filterVal.split(",").includes(cat)) return false;
           continue;
         }
         const colIdx = headers.indexOf(colName);
@@ -3388,25 +3301,17 @@ castingRateInputs,
                         </div>
                       ) : bomIdCategoryFilter && header === "BOM ID" ? (
                         <div className="flex flex-col gap-1 mt-1.5">
-                          <select
-                            value={columnFilters["BOM ID"] ?? "All"}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              handleColumnFilter("BOM ID", e.target.value);
-                            }}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-full text-[10px] border border-border rounded bg-card text-foreground px-1 py-0.5 outline-none cursor-pointer"
-                            title="Filter by BOM ID availability"
-                          >
-                            <option value="All">All</option>
-                            {BOM_ID_FILTER_VALUES.filter(
-                              (v) => v !== "All",
-                            ).map((v) => (
-                              <option key={v} value={v}>
-                                {v}
-                              </option>
-                            ))}
-                          </select>
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <MultiSelectFilter
+                              label="BOM ID"
+                              allLabel="All"
+                              options={BOM_ID_FILTER_VALUES.filter((v) => v !== "All")}
+                              cascadedOptions={[]}
+                              selected={(columnFilters["BOM ID"] ?? "").split(",").filter((v) => v && v !== "All")}
+                              onChange={(vals) => handleColumnFilter("BOM ID", vals.join(","))}
+                              className="h-auto py-0.5 px-1 bg-card"
+                            />
+                          </div>
                         </div>
                       ) : (
                         <div className="flex flex-col gap-1 mt-1.5">

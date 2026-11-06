@@ -25,8 +25,18 @@ import {
   Layers,
 } from "lucide-react";
 import { Button } from "@gmd/ui/components/button";
-import { MultiFilterDropdown, FilterOption } from "./MultiFilterDropdown";
+import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
 import { squish } from "@/lib/squish";
+
+interface FilterOption { value: string; label: string; count?: number }
+// Adapts {value,label,count} lists to MultiSelectFilter's props.
+const fo = (o: FilterOption[]) => ({
+  options: o.map((x) => x.value),
+  cascadedOptions: [] as string[],
+  optionLabels: Object.fromEntries(o.map((x) => [x.value, x.label])),
+  counts: Object.fromEntries(o.filter((x) => x.count !== undefined).map((x) => [x.value, x.count as number])),
+});
+
 
 export interface PendingDocketRow {
   id: number;
@@ -110,7 +120,7 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
   const [selectedRequesters, setSelectedRequesters] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [filterHasAttach, setFilterHasAttach] = useState<"ALL" | "YES" | "NO">("ALL");
-  const [filterMailType, setFilterMailType] = useState<string>("ALL");
+  const [filterMailType, setFilterMailType] = useState<string[]>([]);
   const [filterUnverifiedOnly, setFilterUnverifiedOnly] = useState(false);
 
   // Sorting
@@ -195,8 +205,8 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
       if (filterHasAttach === "NO" && r.attachNames.length > 0) return false;
 
       // 5. Mail Type Filter
-      if (filterMailType !== "ALL") {
-        if (r.mailType !== filterMailType) return false;
+      if (filterMailType.length > 0) {
+        if (!filterMailType.includes(r.mailType)) return false;
       }
 
       // 6. AI verification filter
@@ -255,7 +265,7 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
     setSelectedRequesters([]);
     setSelectedStatuses([]);
     setFilterHasAttach("ALL");
-    setFilterMailType("ALL");
+    setFilterMailType([]);
     setFilterUnverifiedOnly(false);
     setCurrentPage(1);
   }
@@ -265,7 +275,7 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
     selectedRequesters.length > 0 ||
     selectedStatuses.length > 0 ||
     filterHasAttach !== "ALL" ||
-    filterMailType !== "ALL" ||
+    filterMailType.length > 0 ||
     filterUnverifiedOnly;
 
   function handleExportCsv() {
@@ -425,49 +435,49 @@ export default function PendingDocketsTable({ rows, loading = false }: PendingDo
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/40">
           {/* Requester Filter */}
           <div className="w-[180px]">
-            <MultiFilterDropdown
+            <MultiSelectFilter
               label="All Requesters"
-              options={requesterOptions}
-              selectedValues={selectedRequesters}
+ allLabel="All Requesters"
+              {...fo(requesterOptions)}
+              selected={selectedRequesters}
               onChange={(vals: string[]) => {
                 setSelectedRequesters(vals);
                 setCurrentPage(1);
               }}
-              showSearch={true}
-              placeholder="Search requester..."
+              searchPlaceholder="Search requester..."
             />
           </div>
 
           {/* Status Filter */}
           <div className="w-[200px]">
-            <MultiFilterDropdown
+            <MultiSelectFilter
               label="All Statuses"
-              options={statusOptions}
-              selectedValues={selectedStatuses}
+ allLabel="All Statuses"
+              {...fo(statusOptions)}
+              selected={selectedStatuses}
               onChange={(vals: string[]) => {
                 setSelectedStatuses(vals);
                 setCurrentPage(1);
               }}
-              showSearch={false}
             />
           </div>
 
           {/* Mail Type Selector */}
           <div className="flex items-center gap-1 text-xs">
             <span className="text-[11px] font-medium text-muted-foreground">Type:</span>
-            <select
-              value={filterMailType}
-              onChange={(e) => {
-                setFilterMailType(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="h-7 px-2 text-xs bg-background rounded-md border border-border focus:outline-hidden"
-            >
-              <option value="ALL">All Types</option>
-              <option value="DOCKET">DOCKET</option>
-              <option value="QUOTATION">QUOTATION</option>
-              <option value="BOTH">BOTH</option>
-            </select>
+            <div className="w-[150px]">
+              <MultiSelectFilter
+                label="Types"
+                allLabel="All Types"
+                options={["DOCKET", "QUOTATION", "BOTH"]}
+                cascadedOptions={[]}
+                selected={filterMailType}
+                onChange={(vals) => {
+                  setFilterMailType(vals);
+                  setCurrentPage(1);
+                }}
+              />
+            </div>
           </div>
 
           <div className="text-xs text-muted-foreground ml-auto font-medium">

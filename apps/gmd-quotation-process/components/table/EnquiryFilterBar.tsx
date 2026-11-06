@@ -4,7 +4,7 @@
 
 import { Columns3 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@gmd/ui/components/popover";
-import MultiSelectFilter from "./MultiSelectFilter";
+import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
 import DebouncedSearchInput from "./DebouncedSearchInput";
 import { ColumnVisibility } from "@/components/pbg/column-visibility";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";

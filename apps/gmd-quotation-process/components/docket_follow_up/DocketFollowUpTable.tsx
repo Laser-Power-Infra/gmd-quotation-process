@@ -29,8 +29,23 @@ import { Badge } from "@gmd/ui/components/badge";
 import { Button } from "@gmd/ui/components/button";
 import ThreadDetailModal from "./ThreadDetailModal";
 import * as XLSX from "xlsx";
-import { MultiFilterDropdown, FilterOption } from "./MultiFilterDropdown";
+import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
 import { squish } from "@/lib/squish";
+
+const DURATION_OPTIONS = [
+  { value: "RECENT", label: "≤ 3 Days ago" },
+  { value: "MID", label: "3 - 7 Days ago" },
+  { value: "OVERDUE", label: "> 7 Days ago" },
+];
+interface FilterOption { value: string; label: string; count?: number }
+// Adapts {value,label,count} lists to MultiSelectFilter's props.
+const fo = (o: FilterOption[]) => ({
+  options: o.map((x) => x.value),
+  cascadedOptions: [] as string[],
+  optionLabels: Object.fromEntries(o.map((x) => [x.value, x.label])),
+  counts: Object.fromEntries(o.filter((x) => x.count !== undefined).map((x) => [x.value, x.count as number])),
+});
+
 
 interface DocketFollowUpRow {
   enquiryId: string;
@@ -151,7 +166,7 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
   const [selectedFilesStatuses, setSelectedFilesStatuses] = useState<string[]>([]);
 
   const [filterPartyEmail, setFilterPartyEmail] = useState("");
-  const [filterDuration, setFilterDuration] = useState("ALL"); // ALL | RECENT | MID | OVERDUE
+  const [filterDuration, setFilterDuration] = useState<string[]>([]); // RECENT | MID | OVERDUE
   const [filterSender, setFilterSender] = useState("");
 
   // Sort State
@@ -395,14 +410,14 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
       }
 
       // 12. Duration / Last Comm Days Filter
-      if (filterDuration === "RECENT") {
-        if (r.lastCommunicationDays == null || r.lastCommunicationDays > 3) return false;
-      }
-      if (filterDuration === "MID") {
-        if (r.lastCommunicationDays == null || r.lastCommunicationDays <= 3 || r.lastCommunicationDays > 7) return false;
-      }
-      if (filterDuration === "OVERDUE") {
-        if (r.lastCommunicationDays == null || r.lastCommunicationDays <= 7) return false;
+      if (filterDuration.length > 0) {
+        const d = r.lastCommunicationDays;
+        const ok =
+          d != null &&
+          ((filterDuration.includes("RECENT") && d <= 3) ||
+            (filterDuration.includes("MID") && d > 3 && d <= 7) ||
+            (filterDuration.includes("OVERDUE") && d > 7));
+        if (!ok) return false;
       }
 
       // 13. Sender / Last Email Filter
@@ -502,7 +517,7 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
     setSelectedReplyStatuses([]);
     setSelectedFilesStatuses([]);
     setFilterPartyEmail("");
-    setFilterDuration("ALL");
+    setFilterDuration([]);
     setFilterSender("");
     setCurrentPage(1);
   };
@@ -589,11 +604,11 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
         clear: () => setFilterPartyEmail(""),
       });
     }
-    if (filterDuration !== "ALL") {
+    if (filterDuration.length > 0) {
       list.push({
         key: "duration",
-        label: `Duration: ${filterDuration}`,
-        clear: () => setFilterDuration("ALL"),
+        label: `Duration: ${filterDuration.join(", ")}`,
+        clear: () => setFilterDuration([]),
       });
     }
     if (filterSender) {
@@ -856,16 +871,16 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
               <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
                 Party Name ({uniqueParties.length})
               </label>
-              <MultiFilterDropdown
+              <MultiSelectFilter
                 label="All Parties"
-                options={partyOptions}
-                selectedValues={selectedParties}
+ allLabel="All Parties"
+                {...fo(partyOptions)}
+                selected={selectedParties}
                 onChange={(vals) => {
                   setSelectedParties(vals);
                   setCurrentPage(1);
                 }}
-                showSearch={true}
-                placeholder="Search party..."
+                searchPlaceholder="Search party..."
               />
             </div>
 
@@ -874,16 +889,16 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
               <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
                 State ({uniqueStates.length})
               </label>
-              <MultiFilterDropdown
+              <MultiSelectFilter
                 label="All States"
-                options={stateOptions}
-                selectedValues={selectedStates}
+ allLabel="All States"
+                {...fo(stateOptions)}
+                selected={selectedStates}
                 onChange={(vals) => {
                   setSelectedStates(vals);
                   setCurrentPage(1);
                 }}
-                showSearch={true}
-                placeholder="Search state..."
+                searchPlaceholder="Search state..."
               />
             </div>
 
@@ -892,16 +907,16 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
               <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
                 Enquiry Type ({uniqueTypes.length})
               </label>
-              <MultiFilterDropdown
+              <MultiSelectFilter
                 label="All Types"
-                options={typeOptions}
-                selectedValues={selectedTypes}
+ allLabel="All Types"
+                {...fo(typeOptions)}
+                selected={selectedTypes}
                 onChange={(vals) => {
                   setSelectedTypes(vals);
                   setCurrentPage(1);
                 }}
-                showSearch={uniqueTypes.length > 5}
-                placeholder="Search type..."
+                searchPlaceholder="Search type..."
               />
             </div>
 
@@ -910,16 +925,16 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
               <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
                 Order Status ({uniqueOrderStatuses.length})
               </label>
-              <MultiFilterDropdown
+              <MultiSelectFilter
                 label="All Statuses"
-                options={orderStatusOptions}
-                selectedValues={selectedOrderStatuses}
+ allLabel="All Statuses"
+                {...fo(orderStatusOptions)}
+                selected={selectedOrderStatuses}
                 onChange={(vals) => {
                   setSelectedOrderStatuses(vals);
                   setCurrentPage(1);
                 }}
-                showSearch={uniqueOrderStatuses.length > 5}
-                placeholder="Search order status..."
+                searchPlaceholder="Search order status..."
               />
             </div>
 
@@ -928,15 +943,15 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
               <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
                 Quote Status
               </label>
-              <MultiFilterDropdown
+              <MultiSelectFilter
                 label="All Quote Status"
-                options={quoteStatusOptions}
-                selectedValues={selectedQuoteStatuses}
+ allLabel="All Quote Status"
+                {...fo(quoteStatusOptions)}
+                selected={selectedQuoteStatuses}
                 onChange={(vals) => {
                   setSelectedQuoteStatuses(vals);
                   setCurrentPage(1);
                 }}
-                showSearch={false}
               />
             </div>
 
@@ -945,15 +960,15 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
               <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
                 Party Reply
               </label>
-              <MultiFilterDropdown
+              <MultiSelectFilter
                 label="All Replies"
-                options={partyReplyOptions}
-                selectedValues={selectedReplyStatuses}
+ allLabel="All Replies"
+                {...fo(partyReplyOptions)}
+                selected={selectedReplyStatuses}
                 onChange={(vals) => {
                   setSelectedReplyStatuses(vals);
                   setCurrentPage(1);
                 }}
-                showSearch={false}
               />
             </div>
 
@@ -962,15 +977,15 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
               <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
                 Action Status
               </label>
-              <MultiFilterDropdown
+              <MultiSelectFilter
                 label="All Statuses"
-                options={actionStatusOptions}
-                selectedValues={selectedActionStatuses}
+ allLabel="All Statuses"
+                {...fo(actionStatusOptions)}
+                selected={selectedActionStatuses}
                 onChange={(vals) => {
                   setSelectedActionStatuses(vals);
                   setCurrentPage(1);
                 }}
-                showSearch={false}
               />
             </div>
 
@@ -979,19 +994,16 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
               <label className="text-[10px] font-bold text-muted-foreground uppercase block mb-1">
                 Last Activity
               </label>
-              <select
-                value={filterDuration}
-                onChange={(e) => {
-                  setFilterDuration(e.target.value);
+              <MultiSelectFilter
+                label="Durations"
+                allLabel="All Durations"
+                {...fo(DURATION_OPTIONS)}
+                selected={filterDuration}
+                onChange={(vals) => {
+                  setFilterDuration(vals);
                   setCurrentPage(1);
                 }}
-                className={selectClass}
-              >
-                <option value="ALL">All Durations</option>
-                <option value="RECENT">&le; 3 Days ago</option>
-                <option value="MID">3 - 7 Days ago</option>
-                <option value="OVERDUE">&gt; 7 Days ago</option>
-              </select>
+              />
             </div>
           </div>
         </div>
@@ -1115,16 +1127,16 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
                     {sortField === "partyName" && (sortAsc ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                   </div>
                   <div className="mt-1.5">
-                    <MultiFilterDropdown
+                    <MultiSelectFilter
                       label="All Parties"
-                      options={partyOptions}
-                      selectedValues={selectedParties}
+ allLabel="All Parties"
+                      {...fo(partyOptions)}
+                      selected={selectedParties}
                       onChange={(vals) => {
                         setSelectedParties(vals);
                         setCurrentPage(1);
                       }}
-                      showSearch={true}
-                      placeholder="Search party..."
+                      searchPlaceholder="Search party..."
                     />
                   </div>
                 </th>
@@ -1139,16 +1151,16 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
                     {sortField === "state" && (sortAsc ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                   </div>
                   <div className="mt-1.5">
-                    <MultiFilterDropdown
+                    <MultiSelectFilter
                       label="All States"
-                      options={stateOptions}
-                      selectedValues={selectedStates}
+ allLabel="All States"
+                      {...fo(stateOptions)}
+                      selected={selectedStates}
                       onChange={(vals) => {
                         setSelectedStates(vals);
                         setCurrentPage(1);
                       }}
-                      showSearch={true}
-                      placeholder="Search state..."
+                      searchPlaceholder="Search state..."
                     />
                   </div>
                 </th>
@@ -1159,15 +1171,15 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
                     <span>Action Status</span>
                   </div>
                   <div className="mt-1.5">
-                    <MultiFilterDropdown
+                    <MultiSelectFilter
                       label="All Statuses"
-                      options={actionStatusOptions}
-                      selectedValues={selectedActionStatuses}
+ allLabel="All Statuses"
+                      {...fo(actionStatusOptions)}
+                      selected={selectedActionStatuses}
                       onChange={(vals) => {
                         setSelectedActionStatuses(vals);
                         setCurrentPage(1);
                       }}
-                      showSearch={false}
                     />
                   </div>
                 </th>
@@ -1182,15 +1194,15 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
                     {sortField === "quotationSentDate" && (sortAsc ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                   </div>
                   <div className="mt-1.5">
-                    <MultiFilterDropdown
+                    <MultiSelectFilter
                       label="All Quote Status"
-                      options={quoteStatusOptions}
-                      selectedValues={selectedQuoteStatuses}
+ allLabel="All Quote Status"
+                      {...fo(quoteStatusOptions)}
+                      selected={selectedQuoteStatuses}
                       onChange={(vals) => {
                         setSelectedQuoteStatuses(vals);
                         setCurrentPage(1);
                       }}
-                      showSearch={false}
                     />
                   </div>
                 </th>
@@ -1201,15 +1213,15 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
                     <span>Party Reply</span>
                   </div>
                   <div className="mt-1.5">
-                    <MultiFilterDropdown
+                    <MultiSelectFilter
                       label="All Replies"
-                      options={partyReplyOptions}
-                      selectedValues={selectedReplyStatuses}
+ allLabel="All Replies"
+                      {...fo(partyReplyOptions)}
+                      selected={selectedReplyStatuses}
                       onChange={(vals) => {
                         setSelectedReplyStatuses(vals);
                         setCurrentPage(1);
                       }}
-                      showSearch={false}
                     />
                   </div>
                 </th>
@@ -1220,15 +1232,15 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
                     <span>Attachments / Files</span>
                   </div>
                   <div className="mt-1.5">
-                    <MultiFilterDropdown
+                    <MultiSelectFilter
                       label="All Files"
-                      options={fileOptions}
-                      selectedValues={selectedFilesStatuses}
+ allLabel="All Files"
+                      {...fo(fileOptions)}
+                      selected={selectedFilesStatuses}
                       onChange={(vals) => {
                         setSelectedFilesStatuses(vals);
                         setCurrentPage(1);
                       }}
-                      showSearch={false}
                     />
                   </div>
                 </th>
@@ -1262,19 +1274,16 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
                     {sortField === "lastCommunicationDays" && (sortAsc ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                   </div>
                   <div className="mt-1.5">
-                    <select
-                      value={filterDuration}
-                      onChange={(e) => {
-                        setFilterDuration(e.target.value);
-                        setCurrentPage(1);
-                      }}
-                      className={selectClass}
-                    >
-                      <option value="ALL">All Days</option>
-                      <option value="RECENT">&le; 3 Days</option>
-                      <option value="MID">3 - 7 Days</option>
-                      <option value="OVERDUE">&gt; 7 Days</option>
-                    </select>
+                    <MultiSelectFilter
+                label="Durations"
+                allLabel="All Durations"
+                {...fo(DURATION_OPTIONS)}
+                selected={filterDuration}
+                onChange={(vals) => {
+                  setFilterDuration(vals);
+                  setCurrentPage(1);
+                }}
+              />
                   </div>
                 </th>
 

@@ -8,6 +8,7 @@ import * as XLSX from "xlsx";
 import { getLedgerFollowUpHistoryAction, saveLedgerFollowUpAction } from "@/app/actions/ledgerFollowUp";
 import type { FollowUpHistoryRow } from "@/app/actions/ledgerFollowUp";
 import { saveLegalCaseAction } from "@/app/actions/partyLegalCase";
+import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
 import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import { squish } from "@gmd/dashboard/lib/squish";
 import type { DebtorRow, DebtorTotals } from "@/lib/debtors";
@@ -210,9 +211,9 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
   }, [hydrated, prefs]);
 
   const search = prefs.filters.search ?? "";
-  const owner = prefs.filters.owner ?? "";
+  const owner = useMemo(() => (prefs.filters.owner ? prefs.filters.owner.split(",") : []), [prefs.filters.owner]);
   const weekOnly = !!prefs.filters.weekOnly;
-  const clientType = prefs.filters.clientType ?? "";
+  const clientType = useMemo(() => (prefs.filters.clientType ? prefs.filters.clientType.split(",") : []), [prefs.filters.clientType]);
   const overdueOnly = !!prefs.filters.overdueOnly;
   const over45 = !!prefs.filters.over45;
   const broken = !!prefs.filters.broken;
@@ -323,9 +324,9 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
       .filter((p) => {
         if (isUnderLitigation(p.legal.status)) return false;
         if (needle && !squish(`${p.accName} ${p.accCode}`).includes(needle)) return false;
-        if (!ownerMatches(p.follow.owner, owner)) return false;
+        if (owner.length && !owner.some((o) => ownerMatches(p.follow.owner, o))) return false;
         if (weekOnly && !inThisWeek(p.follow.promisedDate, today)) return false;
-        if (clientType && p.follow.clientType !== clientType) return false;
+        if (clientType.length && !clientType.includes(p.follow.clientType ?? "")) return false;
         if (overdueOnly && p.overdue <= 0) return false;
         // shortcut: "past 45 days" is approximated by the 61+ buckets, upgrade with the 45-day bucket cut
         if (over45 && p.buckets["61-90"] + p.buckets["91-180"] + p.buckets["180+"] <= 0) return false;
@@ -487,15 +488,8 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
             </button>
           ))}
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">{parties.length} parties</span>
-          <select aria-label="Filter by owner" value={owner} onChange={(e) => setFilter("owner", e.target.value)} className="rounded border border-border bg-card px-2 py-1 text-sm">
-            <option value="">All owners</option>
-            <option value={UNASSIGNED}>Unassigned</option>
-            {owners.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-          <select aria-label="Filter by client type" value={clientType} onChange={(e) => setFilter("clientType", e.target.value)} className="rounded border border-border bg-card px-2 py-1 text-sm">
-            <option value="">All client types</option>
-            {clientTypes.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
+          <MultiSelectFilter label="Filter by owner" allLabel="All owners" options={[UNASSIGNED, ...owners]} cascadedOptions={[]} selected={owner} onChange={(v) => setFilter("owner", v.join(","))} optionLabels={{ [UNASSIGNED]: "Unassigned" }} className="w-40 h-8 text-sm" />
+          <MultiSelectFilter label="Filter by client type" allLabel="All client types" options={clientTypes} cascadedOptions={[]} selected={clientType} onChange={(v) => setFilter("clientType", v.join(","))} className="w-44 h-8 text-sm" />
           {([["overdueOnly", "Overdue only"], ["over45", "Past 45 days only"], ["broken", "Promise broken"]] as const).map(([k, label]) => (
             <label key={k} className="flex items-center gap-1.5 text-sm text-foreground">
               <input type="checkbox" checked={!!prefs.filters[k]} onChange={(e) => setFilter(k, e.target.checked ? "1" : "")} />

@@ -76,6 +76,8 @@ export function Popover({
       const target = event.target as Node;
       if (triggerRef.current?.contains(target)) return;
       if (panelRef.current?.contains(target)) return;
+      // Nested base-ui popovers (e.g. MultiSelectFilter) portal their panel to body.
+      if ((target as Element).closest?.("[data-slot=\"popover-content\"]")) return;
       setOpen(false);
     }
     function onKeyDown(event: KeyboardEvent) {

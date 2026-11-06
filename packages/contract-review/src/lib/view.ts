@@ -239,10 +239,10 @@ export type SidebarExclude =
 export function matchesSidebar(
   row: unknown[],
   balBill: BalBillFilter,
-  status: string,
+  status: string[],
   clearance: string[],
   item: string[],
-  size: string,
+  size: string[],
   pn: string[],
   mc: string[],
   inspection: string[],
@@ -257,13 +257,12 @@ export function matchesSidebar(
     const ok = balBill === "yes" ? isYes : !isYes;
     if (!ok) return false;
   }
-  if (exclude !== "status" && status !== "all") {
-    const cell = String(row[STATUS_IDX] ?? "").trim();
-    if (status === "Blanks") {
-      if (cell !== "") return false;
-    } else if (cell.toLowerCase() !== status.toLowerCase()) {
-      return false;
-    }
+  if (exclude !== "status" && status.length > 0) {
+    const cell = String(row[STATUS_IDX] ?? "").trim().toLowerCase();
+    const ok = status.some((s) =>
+      s === "Blanks" ? cell === "" : cell === s.toLowerCase(),
+    );
+    if (!ok) return false;
   }
   if (exclude !== "clearance" && clearance.length > 0) {
     const cell = String(row[clearanceIdx] ?? "").trim();
@@ -278,8 +277,8 @@ export function matchesSidebar(
   }
   if (
     exclude !== "size" &&
-    size &&
-    String(row[SIZE_IDX] ?? "").trim() !== size
+    size.length > 0 &&
+    !size.includes(String(row[SIZE_IDX] ?? "").trim())
   ) {
     return false;
   }
@@ -517,9 +516,9 @@ export interface ViewQuery {
   dateRanges: DateRanges;
   globalSearch: string;
   balBillFilter: BalBillFilter;
-  statusFilter: string;
+  statusFilter: string[];
   tileItems: string[];
-  tileSize: string;
+  tileSize: string[];
   activeRateTile: RateTileKey | null;
   /**
    * The table's "Drawing present" / "Image present" checkboxes. They narrow the

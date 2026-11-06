@@ -241,3 +241,13 @@ test('detectCfSet: plain valves and standalone parts are left alone', () => {
   assert.deepEqual(detectCfSet('Bolts and nuts M16', 'BOLTS OR NUTS'), [])
   assert.deepEqual(detectCfSet('with flanges', null), [])
 })
+
+test('detectCfSet: the valve describing its own build is not a CF request', () => {
+  const t = 'SLUICE VALVE-RESILIENT-NON-RISING'
+  assert.deepEqual(detectCfSet('Ductile Iron Body & Disc Resilient Seated type Sluice Valve of PN 1.0 with flanged ends', t), [])
+  assert.deepEqual(detectCfSet('DI Sluice Valve DN100, EPDM bonnet gasket, SS bolts & nuts', t), [])
+  assert.deepEqual(detectCfSet('Double flanged sluice valve DN150 PN16', t), [])
+  assert.deepEqual(detectCfSet('SS CF8M body sluice valve DN50', t), [])
+  assert.deepEqual(detectCfSet('Sluice valve DN80 with bolts and nuts', t), ['flange'])
+  assert.deepEqual(detectCfSet('Sluice valve DN80 with C.F.', t), ['flange'])
+})

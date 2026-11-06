@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { toast } from "sonner";
 import { updateIndentRmCodeAction } from "@/app/actions/contractReview";
-import MultiSelectFilter, { BLANK } from "@/components/table/MultiSelectFilter";
+import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter";
 import Pagination from "@/components/table/Pagination";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import type { VariantMetrics } from "@/lib/indentListingMetrics";

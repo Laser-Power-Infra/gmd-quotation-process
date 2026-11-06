@@ -7,7 +7,7 @@ import { shallowEqual } from "react-redux";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
 import Pagination from "./Pagination";
-import MultiSelectFilter, { BLANK } from "./MultiSelectFilter";
+import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter";
 import CellSelect, { optionsWithCurrent } from "./CellSelect";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";

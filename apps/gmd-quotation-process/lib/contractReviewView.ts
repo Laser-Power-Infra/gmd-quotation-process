@@ -132,6 +132,10 @@ export function getContractReviewDataset(fresh = false): Promise<Dataset> {
 }
 
 /** Client input is untrusted: fill in anything missing so the pipeline can't throw. */
+// Stale clients may still send a single string (or "all").
+const toArr = (x: unknown): string[] =>
+  Array.isArray(x) ? x : x && x !== "all" ? [String(x)] : [];
+
 function normalizeQuery(q: ContractReviewViewQuery): ContractReviewViewQuery {
   return {
     columnFilters: q?.columnFilters ?? {},
@@ -140,9 +144,9 @@ function normalizeQuery(q: ContractReviewViewQuery): ContractReviewViewQuery {
     dateRanges: q?.dateRanges ?? {},
     globalSearch: q?.globalSearch ?? "",
     balBillFilter: q?.balBillFilter ?? "all",
-    statusFilter: q?.statusFilter ?? "all",
+    statusFilter: toArr(q?.statusFilter),
     tileItems: q?.tileItems ?? [],
-    tileSize: q?.tileSize ?? "",
+    tileSize: toArr(q?.tileSize),
     activeRateTile: q?.activeRateTile ?? null,
     presence: {
       drawing: !!q?.presence?.drawing,

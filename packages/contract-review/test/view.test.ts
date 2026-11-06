@@ -105,19 +105,19 @@ const base: ViewQuery = {
   dateRanges: {},
   globalSearch: "",
   balBillFilter: "all",
-  statusFilter: "all",
+  statusFilter: [],
   tileItems: [],
-  tileSize: "",
+  tileSize: [],
   activeRateTile: null,
   presence: { drawing: false, image: false },
 };
 
 const scenarios: Record<string, Partial<ViewQuery>> = {
   none: {},
-  status: { statusFilter: "Blanks" },
-  statusNamed: { statusFilter: "Closed" },
+  status: { statusFilter: ["Blanks"] },
+  statusNamed: { statusFilter: ["Closed"] },
   clearance: { multiFilters: { "CLEARANCE STATUS": ["APPROVED", "(Blank)"] } },
-  items: { tileItems: ["Gate"], tileSize: "80" },
+  items: { tileItems: ["Gate"], tileSize: ["80"] },
   mcAndInspection: {
     multiFilters: { "MC Received/Pending": ["Received"], Inspection: ["DONE"] },
   },
@@ -132,7 +132,7 @@ const scenarios: Record<string, Partial<ViewQuery>> = {
       STATUS: ["(Blank)"],
       "CLEARANCE STATUS": ["APPROVED", "NA", "NR"],
     },
-    statusFilter: "Blanks",
+    statusFilter: ["Blanks"],
   },
   // What a node click writes to the table: the node's own column filter.
   graphNodeClick: {
@@ -149,7 +149,7 @@ const scenarios: Record<string, Partial<ViewQuery>> = {
     columnFilters: { Remarks: "baz" },
     tileItems: ["Gate"],
     activeRateTile: "rateXBalMcQty",
-    statusFilter: "Blanks",
+    statusFilter: ["Blanks"],
   },
 };
 

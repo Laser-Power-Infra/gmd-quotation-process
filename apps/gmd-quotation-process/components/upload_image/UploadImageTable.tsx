@@ -6,7 +6,7 @@ import { Button } from "@gmd/ui/components/button";
 import { toast } from "sonner";
 import { uploadImageForComboAction, createGeneratedImageAction } from "@/app/actions/misc";
 import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
-import MultiSelectFilter, { BLANK } from "@/components/table/MultiSelectFilter";
+import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter";
 import { squish } from "@/lib/squish";
 
 export type UploadImageComboRow = {

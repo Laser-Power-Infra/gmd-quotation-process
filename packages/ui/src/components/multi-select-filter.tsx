@@ -2,13 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, Search } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "../lib/utils";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@gmd/ui/components/popover";
-import { squish } from "@/lib/squish";
+} from "./popover";
+import { squish } from "../lib/squish";
 
 export const BLANK = "__blank__";
 export const AVAILABLE = "__available__";
@@ -32,6 +32,10 @@ interface MultiSelectFilterProps {
   renderButtonLabel?: (selected: string[], allLabel: string) => string;
   /** Fired when the panel opens, so the caller can fetch that column's options. */
   onOpen?: () => void;
+  /** Small muted second line under an option's label. */
+  optionHints?: Record<string, string>;
+  /** Enter in the search box (or the "Rows containing" button) submits the typed text and closes the panel. */
+  onSearchSubmit?: (text: string) => void;
 }
 
 export default function MultiSelectFilter({
@@ -51,6 +55,8 @@ export default function MultiSelectFilter({
   align = "start",
   renderButtonLabel,
   onOpen,
+  optionHints,
+  onSearchSubmit,
 }: MultiSelectFilterProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -79,6 +85,12 @@ export default function MultiSelectFilter({
         ? selected.filter((v) => v !== opt)
         : [...selected, opt]
     );
+  };
+
+  const submitSearch = () => {
+    onSearchSubmit?.(search.trim());
+    setOpen(false);
+    setSearch("");
   };
 
   const buttonLabel = renderButtonLabel
@@ -126,9 +138,25 @@ export default function MultiSelectFilter({
             placeholder={searchPlaceholder || `Search ${label.toLowerCase()}...`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && onSearchSubmit && search.trim()) {
+                e.preventDefault();
+                submitSearch();
+              }
+            }}
             className="w-full text-[10px] bg-transparent outline-none border-none placeholder:text-muted-foreground p-0 h-4 normal-case"
           />
         </div>
+
+        {onSearchSubmit && search.trim() && (
+          <button
+            type="button"
+            onClick={submitSearch}
+            className="text-left text-[10px] text-blue-600 font-semibold hover:underline cursor-pointer truncate px-1"
+          >
+            Rows containing “{search.trim()}”
+          </button>
+        )}
 
         <div className="flex justify-between items-center px-1 text-[9px]">
           <button
@@ -186,6 +214,11 @@ export default function MultiSelectFilter({
                 />
                 <span className="truncate flex-1" title={optionLabels?.[opt] ?? opt}>
                   {optionLabels?.[opt] ?? opt}
+                  {optionHints?.[opt] && (
+                    <span className="block text-[9px] font-normal text-muted-foreground truncate">
+                      {optionHints[opt]}
+                    </span>
+                  )}
                 </span>
                 {count !== undefined && (
                   <span className="text-[9px] text-muted-foreground font-semibold shrink-0 ml-1">

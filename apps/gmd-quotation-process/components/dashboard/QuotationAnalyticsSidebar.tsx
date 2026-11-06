@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useAppSelector } from "@/lib/hooks";
 import { Card, CardContent, CardHeader, CardTitle } from "@gmd/ui/components/card";
-import MultiSelectFilter from "@/components/table/MultiSelectFilter";
+import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
 import { X, Filter } from "lucide-react";
 import { squish } from "@/lib/squish";
 

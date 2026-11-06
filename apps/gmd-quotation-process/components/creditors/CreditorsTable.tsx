@@ -14,6 +14,7 @@ import type { Bucket } from "@/lib/debtorsAgeing";
 import { CREDITOR_PREFS_KEY, DEFAULT_CREDITOR_PREFS, dateSort, loadPrefs, numericSort, savePrefs, textSort, toAmount, toTime } from "@/lib/tablePrefs";
 import type { TablePrefs } from "@/lib/tablePrefs";
 import { formatIndianNumber } from "@/lib/formatCurrency";
+import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
 import { EMPTY_FOLLOW_UP, downloadCsv, followUpFor, toCsv } from "@/lib/debtorJoins";
 import type { FollowUp } from "@/lib/debtorJoins";
 import { CREDITOR_STATUSES } from "@/lib/ledgerFollowUp";
@@ -106,7 +107,7 @@ export default function CreditorsTable({ rows, advances, names, followUps }: Pro
   const search = prefs.filters.search ?? "";
   const overdueOnly = !!prefs.filters.overdueOnly;
   const group = prefs.filters.group === "all" || GROUPS.includes(prefs.filters.group as VendorGroup) ? (prefs.filters.group as VendorGroup | "all") : "local";
-  const schedule = prefs.filters.schedule ?? "";
+  const schedule = useMemo(() => (prefs.filters.schedule ? prefs.filters.schedule.split(",") : []), [prefs.filters.schedule]);
   // the group filter always stores a value ("local" is the default view, so "all" must be stored explicitly)
   const setFilter = (k: string, v: string) =>
     setPrefs((p) => {
@@ -152,7 +153,7 @@ export default function CreditorsTable({ rows, advances, names, followUps }: Pro
   const filtered = useMemo<PartyRow[]>(() => {
     const needle = squish(search);
     return inGroup
-      .filter((p) => (!needle || squish(`${p.accName} ${p.accCode}`).includes(needle)) && (!schedule || p.schedule === schedule) && (!overdueOnly || p.overdue > 0))
+      .filter((p) => (!needle || squish(`${p.accName} ${p.accCode}`).includes(needle)) && (!schedule.length || schedule.includes(p.schedule ?? "")) && (!overdueOnly || p.overdue > 0))
       .map((p) => ({ ...p, follow: { ...EMPTY_FOLLOW_UP, ...followUpFor(follow, p.accCode) } }));
   }, [inGroup, follow, search, schedule, overdueOnly]);
 
@@ -225,10 +226,7 @@ export default function CreditorsTable({ rows, advances, names, followUps }: Pro
         <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-2.5">
           <h2 className="text-sm font-semibold text-foreground">Party-wise payables</h2>
           <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">{parties.length} parties</span>
-          <select aria-label="Filter by schedule" value={schedule} onChange={(e) => setFilter("schedule", e.target.value)} className="rounded border border-border bg-card px-2 py-1 text-sm">
-            <option value="">All schedules</option>
-            {schedules.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <MultiSelectFilter label="Filter by schedule" allLabel="All schedules" options={schedules} cascadedOptions={[]} selected={schedule} onChange={(v) => setFilter("schedule", v.join(","))} className="w-44 h-8 text-sm" />
           <label className="flex items-center gap-1.5 text-sm text-foreground">
             <input type="checkbox" checked={overdueOnly} onChange={(e) => setFilter("overdueOnly", e.target.checked ? "1" : "")} />
             Overdue only

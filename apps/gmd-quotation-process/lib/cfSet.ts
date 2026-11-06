@@ -36,7 +36,8 @@ export function mocKeys(value: string | null | undefined): Set<string> {
 }
 
 const STANDALONE_TYPES = new Set(["COMPANION FLANGE", "GASKET", "BOLTS OR NUTS"]);
-const CF_TEXT = /with\s+(companion\s+)?flanges?|\bC\.?F\b\.?|with\s+fasteners|bolts?\s*(&|and)\s*nuts?|gaskets?/i;
+// Only an explicit request counts: "with flanged ends", "bonnet gasket" or "bolts & nuts" describe the valve's own build.
+const CF_TEXT = /with\s+(?:companion\s+)?flanges?\b|\bC\.?F\b|with\s+(?:fasteners?|gaskets?|bolts?\s*(?:&|and)\s*nuts?)\b/i;
 
 /** Party text asking for flanges/fasteners/gaskets on a valve -> the "flange" (full set) Others tick. */
 export function detectCfSet(itemName: string | null | undefined, itemType: string | null | undefined): string[] {
