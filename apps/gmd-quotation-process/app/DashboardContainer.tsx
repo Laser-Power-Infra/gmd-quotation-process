@@ -214,6 +214,8 @@ export default function DashboardContainer({
         onClearAll={clearAllAnalytics}
         hasActiveAnalyticsFilters={hasActiveAnalyticsFilters}
         facetCounts={summary.facetCounts ?? {}}
+        stageCounts={summary.stageCounts ?? {}}
+        stageAgeing={summary.stageAgeing ?? {}}
       />}
       {/* overflow-y-auto, not hidden: on a short viewport the stat strip + header +
           stage tiles can exceed the height, and clipping them left no way to reach
