@@ -3,6 +3,7 @@ import { requireAccess, loginRequired } from "@/lib/access";
 import { syncAvailableBomIds, maybeUpdateProductCostFromNewCode } from "@/lib/itemBomSync";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { prisma } from "@/lib/prisma";
+import { mirrorLookup } from "@/lib/lookupMirror";
 import { uploadFileToDrive } from "@/lib/gdrive";
 import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry } from "@/lib/costCalculator";
 import { resolveItemCategory } from "@/lib/itemCategoryResolver";
@@ -1413,6 +1414,7 @@ export async function addPartyOptionAction(rawValue: string) {
     // Deactivated parties are missing from the dropdown, so re-adding one means switching it back on.
     if (!existing.isActive) {
       await prisma.lookupOption.update({ where: { id: existing.id }, data: { isActive: true } });
+      mirrorLookup({ upsertIds: [existing.id] });
     }
     return { success: true as const, value };
   }
@@ -1421,8 +1423,9 @@ export async function addPartyOptionAction(rawValue: string) {
     where: { type: "PARTY" },
     _max: { sortOrder: true },
   });
-  await prisma.lookupOption.create({
+  const created = await prisma.lookupOption.create({
     data: { type: "PARTY", value, sortOrder: (maxSort._max.sortOrder ?? -1) + 1 },
   });
+  mirrorLookup({ upsertIds: [created.id] });
   return { success: true as const, value };
 }

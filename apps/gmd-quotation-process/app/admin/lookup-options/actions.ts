@@ -3,6 +3,7 @@
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { mirrorLookup } from "@/lib/lookupMirror";
 import { recomputeCfSets, refreshFlangeGaskets } from "@/lib/cfSetItem";
 
 async function assertDeveloper(): Promise<boolean> {
@@ -81,6 +82,11 @@ export async function addLookupOptionAction(formData: FormData) {
         sortOrder: sortOrder++,
       })),
     });
+    const created = await prisma.lookupOption.findMany({
+      where: { type, value: { in: toCreate } },
+      select: { id: true },
+    });
+    mirrorLookup({ upsertIds: created.map((r) => r.id) });
   }
 
   revalidatePath("/admin/lookup-options");
@@ -133,6 +139,7 @@ export async function updateLookupOptionAction(formData: FormData) {
     where: { id },
     data: { type, value, sortOrder, code, defaultState },
   });
+  mirrorLookup({ upsertIds: [id] });
   // Quote-time CF sets must not go stale when a CF rate is edited.
   // The rate row is already saved: a failed recompute is logged, not reported as a failed save.
   let note: string | undefined;
@@ -163,6 +170,7 @@ export async function toggleLookupOptionAction(id: string) {
     where: { id },
     data: { isActive: !existing.isActive },
   });
+  mirrorLookup({ upsertIds: [id] });
 
   revalidatePath("/admin/lookup-options");
   return { success: true };
@@ -173,6 +181,7 @@ export async function deleteLookupOptionAction(id: string) {
     return { success: false, error: "Unauthorized: developer only" };
   }
   await prisma.lookupOption.delete({ where: { id } });
+  mirrorLookup({ deleteIds: [id] });
 
   revalidatePath("/admin/lookup-options");
   return { success: true };

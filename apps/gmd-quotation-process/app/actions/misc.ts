@@ -4,6 +4,7 @@ import { getCastingKey } from "@/lib/gmd_lib/rawMaterialView";
 import { ERP_CLOSED_STATUSES, C_BATCH_VALUE } from "@/lib/erpItemStatus";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { prisma } from "@/lib/prisma";
+import { mirrorLookup } from "@/lib/lookupMirror";
 import { getUtilityDefaultStates } from "@/lib/lookup";
 import { uploadFileToDrive } from "@/lib/gdrive";
 import { serializeItem, serializeEnquiry } from "@/lib/costCalculator";
@@ -284,8 +285,10 @@ export async function saveGMDCastingRateAction(key: string, value: string, from?
         where: { id: existing.id },
         data: { value: rowValue },
       });
+      mirrorLookup({ upsertIds: [existing.id] });
     } else {
-      await prisma.lookupOption.create({ data: { type, value: rowValue } });
+      const created = await prisma.lookupOption.create({ data: { type, value: rowValue } });
+      mirrorLookup({ upsertIds: [created.id] });
     }
     const recomputed = await recomputeCastingCosts();
     await recomputeCfSets(); // CF rates fall back to casting rates
