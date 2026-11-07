@@ -12,7 +12,7 @@ import CellSelect, { optionsWithCurrent } from "./CellSelect";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";
 import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, loadEnquiryItems, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
-import { enquiryFilterKey, type EnquiryStage } from "@/lib/enquiryQuery";
+import { enquiryFilterKey } from "@/lib/enquiryQuery";
 import { fetchDocketNumbers, fetchFilteredEnquiryExport, fetchGeneratedImageMap } from "@/app/actions/enquiryQuery";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
 import { itemDeletedStatus, DELETED_STATUS_OPTIONS } from "@/lib/filterUtils";
@@ -44,7 +44,7 @@ import EditableText from "./EditableText";
 import { ALL_COLUMN_KEYS, effectiveColumns } from "@/lib/enquiryColumns";
 import { ENQUIRY_COLUMNS_KEY, loadColumnSet, saveColumnSet } from "@/lib/tablePrefs";
 import AssigneePendingStrip from "./AssigneePendingStrip";
-import { AGE_BUCKETS, istDaysSince } from "@/lib/stageAgeing";
+import { istDaysSince } from "@/lib/stageAgeing";
 import { ConfirmDialog } from "@/components/chat/ConfirmDialog";
 import { isInternalEmail } from "@/lib/enquiryEmailParty";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@gmd/ui/components/dialog";
@@ -90,14 +90,6 @@ const fileToBase64 = (file: File): Promise<string> => {
     reader.onerror = (error) => reject(error);
   });
 };
-
-const STAGE_TILES: [Exclude<EnquiryStage, "">, string][] = [
-  ["details", "Details pending"],
-  ["cost", "Cost pending"],
-  ["validation", "Validation pending"],
-  ["ready", "Ready to send"],
-  ["sent", "Sent, awaiting reply"],
-];
 
 function isBlankValue(value: unknown): boolean {
   return value === null || value === undefined || value === "" || value === "-";
@@ -2160,32 +2152,6 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     <div className="flex flex-col flex-1 min-h-0 w-full max-w-full min-w-0">
       {/* Everything above the drag bar scales together (CSS zoom); the table itself never does. */}
       <div className="shrink-0" style={analyticsOn && scale < 1 ? { zoom: scale } : undefined}>
-      {/* Status tiles: one stage per docket, counted server-side; click to filter */}
-      {analyticsOn && <div className="flex flex-wrap gap-2 px-4 py-2 border-b border-border">
-        {STAGE_TILES.map(([stage, label]) => {
-          const active = pageState.stage === stage;
-          return (
-            <button
-              key={stage}
-              type="button"
-              onClick={() => dispatch(setEnquiryStage(active ? "" : stage))}
-              aria-pressed={active}
-              className={`flex flex-1 flex-col items-start rounded-md border px-3 py-1.5 min-w-32 cursor-pointer transition-colors ${
-                active
-                  ? "border-[#0f62fe] bg-[#0f62fe] text-white dark:border-blue-500/80 dark:bg-blue-500/80"
-                  : "border-border bg-background text-foreground hover:bg-accent"
-              }`}
-            >
-              <span className={`text-[10px] font-semibold uppercase tracking-wider ${active ? "text-white/80" : "text-muted-foreground"}`}>{label}</span>
-              <span className="text-lg font-bold leading-tight">{pageState.summary?.stageCounts?.[stage] ?? 0}</span>
-              {/* Ageing: days since enquiry */}
-              <span className={`text-[9px] tabular-nums ${active ? "text-white/80" : "text-muted-foreground"}`}>
-                {AGE_BUCKETS.map((b) => `${b}d ${pageState.summary?.stageAgeing?.[stage]?.[b] ?? 0}`).join(" · ")}
-              </span>
-            </button>
-          );
-        })}
-      </div>}
       {analyticsOn && <AssigneePendingStrip rows={pageState.summary?.assigneePending ?? []} />}
       {/* Table Toolbar */}
       <div className="flex flex-wrap justify-between items-center gap-x-4 gap-y-2 px-4 py-2.5 bg-muted/50 border-b border-border">

@@ -1,11 +1,22 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useAppSelector } from "@/lib/hooks";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { setEnquiryStage } from "@/lib/enquiriesSlice";
+import type { EnquiryStage } from "@/lib/enquiryQuery";
+import { AGE_BUCKETS } from "@/lib/stageAgeing";
 import { Card, CardContent, CardHeader, CardTitle } from "@gmd/ui/components/card";
 import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
 import { X, Filter } from "lucide-react";
 import { squish } from "@/lib/squish";
+
+const STAGE_TILES: [Exclude<EnquiryStage, "">, string][] = [
+  ["details", "Details pending"],
+  ["cost", "Cost pending"],
+  ["validation", "Validation pending"],
+  ["ready", "Ready to send"],
+  ["sent", "Sent, awaiting reply"],
+];
 
 function sortStrings(arr: string[]): string[] {
   return [...arr].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
@@ -28,6 +39,9 @@ interface QuotationAnalyticsSidebarProps {
   hasActiveAnalyticsFilters: boolean;
   /** Server summary counts (field → value → dockets) over the full filtered set. */
   facetCounts: Record<string, Record<string, number>>;
+  /** Server summary: dockets per stage, and per stage per age bucket. */
+  stageCounts: Record<string, number>;
+  stageAgeing: Record<string, Record<string, number>>;
 }
 
 export default function QuotationAnalyticsSidebar({
@@ -46,8 +60,12 @@ export default function QuotationAnalyticsSidebar({
   onClearAll,
   hasActiveAnalyticsFilters,
   facetCounts,
+  stageCounts,
+  stageAgeing,
 }: QuotationAnalyticsSidebarProps) {
+  const dispatch = useAppDispatch();
   const isCollapsed = useAppSelector((s) => s.ui.isAnalyticsSidebarCollapsed);
+  const activeStage = useAppSelector((s) => s.enquiries.page.stage);
   const [stateSearchQuery, setStateSearchQuery] = useState("");
 
   // Options and counts come from the server summary: every filtered docket
@@ -290,6 +308,33 @@ export default function QuotationAnalyticsSidebar({
           </div>
         </CardContent>
       </Card>
+
+      {/* Stage tiles: one stage per docket, counted server-side; click to filter */}
+      <div className="flex flex-col gap-1.5">
+        {STAGE_TILES.map(([stage, label]) => {
+          const active = activeStage === stage;
+          return (
+            <button
+              key={stage}
+              type="button"
+              onClick={() => dispatch(setEnquiryStage(active ? "" : stage))}
+              aria-pressed={active}
+              className={`flex flex-col items-start rounded-lg border px-3 py-1.5 cursor-pointer transition-colors ${
+                active
+                  ? "border-[#0f62fe] bg-[#0f62fe] text-white dark:border-blue-500/80 dark:bg-blue-500/80"
+                  : "border-border bg-background text-foreground hover:bg-accent"
+              }`}
+            >
+              <span className={`text-[10px] font-semibold uppercase tracking-wider ${active ? "text-white/80" : "text-muted-foreground"}`}>{label}</span>
+              <span className="text-lg font-bold leading-tight">{stageCounts[stage] ?? 0}</span>
+              {/* Ageing: days since enquiry */}
+              <span className={`text-[9px] tabular-nums ${active ? "text-white/80" : "text-muted-foreground"}`}>
+                {AGE_BUCKETS.map((b) => `${b}d ${stageAgeing[stage]?.[b] ?? 0}`).join(" · ")}
+              </span>
+            </button>
+          );
+        })}
+      </div>
     </aside>
   );
 }
