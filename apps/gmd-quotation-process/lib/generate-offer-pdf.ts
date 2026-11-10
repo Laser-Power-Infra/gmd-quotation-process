@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { getItemNameMerge } from "./costCalculator";
 import { makeImageKey } from "./imageKey";
 import { oneClickAccess } from "./oneClickAccess";
+import { reverseAuctionPrefix } from "./docketEmailTemplate";
 
 function extractDriveFileId(url: string | null | undefined): string | null {
   if (!url) return null;
@@ -34,7 +35,7 @@ function extractDriveFileId(url: string | null | undefined): string | null {
 export async function generateOfferPdfAction(
   rowData: OfferLetterTemplateData,
   enquiryId?: string,
-  options?: { bypassFreeze?: boolean },
+  options?: { bypassFreeze?: boolean; raRound?: number },
 ) {
   const bypassFreeze = options?.bypassFreeze === true;
   try {
@@ -248,7 +249,7 @@ export async function generateOfferPdfAction(
         docketNo: dbEnquiry.docketNumber,
         state: dbEnquiry.state || "",
         partyName: dbEnquiry.partyName,
-        subject: `Offer For Supply under @ ${dbEnquiry.utility || ""}`,
+        subject: `${reverseAuctionPrefix(options?.raRound)}Offer For Supply under @ ${dbEnquiry.utility || ""}`,
         price: "The Quoted prices are on Firm basis, valid for 60days.",
         paymentTerms: dbEnquiry.paymentTerms || "",
         inspection: dbEnquiry.inspection || "",

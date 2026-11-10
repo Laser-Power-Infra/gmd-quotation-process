@@ -20,6 +20,15 @@ export interface EnquiryItemData {
   /** Set on the CF set line under a valve (flanges + gaskets + bolts + nuts). */
   parentItemId?: string | null;
   cfSetBreakdown?: unknown;
+  /** Actuator link: codes from the actuator master and the cost build-up (see lib/actuatorCost.ts). */
+  actuatorMake?: string | null;
+  actCode?: string | null;
+  gbCode?: string | null;
+  controlType?: string | null;
+  bareValveCost?: number | null;
+  adaptorCost?: number | null;
+  assemblyCost?: number | null;
+  actuatorBreakdown?: unknown;
   cost: number | null;
   stockStatus: string | null;
   discount: number | null;
@@ -84,6 +93,7 @@ export interface EnquiryData {
   projectReference: string | null;
   technicalEvaluation?: string | null;
   reverseAuctionStatus?: string | null;
+  reverseAuctionCount?: number | null;
   apm?: string | null;
   offerPdfGeneratedAt?: string | Date | null;
   offerPdfGeneratedBy?: string | null;

@@ -73,22 +73,60 @@ type BomComponentCodes = {
 export function pickBomComponentCode(
   ownItemCode: string,
   components: BomComponentCodes[],
+  skip?: ReadonlySet<string>,
 ): string | null {
   for (const c of components) {
     const rm = c.rawMaterial?.erpItemCode?.trim();
-    if (rm) return rm;
+    if (rm && !skip?.has(rm)) return rm;
   }
   for (const c of components) {
     const fi = c.fullItem?.itemCode?.trim();
-    if (fi && fi !== ownItemCode.trim()) return fi;
+    if (fi && fi !== ownItemCode.trim() && !skip?.has(fi)) return fi;
   }
   return null;
 }
 
-/** BOM linkage for one (itemCode, bomId): its type and the component code that carries the cost. */
+/**
+ * ERP codes of actuators and gearboxes (cached 60 s: one load per call chain, not per item). Their BOM lines never carry
+ * the item's cost (the actuator and gearbox are priced once, by lib/actuatorCost.ts) and never change a BOM's type,
+ * use status or RM availability. Throws when the lookup fails: callers decide what is safe.
+ */
+let codesCache: { at: number; codes: Set<string> } | null = null;
+export async function loadActuatorErpCodes(): Promise<Set<string>> {
+  if (codesCache && Date.now() - codesCache.at < 60_000) return codesCache.codes;
+  const [a, g] = await Promise.all([prisma.actuatorStock.findMany({ select: { erpCode: true } }), prisma.gmdGearboxStock.findMany({ select: { erpCode: true } })]);
+  codesCache = { at: Date.now(), codes: new Set([...a, ...g].map((r) => r.erpCode.trim())) };
+  return codesCache.codes;
+}
+
+/** Same lookup for BOM use-status / availability / type: on failure nothing is ignored (old behaviour). */
+export async function actuatorCodesOrEmpty(): Promise<Set<string>> {
+  try { return await loadActuatorErpCodes(); } catch (e) { console.warn("[verifyBom] actuator codes unavailable:", e); return new Set(); }
+}
+
+/** Rows without actuator / gearbox lines; a BOM made only of them is left as it is. */
+export function dropActuatorRows<T extends { rmItemCode: string | null }>(rows: T[], skip: ReadonlySet<string>): T[] {
+  const kept = rows.filter((r) => !(r.rmItemCode && skip.has(r.rmItemCode.trim())));
+  return kept.length ? kept : rows;
+}
+
+/** dropActuatorRows applied per BOM id, for row lists that span several BOMs. */
+export function dropActuatorRowsPerBom<T extends { bomId: string; rmItemCode: string | null }>(rows: T[], skip: ReadonlySet<string>): T[] {
+  if (!skip.size) return rows;
+  const groups = new Map<string, T[]>();
+  for (const r of rows) groups.set(r.bomId, [...(groups.get(r.bomId) ?? []), r]);
+  return [...groups.values()].flatMap((g) => dropActuatorRows(g, skip));
+}
+
+/**
+ * BOM linkage for one (itemCode, bomId): its type and the component code that carries the cost.
+ * `actuated` (the docket item is ACT / ACT+GB / ELECTRIC / ACTUATOR): actuator and gearbox lines are not the cost component.
+ * If the code list cannot be loaded, an actuated item gets no component (never an actuator code); others are unaffected.
+ */
 export async function findBomForItem(
   itemCode: string,
   bomId: string,
+  opts: { actuated?: boolean } = {},
 ): Promise<{ bomId: string; bomIdType: string | null; rmItemCode: string | null } | null> {
   const bom = await prisma.bom.findFirst({
     where: { bomId, fullItem: { itemCode } },
@@ -105,11 +143,13 @@ export async function findBomForItem(
     },
   });
   if (!bom) return null;
-  return {
-    bomId: bom.bomId,
-    bomIdType: bom.bomIdType,
-    rmItemCode: pickBomComponentCode(itemCode, bom.components),
-  };
+  let rmItemCode: string | null = null;
+  if (!opts.actuated) rmItemCode = pickBomComponentCode(itemCode, bom.components);
+  else {
+    try { rmItemCode = pickBomComponentCode(itemCode, bom.components, await loadActuatorErpCodes()); }
+    catch (e) { console.warn(`[findBomForItem] actuator codes unavailable, no cost component for ${itemCode}:`, e); }
+  }
+  return { bomId: bom.bomId, bomIdType: bom.bomIdType, rmItemCode };
 }
 
 /** Component rows for an item's BOMs, optionally skipping "NO USE" components. */
@@ -117,7 +157,7 @@ export async function getBomCandidates(
   itemCode: string,
   opts: { excludeNoUse?: boolean } = {},
 ): Promise<BomRow[]> {
-  const rows = await loadBomRows({ fullItem: { itemCode } });
+  const rows = dropActuatorRowsPerBom(await loadBomRows({ fullItem: { itemCode } }), await actuatorCodesOrEmpty());
   return opts.excludeNoUse ? rows.filter((r) => r.noUse !== "NO USE") : rows;
 }
 
@@ -170,7 +210,7 @@ export type BomUseStatus = "USE" | "NO USE" | null;
 
 type BomRowShape = Pick<BomRow, "itemCode" | "rmItemCode" | "bomIdType">;
 
-function computeBomUseStatus(rows: BomRowShape[]): BomUseStatus {
+export function computeBomUseStatus(rows: BomRowShape[]): BomUseStatus {
   if (rows.length === 0) return null;
   const types = new Set<string>();
   for (const r of rows) if (r.bomIdType) types.add(r.bomIdType);
@@ -220,6 +260,7 @@ export async function getBomRmAvailBatch(
   const out = new Map<string, BomRmAvail>();
   if (unique.length === 0) return out;
   const rows = await loadBomRows({ bomId: { in: unique } });
+  const skip = await actuatorCodesOrEmpty();
   const groups = new Map<string, BomRow[]>();
   for (const r of rows) {
     if (!groups.has(r.bomId)) groups.set(r.bomId, []);
@@ -231,13 +272,13 @@ export async function getBomRmAvailBatch(
       out.set(id, { qualifies: false, stock: 0 });
       continue;
     }
-    const status = computeBomUseStatus(group);
+    const status = computeBomUseStatus(dropActuatorRows(group, skip));
     if (status !== "USE") {
       out.set(id, { qualifies: false, stock: 0 });
       continue;
     }
     let stock = 0;
-    for (const r of group) {
+    for (const r of dropActuatorRows(group, skip)) {
       const s = parseFloat(String(r.availableStock ?? "").replace(/,/g, ""));
       if (!isNaN(s)) stock += s;
     }
@@ -345,7 +386,7 @@ export async function resolveContractReviewBomIdsFromActuator(
   const bomIds = [
     ...new Set([...bomIdsByItem.values()].flat()),
   ];
-  const vbRows = await loadBomRows({ bomId: { in: bomIds } });
+  const vbRows = dropActuatorRowsPerBom(await loadBomRows({ bomId: { in: bomIds } }), await actuatorCodesOrEmpty());
   const rmCodes = [
     ...new Set(vbRows.map((r) => r.rmItemCode).filter((c): c is string => !!c)),
   ];

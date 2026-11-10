@@ -27,7 +27,10 @@ export type BomType = (typeof BOM_TYPE)[keyof typeof BOM_TYPE];
 const isTradingCode = (l: BomLine) =>
   /^TV-/i.test(l.code.trim()) || /^TV-/i.test(String(l.name ?? "").trim());
 
-export function classifyBom(lines: BomLine[]): BomType {
+/** `skip` = actuator / gearbox ERP codes: those lines never change the type (a BOM made only of them is classified as it is). */
+export function classifyBom(allLines: BomLine[], skip?: ReadonlySet<string>): BomType {
+  const kept = skip ? allLines.filter((l) => !skip.has(l.code.trim())) : allLines;
+  const lines = kept.length ? kept : allLines;
   if (lines.length === 0) return BOM_TYPE.empty;
   const open = lines.filter((l) => l.open);
   if (open.length === 0) return BOM_TYPE.closed;

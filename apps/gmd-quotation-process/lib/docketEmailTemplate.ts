@@ -35,10 +35,15 @@ function esc(value: unknown): string {
     .replace(/'/g, "&#39;");
 }
 
+/** "Reverse " repeated once per reverse-auction round, then "Auction"; "" for round 0. */
+export function reverseAuctionPrefix(round = 0): string {
+  return round > 0 ? `${"Reverse ".repeat(round)}Auction ` : "";
+}
+
 export function buildDocketEmailSubject(
-  data: Pick<DocketEmailData, "docketNumber" | "revised">,
+  data: Pick<DocketEmailData, "docketNumber" | "revised"> & { raRound?: number },
 ): string {
-  return `${data.revised ? "Revised Offer" : "Offer"} - ${data.docketNumber}`;
+  return `${reverseAuctionPrefix(data.raRound)}${data.revised ? "Revised Offer" : "Offer"} - ${data.docketNumber}`;
 }
 
 /**

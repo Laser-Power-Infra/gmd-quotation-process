@@ -206,7 +206,7 @@ function dedupeKey(item: ParsedDocketItem): string {
  * quantity column, then reads each following row.
  */
 function parseDelimitedTables(lines: string[], out: ParsedDocketItem[]): void {
-  let header: { desc: number; qty: number; size: number; fields: number } | null = null;
+  let header: { desc: number; qty: number; size: number; sizeMm: boolean; rating: number; fields: number } | null = null;
 
   for (const raw of lines) {
     const line = stripQuoteMarkers(raw).trim();
@@ -230,11 +230,22 @@ function parseDelimitedTables(lines: string[], out: ParsedDocketItem[]): void {
       /^(?:item|item\s*name|item\s*desc(?:ription)?|description|particulars|material|name|specification)$/i.test(c),
     );
     const sizeIdx = cells.findIndex((c) =>
-      /^(?:size|size\s*\/\s*dn|dn|nominal\s*size|dia|diameter)$/i.test(c),
+      /^(?:nominal\s*)?(?:size|size\s*\/\s*dn|dn|nb|dia|diameter)(?:\s*\((?:mm|inch|in)\))?$/i.test(c),
+    );
+    const ratingIdx = cells.findIndex((c) =>
+      /^(?:pn|pressure\s*rating|rating|class|pn\s*\/\s*(?:ansi\s*)?(?:rating|class))$/i.test(c),
     );
 
     if (qtyIdx !== -1 && descIdx !== -1) {
-      header = { desc: descIdx, qty: qtyIdx, size: sizeIdx, fields: cells.length };
+      header = {
+        desc: descIdx,
+        qty: qtyIdx,
+        size: sizeIdx,
+        // A "(MM)" header means bare numbers are millimetres, not inches.
+        sizeMm: sizeIdx >= 0 && /\(mm\)/i.test(cells[sizeIdx]),
+        rating: ratingIdx,
+        fields: cells.length,
+      };
       continue;
     }
 
@@ -243,11 +254,15 @@ function parseDelimitedTables(lines: string[], out: ParsedDocketItem[]): void {
       if (quantity === null) continue;
       let itemName = toItemName(cells[header.desc] ?? "");
       if (!itemName) continue;
-      // Fold an adjacent size column into the name when the description lacks it.
-      if (header.size >= 0) {
-        const sizeCell = (cells[header.size] ?? "").trim();
-        if (sizeCell && !itemName.toLowerCase().includes(sizeCell.toLowerCase())) {
-          itemName = `${itemName} ${sizeCell}`.replace(/\s+/g, " ").trim();
+      // Fold the size and rating columns into the name when the description lacks them,
+      // so rows that differ only by size / PN stay separate items.
+      for (const [idx, isSize] of [[header.size, true], [header.rating, false]] as const) {
+        if (idx < 0) continue;
+        let cell = (cells[idx] ?? "").trim();
+        if (!cell || cell === "-") continue;
+        if (isSize && header.sizeMm && /^\d+$/.test(cell)) cell = `${cell}MM`;
+        if (!itemName.toLowerCase().includes(cell.toLowerCase())) {
+          itemName = `${itemName} ${cell}`.replace(/\s+/g, " ").trim();
         }
       }
       out.push({ itemName, quantity });

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { isActuated } from "@/lib/actuatorCost";
 import { recalculateItem } from "@/lib/costCalculator";
 import { buildRmCostMap, DIRECT_M2M, getBomEntry } from "@/lib/gmdBomCostLookup";
 import { buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
@@ -36,7 +37,7 @@ export async function maybeUpdateProductCostFromNewCode(itemId: string, newCode:
   if (!newCode) return;
   // Do not early-return on productCost alone - we still need to fill availableStock/bomType via fallback if missing
   // Fetch meta for fallback gates (includes present-value checks)
-  const preMeta = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { bomId: true, costRefCode: true, productCost: true, availableStock: true, bomType: true } });
+  const preMeta = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { bomId: true, costRefCode: true, productCost: true, availableStock: true, bomType: true, operationType: true, itemType: true, actCode: true, gbCode: true, actuatorBreakdown: true } });
   const needProductCost = preMeta?.productCost == null;
   const needStock = !preMeta?.availableStock || preMeta.availableStock.trim() === "";
   const needBomType = !preMeta?.bomType;
@@ -87,7 +88,7 @@ export async function maybeUpdateProductCostFromNewCode(itemId: string, newCode:
       // Single candidate path: try VerifyBom row for cost, fallback to sheet BOM
       // PRIORITY: Raw Materials (GMDUpdateItem.cost) wins; SupplyHistory is fallback
       // Non-override: only set productCost if needProductCost, but bomId/bomType/rmItemCode/availableStock still respect present checks
-      const vbRow = await findBomForItem(newCode, candidateIds[0]);
+      const vbRow = await findBomForItem(newCode, candidateIds[0], { actuated: !!preMeta && isActuated(preMeta) });
       if (vbRow?.rmItemCode) {
         // Try Raw Materials first, then SupplyHistory fallback
         let cost: number | undefined;

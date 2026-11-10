@@ -86,6 +86,8 @@ model Enquiry {
   validationAssignee   User?   @relation("ValidationAssignee", fields: [validationAssigneeId], references: [id], onDelete: SetNull)
   sendAssigneeId       String?
   sendAssignee         User?   @relation("SendAssignee", fields: [sendAssigneeId], references: [id], onDelete: SetNull)
+  reverseAuctionCount  Int     @default(0)
+  reverseAuctionSends  ReverseAuctionSend[]
 
   attachments Attachment[]
   items       EnquiryItem[]
@@ -97,6 +99,19 @@ model Enquiry {
   @@index([closureStatus])
   @@index([partyName])
 }
+
+ model ReverseAuctionSend {
+   id        String   @id @default(cuid())
+   enquiryId String
+   enquiry   Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+   round     Int
+   sentBy    String
+   sentAt    DateTime @default(now())
+
+   @@unique([enquiryId, round])
+ }
+
+
 
 // Who changed VA% / quoted rate / validation, and when. No FK: survives item deletion.
 model ItemChangeLog {
@@ -154,6 +169,15 @@ model EnquiryItem {
   cfSetBreakdown       Json?
   productCost          Decimal?
   costRefCode          String?
+  // Actuator link (Op Type ACT / ACT+GB / ELECTRIC, or Item type ACTUATOR): codes from the actuator master.
+  actuatorMake         String?
+  actCode              String?
+  gbCode               String?
+  controlType          String? // On-off | Modulating | Integral intelligent
+  bareValveCost        Decimal? // valve cost before actuator/gearbox; productCost = this + the parts
+  adaptorCost          Decimal? // blank = not applicable (0)
+  assemblyCost         Decimal? // assembly & testing, blank = not applicable (0)
+  actuatorBreakdown    Json? // { parts, pending, total, text }; pending lists missing prices
   cost                 Decimal?
   stockStatus          String?
   discount             Decimal?
@@ -193,7 +217,7 @@ model EnquiryItem {
 
   // The dashboard stage CASE runs four correlated EXISTS on this FK per Enquiry row.
   @@index([enquiryId])
-  @@unique([parentItemId])
+  @@index([parentItemId])
 }
 
 model GmdItemCode {
@@ -1453,4 +1477,164 @@ model ServiceItem {
   itemCode String   @id
   itemName String?
   syncedAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Actuator and gearbox master (AUMA / Rotork). Loaded from GMD_Actuator_Master.xlsx
+// by `pnpm --filter gmd-quotation-process actuator:import <xlsx>`. Read by key:
+// MAP KEY "TYPE|DN|PN", ACT CODE, GB CODE, ERP code.
+// ---------------------------------------------------------------------------
+
+/// ACT_MASTER: one row per actuator model. offerDate/offerValidTill are filled
+/// later (not in the workbook) and are never touched by the import.
+model ActuatorMaster {
+  actCode        String    @id
+  make           String
+  series         String?
+  model          String?
+  motion         String?
+  minTorque      Float?
+  maxTorque      Float?
+  valveFlange    String?
+  speedRange     String?
+  dutyOptions    String?
+  dataStatus     String?
+  price          Float?
+  leadTimeWeeks  Float?
+  offerDate      DateTime?
+  offerValidTill DateTime?
+  remarks        String?
+  updatedAt      DateTime  @updatedAt
+}
+
+/// GB_MASTER: part-turn worm gearboxes.
+model GearboxMaster {
+  gbCode          String   @id
+  make            String
+  model           String?
+  maxOutputTorque Float?
+  torqueFactor    Float?
+  topFlange       String?
+  baseFlange      String?
+  dataStatus      String?
+  price           Float?
+  remarks         String?
+  updatedAt       DateTime @updatedAt
+}
+
+/// VALVE_TORQUE table. key = "TYPE|DN".
+model ValveTorque {
+  key              String   @id
+  valveType        String
+  dn               Int
+  motion           String?
+  indicativeTorque Float?
+  dataStatus       String?
+  indicativeFlange String?
+  flangeStd        String?
+  gmdTorque        Float?
+  gmdTopFlange     String?
+  effectiveFlange  String?
+  updatedAt        DateTime @updatedAt
+}
+
+/// VALVE_TORQUE parameter rows above the table (PN16 multiplier, safety factor).
+model ActuatorParam {
+  name  String  @id
+  value Float
+  note  String?
+}
+
+/// MAPPING: valve type + DN + PN -> torque -> gearbox -> actuators -> stock.
+model ActuatorMapping {
+  mapKey         String   @id
+  valveType      String
+  dn             Int
+  pn             String
+  valveTorque    Float?
+  requiredTorque Float?
+  gearbox        String?
+  gbFactor       Float?
+  actInputTorque Float?
+  aumaModel      String?
+  aumaActCode    String?
+  rotorkModel    String?
+  rotorkActCode  String?
+  directPartTurn String?
+  stockRotorkNm  Float?
+  stockRotorkQty Float?
+  valveFlange    String?
+  gbBaseFlange   String?
+  gbTopFlange    String?
+  actFlange      String?
+  flangeCheck    String?
+  gmdGbCode      String?
+  gmdGbRating    Float?
+  gmdGbAvailable Float?
+  note           String?
+  updatedAt      DateTime @updatedAt
+
+  @@index([valveType, dn])
+}
+
+/// SUITABILITY: one row per (MAP KEY, actuator/gearbox code).
+/// kind ACT|GB; code = ACT CODE or GMD gearbox ERP code;
+/// mark = tick (suitable) | circle (oversized) | "n/a" | "" (too small).
+model ActuatorSuitability {
+  mapKey   String
+  kind     String
+  code     String
+  make     String
+  label    String
+  ratingNm Float?
+  mark     String
+
+  @@id([mapKey, code])
+  @@index([code])
+}
+
+/// GMD_GB_STOCK: gearbox stock per ERP item code (qty columns are a snapshot; live qty comes from PhysicalStock).
+model GmdGearboxStock {
+  erpCode      String   @id
+  gbType       String?
+  ratedTorque  Float?
+  received     Float?
+  dispatched   Float?
+  available    Float?
+  stockPerErp  Float?
+  erpGap       Float?
+  rate         Float?
+  stockValue   Float?
+  baseFlange   String?
+  topFlange    String?
+  suitsBfvPn10 Float?
+  suitsBfvPn16 Float?
+  remarks      String?
+  updatedAt    DateTime @updatedAt
+}
+
+/// STOCK_ACT: actuator stock per ERP code (qty columns are a snapshot). actCode links to ActuatorMaster where derivable (K-series).
+model ActuatorStock {
+  erpCode        String   @id
+  l6Code         String?
+  ratingCode     String?
+  series         String?
+  torque         Float?
+  outputRpm      Float?
+  make           String?
+  actCode        String?
+  received       Float?
+  dispatched     Float?
+  available      Float?
+  physicalSum    Float?
+  stockPerErp    Float?
+  erpGap         Float?
+  rate           Float?
+  stockValue     Float?
+  moving3m       String?
+  dispatched2627 Float?
+  status         String?
+  updatedAt      DateTime @updatedAt
+
+  @@index([actCode])
 }

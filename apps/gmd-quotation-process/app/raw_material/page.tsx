@@ -26,6 +26,7 @@ import {
   computeCardStats,
   computeDuplicateDerivedIds,
   getCastingKey,
+  headName,
   itemToRow,
   matchesNewItemsTableFilters,
   matchesSidebarItem,
@@ -1221,12 +1222,18 @@ export default function Home() {
     "all",
   );
 
+  // Major Head card toggle; the head column follows the Group-by choice.
+  const [headFilter, setHeadFilter] = useState<string | null>(null);
+  const headField = groupBy === "valve" ? "majorHeadValveType" : "majorHeadItemType";
+
   const scopedNewItems = useMemo(
     () =>
-      newItems.filter((item) =>
-        matchesSidebarItem(item, indianImported, majorFilter),
+      newItems.filter(
+        (item) =>
+          matchesSidebarItem(item, indianImported, majorFilter) &&
+          (headFilter === null || headName(item[headField]) === headFilter),
       ),
-    [newItems, indianImported, majorFilter],
+    [newItems, indianImported, majorFilter, headFilter, headField],
   );
 
   const scopedNewCost = useMemo(
@@ -1271,8 +1278,9 @@ export default function Home() {
         indianImported,
         majorFilter,
         groupBy === "valve" ? MAJOR_HEAD_VALVE_TYPE_HEADER : MAJOR_HEAD_ITEM_TYPE_HEADER,
+        headFilter,
       ),
-    [sidebarBaseRows, headers, indianImported, majorFilter, groupBy],
+    [sidebarBaseRows, headers, indianImported, majorFilter, groupBy, headFilter],
   );
 
   const fmt = (n: number) =>
@@ -1296,6 +1304,7 @@ export default function Home() {
   const handleNewItemsReset = useCallback(() => {
     setIndianImported("all");
     setMajorFilter("all");
+    setHeadFilter(null);
   }, []);
 
   if (loading) {
@@ -1377,18 +1386,36 @@ export default function Home() {
               </div>
 
               {cardStats.byHead.length > 0 && (
-                <div className="w-full bg-white/5 border border-white/10 rounded-lg p-3">
-                  <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60 mb-1">
-                    By Major Head ({groupBy === "valve" ? "Valve Type" : "Item Type"})
-                  </span>
-                  {cardStats.byHead.map((h) => (
-                    <div key={h.head} className="flex justify-between gap-2 text-[10px] text-white/80 py-0.5">
-                      <span className="truncate" title={h.head}>{h.head}</span>
-                      <span className="shrink-0 tabular-nums">{fmt(h.sum)} <span className="text-white/50">({h.count})</span></span>
-                    </div>
-                  ))}
-                </div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-white/60">
+                  By Major Head ({groupBy === "valve" ? "Valve Type" : "Item Type"})
+                </span>
               )}
+              {cardStats.byHead.map((h) => (
+                <button
+                  key={h.head}
+                  type="button"
+                  aria-pressed={headFilter === h.head}
+                  onClick={() =>
+                    setHeadFilter((s) => (s === h.head ? null : h.head))
+                  }
+                  className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
+                    headFilter === h.head
+                      ? "border-[#38ef7d] dark:border-emerald-400/50 bg-white/10"
+                      : "border-white/10 hover:border-white/25"
+                  }`}
+                >
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-white/60 truncate" title={h.head}>
+                    {h.head}
+                  </span>
+                  <span className="block text-lg font-bold text-white dark:text-foreground mt-1">
+                    {fmt(h.sum)}
+                  </span>
+                  <span className="block text-[10px] font-medium text-white/50 mt-0.5">
+                    {h.count} item
+                    {h.count === 1 ? "" : "s"}
+                  </span>
+                </button>
+              ))}
 
               <button
                 type="button"
@@ -1499,7 +1526,10 @@ export default function Home() {
                       type="button"
                       role="radio"
                       aria-checked={groupBy === g.key}
-                      onClick={() => setGroupBy(g.key)}
+                      onClick={() => {
+                        setGroupBy(g.key);
+                        setHeadFilter(null); // head names differ between Item/Valve Type
+                      }}
                       className={`rounded border px-2 py-1 ${
                         groupBy === g.key
                           ? "border-primary bg-primary/10 text-primary font-semibold"
@@ -1605,7 +1635,7 @@ export default function Home() {
                     filterActions={filterActions}
                     onReset={handleNewItemsReset}
                     externalFiltersActive={
-                      indianImported !== "all" || majorFilter !== "all"
+                      indianImported !== "all" || majorFilter !== "all" || headFilter !== null
                     }
                     castingRateInputs={castingRateInputs}
                     lockedCostIds={lockedCostIds}

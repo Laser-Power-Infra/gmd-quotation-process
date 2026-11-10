@@ -3,6 +3,7 @@ import { requireAccess, loginRequired } from "@/lib/access";
 import { syncAvailableBomIds, maybeUpdateProductCostFromNewCode } from "@/lib/itemBomSync";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { prisma } from "@/lib/prisma";
+import { isActuatorCandidate } from "@/lib/actuatorCost";
 import { mirrorLookup } from "@/lib/lookupMirror";
 import { uploadFileToDrive } from "@/lib/gdrive";
 import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry } from "@/lib/costCalculator";
@@ -334,6 +335,16 @@ export async function addItemsAction(formData: {
     for (const item of items) {
       await recalculateItem(item.id);
     }
+    // New Op Type ACT / ACT+GB / ELECTRIC items get auto-filled (linked); their created cost is the valve cost.
+    for (const item of items) {
+      if (item.position < startPos || !isActuatorCandidate(item)) continue;
+      try {
+        const { applyActuatorToItem } = await import("@/lib/actuatorItem");
+        await applyActuatorToItem(item.id);
+      } catch (e) {
+        console.warn("[createEnquiry] actuator auto-fill failed:", e);
+      }
+    }
     for (const item of items) {
       if (item.others.length > 0 && !item.parentItemId) await ensureCfSetItem(item.id);
     }
@@ -587,6 +598,13 @@ export async function updateEnquiryItemAction(formData: {
     });
     // CF set child follows the valve's Others/size/MOC/PN/quantity (skips children and frozen enquiries itself).
     await ensureCfSetItem(formData.itemId, { resetMoc: resolved.moc !== item.moc });
+    // Typed Product Cost on a linked actuated item is the valve cost: add the parts (or leave pending). Also covers Op Type / DN / PN edits.
+    try {
+      const { syncActuatorOnChange } = await import("@/lib/actuatorItem");
+      await syncActuatorOnChange(formData.itemId, item);
+    } catch (e) {
+      console.warn("[updateEnquiryItemAction] actuator re-price failed:", e);
+    }
 
     // Update attachments if provided and upload to Google Drive
     if (formData.attachments) {
@@ -1066,6 +1084,7 @@ export async function sendDocketEmailAction(
   enquiryId: string,
   allowNoThread = false,
   revised = false,
+  reverseAuction = false,
 ) {
   await requireAccess();
   const denied = await loginRequired(); if (denied) return denied;
@@ -1123,12 +1142,13 @@ export async function sendDocketEmailAction(
     }
     const cc = ccEmails.join(", ");
 
+    const raRound = reverseAuction ? enquiry.reverseAuctionCount + 1 : 0;
     // Reuse the Offer PDF pipeline for the attachment.
     const { generateOfferPdfAction } = await import("@/lib/generate-offer-pdf");
     const pdfRes = await generateOfferPdfAction(
       { docketNo: enquiry.docketNumber } as unknown as OfferLetterTemplateData,
       enquiryId,
-      { bypassFreeze: true },
+      { bypassFreeze: true, raRound },
     );
     if (!pdfRes.success || !pdfRes.pdfBase64) {
       return { success: false, error: pdfRes.error || "Failed to generate the offer PDF." };
@@ -1152,7 +1172,7 @@ export async function sendDocketEmailAction(
       "READY STOCK";
 
     const state = (enquiry.state || "").trim();
-    const subject = buildDocketEmailSubject({ docketNumber: enquiry.docketNumber, revised });
+    const subject = buildDocketEmailSubject({ docketNumber: enquiry.docketNumber, revised, raRound });
     const html = buildDocketEmailHtml({
       docketNumber: enquiry.docketNumber,
       revised,
@@ -1179,11 +1199,20 @@ export async function sendDocketEmailAction(
       return { success: false, error: send.error || "Email sending failed." };
     }
 
-    const updated = await prisma.enquiry.update({
-      where: { id: enquiryId },
-      data: { emailSentBy: userId, offerRevised: false },
-      include: { items: { orderBy: { position: "asc" } } },
-    });
+    const [updated] = await prisma.$transaction([
+      prisma.enquiry.update({
+        where: { id: enquiryId },
+        data: {
+          emailSentBy: userId,
+          offerRevised: false,
+          ...(raRound ? { reverseAuctionCount: raRound, reverseAuctionStatus: "Yes" } : {}),
+        },
+        include: { items: { orderBy: { position: "asc" } } },
+      }),
+      ...(raRound
+        ? [prisma.reverseAuctionSend.create({ data: { enquiryId, round: raRound, sentBy: userId } })]
+        : []),
+    ]);
     return { success: true, data: serializeEnquiry(updated) };
   } catch (error: any) {
     console.error("Error sending docket email:", error);

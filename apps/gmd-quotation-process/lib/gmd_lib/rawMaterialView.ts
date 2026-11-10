@@ -224,6 +224,11 @@ export function matchesSidebarNew(
   return true;
 }
 
+/** A Major Head cell as the sidebar names it; blank reads as UNCLASSIFIED. */
+export function headName(value: unknown): string {
+  return String(value ?? "").trim() || UNCLASSIFIED_HEAD;
+}
+
 /** Items kept by the sidebar's Indian/Imported + Major/Minor toggles. */
 export function matchesSidebarItem(
   item: GMDUpdateRow,
@@ -266,6 +271,8 @@ export function computeCardStats(
   indianImported: IndianImportedFilter,
   majorFilter: MajorFilter,
   headHeader?: string,
+  /** Selected Major Head card (null = all); narrows every card except the head cards. */
+  headFilter: string | null = null,
 ): CardStats {
   const stats: CardStats = {
     indian: { count: 0, sum: 0 },
@@ -287,9 +294,14 @@ export function computeCardStats(
   };
   const impIdx = headers.indexOf("INDIAN/IMPORTED");
   const majorIdx = headers.indexOf("MAJOR MARKING");
+  const headIdx = headHeader ? headers.indexOf(headHeader) : -1;
+  const headRows =
+    headFilter === null || headIdx === -1
+      ? sidebarBaseRows
+      : sidebarBaseRows.filter((row) => headName(row[headIdx]) === headFilter);
 
-  // Indian/Imported counts exclude the indian toggle (respect major + table).
-  for (const row of sidebarBaseRows) {
+  // Indian/Imported counts exclude the indian toggle (respect major + head + table).
+  for (const row of headRows) {
     if (!matchesSidebarNew(row, "all", majorFilter, headers, "indian")) continue;
     const value = stockValue(row);
     if (value === null) continue;
@@ -306,8 +318,8 @@ export function computeCardStats(
     }
   }
 
-  // Major/Minor counts exclude the major toggle (respect indian + table).
-  for (const row of sidebarBaseRows) {
+  // Major/Minor counts exclude the major toggle (respect indian + head + table).
+  for (const row of headRows) {
     if (!matchesSidebarNew(row, indianImported, "all", headers, "major"))
       continue;
     const value = stockValue(row);
@@ -326,9 +338,7 @@ export function computeCardStats(
   }
 
   // Total: same scope as the Indian/Imported cards, so they add up to it.
-  const headIdx = headHeader ? headers.indexOf(headHeader) : -1;
-  const byHead = new Map<string, { head: string; count: number; sum: number }>();
-  for (const row of sidebarBaseRows) {
+  for (const row of headRows) {
     if (!matchesSidebarNew(row, "all", majorFilter, headers, "indian")) continue;
     const value = stockValue(row);
     if (value === null) continue;
@@ -339,13 +349,19 @@ export function computeCardStats(
       stats.unlabeled.count++;
       stats.unlabeled.sum += value;
     }
-    if (headIdx !== -1) {
-      const head = String(row[headIdx] ?? "").trim() || "UNCLASSIFIED";
-      const h = byHead.get(head) ?? { head, count: 0, sum: 0 };
-      h.count++;
-      h.sum += value;
-      byHead.set(head, h);
-    }
+  }
+
+  // Head cards exclude the head toggle (respect indian + major + table).
+  const byHead = new Map<string, { head: string; count: number; sum: number }>();
+  for (const row of headIdx === -1 ? [] : sidebarBaseRows) {
+    if (!matchesSidebarNew(row, indianImported, majorFilter, headers)) continue;
+    const value = stockValue(row);
+    if (value === null) continue;
+    const head = headName(row[headIdx]);
+    const h = byHead.get(head) ?? { head, count: 0, sum: 0 };
+    h.count++;
+    h.sum += value;
+    byHead.set(head, h);
   }
   stats.byHead = [...byHead.values()].sort((a, b) => b.sum - a.sum);
 

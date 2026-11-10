@@ -3,6 +3,7 @@ import {
   computeDeliverySchedule,
   DEFAULT_DELIVERY_SCHEDULE,
 } from "@/lib/deliverySchedule";
+import { syncActuatorStock } from "@/lib/actuatorStockSync";
 import { resolveImportedInhouse } from "@/lib/importInhouseMapping";
 
 /**
@@ -66,6 +67,19 @@ export async function getRmTypeMap(rmCodes: string[]): Promise<Map<string, strin
  * Can optionally target specific itemIds or all matching items.
  */
 export async function syncDirectM2MAvailableStock(itemIds?: string[]): Promise<{ updatedCount: number; updatedIds: string[] }> {
+  const rm = await syncRmStock(itemIds);
+  // Actuator / gearbox free qty (Physical Stock by ERP code); a failure must not undo the RM sync.
+  try {
+    const act = await syncActuatorStock(itemIds);
+    const ids = [...new Set([...rm.updatedIds, ...act.updatedIds])];
+    return { updatedCount: ids.length, updatedIds: ids };
+  } catch (e) {
+    console.warn("[syncDirectM2MAvailableStock] actuator stock failed:", e);
+    return rm;
+  }
+}
+
+async function syncRmStock(itemIds?: string[]): Promise<{ updatedCount: number; updatedIds: string[] }> {
   const whereClause: any = {
     rmItemCode: { not: null },
   };
