@@ -16,6 +16,7 @@
     "@gmd/db-stock": "workspace:*",
     "@gmd/physical-stock": "workspace:*",
     "@gmd/purchase": "workspace:*",
+    "@gmd/stock-allocation": "workspace:*",
     "@gmd/ui": "workspace:*",
     "@googleapis/drive": "^26.0.2",
     "@reduxjs/toolkit": "^2.12.0",

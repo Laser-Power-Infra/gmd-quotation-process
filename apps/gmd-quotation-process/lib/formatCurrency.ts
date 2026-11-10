@@ -1,36 +1,4 @@
-const formatterCache = new Map<number, Intl.NumberFormat>();
-
-function getIndianNumberFormatter(minimumFractionDigits: number): Intl.NumberFormat {
-  let formatter = formatterCache.get(minimumFractionDigits);
-  if (!formatter) {
-    formatter = new Intl.NumberFormat("en-IN", {
-      minimumFractionDigits,
-      maximumFractionDigits: Math.max(2, minimumFractionDigits),
-    });
-    formatterCache.set(minimumFractionDigits, formatter);
-  }
-  return formatter;
-}
-
-/**
- * Format a numeric value using Indian digit grouping (thousands/lakhs/crores),
- * e.g. 1234567 -> "12,34,567" and 1234.5 -> "1,234.5".
- * Returns "" for blank / non-numeric input so callers can keep their "-" fallback.
- *
- * Pass minimumFractionDigits (e.g. 2) for totals that should always show decimals.
- */
-export function formatIndianNumber(
-  value: number | string | null | undefined,
-  minimumFractionDigits = 0
-): string {
-  if (value === null || value === undefined || value === "") return "";
-  const n =
-    typeof value === "number"
-      ? value
-      : parseFloat(String(value).replace(/,/g, "").trim());
-  if (Number.isNaN(n)) return "";
-  return getIndianNumberFormatter(minimumFractionDigits).format(n);
-}
+export { formatIndianNumber } from "@gmd/ui/lib/format";
 
 /**
  * Strip grouping symbols from a user-entered value so it can be parsed as a number.

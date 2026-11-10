@@ -13,6 +13,7 @@ const NAV = [
   { label: "Physical Stock", href: "/" },
   { label: "Heat Entry", href: "/heat-entry" },
   { label: "Entry History", href: "/history" },
+  { label: "Stock Allocation", href: "/stock-allocation" },
 ];
 
 export default function NavMenu() {

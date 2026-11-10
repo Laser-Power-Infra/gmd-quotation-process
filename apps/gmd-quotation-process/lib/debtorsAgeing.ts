@@ -90,10 +90,4 @@ export function summarise(rows: LedgerRow[], today: Date, opts: { side?: LedgerS
   return { parties, buckets, totalDues, overdue: sum((p) => p.overdue), over90: sum((p) => p.over90), credits, net: totalDues - credits };
 }
 
-/** Lakh format: 1234567 -> "₹12.35 L"; crores above 1e7. */
-export function formatLakh(n: number): string {
-  const a = Math.abs(n);
-  const s = n < 0 ? "-" : "";
-  if (a >= 1e7) return `${s}₹${(a / 1e7).toFixed(2)} Cr`;
-  return `${s}₹${(a / 1e5).toFixed(2)} L`;
-}
+export { formatLakh } from "@gmd/ui/lib/format";

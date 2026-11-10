@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { allocateStock } from '../lib/stockAllocation/engine.js'
-import type { ContractLine, LedgerEntry, StockItem } from '../lib/stockAllocation/types.js'
+import { allocateStock } from '../src/engine'
+import type { ContractLine, LedgerEntry, StockItem } from '../src/types'
 
 let n = 0
 const SLV_NAME = 'SLUICE VALVE-RESILIENT-NON-RISING_DUCTILE IRON/CAST IRON_STANDARD_65_PN-10/16_'

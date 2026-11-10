@@ -1,0 +1,33 @@
+{
+  "name": "@gmd/stock-allocation",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    "./ui": "./src/ui/StockAllocationTable.tsx",
+    "./server": "./src/server/index.ts",
+    "./engine": "./src/engine.ts",
+    "./types": "./src/types.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "dependencies": {
+    "@gmd/dashboard": "workspace:*",
+    "@gmd/db-stock": "workspace:*",
+    "@gmd/db-tender": "workspace:*",
+    "@gmd/ui": "workspace:*",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "tsx": "^4.19.0"
+  },
+  "peerDependencies": {
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --conditions=react-server --test test/*.test.ts"
+  }
+}

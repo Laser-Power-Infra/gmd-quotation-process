@@ -1,9 +1,8 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { requireAccess } from "@/lib/access";
-import { addBooking, deleteBooking, lockOffer, unlockOffer, updateBooking } from "@/lib/stockAllocation/ledger";
-import { computeStockAllocation } from "@/lib/stockAllocation/load";
-import type { Basis } from "@/lib/stockAllocation/types";
+import { addBooking, computeStockAllocation, deleteBooking, lockOffer, unlockOffer, updateBooking } from "@gmd/stock-allocation/server";
+import type { Basis } from "@gmd/stock-allocation/types";
 
 type Res<T = null> = { success: true; data: T } | { success: false; error: string };
 

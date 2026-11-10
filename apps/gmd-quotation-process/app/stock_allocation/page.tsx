@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
-import StockAllocationTable from "@/components/stock-allocation/StockAllocationTable";
-import { computeStockAllocation } from "@/lib/stockAllocation/load";
+import StockAllocationTable from "@gmd/stock-allocation/ui";
+import { computeStockAllocation } from "@gmd/stock-allocation/server";
+import * as actions from "./actions";
 
 export const metadata: Metadata = { title: "Stock Allocation | GMD Quotation Process" };
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export default async function Page() {
       <GMDUpdateHeader title="STOCK ALLOCATION" totalRows={result?.offerNow.length ?? 0} />
       <div className="flex-1 min-h-0 px-6 pb-6">
         {result ? (
-          <StockAllocationTable initial={result} />
+          <StockAllocationTable initial={result} actions={{ ...actions }} />
         ) : (
           <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">Could not load stock allocation: {error}</div>
         )}

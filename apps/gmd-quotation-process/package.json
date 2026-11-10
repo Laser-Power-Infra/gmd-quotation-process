@@ -132,6 +132,7 @@
     "@gmd/db-tender": "workspace:*",
     "@gmd/physical-stock": "workspace:*",
     "@gmd/purchase": "workspace:*",
+    "@gmd/stock-allocation": "workspace:*",
     "@gmd/ui": "workspace:*",
     "@google/genai": "^2.11.0",
     "@googleapis/drive": "^26.0.1",
