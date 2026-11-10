@@ -1066,6 +1066,7 @@ export async function sendDocketEmailAction(
   enquiryId: string,
   allowNoThread = false,
   revised = false,
+  reverseAuction = false,
 ) {
   await requireAccess();
   const denied = await loginRequired(); if (denied) return denied;
@@ -1123,12 +1124,13 @@ export async function sendDocketEmailAction(
     }
     const cc = ccEmails.join(", ");
 
+    const raRound = reverseAuction ? enquiry.reverseAuctionCount + 1 : 0;
     // Reuse the Offer PDF pipeline for the attachment.
     const { generateOfferPdfAction } = await import("@/lib/generate-offer-pdf");
     const pdfRes = await generateOfferPdfAction(
       { docketNo: enquiry.docketNumber } as unknown as OfferLetterTemplateData,
       enquiryId,
-      { bypassFreeze: true },
+      { bypassFreeze: true, raRound },
     );
     if (!pdfRes.success || !pdfRes.pdfBase64) {
       return { success: false, error: pdfRes.error || "Failed to generate the offer PDF." };
@@ -1152,7 +1154,7 @@ export async function sendDocketEmailAction(
       "READY STOCK";
 
     const state = (enquiry.state || "").trim();
-    const subject = buildDocketEmailSubject({ docketNumber: enquiry.docketNumber, revised });
+    const subject = buildDocketEmailSubject({ docketNumber: enquiry.docketNumber, revised, raRound });
     const html = buildDocketEmailHtml({
       docketNumber: enquiry.docketNumber,
       revised,
@@ -1179,11 +1181,20 @@ export async function sendDocketEmailAction(
       return { success: false, error: send.error || "Email sending failed." };
     }
 
-    const updated = await prisma.enquiry.update({
-      where: { id: enquiryId },
-      data: { emailSentBy: userId, offerRevised: false },
-      include: { items: { orderBy: { position: "asc" } } },
-    });
+    const [updated] = await prisma.$transaction([
+      prisma.enquiry.update({
+        where: { id: enquiryId },
+        data: {
+          emailSentBy: userId,
+          offerRevised: false,
+          ...(raRound ? { reverseAuctionCount: raRound, reverseAuctionStatus: "Yes" } : {}),
+        },
+        include: { items: { orderBy: { position: "asc" } } },
+      }),
+      ...(raRound
+        ? [prisma.reverseAuctionSend.create({ data: { enquiryId, round: raRound, sentBy: userId } })]
+        : []),
+    ]);
     return { success: true, data: serializeEnquiry(updated) };
   } catch (error: any) {
     console.error("Error sending docket email:", error);

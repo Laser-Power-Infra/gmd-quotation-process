@@ -86,6 +86,8 @@ model Enquiry {
   validationAssignee   User?   @relation("ValidationAssignee", fields: [validationAssigneeId], references: [id], onDelete: SetNull)
   sendAssigneeId       String?
   sendAssignee         User?   @relation("SendAssignee", fields: [sendAssigneeId], references: [id], onDelete: SetNull)
+  reverseAuctionCount  Int     @default(0)
+  reverseAuctionSends  ReverseAuctionSend[]
 
   attachments Attachment[]
   items       EnquiryItem[]
@@ -97,6 +99,19 @@ model Enquiry {
   @@index([closureStatus])
   @@index([partyName])
 }
+
+ model ReverseAuctionSend {
+   id        String   @id @default(cuid())
+   enquiryId String
+   enquiry   Enquiry  @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+   round     Int
+   sentBy    String
+   sentAt    DateTime @default(now())
+
+   @@unique([enquiryId, round])
+ }
+
+
 
 // Who changed VA% / quoted rate / validation, and when. No FK: survives item deletion.
 model ItemChangeLog {
@@ -193,7 +208,7 @@ model EnquiryItem {
 
   // The dashboard stage CASE runs four correlated EXISTS on this FK per Enquiry row.
   @@index([enquiryId])
-  @@unique([parentItemId])
+  @@index([parentItemId])
 }
 
 model GmdItemCode {

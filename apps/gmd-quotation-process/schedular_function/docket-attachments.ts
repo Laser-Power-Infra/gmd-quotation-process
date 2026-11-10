@@ -89,6 +89,22 @@ async function fetchBuffer(url: string): Promise<Buffer> {
   }
 }
 
+/**
+ * Copies each merged block's value down its first column. Excel keeps a merged
+ * value only in the top cell, so a DESCRIPTION merged over 13 rows would leave
+ * 12 nameless rows that the table parser drops.
+ */
+export function fillMergedDown(XLSX: typeof import("xlsx"), sheet: import("xlsx").WorkSheet): void {
+  for (const m of sheet["!merges"] ?? []) {
+    const top = sheet[XLSX.utils.encode_cell(m.s)];
+    if (!top) continue;
+    for (let r = m.s.r + 1; r <= m.e.r; r++) {
+      const addr = XLSX.utils.encode_cell({ r, c: m.s.c });
+      if (!sheet[addr]) sheet[addr] = { ...top };
+    }
+  }
+}
+
 async function bufferToText(kind: AttachmentKind, buffer: Buffer): Promise<string | null> {
   if (kind === "pdf") {
     const { extractText } = await import("unpdf");
@@ -105,6 +121,7 @@ async function bufferToText(kind: AttachmentKind, buffer: Buffer): Promise<strin
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
       if (!sheet) continue;
+      fillMergedDown(XLSX, sheet);
       const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
         header: 1,
         raw: false,

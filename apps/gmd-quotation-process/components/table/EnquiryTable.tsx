@@ -4751,6 +4751,8 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
   // A rate changed after the last send: default the next mail to "Revised".
   const [revised, setRevised] = useState(!!enquiry.offerRevised);
   useEffect(() => { if (enquiry.offerRevised) setRevised(true); }, [enquiry.offerRevised]);
+  const [raArmed, setRaArmed] = useState(false);
+  const raCount = enquiry.reverseAuctionCount ?? 0;
 
   const approved = !!enquiry.emailApproved;
   const sentBy = enquiry.emailSentBy ?? null;
@@ -4785,10 +4787,11 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
     setSending(true);
     const toastId = toast.loading("Sending email...");
     try {
-      await dispatch(sendDocketEmail({ enquiryId: enquiry.id, allowNoThread, revised })).unwrap();
+      await dispatch(sendDocketEmail({ enquiryId: enquiry.id, allowNoThread, revised, reverseAuction: raArmed })).unwrap();
       toast.success("Email sent.", { id: toastId });
       setNoThreadOpen(false);
       setRevised(false);
+      setRaArmed(false);
     } catch (e) {
       // No linked thread: let the user decide to send it as a new mail instead.
       if (e && typeof e === "object" && (e as { code?: string }).code === "NO_THREAD") {
@@ -4821,6 +4824,11 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
         <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300">
           <Check className="h-3 w-3 stroke-[3]" /> Sent
         </span>
+        {raCount > 0 && (
+          <span className="px-2 py-0.5 text-[9px] font-bold rounded-full border border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+            RA ×{raCount}
+          </span>
+        )}
         {enquiry.offerRevised && (
           <span
             className="px-2 py-0.5 text-[9px] font-bold rounded-full border border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
@@ -4884,6 +4892,20 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
         />
         Revised
       </label>
+      <button
+        type="button"
+        onClick={() => setRaArmed((v) => !v)}
+        disabled={sending}
+        aria-pressed={raArmed}
+        title={`Reverse auction offers sent: ${raCount}. Click to send the next one as RA round ${raCount + 1}.`}
+        className={`px-2 py-0.5 text-[9px] font-bold rounded-full border transition-colors whitespace-nowrap cursor-pointer ${
+          raArmed
+            ? "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300"
+            : "border-border bg-muted text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        {raArmed ? `RA: ${raCount} → ${raCount + 1}` : `RA: ${raCount}`}
+      </button>
       <button
         type="button"
         onClick={handleSend}

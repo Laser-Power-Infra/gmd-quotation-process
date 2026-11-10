@@ -234,10 +234,11 @@ export const sendDocketEmail = createAsyncThunk(
       enquiryId,
       allowNoThread = false,
       revised = false,
-    }: { enquiryId: string; allowNoThread?: boolean; revised?: boolean },
+      reverseAuction = false,
+    }: { enquiryId: string; allowNoThread?: boolean; revised?: boolean; reverseAuction?: boolean },
     { rejectWithValue }
   ) => {
-    const result = await sendDocketEmailAction(enquiryId, allowNoThread, revised);
+    const result = await sendDocketEmailAction(enquiryId, allowNoThread, revised, reverseAuction);
     if (!result.success) {
       return rejectWithValue({
         error: result.error || "Failed to send docket email",

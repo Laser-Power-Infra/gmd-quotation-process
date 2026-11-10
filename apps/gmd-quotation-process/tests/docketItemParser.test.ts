@@ -142,3 +142,17 @@ test("quoted table with description in first column", () => {
 function parseDelimited(body: string) {
   return parseDocketItems({ bodies: [body] });
 }
+
+test("table folds a '(MM)' size and PN column so same-name rows stay separate", () => {
+  const text = [
+    "SL. NO.\tDESCRIPTION\tNOMINAL DIA (MM)\tPN / ANSI RATING\tUOM\tQUANTITY",
+    "1\tAIR VALVE\t50\tPN 10\tNos.\t1",
+    "2\tAIR VALVE\t50\tPN16\tNos.\t1",
+    "3\tAIR VALVE\t80\t-\tNos.\t1",
+  ].join("\n");
+  assert.deepEqual(parseDocketItems({ attachmentTexts: [text] }), [
+    { itemName: "AIR VALVE 50MM PN 10", quantity: 1 },
+    { itemName: "AIR VALVE 50MM PN16", quantity: 1 },
+    { itemName: "AIR VALVE 80MM", quantity: 1 },
+  ]);
+});

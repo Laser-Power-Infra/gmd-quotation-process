@@ -84,6 +84,7 @@ export interface EnquiryData {
   projectReference: string | null;
   technicalEvaluation?: string | null;
   reverseAuctionStatus?: string | null;
+  reverseAuctionCount?: number | null;
   apm?: string | null;
   offerPdfGeneratedAt?: string | Date | null;
   offerPdfGeneratedBy?: string | null;
