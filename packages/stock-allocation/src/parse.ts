@@ -1,4 +1,4 @@
-import { parseGmdDate } from "../gmd_lib/dateParse";
+import { parseGmdDate } from "@gmd/ui/lib/dateParse";
 import type { ContractLine, StockItem } from "./types";
 
 export type Pn = { cls: boolean; n: number } | null;

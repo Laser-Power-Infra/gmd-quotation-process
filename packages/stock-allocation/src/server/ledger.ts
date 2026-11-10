@@ -1,5 +1,5 @@
-import { stockPrisma } from "@/lib/stockPrisma";
-import type { Basis, LedgerEntry } from "./types";
+import { stockPrisma } from "@gmd/db-stock";
+import type { Basis, LedgerEntry } from "../types";
 
 type Row = Awaited<ReturnType<typeof stockPrisma.stockAllocation.findFirstOrThrow>>;
 
