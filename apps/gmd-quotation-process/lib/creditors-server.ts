@@ -39,3 +39,27 @@ export async function getCreditors(): Promise<CreditorsResult> {
   const latest = [...bills, ...advs].reduce<Date | null>((m, r) => (m === null || r.syncedAt > m ? r.syncedAt : m), null);
   return { rows, advances, summary, names: Object.fromEntries(names), syncedAt: latest ? latest.toISOString() : null, followUps };
 }
+
+export type SupplierPayable = { bills: number; advances: number; net: number; overdue: number; over180: number };
+
+/** What each supplier (ERP account code) is owed: same ledger and ageing as the Creditors page. Codes with nothing open are absent. */
+export async function getSupplierPayables(accCodes: string[]): Promise<Map<string, SupplierPayable>> {
+  const codes = [...new Set(accCodes.filter(Boolean))];
+  if (codes.length === 0) return new Map();
+  const [bills, advs] = await Promise.all([
+    prisma.creditor.findMany({ where: { accCode: { in: codes } } }),
+    prisma.creditorAdvance.findMany({ where: { accCode: { in: codes } } }),
+  ]);
+  const rows: CreditorRow[] = bills.map((r) => ({
+    id: r.id, accSch: r.accSch, accCode: r.accCode, accName: r.accName, vrNo: r.vrNo,
+    vrDate: iso(r.vrDate), dueDate: iso(r.dueDate), unAllocCr: num(r.unAllocCr),
+    partyBillNo: r.partyBillNo, partyBillDate: iso(r.partyBillDate),
+  }));
+  const advances: AdvanceRow[] = advs.map((a) => ({
+    id: a.id, accSch: a.accSch, accCode: a.accCode, vrNo: a.vrNo, vrDate: iso(a.vrDate),
+    unAllocDr: num(a.unAllocDr), partyBillNo: a.partyBillNo, partyBillDate: iso(a.partyBillDate),
+    particular: a.particular, narration: a.narration,
+  }));
+  const { summary } = buildCreditorParties(rows, advances, new Date());
+  return new Map(summary.parties.map((p) => [p.accCode, { bills: p.totalDues, advances: p.credits, net: p.net, overdue: p.overdue, over180: p.buckets["180+"] }]));
+}

@@ -695,6 +695,9 @@ importers:
       '@gmd/ui':
         specifier: workspace:*
         version: link:../ui
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
       lucide-react:
         specifier: ^1.23.0
         version: 1.52.0(@types/react@19.3.0)(react@19.2.4)
@@ -704,6 +707,9 @@ importers:
       react-dom:
         specifier: ^19
         version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
       server-only:
         specifier: ^0.0.1
         version: 0.0.1

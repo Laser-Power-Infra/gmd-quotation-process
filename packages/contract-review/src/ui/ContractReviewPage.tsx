@@ -371,6 +371,11 @@ export function ContractReviewPage({
   );
   const [batchFilters, setBatchFilters] = useState<Record<string, boolean>>({});
   const [globalSearch, setGlobalSearch] = useState("");
+  // Deep link from other pages (e.g. Purchases): /contract_review?search=<contract no>.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("search");
+    if (q) setGlobalSearch(q);
+  }, []);
   const [dateRanges, setDateRanges] = useState<
     Record<string, { from: string; to: string; blank?: boolean }>
   >({});
