@@ -1,9 +1,9 @@
 import "server-only";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
-import { stockPrisma } from "@/lib/stockPrisma";
-import { allocateStock } from "./engine";
+import { stockPrisma } from "@gmd/db-stock";
+import { allocateStock } from "../engine";
 import { listLedger } from "./ledger";
-import type { AllocationResult, ContractLine, LedgerEntry, StockItem } from "./types";
+import type { AllocationResult, ContractLine, LedgerEntry, StockItem } from "../types";
 
 const num = (v: string | null) => {
   const n = parseFloat((v ?? "").replace(/,/g, ""));
@@ -44,3 +44,5 @@ export async function computeStockAllocation(): Promise<AllocationResult> {
   }));
   return allocateStock({ stock, lines, ledger });
 }
+
+export * from "./ledger";

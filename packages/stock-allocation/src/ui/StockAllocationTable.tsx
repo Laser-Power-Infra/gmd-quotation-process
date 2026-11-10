@@ -1,14 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
-import { squish } from "@gmd/dashboard/lib/squish";
-import { formatLakh } from "@/lib/debtorsAgeing";
-import { formatIndianNumber } from "@/lib/formatCurrency";
-import { downloadCsv, toCsv } from "@/lib/debtorJoins";
-import { TD, TDN, TH, Tile } from "@/components/execution/ui";
-import { addBookingAction, deleteBookingAction, reloadAction, setOfferSentAction, updateBookingAction } from "@/app/stock_allocation/actions";
-import type { AllocationResult, OfferLine } from "@/lib/stockAllocation/types";
+import DebouncedSearchInput from "@gmd/dashboard/components/DebouncedSearchInput";
+import { squish } from "@gmd/ui/lib/squish";
+import { formatIndianNumber, formatLakh } from "@gmd/ui/lib/format";
+import { downloadCsv, toCsv } from "@gmd/ui/lib/csv";
+import { TD, TDN, TH, Tile } from "@gmd/ui/components/plain-table";
+import type { AllocationResult, OfferLine, StockAllocationActions } from "../types";
 
 type View = "offer" | "ledger" | "short";
 const VIEWS: [View, string][] = [["offer", "Offer Now"], ["ledger", "Stock Allocation Ledger"], ["short", "Not in Stock"]];
@@ -16,7 +14,10 @@ const key = (o: OfferLine) => `${o.line.contractNo}|${o.line.itemCode}`;
 const rm = (r: OfferLine["rmCodes"][number]) => `${r.erpCode}${r.location ? ` @${r.location}` : ""} ×${r.qty}${r.spare ? " (spare)" : ""}`;
 const input = "rounded border border-border bg-background px-2 py-1 text-xs";
 
-export default function StockAllocationTable({ initial }: { initial: AllocationResult }) {
+export default function StockAllocationTable({ initial, actions, hideRates }: { initial: AllocationResult; actions: StockAllocationActions; hideRates?: boolean }) {
+  // Cosmetic only: the figures are still in the data sent to the browser.
+  const hidden = hideRates ? ["Rate", "Short value"] : [];
+  const { addBookingAction, deleteBookingAction, reloadAction, setOfferSentAction, updateBookingAction } = actions;
   const [data, setData] = useState(initial);
   const [view, setView] = useState<View>("offer");
   const [search, setSearch] = useState("");
@@ -48,15 +49,19 @@ export default function StockAllocationTable({ initial }: { initial: AllocationR
   const short = useMemo(() => data.notInStock.filter((c) => !needle || squish(`${c.contractNo} ${c.party} ${c.lines.map((l) => l.line.itemCode).join(" ")}`).includes(needle)).sort((a, b) => b.shortValue - a.shortValue), [data, needle]);
   const manual = data.allocations.filter((a) => a.source === "manual" && a.ledgerId);
 
+  const visibleCsv = (header: string[], rows: Parameters<typeof toCsv>[1]) => {
+    const keep = (_: unknown, i: number) => !hidden.includes(header[i]);
+    return toCsv(header.filter(keep), rows.map((r) => r.filter(keep)));
+  };
   const exportCsv = () => {
     if (view === "offer")
-      downloadCsv("offer_now.csv", toCsv(["Contract", "Party", "Date", "Item code", "Item", "Rate", "Balance qty", "Offerable qty", "Offer value", "RM codes", "Basis", "Flags", "Project", "Offer sent", "Remarks"],
+      downloadCsv("offer_now.csv", visibleCsv(["Contract", "Party", "Date", "Item code", "Item", "Rate", "Balance qty", "Offerable qty", "Offer value", "RM codes", "Basis", "Flags", "Project", "Offer sent", "Remarks"],
         offer.map((o) => [o.line.contractNo, o.line.party, o.line.dateOfContract, o.line.itemCode, o.line.itemName, o.line.rate, o.line.balanceQty, o.offerableQty, o.offerValue, o.rmCodes.map(rm).join("; "), o.basis, o.flags.join("; "), o.line.project, o.offerSent ? "Y" : "", o.remarks])));
     else if (view === "ledger")
-      downloadCsv("stock_allocation_ledger.csv", toCsv(["ERP code", "Location", "Description", "Available qty", "Allocated to", "Allocated qty", "Free balance"],
+      downloadCsv("stock_allocation_ledger.csv", visibleCsv(["ERP code", "Location", "Description", "Available qty", "Allocated to", "Allocated qty", "Free balance"],
         ledger.map((l) => [l.erpCode, l.location, l.description, l.availableQty, l.allocatedTo.map((a) => `${a.contractNo} / ${a.itemCode} ×${a.qty} (${a.stage})`).join("; "), l.allocatedQty, l.freeBalance])));
     else
-      downloadCsv("not_in_stock.csv", toCsv(["Contract", "Party", "Item code", "Item", "Balance qty", "Offerable qty", "Short qty", "Rate", "Short value"],
+      downloadCsv("not_in_stock.csv", visibleCsv(["Contract", "Party", "Item code", "Item", "Balance qty", "Offerable qty", "Short qty", "Rate", "Short value"],
         short.flatMap((c) => c.lines.map((l) => [c.contractNo, c.party, l.line.itemCode, l.line.itemName, l.line.balanceQty, l.line.balanceQty - l.shortQty, l.shortQty, l.line.rate, l.shortValue]))));
   };
 
@@ -69,7 +74,7 @@ export default function StockAllocationTable({ initial }: { initial: AllocationR
     <Tile label={label} value={`${formatLakh(v)}${n === undefined ? "" : ` · ${n} lines`}`} hint={`Rs ${formatIndianNumber(v)}`} danger={danger} />
   );
   const head = (cols: string[], right: number[] = []) => (
-    <thead className="sticky top-0 z-10 border-b border-border bg-muted/80"><tr>{cols.map((h, i) => <th key={i} className={`${TH} ${right.includes(i) ? "text-right" : ""}`}>{h}</th>)}</tr></thead>
+    <thead className="sticky top-0 z-10 border-b border-border bg-muted/80"><tr>{cols.map((h, i) => hidden.includes(h) ? null : <th key={i} className={`${TH} ${right.includes(i) ? "text-right" : ""}`}>{h}</th>)}</tr></thead>
   );
 
   return (
@@ -107,7 +112,7 @@ export default function StockAllocationTable({ initial }: { initial: AllocationR
                       <td className={TD}>{o.line.dateOfContract ?? "-"}</td>
                       <td className={TD}>{o.line.itemCode}</td>
                       <td className={TD}>{o.line.itemName}</td>
-                      <td className={TDN}>{formatIndianNumber(o.line.rate)}</td>
+                      {!hideRates && <td className={TDN}>{formatIndianNumber(o.line.rate)}</td>}
                       <td className={TDN}>{formatIndianNumber(o.line.balanceQty)}</td>
                       <td className={TDN}>{formatIndianNumber(o.offerableQty)}</td>
                       <td className={TDN}>{formatIndianNumber(o.offerValue)}</td>
@@ -191,13 +196,13 @@ export default function StockAllocationTable({ initial }: { initial: AllocationR
               <tbody className="divide-y divide-border/60">
                 {short.flatMap((c) => [
                   <tr key={c.contractNo} className="bg-muted/50 font-semibold">
-                    <td className={TD}>{c.contractNo}</td><td className={TD} colSpan={5}>{c.party}</td><td className={TDN} title={`Rs ${formatIndianNumber(c.shortValue)}`}>{formatLakh(c.shortValue)}</td>
+                    <td className={TD}>{c.contractNo}</td><td className={TD} colSpan={hideRates ? 4 : 5}>{c.party}</td>{!hideRates && <td className={TDN} title={`Rs ${formatIndianNumber(c.shortValue)}`}>{formatLakh(c.shortValue)}</td>}
                   </tr>,
                   ...c.lines.map((l, i) => (
                     <tr key={`${c.contractNo}-${i}`}>
                       <td className={`${TD} pl-6`}>{l.line.itemCode}</td><td className={TD}>{l.line.itemName}</td>
                       <td className={TDN}>{formatIndianNumber(l.line.balanceQty)}</td><td className={TDN}>{formatIndianNumber(l.line.balanceQty - l.shortQty)}</td>
-                      <td className={TDN}>{formatIndianNumber(l.shortQty)}</td><td className={TDN}>{formatIndianNumber(l.line.rate)}</td><td className={TDN}>{formatIndianNumber(l.shortValue)}</td>
+                      <td className={TDN}>{formatIndianNumber(l.shortQty)}</td>{!hideRates && <><td className={TDN}>{formatIndianNumber(l.line.rate)}</td><td className={TDN}>{formatIndianNumber(l.shortValue)}</td></>}
                     </tr>
                   )),
                 ])}

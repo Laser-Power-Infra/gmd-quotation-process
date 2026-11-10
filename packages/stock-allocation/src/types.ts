@@ -39,3 +39,16 @@ export interface AllocationResult {
   summary: { finished: number; assemble: number; actuator: number; short: number;   // values (Rs)
              finishedLines: number; assembleLines: number; actuatorLines: number };
 }
+
+export type ActionResult<T = null> = { success: true; data: T } | { success: false; error: string };
+/** Server Actions the host app supplies; the app owns auth and revalidation. */
+export interface StockAllocationActions {
+  addBookingAction(input: { erpCode: string; location: string | null; contractNo: string; itemCode: string; qty: number; remarks: string | null }): Promise<ActionResult<unknown>>;
+  updateBookingAction(id: string, input: { qty: number; remarks?: string | null }): Promise<ActionResult<unknown>>;
+  deleteBookingAction(id: string): Promise<ActionResult<unknown>>;
+  setOfferSentAction(input: {
+    contractNo: string; itemCode: string; sent: boolean; basis: Basis; remarks: string | null;
+    rmCodes: { erpCode: string; location: string | null; qty: number }[];
+  }): Promise<ActionResult<unknown>>;
+  reloadAction(): Promise<ActionResult<AllocationResult>>;
+}

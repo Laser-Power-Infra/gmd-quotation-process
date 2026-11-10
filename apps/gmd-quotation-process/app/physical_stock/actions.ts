@@ -16,7 +16,7 @@ import { editableFieldsFor } from "@gmd/physical-stock/flags";
 import type { ActionResult, PhysicalStockPageData, PhysicalStockRow } from "@gmd/physical-stock/types";
 import type { TableQuery } from "@gmd/ui/components/data-table/types";
 import { stockPrisma } from "@/lib/stockPrisma";
-import { computeStockAllocation } from "@/lib/stockAllocation/load";
+import { computeStockAllocation } from "@gmd/stock-allocation/server";
 import { getPhysicalStockFlags } from "@/lib/physical-stock-flags";
 import {
   costForPhysicalStockBom,

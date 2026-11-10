@@ -5,6 +5,7 @@
 @import "@gmd/contract-review/styles.css";
 @import "@gmd/physical-stock/styles.css";
 @import "@gmd/purchase/styles.css";
+@import "@gmd/stock-allocation/styles.css";
 
 @custom-variant dark (&:is(.dark *));
 
