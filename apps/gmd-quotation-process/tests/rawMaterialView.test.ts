@@ -95,3 +95,34 @@ test("card stats cascade on the opposite toggle", () => {
   assert.deepEqual(indianOnly.major, { count: 1, sum: 20 });
   assert.deepEqual(indianOnly.indian, { count: 2, sum: 40 });
 });
+
+test("head cards filter the other cards and cascade on them", () => {
+  const hdrs = ["INDIAN/IMPORTED", "MAJOR MARKING", "HEAD"];
+  const mk = (imp: string, major: string, head: string) => {
+    const r: unknown[] = new Array(25).fill("");
+    r[0] = imp;
+    r[1] = major;
+    r[2] = head;
+    r[12] = "1";
+    r[16] = "10";
+    return r;
+  };
+  const rows = [
+    mk("Indian", "TRUE", "FASTENERS"),
+    mk("Imported", "TRUE", "FASTENERS"),
+    mk("Indian", "FALSE", ""),
+  ];
+  const fast = computeCardStats(rows, hdrs, "all", "all", "HEAD", "FASTENERS");
+  assert.deepEqual(fast.total, { count: 2, sum: 20 });
+  assert.deepEqual(fast.indian, { count: 1, sum: 10 });
+  assert.deepEqual(fast.minor, { count: 0, sum: 0 });
+  // Head cards ignore their own toggle but follow Indian/Imported.
+  assert.equal(fast.byHead.length, 2);
+  const indian = computeCardStats(rows, hdrs, "indian", "all", "HEAD", null);
+  assert.deepEqual(
+    indian.byHead.map((h) => [h.head, h.count]),
+    [["FASTENERS", 1], ["UNCLASSIFIED", 1]],
+  );
+  const unc = computeCardStats(rows, hdrs, "all", "all", "HEAD", "UNCLASSIFIED");
+  assert.deepEqual(unc.total, { count: 1, sum: 10 });
+});

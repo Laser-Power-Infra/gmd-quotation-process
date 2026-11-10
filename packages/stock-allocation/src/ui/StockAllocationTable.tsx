@@ -5,18 +5,91 @@ import DebouncedSearchInput from "@gmd/dashboard/components/DebouncedSearchInput
 import { squish } from "@gmd/ui/lib/squish";
 import { formatIndianNumber, formatLakh } from "@gmd/ui/lib/format";
 import { downloadCsv, toCsv } from "@gmd/ui/lib/csv";
-import { TD, TDN, TH, Tile } from "@gmd/ui/components/plain-table";
+import { TD, TH, Tile } from "@gmd/ui/components/plain-table";
+import { Button } from "@gmd/ui/components/button";
+import { Segmented } from "@gmd/ui/components/segmented";
+import { DataTable } from "@gmd/ui/components/data-table/DataTable";
+import type { DataColumn, TableSort } from "@gmd/ui/components/data-table/types";
+import { applyTable, facetValues } from "./localTable";
 import type { AllocationResult, OfferLine, StockAllocationActions } from "../types";
 
 type View = "offer" | "ledger" | "short";
-const VIEWS: [View, string][] = [["offer", "Offer Now"], ["ledger", "Stock Allocation Ledger"], ["short", "Not in Stock"]];
+const VIEWS = [
+  { value: "offer", label: "Offer Now" },
+  { value: "ledger", label: "Stock Allocation Ledger" },
+  { value: "short", label: "Not in Stock" },
+] as const;
 const key = (o: OfferLine) => `${o.line.contractNo}|${o.line.itemCode}`;
 const rm = (r: OfferLine["rmCodes"][number]) => `${r.erpCode}${r.location ? ` @${r.location}` : ""} ×${r.qty}${r.spare ? " (spare)" : ""}`;
 const input = "rounded border border-border bg-background px-2 py-1 text-xs";
 
+// Cosmetic only: the figures are still in the data sent to the browser.
+const RATE_KEYS = ["rate", "shortValue", "contractShort"];
+const visible = <Row,>(cols: DataColumn<Row>[], hideRates?: boolean) => (hideRates ? cols.filter((c) => !RATE_KEYS.includes(c.key)) : cols);
+
+type OfferRow = {
+  id: string; contractNo: string; party: string; date: string | null; itemCode: string; itemName: string;
+  rate: number; balanceQty: number; offerableQty: number; offerValue: number; rmCodes: string; basis: string;
+  flags: string; project: string | null; offerSent: boolean; remarks: string; o: OfferLine;
+};
+type LedgerRow = {
+  id: string; erpCode: string; location: string | null; description: string; availableQty: number;
+  allocatedTo: string; allocatedQty: number; freeBalance: number;
+};
+type ShortRow = {
+  id: string; contractNo: string; party: string; contractShort: number; itemCode: string; itemName: string;
+  balanceQty: number; offerable: number; shortQty: number; rate: number; shortValue: number;
+};
+
+const LEDGER_COLS: DataColumn<LedgerRow>[] = [
+  { key: "erpCode", label: "ERP code", kind: "text", sticky: true, width: 140, sortable: true },
+  { key: "location", label: "Location", kind: "text", width: 110, filter: true, sortable: true },
+  { key: "description", label: "Description", kind: "text", width: 320, sortable: true },
+  { key: "availableQty", label: "Available qty", kind: "number", align: "right", width: 120, sortable: true },
+  { key: "allocatedTo", label: "Allocated to", kind: "text", width: 320 },
+  { key: "allocatedQty", label: "Allocated qty", kind: "number", align: "right", width: 120, sortable: true },
+  { key: "freeBalance", label: "Free balance", kind: "number", align: "right", width: 120, sortable: true },
+];
+
+const SHORT_COLS: DataColumn<ShortRow>[] = [
+  { key: "contractNo", label: "Contract", kind: "text", sticky: true, width: 130, filter: true, sortable: true },
+  { key: "party", label: "Party", kind: "text", width: 200, filter: true, sortable: true },
+  { key: "contractShort", label: "Contract short", kind: "number", align: "right", width: 130, sortable: true, render: (r) => formatLakh(r.contractShort) },
+  { key: "itemCode", label: "Item code", kind: "text", width: 130, sortable: true },
+  { key: "itemName", label: "Item", kind: "text", width: 260, sortable: true },
+  { key: "balanceQty", label: "Balance qty", kind: "number", align: "right", width: 110, sortable: true },
+  { key: "offerable", label: "Offerable", kind: "number", align: "right", width: 110, sortable: true },
+  { key: "shortQty", label: "Short qty", kind: "number", align: "right", width: 110, sortable: true },
+  { key: "rate", label: "Rate", kind: "number", align: "right", width: 110, sortable: true },
+  { key: "shortValue", label: "Short value", kind: "number", align: "right", width: 130, sortable: true },
+];
+
+/**
+ * Sort, facet filters and row selection for one DataTable over in-memory rows.
+ * `searching`/`clearSearch`: the toolbar search narrows rows too, so "Clear filters" clears it as well.
+ */
+function useLocalTable<Row extends { id: string }>(rows: Row[], columns: DataColumn<Row>[], searching: boolean, clearSearch: () => void) {
+  const [sort, setSort] = useState<TableSort | null>(null);
+  const [filters, setFilters] = useState<Record<string, string[]>>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const shown = useMemo(() => applyTable(rows, columns, sort, filters), [rows, columns, sort, filters]);
+  return {
+    shown,
+    props: {
+      columns, rows: shown, rowId: (r: Row) => r.id, sort, onSortChange: setSort, filters, selectedId, onSelect: setSelectedId,
+      hasFilters: searching || Object.values(filters).some((v) => v.length > 0),
+      onClearFilters: () => { setFilters({}); clearSearch(); },
+      onFilterChange: (k: string, values: string[]) => setFilters((f) => ({ ...f, [k]: values })),
+      // Options come from rows passing the other columns' filters, so a pick never empties its own list.
+      facetOptions: (k: string) => facetValues(applyTable(rows, columns, null, { ...filters, [k]: [] }), k),
+      onFacetOpen: () => undefined,
+      loading: false,
+      refreshing: false,
+    },
+  };
+}
+
 export default function StockAllocationTable({ initial, actions, hideRates }: { initial: AllocationResult; actions: StockAllocationActions; hideRates?: boolean }) {
-  // Cosmetic only: the figures are still in the data sent to the browser.
-  const hidden = hideRates ? ["Rate", "Short value"] : [];
   const { addBookingAction, deleteBookingAction, reloadAction, setOfferSentAction, updateBookingAction } = actions;
   const [data, setData] = useState(initial);
   const [view, setView] = useState<View>("offer");
@@ -44,25 +117,83 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
   };
 
   const needle = squish(search);
-  const offer = useMemo(() => data.offerNow.filter((o) => !needle || squish(`${o.line.contractNo} ${o.line.party} ${o.line.itemCode} ${o.rmCodes.map((r) => r.erpCode).join(" ")}`).includes(needle)), [data, needle]);
-  const ledger = useMemo(() => data.ledger.filter((l) => !needle || squish(`${l.erpCode} ${l.location} ${l.description} ${l.allocatedTo.map((a) => `${a.contractNo} ${a.itemCode}`).join(" ")}`).includes(needle)), [data, needle]);
-  const short = useMemo(() => data.notInStock.filter((c) => !needle || squish(`${c.contractNo} ${c.party} ${c.lines.map((l) => l.line.itemCode).join(" ")}`).includes(needle)).sort((a, b) => b.shortValue - a.shortValue), [data, needle]);
+  const offerRows = useMemo<OfferRow[]>(() => data.offerNow
+    .filter((o) => !needle || squish(`${o.line.contractNo} ${o.line.party} ${o.line.itemCode} ${o.rmCodes.map((r) => r.erpCode).join(" ")}`).includes(needle))
+    .map((o) => ({
+      id: key(o), contractNo: o.line.contractNo, party: o.line.party, date: o.line.dateOfContract, itemCode: o.line.itemCode,
+      itemName: o.line.itemName, rate: o.line.rate, balanceQty: o.line.balanceQty, offerableQty: o.offerableQty,
+      offerValue: o.offerValue, rmCodes: o.rmCodes.map(rm).join("; "), basis: o.basis, flags: o.flags.join(", "),
+      project: o.line.project, offerSent: o.offerSent, remarks: o.remarks ?? "", o,
+    })), [data, needle]);
+  const ledgerRows = useMemo<LedgerRow[]>(() => data.ledger
+    .filter((l) => !needle || squish(`${l.erpCode} ${l.location} ${l.description} ${l.allocatedTo.map((a) => `${a.contractNo} ${a.itemCode}`).join(" ")}`).includes(needle))
+    .map((l) => ({
+      id: `${l.erpCode}|${l.location}`, erpCode: l.erpCode, location: l.location, description: l.description,
+      availableQty: l.availableQty, allocatedQty: l.allocatedQty, freeBalance: l.freeBalance,
+      allocatedTo: l.allocatedTo.map((a) => `${a.contractNo} / ${a.itemCode} ×${a.qty} (${a.stage})`).join("; "),
+    })), [data, needle]);
+  // Unsorted order = biggest short contract first, its lines together.
+  const shortRows = useMemo<ShortRow[]>(() => data.notInStock
+    .filter((c) => !needle || squish(`${c.contractNo} ${c.party} ${c.lines.map((l) => l.line.itemCode).join(" ")}`).includes(needle))
+    .sort((a, b) => b.shortValue - a.shortValue)
+    .flatMap((c) => c.lines.map((l, i) => ({
+      id: `${c.contractNo}|${i}`, contractNo: c.contractNo, party: c.party, contractShort: c.shortValue,
+      itemCode: l.line.itemCode, itemName: l.line.itemName, balanceQty: l.line.balanceQty,
+      offerable: l.line.balanceQty - l.shortQty, shortQty: l.shortQty, rate: l.line.rate, shortValue: l.shortValue,
+    }))), [data, needle]);
   const manual = data.allocations.filter((a) => a.source === "manual" && a.ledgerId);
 
-  const visibleCsv = (header: string[], rows: Parameters<typeof toCsv>[1]) => {
-    const keep = (_: unknown, i: number) => !hidden.includes(header[i]);
-    return toCsv(header.filter(keep), rows.map((r) => r.filter(keep)));
-  };
+  const offerCols = useMemo(() => visible<OfferRow>([
+    { key: "contractNo", label: "Contract", kind: "text", sticky: true, width: 130, filter: true, sortable: true },
+    { key: "party", label: "Party", kind: "text", width: 200, filter: true, sortable: true },
+    { key: "date", label: "Date", kind: "date", width: 110, sortable: true },
+    { key: "itemCode", label: "Item code", kind: "text", width: 130, sortable: true },
+    { key: "itemName", label: "Item", kind: "text", width: 260, sortable: true },
+    { key: "rate", label: "Rate", kind: "number", align: "right", width: 110, sortable: true },
+    { key: "balanceQty", label: "Balance qty", kind: "number", align: "right", width: 110, sortable: true },
+    { key: "offerableQty", label: "Offerable qty", kind: "number", align: "right", width: 120, sortable: true },
+    { key: "offerValue", label: "Offer value", kind: "number", align: "right", width: 130, sortable: true },
+    { key: "rmCodes", label: "RM codes", kind: "text", width: 240 },
+    { key: "basis", label: "Basis", kind: "text", width: 130, filter: true, sortable: true },
+    { key: "flags", label: "Flags", kind: "text", width: 160, filter: true },
+    { key: "project", label: "Project", kind: "text", width: 140, filter: true, sortable: true },
+    {
+      key: "offerSent", label: "Offer sent", kind: "boolean", width: 100,
+      render: (r) => (
+        <input type="checkbox" checked={r.offerSent} disabled={busy === r.id} aria-label={`Offer sent for ${r.contractNo} ${r.itemCode}`}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => write(r.id, () => setOfferSentAction({ contractNo: r.contractNo, itemCode: r.itemCode, sent: e.target.checked, basis: r.o.basis, remarks: (remarks[r.id] ?? r.remarks) || null, rmCodes: r.o.rmCodes.map(({ erpCode, location, qty }) => ({ erpCode, location, qty })) }))} />
+      ),
+    },
+    {
+      key: "remarks", label: "Remarks", kind: "text", width: 200,
+      render: (r) => (
+        <input className={`${input} w-full`} value={remarks[r.id] ?? r.remarks} readOnly={r.offerSent} aria-label={`Remarks for ${r.contractNo} ${r.itemCode}`}
+          onClick={(e) => e.stopPropagation()} onChange={(e) => setRemarks({ ...remarks, [r.id]: e.target.value })} />
+      ),
+    },
+  ], hideRates),
+  // `write` only closes over setters and the actions prop, so it is safe to leave out.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [hideRates, remarks, busy]);
+  const ledgerCols = useMemo(() => visible(LEDGER_COLS, hideRates), [hideRates]);
+  const shortCols = useMemo(() => visible(SHORT_COLS, hideRates), [hideRates]);
+
+  const clearSearch = () => setSearch("");
+  const offerTable = useLocalTable(offerRows, offerCols, !!needle, clearSearch);
+  const ledgerTable = useLocalTable(ledgerRows, ledgerCols, !!needle, clearSearch);
+  const shortTable = useLocalTable(shortRows, shortCols, !!needle, clearSearch);
+
+  // Downloads exactly what the table shows: same filters, order and visible columns.
   const exportCsv = () => {
-    if (view === "offer")
-      downloadCsv("offer_now.csv", visibleCsv(["Contract", "Party", "Date", "Item code", "Item", "Rate", "Balance qty", "Offerable qty", "Offer value", "RM codes", "Basis", "Flags", "Project", "Offer sent", "Remarks"],
-        offer.map((o) => [o.line.contractNo, o.line.party, o.line.dateOfContract, o.line.itemCode, o.line.itemName, o.line.rate, o.line.balanceQty, o.offerableQty, o.offerValue, o.rmCodes.map(rm).join("; "), o.basis, o.flags.join("; "), o.line.project, o.offerSent ? "Y" : "", o.remarks])));
-    else if (view === "ledger")
-      downloadCsv("stock_allocation_ledger.csv", visibleCsv(["ERP code", "Location", "Description", "Available qty", "Allocated to", "Allocated qty", "Free balance"],
-        ledger.map((l) => [l.erpCode, l.location, l.description, l.availableQty, l.allocatedTo.map((a) => `${a.contractNo} / ${a.itemCode} ×${a.qty} (${a.stage})`).join("; "), l.allocatedQty, l.freeBalance])));
-    else
-      downloadCsv("not_in_stock.csv", visibleCsv(["Contract", "Party", "Item code", "Item", "Balance qty", "Offerable qty", "Short qty", "Rate", "Short value"],
-        short.flatMap((c) => c.lines.map((l) => [c.contractNo, c.party, l.line.itemCode, l.line.itemName, l.line.balanceQty, l.line.balanceQty - l.shortQty, l.shortQty, l.line.rate, l.shortValue]))));
+    const csv = <Row,>(name: string, cols: DataColumn<Row>[], rows: Row[]) =>
+      downloadCsv(name, toCsv(cols.map((c) => c.label), rows.map((r) => cols.map((c) => {
+        const v = (r as Record<string, unknown>)[c.key];
+        return typeof v === "boolean" ? (v ? "Y" : "") : (v as string | number | null);
+      }))));
+    if (view === "offer") csv("offer_now.csv", offerCols, offerTable.shown.map((r) => ({ ...r, remarks: remarks[r.id] ?? r.remarks })));
+    else if (view === "ledger") csv("stock_allocation_ledger.csv", ledgerCols, ledgerTable.shown);
+    else csv("not_in_stock.csv", shortCols, shortTable.shown);
   };
 
   const addBooking = async () => {
@@ -73,13 +204,10 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
   const tile = (label: string, v: number, n?: number, danger?: boolean) => (
     <Tile label={label} value={`${formatLakh(v)}${n === undefined ? "" : ` · ${n} lines`}`} hint={`Rs ${formatIndianNumber(v)}`} danger={danger} />
   );
-  const head = (cols: string[], right: number[] = []) => (
-    <thead className="sticky top-0 z-10 border-b border-border bg-muted/80"><tr>{cols.map((h, i) => hidden.includes(h) ? null : <th key={i} className={`${TH} ${right.includes(i) ? "text-right" : ""}`}>{h}</th>)}</tr></thead>
-  );
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 overflow-auto">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+      <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-5">
         {tile("Finished offerable", s.finished, s.finishedLines)}
         {tile("Assemble", s.assemble, s.assembleLines)}
         {tile("Actuator to map", s.actuator, s.actuatorLines)}
@@ -87,130 +215,63 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
         {tile("Not in stock (short)", s.short, undefined, true)}
       </div>
 
-      <div className="flex min-h-[320px] flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2.5">
-          {VIEWS.map(([v, label]) => (
-            <button key={v} type="button" onClick={() => setView(v)} className={`rounded border px-3 py-1 text-xs font-semibold ${view === v ? "border-primary bg-primary/10" : "border-border"}`}>{label}</button>
-          ))}
-          <button type="button" className="rounded border border-border px-2 py-1 text-xs" onClick={exportCsv}>Download Excel (CSV)</button>
-          {error && <span className="text-xs text-red-600">{error}</span>}
-          <div className="ml-auto w-72"><DebouncedSearchInput value={search} onCommit={setSearch} placeholder="Search contract, party, item or ERP code" /></div>
-        </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <Segmented options={VIEWS} value={view} onChange={setView} label="Stock allocation view" />
+        <Button variant="outline" size="sm" onClick={exportCsv}>Download Excel (CSV)</Button>
+        {error && <span role="alert" className="text-xs text-red-600">{error}</span>}
+        <div className="ml-auto w-72"><DebouncedSearchInput value={search} onCommit={setSearch} placeholder="Search contract, party, item or ERP code" /></div>
+      </div>
 
-        <div className="min-h-0 flex-1 overflow-auto">
-          {view === "offer" && (
-            <table className="w-full border-collapse text-left text-[13px]">
-              {head(["Contract", "Party", "Date", "Item code", "Item", "Rate", "Balance qty", "Offerable qty", "Offer value", "RM codes", "Basis", "Flags", "Project", "Offer sent", "Remarks"], [5, 6, 7, 8])}
-              <tbody className="divide-y divide-border/60">
-                {offer.map((o) => {
-                  const k = key(o);
-                  const text = remarks[k] ?? o.remarks ?? "";
-                  return (
-                    <tr key={k} className={o.offerSent ? "bg-muted/50 text-muted-foreground" : ""}>
-                      <td className={`${TD} font-medium`}>{o.line.contractNo}</td>
-                      <td className={TD}>{o.line.party}</td>
-                      <td className={TD}>{o.line.dateOfContract ?? "-"}</td>
-                      <td className={TD}>{o.line.itemCode}</td>
-                      <td className={TD}>{o.line.itemName}</td>
-                      {!hideRates && <td className={TDN}>{formatIndianNumber(o.line.rate)}</td>}
-                      <td className={TDN}>{formatIndianNumber(o.line.balanceQty)}</td>
-                      <td className={TDN}>{formatIndianNumber(o.offerableQty)}</td>
-                      <td className={TDN}>{formatIndianNumber(o.offerValue)}</td>
-                      <td className={TD}>{o.rmCodes.map((r, i) => <div key={i}>{rm(r)}</div>)}</td>
-                      <td className={TD}>{o.basis}</td>
-                      <td className={TD}>{o.flags.join(", ") || "-"}</td>
-                      <td className={TD}>{o.line.project ?? "-"}</td>
-                      <td className={TD}>
-                        <input type="checkbox" checked={o.offerSent} disabled={busy === k} aria-label="Offer sent"
-                          onChange={(e) => write(k, () => setOfferSentAction({ contractNo: o.line.contractNo, itemCode: o.line.itemCode, sent: e.target.checked, basis: o.basis, remarks: text || null, rmCodes: o.rmCodes.map(({ erpCode, location, qty }) => ({ erpCode, location, qty })) }))} />
-                      </td>
-                      <td className={TD}><input className={`${input} w-40`} value={text} readOnly={o.offerSent} onChange={(e) => setRemarks({ ...remarks, [k]: e.target.value })} /></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
+      {view === "offer" && (
+        <DataTable {...offerTable.props} rowClassName={(r) => (r.offerSent ? "bg-muted/50 text-muted-foreground" : undefined)} />
+      )}
 
-          {view === "ledger" && (
-            <>
-              <div className="flex flex-wrap items-end gap-2 border-b border-border p-3">
-                <span className="w-full text-xs font-semibold">Add booking</span>
-                <input className={`${input} w-32`} placeholder="ERP code" value={form.erpCode} onChange={(e) => setForm({ ...form, erpCode: e.target.value })} />
-                <select className={input} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}>
-                  <option value="">Any location</option><option>KGP</option><option>BALTIKURI</option>
-                </select>
-                <input className={`${input} w-32`} placeholder="Contract no" value={form.contractNo} onChange={(e) => setForm({ ...form, contractNo: e.target.value })} />
-                <input className={`${input} w-32`} placeholder="Item code" value={form.itemCode} onChange={(e) => setForm({ ...form, itemCode: e.target.value })} />
-                <input className={`${input} w-20`} type="number" min={0} placeholder="Qty" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
-                <input className={`${input} w-48`} placeholder="Remarks" value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
-                <button type="button" disabled={busy === "add"} className="rounded border border-border px-3 py-1 text-xs font-semibold" onClick={addBooking}>Add</button>
-              </div>
-              {manual.length > 0 && (
-                <div className="border-b border-border p-3">
-                  <div className="mb-1 text-xs font-semibold">Manual bookings</div>
-                  <table className="border-collapse text-[12px]">
-                    {head(["ERP code", "Location", "Contract", "Item code", "Qty", "Stage", ""])}
-                    <tbody className="divide-y divide-border/60">
-                      {manual.map((a) => {
-                        const id = a.ledgerId!;
-                        return (
-                          <tr key={id}>
-                            <td className={TD}>{a.erpCode}</td><td className={TD}>{a.location ?? "Any"}</td><td className={TD}>{a.contractNo}</td><td className={TD}>{a.itemCode}</td>
-                            <td className={TD}>
-                              <input className={`${input} w-20`} type="number" min={0} value={qtyEdit[id] ?? a.qty} onChange={(e) => setQtyEdit({ ...qtyEdit, [id]: e.target.value })} />
-                              {qtyEdit[id] !== undefined && (
-                                <button type="button" disabled={busy === id} className="ml-1 text-xs text-primary underline"
-                                  onClick={async () => { if (await write(id, () => updateBookingAction(id, { qty: Number(qtyEdit[id]) }))) setQtyEdit(({ [id]: _, ...r }) => r); }}>Save</button>
-                              )}
-                            </td>
-                            <td className={TD}>{a.stage}</td>
-                            <td className={TD}><button type="button" disabled={busy === id} className="text-xs text-red-600 underline" onClick={() => confirm(`Delete booking ${a.erpCode} for ${a.contractNo}?`) && write(id, () => deleteBookingAction(id))}>Delete</button></td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              <table className="w-full border-collapse text-left text-[13px]">
-                {head(["ERP code", "Location", "Description", "Available qty", "Allocated to", "Allocated qty", "Free balance"], [3, 5, 6])}
+      {view === "ledger" && (
+        <>
+          <div className="flex shrink-0 flex-wrap items-end gap-2 rounded-xl border border-border bg-card p-3">
+            <span className="w-full text-xs font-semibold">Add booking</span>
+            <input className={`${input} w-32`} placeholder="ERP code" value={form.erpCode} onChange={(e) => setForm({ ...form, erpCode: e.target.value })} />
+            <select className={input} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })}>
+              <option value="">Any location</option><option>KGP</option><option>BALTIKURI</option>
+            </select>
+            <input className={`${input} w-32`} placeholder="Contract no" value={form.contractNo} onChange={(e) => setForm({ ...form, contractNo: e.target.value })} />
+            <input className={`${input} w-32`} placeholder="Item code" value={form.itemCode} onChange={(e) => setForm({ ...form, itemCode: e.target.value })} />
+            <input className={`${input} w-20`} type="number" min={0} placeholder="Qty" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
+            <input className={`${input} w-48`} placeholder="Remarks" value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
+            <Button size="sm" disabled={busy === "add"} onClick={addBooking}>Add</Button>
+          </div>
+          {manual.length > 0 && (
+            <div className="max-h-48 shrink-0 overflow-auto rounded-xl border border-border bg-card p-3">
+              <div className="mb-1 text-xs font-semibold">Manual bookings</div>
+              <table className="border-collapse text-[12px]">
+                <thead className="border-b border-border bg-muted/80"><tr>{["ERP code", "Location", "Contract", "Item code", "Qty", "Stage", ""].map((h, i) => <th key={i} className={TH}>{h}</th>)}</tr></thead>
                 <tbody className="divide-y divide-border/60">
-                  {ledger.map((l) => (
-                    <tr key={`${l.erpCode}|${l.location}`}>
-                      <td className={`${TD} font-medium`}>{l.erpCode}</td><td className={TD}>{l.location ?? "-"}</td><td className={TD}>{l.description}</td>
-                      <td className={TDN}>{formatIndianNumber(l.availableQty)}</td>
-                      <td className={TD}>{l.allocatedTo.map((a, i) => <div key={i}>{a.contractNo} / {a.itemCode} ×{a.qty} ({a.stage})</div>)}</td>
-                      <td className={TDN}>{formatIndianNumber(l.allocatedQty)}</td>
-                      <td className={TDN}>{formatIndianNumber(l.freeBalance)}</td>
-                    </tr>
-                  ))}
+                  {manual.map((a) => {
+                    const id = a.ledgerId!;
+                    return (
+                      <tr key={id}>
+                        <td className={TD}>{a.erpCode}</td><td className={TD}>{a.location ?? "Any"}</td><td className={TD}>{a.contractNo}</td><td className={TD}>{a.itemCode}</td>
+                        <td className={TD}>
+                          <input className={`${input} w-20`} type="number" min={0} value={qtyEdit[id] ?? a.qty} onChange={(e) => setQtyEdit({ ...qtyEdit, [id]: e.target.value })} />
+                          {qtyEdit[id] !== undefined && (
+                            <button type="button" disabled={busy === id} className="ml-1 text-xs text-primary underline"
+                              onClick={async () => { if (await write(id, () => updateBookingAction(id, { qty: Number(qtyEdit[id]) }))) setQtyEdit(({ [id]: _, ...r }) => r); }}>Save</button>
+                          )}
+                        </td>
+                        <td className={TD}>{a.stage}</td>
+                        <td className={TD}><button type="button" disabled={busy === id} className="text-xs text-red-600 underline" onClick={() => confirm(`Delete booking ${a.erpCode} for ${a.contractNo}?`) && write(id, () => deleteBookingAction(id))}>Delete</button></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
-            </>
+            </div>
           )}
+          <DataTable {...ledgerTable.props} />
+        </>
+      )}
 
-          {view === "short" && (
-            <table className="w-full border-collapse text-left text-[13px]">
-              {head(["Contract / Item code", "Party / Item", "Balance qty", "Offerable", "Short qty", "Rate", "Short value"], [2, 3, 4, 5, 6])}
-              <tbody className="divide-y divide-border/60">
-                {short.flatMap((c) => [
-                  <tr key={c.contractNo} className="bg-muted/50 font-semibold">
-                    <td className={TD}>{c.contractNo}</td><td className={TD} colSpan={hideRates ? 4 : 5}>{c.party}</td>{!hideRates && <td className={TDN} title={`Rs ${formatIndianNumber(c.shortValue)}`}>{formatLakh(c.shortValue)}</td>}
-                  </tr>,
-                  ...c.lines.map((l, i) => (
-                    <tr key={`${c.contractNo}-${i}`}>
-                      <td className={`${TD} pl-6`}>{l.line.itemCode}</td><td className={TD}>{l.line.itemName}</td>
-                      <td className={TDN}>{formatIndianNumber(l.line.balanceQty)}</td><td className={TDN}>{formatIndianNumber(l.line.balanceQty - l.shortQty)}</td>
-                      <td className={TDN}>{formatIndianNumber(l.shortQty)}</td>{!hideRates && <><td className={TDN}>{formatIndianNumber(l.line.rate)}</td><td className={TDN}>{formatIndianNumber(l.shortValue)}</td></>}
-                    </tr>
-                  )),
-                ])}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      {view === "short" && <DataTable {...shortTable.props} />}
     </div>
   );
 }

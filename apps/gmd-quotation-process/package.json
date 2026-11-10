@@ -10,6 +10,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noemit",
     "test": "node --import tsx --import ./tests/server-only-stub.mjs --test \"tests/**/*.test.ts\"",
+    "actuator:import": "tsx scripts/import-actuator-master.ts",
     "seed:lookups": "tsx scripts/seed-lookup-options.ts",
     "utility:seed": "tsx scripts/seed-utility-master.ts",
     "utility:seed:apply": "tsx scripts/seed-utility-master.ts --apply",

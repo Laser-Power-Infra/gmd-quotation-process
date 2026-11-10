@@ -9,6 +9,8 @@ import type { RootState } from "./store";
 import type { EnquiryData, EnquiryItemData } from "./types";
 import { updateEnquiryFieldAction, createNewEnquiryAction, addItemsAction, updateEnquiryItemAction, deleteEnquiryItemAction, deleteEnquiryAction, addAttachmentsAction, syncEnquiryEmailAddressesAction, sendDocketEmailAction } from "@/app/actions/enquiry";
 import { updateItemFieldAction, importExcelDataAction, applyAutoFillAction, updateVaPercentAction, fetchErpItemCodesAction, updateProductCostFromBomAction, update2to1CostAction, updateAllBomCostsAction, selectBomIdAction, syncDirectM2MAvailableStockAction } from "@/app/actions/item";
+import { fetchActuatorAction, saveActuatorFieldsAction } from "@/app/actions/actuator";
+import type { ActuatorPatch } from "@/lib/actuatorItem";
 import { bulkUpdateValidationAction, bulkUpdateApmAction, clearQuotedRatesAction, fetchContractReviewRatesAction, populatePdCostValidationAction } from "@/app/actions/misc";
 import {
   fetchEnquiryFacet,
@@ -100,6 +102,18 @@ export const fetchItemCodes = createAsyncThunk(
     return result.data!;
   }
 );
+
+export const fetchActuator = createAsyncThunk("enquiries/fetchActuator", async (itemIds: string[], { rejectWithValue }) => {
+  const result = await fetchActuatorAction(itemIds);
+  if (!result.success) return rejectWithValue("Failed to fetch actuator");
+  return result.data;
+});
+
+export const saveActuatorFields = createAsyncThunk("enquiries/saveActuatorFields", async (a: { itemId: string; patch: ActuatorPatch }, { rejectWithValue }) => {
+  const result = await saveActuatorFieldsAction(a.itemId, a.patch);
+  if (!result.success) return rejectWithValue(result.error);
+  return result.data;
+});
 
 export const updateProductCost = createAsyncThunk(
   "enquiries/updateProductCost",
@@ -1194,6 +1208,17 @@ const enquiriesSlice = createSlice({
         state.updateStatus = "failed";
         state.updateError = (action.payload as string) || "Select BOM failed";
       })
+      .addMatcher(
+        (action) => fetchActuator.fulfilled.match(action) || saveActuatorFields.fulfilled.match(action),
+        (state, action: { payload: { items: EnquiryItemData[] } }) => {
+          itemsAdapter.upsertMany(state.items, action.payload.items);
+          for (const item of action.payload.items) {
+            const items = state.enquiries.entities[item.enquiryId]?.items;
+            const idx = items ? items.findIndex((i) => i.id === item.id) : -1;
+            if (items && idx !== -1) items[idx] = item;
+          }
+        },
+      )
       // Any mutation can change whether the page's rows still match the filters,
       // so let the page layer refetch instead of guessing.
       .addMatcher(

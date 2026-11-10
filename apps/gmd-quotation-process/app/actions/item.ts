@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { recalculateItem, serializeItem, autoDetectItemType, getItemNameMerge } from "@/lib/costCalculator";
 import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { ensureCfSetItem } from "@/lib/cfSetItem";
+import { isActuated } from "@/lib/actuatorCost";
 import { correctItemType } from "@/lib/itemTypePatterns";
 import { DETAILS_FIELDS, pnFromName, type AutoFillChange, type DetailsField } from "@/lib/detailsCheck";
 import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
@@ -379,6 +380,19 @@ export async function updateItemFieldAction(
     }
 
     // Auto-recompute erpItemCode if derived fields changed, and cascade productCost if code changed and productCost was null
+    // Op Type / Item type / DN / PN / name changed: link, re-price or de-actuate the actuator parts before the code cascade.
+    if (["itemType", "size", "pnRating", "operationType", "itemName"].includes(field) && updatedItem) {
+      try {
+        const { syncActuatorOnChange } = await import("@/lib/actuatorItem");
+        const r = await syncActuatorOnChange(itemId, prevFull as any);
+        if (r) {
+          const latest = await prisma.enquiryItem.findUnique({ where: { id: itemId } });
+          if (latest) updatedItem = serializeItem(latest);
+        }
+      } catch (e) {
+        console.warn(`[updateItemField] actuator re-price failed for ${itemId}:`, e);
+      }
+    }
     const CODE_DERIVED_FIELDS = ["itemType", "moc", "size", "pnRating", "operationType", "itemName"];
     if (CODE_DERIVED_FIELDS.includes(field) && updatedItem) {
       try {
@@ -402,7 +416,7 @@ export async function updateItemFieldAction(
           if (recomputed.changed) {
             const afterCode = await prisma.enquiryItem.findUnique({
               where: { id: itemId },
-              select: { productCost: true, erpItemCode: true, availableBomIds: true, bomId: true },
+              select: { productCost: true, erpItemCode: true, availableBomIds: true, bomId: true, operationType: true, itemType: true, actCode: true, gbCode: true, actuatorBreakdown: true },
             });
             let validCandidates: string[] = [];
             if (afterCode?.erpItemCode) {
@@ -417,7 +431,7 @@ export async function updateItemFieldAction(
             if (isStaleBom || !currentBomId) {
               if (validCandidates.length === 1 && afterCode?.erpItemCode) {
                 const candidateBom = validCandidates[0];
-                const vbRow = await findBomForItem(afterCode.erpItemCode, candidateBom);
+                const vbRow = await findBomForItem(afterCode.erpItemCode, candidateBom, { actuated: isActuated(afterCode) });
                 if (vbRow?.rmItemCode) {
                   const bomType = vbRow.bomIdType || DIRECT_M2M;
                   const dataToUpdate: any = { bomId: vbRow.bomId, rmItemCode: vbRow.rmItemCode, bomType };
@@ -479,7 +493,7 @@ export async function updateItemFieldAction(
 
         const freshItem = await prisma.enquiryItem.findUnique({
           where: { id: itemId },
-          select: { bomId: true },
+          select: { bomId: true, operationType: true, itemType: true, actCode: true, gbCode: true, actuatorBreakdown: true },
         });
         const currentBomId = freshItem?.bomId;
         const isStaleBom = currentBomId && !validCandidates.includes(currentBomId);
@@ -487,7 +501,7 @@ export async function updateItemFieldAction(
         if (isStaleBom || !currentBomId) {
           if (validCandidates.length === 1 && itemCodeVal) {
             const candidateBom = validCandidates[0];
-            const vbRow = await findBomForItem(itemCodeVal, candidateBom);
+            const vbRow = await findBomForItem(itemCodeVal, candidateBom, { actuated: !!freshItem && isActuated(freshItem) });
             if (vbRow?.rmItemCode) {
               const bomType = vbRow.bomIdType || DIRECT_M2M;
               const dataToUpdate: any = { bomId: vbRow.bomId, rmItemCode: vbRow.rmItemCode, bomType };
@@ -550,7 +564,7 @@ export async function selectBomIdAction(itemId: string, bomId: string | null) {
   await requireAccess();
   const denied = await loginRequired(); if (denied) return denied;
   try {
-    const item = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { enquiryId: true, erpItemCode: true, productCost: true, availableBomIds: true } });
+    const item = await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { enquiryId: true, erpItemCode: true, productCost: true, availableBomIds: true, operationType: true, itemType: true, actCode: true, gbCode: true, actuatorBreakdown: true } });
     if (!item) return { success: false, error: "Item not found." };
     // Guard frozen enquiries: bom selection mutates productCost/cost linkage
     {
@@ -569,7 +583,7 @@ export async function selectBomIdAction(itemId: string, bomId: string | null) {
       const cleared = await prisma.enquiryItem.update({ where: { id: itemId }, data: { bomId: null, rmItemCode: null, rmType: null, bomType: null } });
       return { success: true, data: serializeItem(cleared) };
     }
-    const vbRow = await findBomForItem(item.erpItemCode, bomId);
+    const vbRow = await findBomForItem(item.erpItemCode, bomId, { actuated: isActuated(item) });
     if (!vbRow) return { success: false, error: "BOM not found for this item code." };
     // Update bom linkage and available stock if DIRECT M2M
     const bomType = vbRow.bomIdType || DIRECT_M2M;
@@ -789,7 +803,7 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
 
     const items = await prisma.enquiryItem.findMany({
       where: { id: { in: itemIds } },
-      select: { id: true, itemName: true, size: true, pnRating: true, erpItemCode: true, productCost: true, bomId: true, costRefCode: true, availableStock: true, bomType: true },
+      select: { id: true, itemName: true, size: true, pnRating: true, erpItemCode: true, productCost: true, bomId: true, costRefCode: true, availableStock: true, bomType: true, operationType: true, itemType: true, actCode: true, gbCode: true, actuatorBreakdown: true },
     });
 
     // Verify BOM first: the row's own BOM ID, else its only usable BOM ID.
@@ -805,7 +819,7 @@ export async function updateProductCostFromBomAction(itemIds: string[]) {
         if (usable.length === 1) pickId = usable[0];
       }
       if (!pickId) continue;
-      const row = await findBomForItem(it.erpItemCode, pickId);
+      const row = await findBomForItem(it.erpItemCode, pickId, { actuated: isActuated(it) });
       if (row?.rmItemCode) verifyPick.set(it.id, { bomId: row.bomId, bomIdType: row.bomIdType, rmItemCode: row.rmItemCode });
     }
 

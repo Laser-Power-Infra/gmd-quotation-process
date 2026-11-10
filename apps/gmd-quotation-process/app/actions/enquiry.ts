@@ -3,6 +3,7 @@ import { requireAccess, loginRequired } from "@/lib/access";
 import { syncAvailableBomIds, maybeUpdateProductCostFromNewCode } from "@/lib/itemBomSync";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { prisma } from "@/lib/prisma";
+import { isActuatorCandidate } from "@/lib/actuatorCost";
 import { mirrorLookup } from "@/lib/lookupMirror";
 import { uploadFileToDrive } from "@/lib/gdrive";
 import { recalculateItem, recalculateEnquiryItems, serializeItem, serializeEnquiry } from "@/lib/costCalculator";
@@ -334,6 +335,16 @@ export async function addItemsAction(formData: {
     for (const item of items) {
       await recalculateItem(item.id);
     }
+    // New Op Type ACT / ACT+GB / ELECTRIC items get auto-filled (linked); their created cost is the valve cost.
+    for (const item of items) {
+      if (item.position < startPos || !isActuatorCandidate(item)) continue;
+      try {
+        const { applyActuatorToItem } = await import("@/lib/actuatorItem");
+        await applyActuatorToItem(item.id);
+      } catch (e) {
+        console.warn("[createEnquiry] actuator auto-fill failed:", e);
+      }
+    }
     for (const item of items) {
       if (item.others.length > 0 && !item.parentItemId) await ensureCfSetItem(item.id);
     }
@@ -587,6 +598,13 @@ export async function updateEnquiryItemAction(formData: {
     });
     // CF set child follows the valve's Others/size/MOC/PN/quantity (skips children and frozen enquiries itself).
     await ensureCfSetItem(formData.itemId, { resetMoc: resolved.moc !== item.moc });
+    // Typed Product Cost on a linked actuated item is the valve cost: add the parts (or leave pending). Also covers Op Type / DN / PN edits.
+    try {
+      const { syncActuatorOnChange } = await import("@/lib/actuatorItem");
+      await syncActuatorOnChange(formData.itemId, item);
+    } catch (e) {
+      console.warn("[updateEnquiryItemAction] actuator re-price failed:", e);
+    }
 
     // Update attachments if provided and upload to Google Drive
     if (formData.attachments) {

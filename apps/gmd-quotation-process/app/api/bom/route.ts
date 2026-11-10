@@ -5,6 +5,7 @@ import {
   VERIFY_BOM_HEADERS,
   dbVerifyBomToRow,
 } from "@/lib/gmd_lib/verify-bom-columns";
+import { actuatorCodesOrEmpty } from "@/lib/verifyBomLookup";
 import { classifyBom, storedTypeDisagrees } from "@/lib/bomClassify";
 import { bomMismatches, isHardIssue } from "@/lib/bomMismatch";
 import {
@@ -34,6 +35,7 @@ function toNum(v: unknown): number | null {
 export async function GET() {
   const denied = await denyIfNoAccess();
   if (denied) return denied;
+  const actuatorCodes = await actuatorCodesOrEmpty();
   try {
     // Anchor on FullItem so an item with no BOM (or a BOM with no components)
     // still appears as a parent-only row instead of vanishing.
@@ -107,6 +109,7 @@ export async function GET() {
               isFullItem: !!c.fullItem,
               open: !c.noUse,
             })),
+          actuatorCodes,
         );
       const extras = (bom: BomRow | null, issues: string[]) => {
         const type = bom ? typeOf(bom) : "";

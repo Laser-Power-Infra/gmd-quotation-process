@@ -7,8 +7,11 @@ import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@gmd/db-quotation";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { NEW_BOM_PREFIX, nextBomIds } from "@/lib/autoBom";
+import { actuatorCodesOrEmpty } from "@/lib/verifyBomLookup";
 import { BOM_TYPE, classifyBom } from "@/lib/bomClassify";
+import { createDraftLines } from "@/lib/actuatorStock";
 import { pickNearest } from "@/lib/bomPropose";
+import { proposeActuatorBomChanges, actuatorStockCodesFor, loadActuatedDocketItems } from "@/lib/actuatorBom";
 import type { BomChangeLine } from "@/lib/bomColumns";
 
 const NO_USE = "NO USE";
@@ -39,8 +42,8 @@ async function resolveLines(lines: BomChangeLine[]) {
   });
 }
 
-function storedTypeFor(lines: { fullItemId: string | null; code: string }[]): string | null {
-  const t = classifyBom(lines.map((l) => ({ code: l.code, isFullItem: !!l.fullItemId, open: true })));
+function storedTypeFor(lines: { fullItemId: string | null; code: string }[], skip: ReadonlySet<string>): string | null {
+  const t = classifyBom(lines.map((l) => ({ code: l.code, isFullItem: !!l.fullItemId, open: true })), skip);
   if (t === BOM_TYPE.m2m || t === BOM_TYPE.fgSubstitute) return "DIRECT M2M";
   if (t === BOM_TYPE.twoToOne || t === BOM_TYPE.threeToOne) return t;
   if (t === BOM_TYPE.production) return "CREATE BOM";
@@ -66,7 +69,7 @@ export async function applyBomChange(changeId: string, approvedBy: string | null
         data: {
           bomId,
           fullItemId: fullItem.id,
-          bomIdType: storedTypeFor(resolved),
+          bomIdType: storedTypeFor(resolved, await actuatorCodesOrEmpty()),
           components: {
             create: resolved.map((l) => ({ rawMaterialId: l.rawMaterialId, fullItemId: l.fullItemId, quantity: l.quantity, manualLink: true })),
           },
@@ -119,6 +122,11 @@ export async function applyBomChange(changeId: string, approvedBy: string | null
  * throws: a failure is logged and counted so a sync is not failed by it.
  */
 export async function proposeMissingBoms(source: string): Promise<{ proposed: number; failed: number }> {
+  const [missing, actuator] = await Promise.all([proposeMissingBomsFor(source), proposeActuatorBomChanges(source)]);
+  return { proposed: missing.proposed + actuator.proposed, failed: missing.failed + actuator.failed };
+}
+
+async function proposeMissingBomsFor(source: string): Promise<{ proposed: number; failed: number }> {
   try {
     const [contracts, enquiryItems] = await Promise.all([
       tenderPrisma.contractReview.findMany({
@@ -168,15 +176,22 @@ export async function proposeMissingBoms(source: string): Promise<{ proposed: nu
       return code && sourceByCode.has(code) && !pendingCodes.has(code) && !openLines(fi);
     });
 
+    // Linked ACT / ACT+GB items get the same actuator / gearbox lines as EDIT drafts (see actuatorBom.ts).
+    const actuated = targets.length ? await loadActuatedDocketItems().catch(() => []) : [];
+    const { byCode, live } = actuated.length ? await actuatorStockCodesFor(actuated, targets) : { byCode: new Map(), live: new Map<string, number>() };
+    const skip = byCode.size ? await actuatorCodesOrEmpty() : new Set<string>();
+
     let proposed = 0;
     for (const t of targets) {
       const nearest = pickNearest({ ...t, itemCode: t.itemCode ?? "" }, withBom);
+      const stockCodes = byCode.get((t.itemCode ?? "").trim());
+      const lines = stockCodes ? createDraftLines(nearest ? nearest.lines! : [], skip, stockCodes, live) : nearest ? nearest.lines! : [];
       await prisma.bomChange.create({
         data: {
           kind: "CREATE",
           status: "DRAFT",
           itemCode: t.itemCode!.trim(),
-          lines: nearest ? nearest.lines! : [],
+          lines: lines as unknown as Prisma.InputJsonArray,
           source: sourceByCode.get(t.itemCode!.trim().toUpperCase()),
           note: nearest ? `Copied from ${nearest.itemCode} (${nearest.boms[0]?.bomId ?? "?"})` : "No matching approved BOM found; fill the lines by hand",
           createdBy: "system",

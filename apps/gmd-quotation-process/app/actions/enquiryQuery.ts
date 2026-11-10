@@ -284,6 +284,9 @@ async function hydrateItems(where: Prisma.EnquiryItemWhereInput) {
       cost: item.cost != null ? Number(item.cost) : null,
       discount: item.discount != null ? Number(item.discount) : null,
       vaPercent: item.vaPercent != null ? Number(item.vaPercent) : null,
+      bareValveCost: item.bareValveCost != null ? Number(item.bareValveCost) : null,
+      adaptorCost: item.adaptorCost != null ? Number(item.adaptorCost) : null,
+      assemblyCost: item.assemblyCost != null ? Number(item.assemblyCost) : null,
       quotedRate: item.quotedRate || null,
     };
   });
@@ -427,6 +430,9 @@ export async function fetchFilteredEnquiryExport(
       cost: item.cost != null ? Number(item.cost) : null,
       discount: item.discount != null ? Number(item.discount) : null,
       vaPercent: item.vaPercent != null ? Number(item.vaPercent) : null,
+      bareValveCost: item.bareValveCost != null ? Number(item.bareValveCost) : null,
+      adaptorCost: item.adaptorCost != null ? Number(item.adaptorCost) : null,
+      assemblyCost: item.assemblyCost != null ? Number(item.assemblyCost) : null,
       quotedRate: item.quotedRate || null,
     })),
   }));

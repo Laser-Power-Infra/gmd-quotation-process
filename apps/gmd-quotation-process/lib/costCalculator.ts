@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { matchItemType, matchMoc } from "./itemTypePatterns";
 import { roundUp } from "./rounding";
+import { isActuated, withoutProductCost } from "./actuatorCost";
 import { resolveCostChangeAnchor, isOfferRevision } from "./rateAnchor";
 import { BASE_COST_FACTOR, FULL_LOAD_THRESHOLD, normalizeStateName } from "./costLoading";
 
@@ -12,6 +13,9 @@ export function serializeItem(item: any) {
     cost: item.cost !== null && item.cost !== undefined ? Number(item.cost) : null,
     discount: item.discount !== null && item.discount !== undefined ? Number(item.discount) : null,
     vaPercent: item.vaPercent !== null && item.vaPercent !== undefined ? Number(item.vaPercent) : null,
+    bareValveCost: item.bareValveCost != null ? Number(item.bareValveCost) : null,
+    adaptorCost: item.adaptorCost != null ? Number(item.adaptorCost) : null,
+    assemblyCost: item.assemblyCost != null ? Number(item.assemblyCost) : null,
     quotedRate: item.quotedRate || null,
     quotedRateGst: item.quotedRateGst || null,
     createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
@@ -80,7 +84,8 @@ export async function recalculateItem(
     cost?: number | null;
   },
   // Contract-match: store the quoted rate as given (no round-up) and skip the offer-revised flag.
-  opts?: { exactQuotedRate?: boolean }
+  // actuatorTotal: the write comes from lib/actuatorItem.ts and already includes the actuator parts.
+  opts?: { exactQuotedRate?: boolean; actuatorTotal?: boolean }
 ) {
   // Fetch item and its parent enquiry
   const item = await prisma.enquiryItem.findUnique({
@@ -88,6 +93,29 @@ export async function recalculateItem(
     include: { enquiry: true },
   });
   if (!item) return null;
+
+  // An actuated item's product cost must always include its actuator/gearbox parts. Any other writer
+  // (BOM fill, Update BOM Costs, code change, hand edit) supplies the valve cost only: hand it to the
+  // actuator pricing, which adds the parts and leaves the cost blank while a price is pending.
+  if (updates?.productCost != null && !opts?.actuatorTotal && isActuated(item)) {
+    const { applyActuatorToItem } = await import("./actuatorItem");
+    const restore = { productCost: item.productCost, cost: item.cost };
+    await prisma.enquiryItem.update({ where: { id: itemId }, data: { productCost: updates.productCost } });
+    let r: Awaited<ReturnType<typeof applyActuatorToItem>>;
+    try {
+      r = await applyActuatorToItem(itemId);
+    } catch (e) {
+      // Never leave the valve-only number behind as the cost.
+      await prisma.enquiryItem.update({ where: { id: itemId }, data: restore });
+      throw e;
+    }
+    // Skipped (frozen): the valve-only number must not stay as the cost.
+    if (!r.item) await prisma.enquiryItem.update({ where: { id: itemId }, data: restore });
+    // Every other field passed alongside (quotedRate, extension, vaPercent...) goes the normal way.
+    const rest = withoutProductCost(updates);
+    if (rest) return recalculateItem(itemId, rest, opts);
+    return r.item ?? serializeItem(item);
+  }
 
   // 1. Merge base fields (always applied)
   const productCost = updates && updates.productCost !== undefined

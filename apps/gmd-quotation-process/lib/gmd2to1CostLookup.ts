@@ -1,3 +1,4 @@
+import { twoToOneUpdate } from "@/lib/actuatorCost";
 import { prisma } from "@/lib/prisma";
 import { sheets as googleSheets } from "@googleapis/sheets";
 import { getOAuthClient } from "@/lib/googleAuth";
@@ -201,7 +202,7 @@ export async function update2to1CostForItems(itemIds: string[]) {
 
   const items = await prisma.enquiryItem.findMany({
     where: { id: { in: itemIds } },
-    select: { id: true, erpItemCode: true, cost: true },
+    select: { id: true, erpItemCode: true, cost: true, operationType: true, itemType: true, actCode: true, gbCode: true, actuatorBreakdown: true },
   });
 
   const updatedItems: ReturnType<typeof serializeItem>[] = [];
@@ -237,7 +238,8 @@ export async function update2to1CostForItems(itemIds: string[]) {
 
     if (validConsumptionCount > 0 && sumCost > 0) {
       // Recalculate item passing 'cost' explicitly
-      const recalculated = await recalculateItem(item.id, { cost: sumCost });
+      // Actuated items: the sum is the valve cost, so it goes through the actuator pricing (parts added, blank while pending).
+      const recalculated = await recalculateItem(item.id, twoToOneUpdate(item, sumCost));
 
       // Update BOM metadata on EnquiryItem
       await prisma.enquiryItem.update({

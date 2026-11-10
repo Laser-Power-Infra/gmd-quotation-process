@@ -6,12 +6,13 @@ import Image from "next/image";
 import { shallowEqual } from "react-redux";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
+import ActuatorChip from "./ActuatorChip";
 import Pagination from "./Pagination";
 import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter";
 import CellSelect, { optionsWithCurrent } from "./CellSelect";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, loadEnquiryItems, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, fetchActuator, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, loadEnquiryItems, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
 import { enquiryFilterKey } from "@/lib/enquiryQuery";
 import { fetchDocketNumbers, fetchFilteredEnquiryExport, fetchGeneratedImageMap } from "@/app/actions/enquiryQuery";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
@@ -564,6 +565,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   );
   const [vaStatus, setVaStatus] = useState<"idle" | "running">("idle");
   const [fetchCodesStatus, setFetchCodesStatus] = useState<"idle" | "running">("idle");
+  const [fetchActStatus, setFetchActStatus] = useState<"idle" | "running">("idle");
   const [updateCostStatus, setUpdateCostStatus] = useState<"idle" | "running">("idle");
   const [crRateStatus, setCrRateStatus] = useState<"idle" | "running">("idle");
   const [pdCostValStatus, setPdCostValStatus] = useState<"idle" | "running">("idle");
@@ -1862,6 +1864,31 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     }
   }
 
+  // Fetch Actuator: codes from MAPPING + price from the masters for every actuated item in view.
+  const handleFetchActuator = async () => {
+    const pageFull = await ensurePageItems();
+    if (!pageFull) return;
+    const ids: string[] = []
+    for (const enquiry of pageFull) {
+      if (isEnquiryFrozen((enquiry as any).apm, (enquiry as any).offerPdfGeneratedAt)) continue
+      for (const item of getFilteredItems(enquiry)) {
+        if (["ACT", "ACT+GB", "ELECTRIC"].includes((item.operationType ?? "").trim().toUpperCase()) || (item.itemType ?? "").toUpperCase() === "ACTUATOR") ids.push(item.id)
+      }
+    }
+    if (ids.length === 0) { toast.info("No ACT / ACT+GB / ELECTRIC or ACTUATOR items in the current view."); return }
+    if (!await ask(`Fill actuator and gearbox codes and re-price ${ids.length} item(s)? Items with a missing price are left without a cost ("price pending").`)) return
+    setFetchActStatus("running")
+    try {
+      const r: any = await dispatch(fetchActuator(ids)).unwrap()
+      const notes = (r.notes ?? []).slice(0, 5).map((n: any) => n.note).join("; ")
+      toast[r.pending > 0 ? "warning" : "success"](`Actuator fetched for ${r.items.length} item(s)${r.pending ? `, ${r.pending} price pending / refer OEM` : ""}.${notes ? " " + notes : ""}`, { duration: 9000 })
+    } catch {
+      toast.error("Failed to fetch actuator details.")
+    } finally {
+      setFetchActStatus("idle")
+    }
+  }
+
   const handleUpdateAllBomCosts = async () => {
     const pageFull = await ensurePageItems();
     if (!pageFull) return;
@@ -2272,6 +2299,17 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
           >
             <RefreshCw className={`h-3.5 w-3.5 text-blue-700 dark:text-blue-300 stroke-2 ${fetchCodesStatus === "running" ? "animate-spin" : ""}`} />
             {fetchCodesStatus === "running" ? "Refreshing..." : "Fetch Item Codes"}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleFetchActuator}
+            disabled={fetchActStatus === "running"}
+            title="Fill ACT CODE / GB CODE from the actuator mapping and price them"
+            className="group/button inline-flex shrink-0 items-center justify-center rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-500/25 dark:bg-blue-500/10 dark:text-blue-300 dark:hover:bg-blue-500/20 h-8 gap-1.5 px-3 text-xs font-semibold cursor-pointer transition-all shrink-0 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 text-blue-700 dark:text-blue-300 stroke-2 ${fetchActStatus === "running" ? "animate-spin" : ""}`} />
+            {fetchActStatus === "running" ? "Fetching..." : "Fetch Actuator"}
           </button>
 
           <button
@@ -3778,7 +3816,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           }}
                           className="w-full bg-transparent border-none text-[11px] text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
                         />
-                        {costLoadingBadge(enquiry, firstItem)}{cfChip(firstItem)}</>
+                        {costLoadingBadge(enquiry, firstItem)}{cfChip(firstItem)}<ActuatorChip item={firstItem} frozen={isFrozen} /></>
                       ) : "-"}
                     </td>
 
@@ -4247,6 +4285,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           />
                         {costLoadingBadge(enquiry, item)}
                         {cfChip(item)}
+                        <ActuatorChip item={item} frozen={isFrozen} />
                       </td>
 
                       {/* Stock Status */}
