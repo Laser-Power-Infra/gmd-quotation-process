@@ -43,6 +43,7 @@ async function inChunks<T>(items: T[], size: number, fn: (item: T) => Promise<un
 }
 
 async function backfillAll(): Promise<ActionResult> {
+  const startedAt = Date.now();
   const flags = await getContractReviewFlags();
   const { isEnabled, isEditable } = columnAccess(flags);
   // The backfills are idempotent, so the cached rows are good enough; a stale
@@ -132,6 +133,17 @@ async function backfillAll(): Promise<ActionResult> {
   const settled = await Promise.allSettled(tasks);
   const failed = settled.filter((s) => s.status === "rejected");
   for (const f of failed) console.error("contract review backfill failed", (f as PromiseRejectedResult).reason);
+  // Most batch actions catch their own errors and return { success: false }, so count those too.
+  const softFailed = settled.filter(
+    (s) => s.status === "fulfilled" && (s.value as ActionResult | undefined)?.success === false,
+  );
+  const summary = `${new Date().toISOString()} [contract-review backfill] ${rows.length} rows, ${tasks.length} tasks in ${Date.now() - startedAt} ms`;
+  if (failed.length || softFailed.length) {
+    const reasons = softFailed.map((s) => (s as PromiseFulfilledResult<ActionResult>).value.error).join(" | ");
+    console.error(`${summary}: ${failed.length} threw, ${softFailed.length} returned errors${reasons ? ` (${reasons})` : ""}`);
+  } else {
+    console.info(`${summary}: ok`);
+  }
   invalidateContractReviewCache();
   return { success: true, data: { ran: true, failed: failed.length } };
 }
