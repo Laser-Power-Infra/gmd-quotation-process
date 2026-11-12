@@ -71,6 +71,7 @@ import {
 } from "@gmd/ui/components/resizable";
 import { useDefaultLayout } from "react-resizable-panels";
 import { MailDocsCell } from "./MailDocsCell";
+import { FillOnceCell } from "./FillOnceCell";
 import { FlowDiagram } from "./graph_flow/FlowDiagram";
 import {
   enabledTrees,
@@ -91,6 +92,7 @@ const layoutStorage = {
 const UPLOAD_DIAGRAM_COLUMN = "Upload Drawing";
 const MAIL_DOCS_IDX = CONTRACT_REVIEW_HEADERS.indexOf(MAIL_DOCS_COLUMN);
 const DOCKET_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("DOCKET NO");
+const PO_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PO NO");
 const UPLOAD_DIAGRAM_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf(UPLOAD_DIAGRAM_COLUMN);
 
@@ -966,7 +968,7 @@ export function ContractReviewPage({
   );
 
   const customCells = useMemo(() => {
-    const cells: Record<string, (row: unknown[]) => ReactNode> = {
+    const cells: Record<string, (row: unknown[], id: string) => ReactNode> = {
       // Back-link to the quotation: the Quotations page opens filtered to this docket.
       "DOCKET NO": (row) => {
         const docketNo = String(row[DOCKET_NO_IDX] ?? "").trim();
@@ -1000,8 +1002,18 @@ export function ContractReviewPage({
         );
       };
     }
+    // Fill-once columns: a blank gets an input + tick; once saved it is frozen (server enforces it too).
+    if (flags.blankOnlyColumns.includes("PO NO") && isEnabled("PO NO")) {
+      cells["PO NO"] = (row, id) => (
+        <FillOnceCell
+          value={row[PO_NO_IDX]}
+          label="PO NO"
+          onSave={isEditable("PO NO") ? (v) => handleCellUpdate(id, PO_NO_IDX, v) : undefined}
+        />
+      );
+    }
     return cells;
-  }, [isEnabled, isEditable, addContractMailDocAction, handleAddMailDoc]);
+  }, [isEnabled, isEditable, addContractMailDocAction, handleAddMailDoc, flags.blankOnlyColumns, handleCellUpdate]);
 
   const handleUploadDiagram = useCallback(
     async (id: string, file: File) => {
@@ -2101,6 +2113,7 @@ export function ContractReviewPage({
                 editable
                 fullHeight
                 editableColumns={tableEditableColumns}
+                blankOnlyEditableColumns={flags.blankOnlyColumns}
                 dropdownRowCondition={(header, row) =>
                   header !== "Actuator" || isActuatorItemRow(row)
                 }

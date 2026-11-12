@@ -127,11 +127,20 @@ export function editableFieldsFor(flags: ContractReviewFlags): Set<string> {
   );
 }
 
+/** The editable fields that may only be filled while still blank under these flags. */
+export function blankOnlyFieldsFor(flags: ContractReviewFlags): Set<string> {
+  const blankOnly = new Set<string>(flags.blankOnlyColumns);
+  return new Set(
+    [...editableFieldsFor(flags)].filter((field) => blankOnly.has(headerForField(field) ?? "")),
+  );
+}
+
 export async function updateContractReviewField(
   id: string,
   field: string,
   value: string | null,
   allowed: ReadonlySet<string> = CONTRACT_REVIEW_EDITABLE_FIELDS,
+  blankOnly: ReadonlySet<string> = new Set(),
 ): Promise<ActionResult> {
   try {
     if (!id) return { success: false, error: "Missing contract review id." };
@@ -147,6 +156,15 @@ export async function updateContractReviewField(
         return { success: false, error: validated.error };
       }
       value = validated.contracts.length > 0 ? validated.contracts[0] : null;
+    }
+    if (blankOnly.has(field)) {
+      // Conditional write, so a value filled in meanwhile is never overwritten.
+      const { count } = await tenderPrisma.contractReview.updateMany({
+        where: { id, OR: [{ [field]: null }, { [field]: "" }] },
+        data: { [field]: value },
+      });
+      if (count === 0) return { success: false, error: "This value is already saved and cannot be changed." };
+      return { success: true, data: { id, field, value } };
     }
     await tenderPrisma.contractReview.update({
       where: { id },

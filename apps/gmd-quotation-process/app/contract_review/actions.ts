@@ -8,6 +8,7 @@ import {
   backfillInspection,
   backfillOfferPendingDone,
   backfillPnRating,
+  blankOnlyFieldsFor,
   clearDiagram,
   confirmDiagramUpload,
   createDiagramUpload,
@@ -67,7 +68,8 @@ export async function updateContractReviewFieldAction(
   value: string | null,
 ) {
   await requireAccess();
-  const res = await updateContractReviewField(id, field, value, editableFieldsFor(await getContractReviewFlags()));
+  const flags = await getContractReviewFlags();
+  const res = await updateContractReviewField(id, field, value, editableFieldsFor(flags), blankOnlyFieldsFor(flags));
   invalidateContractReviewCache();
   return res;
 }

@@ -31,6 +31,8 @@ export interface ContractReviewFlags {
   disabledColumns: ContractReviewHeader[];
   /** Still shown, but no edits (UI and server). */
   readOnlyColumns: ContractReviewHeader[];
+  /** Editable only while the cell is blank; a filled value is locked (UI and server). */
+  blankOnlyColumns: ContractReviewHeader[];
   flowDiagram: boolean;
   excelExport: boolean;
   hiddenSidebar: SidebarSection[];
@@ -39,6 +41,7 @@ export interface ContractReviewFlags {
 export const DEFAULT_CONTRACT_REVIEW_FLAGS: ContractReviewFlags = {
   disabledColumns: [],
   readOnlyColumns: [],
+  blankOnlyColumns: [],
   flowDiagram: true,
   excelExport: true,
   hiddenSidebar: [],

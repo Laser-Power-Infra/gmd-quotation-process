@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { resolveContractReviewFlags } from "../src/flags";
 import {
   applyColumnFlags,
+  blankOnlyFieldsFor,
   editableFieldsFor,
   updateContractReviewField,
 } from "../src/server/index";
@@ -59,6 +60,13 @@ test("editableFieldsFor allows MC DATE and APPROVAL DATE unless the app disables
   );
   assert.equal(tender.has("mcDate"), false);
   assert.equal(tender.has("approvalDate"), false);
+});
+
+test("blankOnlyFieldsFor keeps blank-only columns that are still editable", () => {
+  assert.deepEqual([...blankOnlyFieldsFor(resolveContractReviewFlags({ blankOnlyColumns: ["PO NO"] }))], ["poNo"]);
+  const locked = resolveContractReviewFlags({ blankOnlyColumns: ["PO NO"], readOnlyColumns: ["PO NO"] });
+  assert.equal(blankOnlyFieldsFor(locked).size, 0);
+  assert.equal(blankOnlyFieldsFor(resolveContractReviewFlags({})).size, 0);
 });
 
 test("updateContractReviewField rejects a field outside the given allow-list", async () => {
