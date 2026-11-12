@@ -50,6 +50,8 @@ export const CONTRACT_REVIEW_EDITABLE_FIELDS = new Set([
   "productionOrderNumber",
   "vaPercentfromcost",
   "dateOfContract",
+  "mcDate",
+  "approvalDate",
 ]);
 
 const errorMessage = (error: unknown, fallback: string) =>

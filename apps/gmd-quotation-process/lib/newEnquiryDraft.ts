@@ -23,10 +23,10 @@ export interface NewEnquiryDraft {
   fileNames: string[];
 }
 
-export function isDraftEmpty(d: Pick<NewEnquiryDraft, "partyName" | "enquiryType" | "state" | "paymentTerms" | "inspection" | "pbg" | "utility" | "orderStatus" | "items">): boolean {
+export function isDraftEmpty(d: Pick<NewEnquiryDraft, "partyName" | "enquiryType" | "state" | "utility" | "orderStatus" | "items">): boolean {
   return (
-    !d.partyName && !d.enquiryType && !d.state && !d.paymentTerms &&
-    !d.inspection && !d.pbg && !d.utility && !d.orderStatus &&
+    !d.partyName && !d.enquiryType && !d.state &&
+    !d.utility && !d.orderStatus &&
     d.items.every((i) => !i.itemName?.trim() && !i.quantity?.trim())
   );
 }

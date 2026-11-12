@@ -14,26 +14,9 @@ import {
   canonicalPbgClientName,
   canonicalProjectName,
 } from "@/lib/pbg/project-names";
+import { pbgStatus } from "@/lib/pbg/reminder-rules";
 import type { CellValue } from "@/lib/pbg/pbg-cell";
 import type { ColumnKey } from "@/lib/pbg/pbg-columns";
-
-/** Records whose status is "Closed" are hidden unless explicitly requested. */
-const EXCLUDE_CLOSED_WHERE = {
-  AND: [
-    {
-      OR: [
-        { status: null },
-        { status: { not: "closed", mode: "insensitive" as const } },
-      ],
-    },
-    {
-      OR: [
-        { status: null },
-        { status: { not: "close", mode: "insensitive" as const } },
-      ],
-    },
-  ],
-};
 
 /** A manually uploaded Bank Guarantee document stored on a PBG row. */
 export type PbgFile = {
@@ -68,6 +51,8 @@ export type PbgRecord = {
   validityOn: string | null;
   /** Derived: latest SupplyHistoryItem.date for this row (by BG no. or PO). */
   lastSupplyDate: string | null;
+  /** Derived: erpContractNo of that same supply-history row. */
+  contractNo: string | null;
   /** Derived: lastSupplyDate + validityOn duration. */
   extendedValidity: string | null;
   syncedAt: string | null;
@@ -105,8 +90,8 @@ function toNum(value: { toString(): string } | null): number | null {
 /**
  * Reads PBG rows from the database for the dashboard.
  *
- * Closed records are excluded by default so hidden rows never leave the
- * database. Pass `includeClosed: true` to load the full set.
+ * Rows that show as CLOSED are excluded by default. Pass `includeClosed: true`
+ * to load the full set.
  * Uncached: the calling component is wrapped in <Suspense> so it streams
  * at request time and always reflects the latest data.
  */
@@ -115,10 +100,11 @@ export async function getPbgData(
 ): Promise<PbgRecord[]> {
   const includeClosed = options.includeClosed ?? false;
 
-  const rows = await prisma.pbgData.findMany({
-    where: includeClosed ? undefined : EXCLUDE_CLOSED_WHERE,
-    orderBy: { id: "asc" },
-  });
+  const allRows = await prisma.pbgData.findMany({ orderBy: { id: "asc" } });
+  // Filtered here, not in SQL, so pbgStatus stays the one place the mapping lives.
+  const rows = includeClosed
+    ? allRows
+    : allRows.filter((row) => pbgStatus(row.status) !== "CLOSED");
 
   const { byPo, byBg } = await loadSupplyMatches(rows);
 
@@ -153,12 +139,13 @@ export async function getPbgData(
       contactPerson: row.contactPerson,
       contactNumber: row.contactNumber,
       remark: row.remark,
-      status: row.status,
+      status: pbgStatus(row.status),
       mailTrigger: row.mailTrigger,
       bankGuarantee: parsePbgFiles(row.bankGuarantee),
       orderList,
       validityOn: row.validityOn,
       lastSupplyDate,
+      contractNo: match?.contractNo ?? null,
       extendedValidity: computeExtendedValidity(row.validityOn, lastSupplyDate),
       syncedAt: row.syncedAt ? row.syncedAt.toISOString() : null,
       updatedAt: row.updatedAt ? row.updatedAt.toISOString() : null,
@@ -172,6 +159,7 @@ type SupplyMatch = {
   poNumber: string | null;
   poDate: string | null;
   orderList: string[];
+  contractNo: string | null;
 };
 
 /**
@@ -210,6 +198,7 @@ async function loadSupplyMatches(
       invoiceNo: true,
       partyDate: true,
       orderList: true,
+      erpContractNo: true,
     },
   });
 
@@ -224,6 +213,7 @@ async function loadSupplyMatches(
       poNumber: item.partyOrderNo,
       poDate: item.partyDate,
       orderList: splitCsvLinks(item.orderList),
+      contractNo: item.erpContractNo,
     };
 
     const poKey = normalizePo(item.partyOrderNo ?? "");
@@ -333,7 +323,7 @@ export async function syncPbgData(): Promise<PbgSyncResult> {
 
   let inserted = 0;
   let updated = 0;
-  let unchanged = 0;
+  const unchangedIds: bigint[] = [];
   const now = new Date();
 
   for (const row of candidates) {
@@ -375,7 +365,7 @@ export async function syncPbgData(): Promise<PbgSyncResult> {
     }
 
     if (Object.keys(patch).length === 0) {
-      unchanged += 1;
+      unchangedIds.push(existing.id);
       continue;
     }
 
@@ -385,11 +375,19 @@ export async function syncPbgData(): Promise<PbgSyncResult> {
     updated += 1;
   }
 
+  // syncedAt means "seen in the sheet", so the banner shows the real last sync.
+  if (unchangedIds.length > 0) {
+    await prisma.pbgData.updateMany({
+      where: { id: { in: unchangedIds } },
+      data: { syncedAt: now },
+    });
+  }
+
   return {
     totalInSheet: data.length,
     inserted,
     updated,
-    unchanged,
+    unchanged: unchangedIds.length,
     skippedBlankBgNo,
     duplicateInSheet,
     elapsedMs: Date.now() - startedAt,

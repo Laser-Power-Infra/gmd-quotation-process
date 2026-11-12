@@ -16,6 +16,7 @@
 
 import { runSupplyHistorySync, type SupplyHistorySyncResult } from "./supply-history-sync";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 import {
   runSupplyRateBackfill,
   type SupplyRateBackfillResult,
@@ -95,6 +96,7 @@ export async function runScheduledSupplyHistory(): Promise<ScheduledSupplyHistor
       );
     }
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    await recordJobRun(job, steps.masterSync.totalInSheet);
 
     return { success: true, job, startedAt, elapsedMs, steps, rateBackfillError };
   } finally {

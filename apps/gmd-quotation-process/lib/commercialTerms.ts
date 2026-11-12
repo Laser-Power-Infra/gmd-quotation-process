@@ -36,3 +36,11 @@ export function validationBlockedMessage(docketNumber: string | null | undefined
   const verb = missing.length === 1 ? "is" : "are";
   return `Cannot set Validation = Yes: ${joinLabels(missing)} ${verb} blank on ${where}. Fill them first so the correct cost loading is applied.`;
 }
+
+export const DEFAULT_TERMS = { paymentTerms: "30 days", inspection: "Our Scope @ 1%", pbg: "NA" };
+
+/** Terms for a party's next enquiry: copied from its latest one, each blank field falling back to the default. */
+export function termsForParty(last: CommercialTerms | null | undefined) {
+  const pick = (k: keyof typeof DEFAULT_TERMS) => (isBlankTerm(last?.[k]) ? DEFAULT_TERMS[k] : last![k]!);
+  return { paymentTerms: pick("paymentTerms"), inspection: pick("inspection"), pbg: pick("pbg") };
+}

@@ -110,9 +110,13 @@ export type ReportItem = {
   remarks: string;
 };
 
+export type TeamMember = { agency: string; name: string; designation: string };
+
 export type ReportData = {
   header: ReportHeader;
   items: ReportItem[];
+  /** Inspecting team; absent until a member is added in the editor. */
+  team?: TeamMember[];
   // Placeholders until QAP / drawing / MTC sources exist.
   qap: { qapNo: string; mfgStandard: string; bodyPressure: string; seatPressure: string; duration: string };
   tolerance: string;
@@ -287,4 +291,48 @@ export function checkReport(data: ReportData): ReportCheck[] {
     detail: inspDate === null || jirDate === null ? "date missing or unreadable" : undefined,
   });
   return checks;
+}
+
+const serialRange = (it: ReportItem) => [s(it.serialFrom), s(it.serialTo)].filter(Boolean).join(" – ");
+
+/** List cell: "150 serials: S-0001 – S-0100 …" plus one "item: from – to" per item. Null when no serial is filled. */
+export function serialSummary(items: ReportItem[]): { label: string; ranges: string[] } | null {
+  const filled = items.filter((it) => serialRange(it));
+  if (filled.length === 0) return null;
+  const counts = filled.map((it) => serialCount(it.serialFrom, it.serialTo));
+  // One uncountable range drops the total rather than under-count it.
+  const total = counts.includes(null) ? null : counts.reduce<number>((a, c) => a + (c ?? 0), 0);
+  const head = serialRange(filled[0]) + (filled.length > 1 ? " …" : "");
+  return {
+    label: total === null ? head : `${total} serial${total === 1 ? "" : "s"}: ${head}`,
+    ranges: filled.map((it) => `${it.itemCode}: ${serialRange(it)}`),
+  };
+}
+
+/** Team members as "agency, name, designation"; blank parts and blank members skipped. */
+export function teamLines(team: TeamMember[] | undefined): string[] {
+  return (team ?? []).map((m) => [m.agency, m.name, m.designation].map(s).filter(Boolean).join(", ")).filter(Boolean);
+}
+
+const SERIAL = /^(.*?)(\d+)$/;
+
+/** Parsed serial `m` lies in from..to: same prefix (any case) and its number within the range. */
+function serialInRange(m: RegExpExecArray, from: string, to: string): boolean {
+  const [a, b] = [from, to].map((v) => SERIAL.exec(s(v).toUpperCase()));
+  return !!(a && b && a[1] === m[1] && b[1] === m[1] && Number(a[2]) <= Number(m[2]) && Number(m[2]) <= Number(b[2]));
+}
+
+/** List search: the contract no. or a serial range end contains `q`, or `q` is a serial inside a range. Any case. */
+export function reportMatches(data: ReportData, q: string): boolean {
+  const needle = s(q).toUpperCase();
+  const has = (v: string) => s(v).toUpperCase().includes(needle);
+  // SERIAL backtracks quadratically on a long digit run, so parse the needle once and only when serial-sized.
+  const serial = needle.length <= 40 ? SERIAL.exec(needle) : null;
+  return (
+    has(data.header.contractNo) ||
+    data.items.some(
+      (it) =>
+        has(it.serialFrom) || has(it.serialTo) || (serial !== null && serialInRange(serial, it.serialFrom, it.serialTo)),
+    )
+  );
 }

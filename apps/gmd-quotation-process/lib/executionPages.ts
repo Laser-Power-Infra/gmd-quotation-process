@@ -6,6 +6,7 @@
  * quantities) and `SupplyHistoryItem` (one row per invoice line, from SALE BILL / MASTER).
  */
 import { parseGmdDate } from "./gmd_lib/dateParse";
+import { matchItemType } from "./itemTypePatterns";
 
 export const STAGES = ["Order", "Production", "Inspection", "Dispatch", "Bill", "Done"] as const;
 export type Stage = (typeof STAGES)[number];
@@ -40,6 +41,10 @@ export type ContractLine = {
   orderQty: number;
   mcQty: number;
   prodOrdQty: number;
+  /** prodOrdQty − balanceToProdEnt (@gmd/contract-review prodEntryQty); null when unknown. */
+  prodEntryQty: number | null;
+  /** Latest PROD ENTRY DUMP day, dd-MMM-yyyy. */
+  prodEntryDate: string | null;
   diQty: number;
   billedQty: number;
   balBillAgMc: number;
@@ -68,6 +73,22 @@ export function stageOf(l: Pick<ContractLine, "orderQty" | "prodOrdQty" | "diQty
   return "Order";
 }
 
+/**
+ * "Produced X of Y (last entry d)" for one contract: entry qty over prod order qty, both summed over
+ * the lines on a production order whose entry qty is known; null when there are none.
+ */
+export function producedSummary(lines: Pick<ContractLine, "prodOrdQty" | "prodEntryQty" | "prodEntryDate">[]): string | null {
+  const known = lines.filter((l) => l.prodEntryQty !== null && l.prodOrdQty > 0);
+  if (known.length === 0) return null;
+  const produced = known.reduce((sum, l) => sum + (l.prodEntryQty ?? 0), 0);
+  const ordered = known.reduce((sum, l) => sum + l.prodOrdQty, 0);
+  const last = lines
+    .map((l) => l.prodEntryDate)
+    .filter((d): d is string => parseGmdDate(d) !== null)
+    .sort((a, b) => parseGmdDate(b)!.getTime() - parseGmdDate(a)!.getTime())[0];
+  return `Produced ${produced} of ${ordered}${last ? ` (last entry ${last})` : ""}`;
+}
+
 /** Days since the contract date, or null when the date is unreadable. */
 export function ageDays(dateOfContract: string | null, today: Date): number | null {
   const d = parseGmdDate(dateOfContract);
@@ -94,7 +115,87 @@ export type SaleLine = {
   pressureClass: string;
   qty: number;
   value: number;
+  /** qty × unit cost (lib/lineCost.ts); null = cost missing, never zero. */
+  cost: number | null;
+  /** Minimum VA% for the valve type (lib/vaRules.ts); 0 when no rule applies. */
+  minVa: number;
+  /** qty × the Quotation app's cost for the contract line; null when there is none. */
+  quotedCost: number | null;
 };
+
+/**
+ * qty, sales value and the (quoted) cost of one invoice line. A blank sales value is as unknown as
+ * a blank cost: SALE BILL inserts carry no value until MASTER covers them, and costing such a line
+ * against ₹0 of sales would invent a loss. So the cost is null unless qty, value and rate all exist.
+ */
+export function saleMoney(quantity: string | null, value: string | null, unitCost: number | null, quotedUnitCost: number | null): Pick<SaleLine, "qty" | "value" | "cost" | "quotedCost"> {
+  const qty = num(quantity);
+  const priced = Number.isFinite(parseFloat(String(value ?? "").replace(/,/g, "").trim()));
+  const times = (unit: number | null) => (priced && qty > 0 && unit !== null ? qty * unit : null);
+  return { qty, value: num(value), cost: times(unitCost), quotedCost: times(quotedUnitCost) };
+}
+
+/** Running totals of one Sales Register cell: a group × month, a group's Total, or All. */
+export type GpCell = {
+  lines: number;
+  sales: number;
+  /** Lines with no cost: their sales count in `sales`, never in GP. */
+  missingLines: number;
+  missingSales: number;
+  /** Sales and cost of the costed lines, and Σ sales × min VA% ÷ 100 over them. */
+  costedSales: number;
+  cost: number;
+  minGp: number;
+  /** Sales and quoted cost of the lines the Quotation app has a cost for. */
+  quotedSales: number;
+  quotedCost: number;
+};
+
+export const emptyCell = (): GpCell => ({
+  lines: 0, sales: 0, missingLines: 0, missingSales: 0, costedSales: 0, cost: 0, minGp: 0, quotedSales: 0, quotedCost: 0,
+});
+
+/** Adds one line to a cell (in place). Every total, All included, is built this way, never from percentages. */
+export function addLine(c: GpCell, l: Pick<SaleLine, "value" | "cost" | "minVa" | "quotedCost">): GpCell {
+  c.lines++;
+  c.sales += l.value;
+  if (l.cost === null) {
+    c.missingLines++;
+    c.missingSales += l.value;
+  } else {
+    c.costedSales += l.value;
+    c.cost += l.cost;
+    c.minGp += (l.value * l.minVa) / 100;
+  }
+  if (l.quotedCost !== null) {
+    c.quotedSales += l.value;
+    c.quotedCost += l.quotedCost;
+  }
+  return c;
+}
+
+/**
+ * GP = sales − cost and GP % = GP ÷ sales × 100, over the costed lines only (weighted); null when
+ * the cell has no costed line. Red: GP below the sales-weighted minimum VA% of those lines.
+ */
+export function gpOf(c: GpCell): { gp: number | null; gpPct: number | null; red: boolean; quotedGpPct: number | null } {
+  const gp = c.lines > c.missingLines ? c.costedSales - c.cost : null;
+  return {
+    gp,
+    gpPct: gp !== null && c.costedSales !== 0 ? (gp * 100) / c.costedSales : null,
+    red: gp !== null && gp < c.minGp,
+    quotedGpPct: c.quotedSales !== 0 ? ((c.quotedSales - c.quotedCost) * 100) / c.quotedSales : null,
+  };
+}
+
+/**
+ * Sales Register valve type: the item master's type for the code (FullItem.itemType, else
+ * RawMaterial.l2ValveType), else the sheet's label read through the keyword patterns, else
+ * the label as written, else "-".
+ */
+export function valveTypeOf(itemMasterType: string | null | undefined, sheetLabel: string): string {
+  return itemMasterType?.trim() || matchItemType(sheetLabel) || sheetLabel.trim() || "-";
+}
 
 /** "12-Apr-26" / ISO -> "2026-04"; null when unreadable. */
 export function monthKey(date: string | null): string | null {

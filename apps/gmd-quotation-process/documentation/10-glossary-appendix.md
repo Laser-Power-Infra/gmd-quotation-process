@@ -18,6 +18,7 @@
 | **Execution Tracking** `ACC_MASTER` | `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` | Env | `ACC_MASTER_GID` 566954129 | `A1:ZZZ` | `FORMATTED_VALUE` | `getOAuthClient` | `schedular_function/acc-master-sync.ts` → `acc_master` |
 | **Execution Tracking** `SALE_BILL` | `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` | Env | `SALE_BILL_GID` 604337671 | `A1:ZZZ` | `FORMATTED_VALUE` | `getOAuthClient` | `lib/executionTrackingSync.ts` → `SupplyHistoryItem` |
 | **Execution Tracking** `MC` | `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` | Env | `MC_GID` 1910912133 | `A1:ZZZ` | `FORMATTED_VALUE` | `getOAuthClient` | `lib/erpContractNoSync.ts` → `SupplyHistoryItem.erpContractNo` |
+| **Execution Tracking** `PROD ENTRY DUMP` | `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` | Env | `PROD_ENTRY_DUMP_GID` 698397877 (optional; the default) | `A1:ZZZ` | `FORMATTED_VALUE` | `getOAuthClient` | `schedular_function/contract-review-prod-entry.ts` → `ContractReview.prodEntryDate` |
 
 **Env vars (set in deployment `.env`):** Only `DATABASE_URL` currently present locally `D:\gmd-quotation-process\.env`; expected but missing locally: `GOOGLE_SPREADSHEET_ID`, `SUPPLY_HISTORY_SPREADSHEET_ID`, `CONTRACT_SHEET_SPREADSHEET_ID`, `SALE_BILL_SPREADSHEET_ID`, `GDRIVE_*`, `OPENAI*`, `GEMINI*`, `N8N_WEBHOOK`, `GOOGLE_DRIVE` etc — see `lib/gmd_lib/google-sheets.ts`, `app/api/**/sync/route.ts`.
 
@@ -133,6 +134,7 @@ GMD_EXECUTION_TRACKING_SPREADSHEET_ID=...  # execution-tracking sync + acc-maste
 ACC_MASTER_GID=566954129             # tab gid: ACC_CODE -> ACC_NAME (acc_master table)
 SALE_BILL_GID=604337671              # tab gid: the per-invoice execution rows
 MC_GID=1910912133                    # tab gid: ORDER_VRNO (VRNO) -> CONTRACT_VRNO (erpContractNo)
+PROD_ENTRY_DUMP_GID=                 # optional tab gid, default 698397877: PROD ENTRY DUMP -> ContractReview.prodEntryDate
 
 # Google OAuth: all three required (client_id/client_secret from the OAuth client, refresh_token from the consented user)
 GOOGLE_CLIENT_ID=
@@ -153,6 +155,9 @@ AI_EXTRACTION_MODEL=gpt-6-luna
 
 # VA Alert
 N8N_WEBHOOK_URL=
+
+# Sync health alert: comma-separated recipients of the daily 10:00 IST mail (unset = no mail)
+SYNC_ALERT_TO=
 
 # Hard-coded (not env) kept in code:
 # 1LIC8GGgs7K7XWf8kUJFwvfOWpAkElYp6SJ83jk9wWGM GID 2142407502 (Item Creation + BOM cost)

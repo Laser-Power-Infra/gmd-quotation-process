@@ -7,6 +7,7 @@ import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { prisma } from "@/lib/prisma";
 import { getDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail, findBomForItem } from "@/lib/verifyBomLookup";
 import { splitCsvLinks } from "@/lib/gmd_lib/contract-order-links";
+import { latestByContractItem, quoteKey } from "@/lib/quotedCost";
 
 export async function selectContractReviewBomIdAction(
   id: string,
@@ -409,55 +410,12 @@ export async function backfillContractReviewCostFromQuotationAction(
         rate: true,
         costfromQuotation: true,
         vaPercentfromcost: true,
+        docketNo: true,
+        quotedRate: true,
       },
     });
-    const normalize = (v: string) => v.trim().replace(/\s+/g, " ").toUpperCase();
-    const codes = [
-      ...new Set(
-        items
-          .map((i) => i.itemCode)
-          .filter((c): c is string => !!c && c.trim() !== "")
-          .map(normalize),
-      ),
-    ];
-
-    // Walk the enquiryId relation: each item's parent enquiry provides the
-    // selectedContractNo + recency, so an item is only ever attributed to a
-    // contract its own enquiry actually selected.
-    const matches = await prisma.enquiryItem.findMany({
-      where: { erpItemCode: { in: codes } },
-      select: {
-        erpItemCode: true,
-        cost: true,
-        enquiry: {
-          select: {
-            selectedContractNo: true,
-            enquiryDate: true,
-            createdAt: true,
-          },
-        },
-      },
-    });
-
-    const bestByKey = new Map<
-      string,
-      { cost: string | null; recency: number }
-    >();
-    for (const m of matches) {
-      if (!m.erpItemCode || !m.enquiry) continue;
-      const itemKey = normalize(m.erpItemCode);
-      const recency =
-        m.enquiry.enquiryDate?.getTime() ?? m.enquiry.createdAt.getTime() ?? 0;
-      for (const cn of m.enquiry.selectedContractNo ?? []) {
-        const key = normalize(cn) + "||" + itemKey;
-        const prev = bestByKey.get(key);
-        if (prev && prev.recency >= recency) continue;
-        bestByKey.set(key, {
-          cost: m.cost !== null && m.cost !== undefined ? String(m.cost) : null,
-          recency,
-        });
-      }
-    }
+    // Each item's own enquiry selected the contract; the latest enquiry wins.
+    const bestByKey = await latestByContractItem(items.map((i) => i.itemCode));
 
     const computeVa = (cost: string | null, rate: string | null): string | null => {
       const costNum = Number(cost);
@@ -469,7 +427,7 @@ export async function backfillContractReviewCostFromQuotationAction(
 
     const updates = items
       .map((item) => {
-        const key = normalize(item.contractNo) + "||" + normalize(item.itemCode);
+        const key = quoteKey(item.contractNo, item.itemCode);
         const best = bestByKey.get(key);
         if (!best) return null;
         const cost = best.cost ?? null;
@@ -477,6 +435,8 @@ export async function backfillContractReviewCostFromQuotationAction(
         const data: Record<string, string | null> = {};
         if (item.costfromQuotation !== cost) data.costfromQuotation = cost;
         if (item.vaPercentfromcost !== va) data.vaPercentfromcost = va;
+        if (item.docketNo !== best.docketNo) data.docketNo = best.docketNo;
+        if (item.quotedRate !== best.quotedRate) data.quotedRate = best.quotedRate;
         if (Object.keys(data).length === 0) return null;
         return {
           id: item.id,
@@ -505,7 +465,7 @@ export async function backfillContractReviewCostFromQuotationAction(
 
     const data = items
       .map((item) => {
-        const key = normalize(item.contractNo) + "||" + normalize(item.itemCode);
+        const key = quoteKey(item.contractNo, item.itemCode);
         const best = bestByKey.get(key);
         if (!best) return null;
         const cost = best.cost ?? null;

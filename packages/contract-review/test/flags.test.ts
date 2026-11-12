@@ -50,6 +50,17 @@ test("editableFieldsFor allows PO NO and DATE OF CONTRACT only when not read-onl
   assert.equal(locked.has("dateOfContract"), false);
 });
 
+test("editableFieldsFor allows MC DATE and APPROVAL DATE unless the app disables them", () => {
+  const open = editableFieldsFor(resolveContractReviewFlags({}));
+  assert.equal(open.has("mcDate"), true);
+  assert.equal(open.has("approvalDate"), true);
+  const tender = editableFieldsFor(
+    resolveContractReviewFlags({ disabledColumns: ["MC DATE", "APPROVAL DATE"] }),
+  );
+  assert.equal(tender.has("mcDate"), false);
+  assert.equal(tender.has("approvalDate"), false);
+});
+
 test("updateContractReviewField rejects a field outside the given allow-list", async () => {
   const res = await updateContractReviewField("id", "remarks", "x", new Set(["item"]));
   assert.equal(res.success, false);

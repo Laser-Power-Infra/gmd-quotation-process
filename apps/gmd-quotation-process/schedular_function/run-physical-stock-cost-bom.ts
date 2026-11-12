@@ -34,6 +34,7 @@
 
 import { applyPhysicalStockDerivations } from "@/lib/gmd_lib/physical-stock-derive";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 import { syncPhysicalStockCodeOptions, type CodeOptionsSyncResult } from "./physical-stock-code-sync";
 
 export type JobName = "physical-stock-cost-bom";
@@ -93,6 +94,7 @@ export async function runScheduledPhysicalStockCostBom(): Promise<ScheduledPhysi
         `majorMinorUpdated=${steps.derive.majorMinorUpdated}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    await recordJobRun(job, steps.derive.scanned);
 
     return { success: true, job, startedAt, elapsedMs, steps };
   } finally {

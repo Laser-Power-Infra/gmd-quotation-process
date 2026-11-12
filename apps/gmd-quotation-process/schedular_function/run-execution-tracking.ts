@@ -12,6 +12,7 @@
  */
 
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 import {
   runExecutionTrackingStep,
   type ExecutionTrackingStepResult,
@@ -77,6 +78,7 @@ export async function runScheduledExecutionTracking(
         `ambiguous=${sync.ambiguous} failedWrites=${sync.failedWrites}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    if (!options.dryRun) await recordJobRun(job, sync.sheetRows);
 
     return { success: true, job, startedAt, elapsedMs, steps };
   } finally {

@@ -6,8 +6,13 @@ export const CONTRACT_REVIEW_HEADERS = [
   "ITEM_NAME",
   "PARTY ITEM NAME",
   "MC NO",
+  "MC DATE",
+  "APPROVAL DATE",
   "PO NO",
   "RATE",
+  "DOCKET NO",
+  "QUOTED RATE",
+  "RATE DIFF %", // derived on read (no DB column), like DATA INCOMPLETE
   "VALUE",
   "VA % FROM COST",
   "COST FROM QUOTATION",
@@ -67,6 +72,8 @@ export const CONTRACT_REVIEW_HEADERS = [
   "DI DATE",
   "ORDER LIST",
   "PROD ORDER NO",
+  "PROD ENTRY QTY", // derived on read (no DB column)
+  "PROD ENTRY DATE",
   "Upload Drawing",
   "Mails / Documents",
   // Hidden data carrier. Never rendered: listed in the page's hiddenColumns and
@@ -132,6 +139,33 @@ export function appendMailDoc(
 
 export const INCOMPLETE_HEADER = "DATA INCOMPLETE";
 export const INCOMPLETE_VALUE = "!";
+
+// The Match button overwrites EnquiryItem.quotedRate with the contract rate (the old rate is only in the change log).
+const QUOTED_RATE_HINT =
+  "Rate on the docket now. Dockets confirmed with Match carry the contract rate, so their difference shows 0.";
+
+/** Header hover text for the columns whose value needs a word of explanation. */
+export const CONTRACT_REVIEW_HEADER_HINTS: Record<string, string> = {
+  "QUOTED RATE": QUOTED_RATE_HINT,
+  "RATE DIFF %": QUOTED_RATE_HINT,
+};
+
+/** A sheet number ("1,200", "115.00"); NaN when blank or not a number. */
+const sheetNumber = (v: unknown) => parseFloat(String(v ?? "").replace(/,/g, ""));
+
+/** PROD ENTRY QTY = PROD ORD QTY − BALANCE TO PROD ENT; null when either is unknown or the result is negative. */
+export function prodEntryQty(prodOrdQty: unknown, balanceToProdEnt: unknown): number | null {
+  const qty = sheetNumber(prodOrdQty) - sheetNumber(balanceToProdEnt);
+  return Number.isFinite(qty) && qty >= 0 ? qty : null;
+}
+
+/** RATE DIFF % = (contract rate − quoted rate) ÷ quoted rate × 100, to 2 decimals; null without both rates or at quoted 0. */
+export function rateDiffPct(contractRate: unknown, quotedRate: unknown): number | null {
+  const contract = sheetNumber(contractRate);
+  const quoted = sheetNumber(quotedRate);
+  if (!Number.isFinite(contract) || !Number.isFinite(quoted) || quoted === 0) return null;
+  return Math.round(((contract - quoted) / quoted) * 10_000) / 100;
+}
 
 /** Blank date of contract, blank party, or rate exactly 0. */
 export function isDataIncomplete(row: {
@@ -227,6 +261,9 @@ export const CONTRACT_REVIEW_COLUMN_WIDTHS: Partial<
   // Dates.
   "DATE OF CONTRACT": 150,
   "DI DATE": 150,
+  "MC DATE": 150,
+  "APPROVAL DATE": 150,
+  "PROD ENTRY DATE": 150,
 
   // Short codes / identifiers.
   "MC NO": 110,
@@ -237,6 +274,7 @@ export const CONTRACT_REVIEW_COLUMN_WIDTHS: Partial<
   "BOM ID": 130,
   "RM CODE FOR GB": 130,
   "PROD ORDER NO": 150,
+  "DOCKET NO": 150,
   "OFFER NUMBER": 140,
   "INSPECTION NUMBER": 150,
 
@@ -264,6 +302,9 @@ export const CONTRACT_REVIEW_COLUMN_WIDTHS: Partial<
   "ITEM TYPE": 120,
   "VA % FROM COST": 100,
   "COST FROM QUOTATION": 150,
+  "QUOTED RATE": 110,
+  "RATE DIFF %": 100,
+  "PROD ENTRY QTY": 120,
   // Caption-driven: these columns are wide purely because the header is.
   "BAL BILL AG CONT": 100,
   "BAL BILL AG MC": 140,
@@ -301,9 +342,9 @@ export const CONTRACT_REVIEW_COLUMN_WIDTHS: Partial<
  * CONTRACT_REVIEW_HEADERS, so visual order follows the header array, not the
  * order groups are listed here. Declared in visual order for readability:
  *   Contract/PO (idx 0) -> Item Code/Type (idx 3) -> Item Names (idx 4)
- *   -> Item/Size/PN/CostRef (idx 33) -> BOM ID (idx 37)
- *   -> Physical Stock/RM Avail (idx 38) -> Actuator (idx 40)
- *   -> LC/RTGS/Bank (idx 44)
+ *   -> Item/Size/PN/CostRef (idx 38) -> BOM ID (idx 42)
+ *   -> Physical Stock/RM Avail (idx 43) -> Actuator (idx 45)
+ *   -> LC/RTGS/Bank (idx 49)
  *
  * These are purely a display concern: the headers array, the row serializer and
  * the header->DB field map are all untouched, so every *IDX constant and all
@@ -644,6 +685,11 @@ export function dbContractReviewToRow(item: {
   poNo: string | null;
   costfromQuotation: string | null;
   vaPercentfromcost: string | null;
+  docketNo: string | null;
+  quotedRate: string | null;
+  mcDate: string | null;
+  approvalDate: string | null;
+  prodEntryDate: string | null;
   productionOrderNumber: string | null;
   diagramUrl: string | null;
   mailDocs: string | null;
@@ -655,8 +701,9 @@ export function dbContractReviewToRow(item: {
     item.dateOfContract,
     item.partyNameDump,
     item.itemCode, item.itemName, item.partyItemName,
-    item.mcNo, item.poNo,
+    item.mcNo, item.mcDate, item.approvalDate, item.poNo,
     item.rate,
+    item.docketNo, item.quotedRate, rateDiffPct(item.rate, item.quotedRate),
     item.value,
     item.vaPercentfromcost,
     item.costfromQuotation,
@@ -694,6 +741,7 @@ export function dbContractReviewToRow(item: {
     (item.diDate ?? []).join(", "),
     (item.orderList ?? []).join(", "),
     item.productionOrderNumber,
+    prodEntryQty(item.prodOrdQty, item.balanceToProdEnt), item.prodEntryDate,
     item.diagramUrl,
     item.mailDocs,
     item.cBatch,
@@ -706,6 +754,8 @@ export const CONTRACT_REVIEW_HEADER_TO_DB_FIELD: Record<string, string> = {
   "CONTRACT NO": "contractNo",
   "PARTY NAME": "partyNameDump",
   "MC NO": "mcNo",
+  "MC DATE": "mcDate",
+  "APPROVAL DATE": "approvalDate",
   "PO NO": "poNo",
   "ITEM_CODE": "itemCode",
   "ITEM_NAME": "itemName",

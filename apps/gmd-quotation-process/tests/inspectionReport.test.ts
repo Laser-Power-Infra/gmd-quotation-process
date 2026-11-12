@@ -6,8 +6,13 @@ import {
   checkReport,
   groupOfferRows,
   parseReportDate,
+  reportMatches,
   serialCount,
+  serialSummary,
+  teamLines,
   type OfferLine,
+  type ReportData,
+  type ReportItem,
 } from '../lib/inspectionReport.js'
 
 const line = (o: Partial<OfferLine>): OfferLine =>
@@ -62,4 +67,49 @@ test('draft is filled from ContractReview and checks gate a complete report', ()
   // 496 - 246 - 251 < 0: over the contract balance.
   draft.items[0].qtyOffered = '251'
   assert.ok(checkReport(draft).some((c) => !c.ok && c.label.includes('contract balance')))
+})
+
+const item = (itemCode: string, serialFrom: string, serialTo: string) =>
+  ({ itemCode, serialFrom, serialTo }) as ReportItem
+
+test('serial summary: total and first range, every item range for the expand', () => {
+  assert.equal(serialSummary([item('IT1', '', ' ')]), null)
+  assert.deepEqual(serialSummary([item('IT1', 'S-0001', 'S-0250')]), {
+    label: '250 serials: S-0001 – S-0250',
+    ranges: ['IT1: S-0001 – S-0250'],
+  })
+  assert.deepEqual(
+    serialSummary([item('IT1', 'S-0001', 'S-0100'), item('IT2', '', ''), item('IT3', 'S-0101', 'S-0150')]),
+    { label: '150 serials: S-0001 – S-0100 …', ranges: ['IT1: S-0001 – S-0100', 'IT3: S-0101 – S-0150'] },
+  )
+  assert.equal(serialSummary([item('IT1', 'S-5', 'S-5')])!.label, '1 serial: S-5 – S-5')
+  // A range that cannot be counted drops the total rather than under-count it.
+  assert.equal(serialSummary([item('IT1', 'S-0001', 'S-0100'), item('IT2', 'S-7', '')])!.label, 'S-0001 – S-0100 …')
+})
+
+test('inspecting team lines skip blank parts and blank members', () => {
+  assert.deepEqual(teamLines(undefined), [])
+  assert.deepEqual(
+    teamLines([
+      { agency: ' RITES ', name: 'R. Sharma', designation: 'AE' },
+      { agency: '', name: ' ', designation: '' },
+      { agency: 'PHED', name: '', designation: 'EE' },
+    ]),
+    ['RITES, R. Sharma, AE', 'PHED, EE'],
+  )
+})
+
+test('list search matches the contract no. and serials, including one inside a range', () => {
+  const data = { header: { contractNo: 'SD26Y-1' }, items: [item('IT1', 'GMD-0101', 'GMD-0150')] } as ReportData
+  for (const q of ['sd26y', 'GMD-0101', 'gmd-0125', 'GMD-125', 'GMD-01']) assert.ok(reportMatches(data, q), q)
+  for (const q of ['GMD-0151', 'GMD-0100', 'XYZ-0125', 'PO1']) assert.ok(!reportMatches(data, q), q)
+})
+
+test('a huge digit search returns fast instead of backtracking the serial regex', () => {
+  const items = Array.from({ length: 100 }, () => item('IT1', 'GMD-0101', 'GMD-0150'))
+  const data = { header: { contractNo: 'SD26Y-1' }, items } as ReportData
+  const t0 = performance.now()
+  assert.equal(reportMatches(data, '1'.repeat(16000) + 'A'), false)
+  const ms = performance.now() - t0
+  assert.ok(ms < 100, `took ${ms.toFixed(0)} ms`)
 })

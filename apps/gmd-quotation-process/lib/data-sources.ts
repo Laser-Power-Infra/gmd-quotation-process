@@ -1181,7 +1181,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     file: "app/actions/contractReview.ts:backfillContractReviewCostFromQuotationAction",
     line: "3739-3790",
     purpose:
-      "Pulls cost and VA% from the winning quotation for rows that have a contract number.",
+      "Pulls cost, VA%, docket no and quoted rate from the winning quotation for rows that have a contract number.",
     direction: "db-to-db",
     trigger: "page-load",
     triggerLabel: "Page load (every visit)",
@@ -1189,8 +1189,29 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     columns: cols(
       ["COST FROM QUOTATION", "costfromQuotation", "from EnquiryItem.cost"],
       ["VA % FROM COST", "vaPercentfromcost"],
+      ["DOCKET NO", "docketNo", "from Enquiry.docketNumber; links to the docket on Quotations"],
+      ["QUOTED RATE", "quotedRate", "from EnquiryItem.quotedRate, which the Match button sets to the contract rate (RATE DIFF % then reads 0); RATE DIFF % is computed on read"],
     ),
-    writePolicy: "Writes only the two cost columns, on rows with a non-blank CONTRACT NO.",
+    writePolicy: "Writes only these four columns, on rows with a non-blank CONTRACT NO.",
+    cadence: "every-page-load",
+  },
+  {
+    id: "cr-pageload-mail-dates",
+    name: "Page-load MC / approval dates",
+    kind: "derived",
+    file: "lib/contractReviewBackfill.ts (mailTagDay in lib/contractReviewLinks.ts)",
+    purpose:
+      "Fills MC DATE and APPROVAL DATE from the day (IST) of the first MC / Drawing approval mail tag.",
+    direction: "db-to-db",
+    trigger: "page-load",
+    triggerLabel: "Page load (every visit)",
+    dbModels: ["ContractReview"],
+    columns: cols(
+      ["MC DATE", "mcDate", "from the first MC tag in Mails / Documents"],
+      ["APPROVAL DATE", "approvalDate", "from the first Drawing approval tag"],
+    ),
+    writePolicy:
+      "Writes only where the DB cell is still null, so a typed date is never overwritten. Both stay editable.",
     cadence: "every-page-load",
   },
   {
@@ -1289,9 +1310,11 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
       ["Issuing bank name", "issuingBankName"],
       ["PAYMENT TERMS", "paymentTerms"],
       ["Remarks", "remarks"],
+      ["MC DATE", "mcDate", "a typed date is never overwritten by the mail-tag fill"],
+      ["APPROVAL DATE", "approvalDate", "a typed date is never overwritten by the mail-tag fill"],
     ),
     writePolicy:
-      "Mapped through CONTRACT_REVIEW_HEADER_TO_DB_FIELD. Only the 18 columns in the page's editableColumns list can be written.",
+      "Mapped through CONTRACT_REVIEW_HEADER_TO_DB_FIELD. Only the columns in the page's editableColumns list can be written.",
     cadence: "on-demand",
   },
   {
@@ -3190,6 +3213,26 @@ export const DATA_SOURCES: DataSource[] = [
         resolvedBy: "gid",
         note: "positional mapping A=VRNO, C=ITEM_CODE, G=CONTRACT_VRNO, H=INSPE_VRNO, K=DI_DATE; asserted against these header names at startup so a shifted column aborts the run",
         file: "scripts/sync-ic-dump.ts",
+      },
+    ],
+  },
+  {
+    page: "Contract Review",
+    route: "/contract_review",
+    dashboardName: "Contract Review (PROD ENTRY DUMP)",
+    sheetName: "BOM MAST ERP",
+    purpose:
+      "PROD ENTRY DUMP. The latest VRDATE per ORDER_VRNO + ITEM_CODE becomes ContractReview.prodEntryDate on rows whose PROD ORDER NO + ITEM_CODE match (contract-review job, step 6). PROD ENTRY QTY is PROD ORD QTY − BALANCE TO PROD ENT, computed on read.",
+    sheetId: BOM_MAST_ERP_ID,
+    tabs: [
+      {
+        name: "PROD ENTRY DUMP",
+        gid: "698397877",
+        headerRow: 1,
+        range: "A1:ZZZ",
+        resolvedBy: "gid",
+        note: "ITEM_CODE, VRDATE, ORDER_VRNO by header name; PROD_ENTRY_DUMP_GID overrides the gid; a blank or unreadable date never clears a stored one",
+        file: "schedular_function/contract-review-prod-entry.ts",
       },
     ],
   },

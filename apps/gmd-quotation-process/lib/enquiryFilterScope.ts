@@ -9,6 +9,7 @@ const ENQUIRY_LEVEL_FILTERS = new Set([
   "enquiryDateFrom",
   "enquiryDateTo",
   "docketNumber",
+  "docketExact",
   "partyNames",
   "enquiryType",
   "state",

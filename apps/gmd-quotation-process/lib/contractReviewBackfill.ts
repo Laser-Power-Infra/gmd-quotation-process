@@ -1,4 +1,6 @@
 import "server-only";
+import { prisma as tenderPrisma } from "@gmd/db-tender";
+import { MAIL_DOCS_COLUMN, type MailDocCategory } from "@gmd/contract-review/columns";
 import { columnAccess } from "@gmd/contract-review/flags";
 import type { ActionResult } from "@gmd/contract-review/types";
 import {
@@ -13,6 +15,7 @@ import {
   invalidateContractReviewCache,
 } from "@/lib/contractReviewView";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
+import { mailTagDay } from "@/lib/contractReviewLinks";
 import { autoAssignContractReviewBomIdFromActuator, backfillContractReviewCostFromQuotationAction, backfillContractReviewNoUseBatchAction, selectContractReviewBomIdAction, syncContractReviewEnquiryFieldsBatchAction } from "@/app/actions/contractReview";
 import {
   backfillContractReviewClearanceMcPendingBatchAction,
@@ -86,6 +89,27 @@ async function backfillAll(): Promise<ActionResult> {
   if (["STATE", "UTILITY", "PROJECT REFERENCE"].some(isEnabled)) {
     tasks.push(syncContractReviewEnquiryFieldsBatchAction(ids));
   }
+  // MC DATE / APPROVAL DATE from the mail tags. `where: null` re-checks the DB cell, so a date
+  // typed after these cached rows were read is never overwritten.
+  // shortcut: a newly added tag's date appears after the next run (next page open, at most once a
+  // minute), not at once; fill it in addContractMailDoc too if that lag bothers anyone.
+  const mailDocsIdx = data.headers.indexOf(MAIL_DOCS_COLUMN);
+  const tagDays = (header: string, tag: MailDocCategory) => {
+    const idx = data.headers.indexOf(header);
+    if (!isEnabled(header)) return [];
+    return ids.flatMap((id, i) => {
+      const day = mailTagDay(rows[i][idx], rows[i][mailDocsIdx], tag);
+      return day ? [{ id, day }] : [];
+    });
+  };
+  tasks.push(
+    inChunks(tagDays("MC DATE", "MC"), 10, ({ id, day }) =>
+      tenderPrisma.contractReview.updateMany({ where: { id, mcDate: null }, data: { mcDate: day } }),
+    ),
+    inChunks(tagDays("APPROVAL DATE", "Drawing approval"), 10, ({ id, day }) =>
+      tenderPrisma.contractReview.updateMany({ where: { id, approvalDate: null }, data: { approvalDate: day } }),
+    ),
+  );
   // These wrappers re-check the column flags themselves.
   tasks.push(backfillContractReviewOfferPendingDoneBatchAction(ids));
   tasks.push(backfillContractReviewInspectionBatchAction(ids));

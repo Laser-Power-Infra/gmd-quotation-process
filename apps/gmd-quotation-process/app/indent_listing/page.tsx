@@ -156,7 +156,7 @@ export default function IndentListingPage() {
       <GMDUpdateHeader
         title="INDENT CHECKING"
         totalRows={data?.totalRows ?? 0}
-        syncedAt={data?.syncedAt ?? undefined}
+        syncedAt={data?.syncedAt}
         warnIfStale
       />
       <div className="px-6 py-4 flex items-center gap-3">

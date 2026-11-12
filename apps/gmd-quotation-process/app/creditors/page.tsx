@@ -59,7 +59,7 @@ export default function CreditorsPage() {
 
   return (
     <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
-      <GMDUpdateHeader title="CREDITORS" totalRows={data?.rows.length ?? 0} syncedAt={data?.syncedAt ?? undefined} onSync={onSync} syncing={syncing} warnIfStale />
+      <GMDUpdateHeader title="CREDITORS" totalRows={data?.rows.length ?? 0} syncedAt={data?.syncedAt} onSync={onSync} syncing={syncing} warnIfStale />
       {error && <div className="px-6 py-4 text-sm text-red-600">{error}</div>}
       <div className="flex-1 min-h-0 px-6 pb-6 flex gap-4">
         <div className="flex-1 min-h-0">

@@ -48,7 +48,7 @@ export default function ErpBomTab() {
       <GMDUpdateHeader
         title="ERP BOM"
         totalRows={data?.totalRows ?? 0}
-        syncedAt={data?.syncedAt ?? undefined}
+        syncedAt={data?.syncedAt}
         onSync={fetchData}
         syncing={loading}
       />

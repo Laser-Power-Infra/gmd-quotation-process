@@ -63,10 +63,13 @@ test('headers are unique', () => {
   }
 })
 
+/** Numbers the derived cells (RATE DIFF %, PROD ENTRY QTY) can compute a value of their own from. */
+const NUMERIC_INPUTS = { rate: '115', quotedRate: '100', prodOrdQty: '10', balanceToProdEnt: '4' }
+
 test('the serializer reads each source field at most once', () => {
   // Two cells reading the same field means one header has no field of its own
   // and another is silently duplicated.
-  const row = dbContractReviewToRow(makeRow()) as string[]
+  const row = dbContractReviewToRow(makeRow(NUMERIC_INPUTS)) as string[]
   assert.equal(row.length, CONTRACT_REVIEW_HEADERS.length)
   const seen = new Set<string>()
   for (const field of row) {
@@ -148,17 +151,37 @@ test('the collapsed groups hold their documented anchor positions', () => {
   const headers = CONTRACT_REVIEW_HEADERS as readonly string[]
   assert.equal(headers.indexOf('CONTRACT NO'), 0)
   assert.equal(headers.indexOf('ITEM_NAME'), 4)
-  assert.equal(headers.indexOf('Item'), 33)
-  assert.equal(headers.indexOf('BOM ID'), 37)
-  assert.equal(headers.indexOf('Actuator'), 40)
-  assert.equal(headers.indexOf('LC/RTGS REF NO'), 44)
+  assert.equal(headers.indexOf('Item'), 38)
+  assert.equal(headers.indexOf('BOM ID'), 42)
+  assert.equal(headers.indexOf('Actuator'), 45)
+  assert.equal(headers.indexOf('LC/RTGS REF NO'), 49)
 
   // The anchors are where each group actually renders, so assert them from the
   // group data rather than restating the numbers.
   const anchors = CONTRACT_REVIEW_COLUMN_GROUPS.map(
     (g) => headers.indexOf(g.children[0].header),
   )
-  assert.deepEqual(anchors, [0, 3, 4, 33, 38, 40, 44])
+  assert.deepEqual(anchors, [0, 3, 4, 38, 43, 45, 49])
+})
+
+test('interlinking columns: stored fields in place, RATE DIFF % and PROD ENTRY QTY derived on read', () => {
+  const row = dbContractReviewToRow(makeRow(NUMERIC_INPUTS))
+  assert.equal(rowByHeader(row, 'DOCKET NO'), 'docketNo')
+  assert.equal(rowByHeader(row, 'QUOTED RATE'), '100')
+  assert.equal(rowByHeader(row, 'RATE DIFF %'), 15)
+  assert.equal(rowByHeader(row, 'MC DATE'), 'mcDate')
+  assert.equal(rowByHeader(row, 'APPROVAL DATE'), 'approvalDate')
+  assert.equal(rowByHeader(row, 'PROD ENTRY QTY'), 6)
+  assert.equal(rowByHeader(row, 'PROD ENTRY DATE'), 'prodEntryDate')
+
+  // Blank inputs leave the derived cells blank rather than showing 0 or NaN.
+  const blank = dbContractReviewToRow(makeRow({ quotedRate: '', balanceToProdEnt: '' }))
+  assert.equal(rowByHeader(blank, 'RATE DIFF %'), null)
+  assert.equal(rowByHeader(blank, 'PROD ENTRY QTY'), null)
+
+  // The two dates are edited inline, which needs a DB field to write.
+  assert.equal(CONTRACT_REVIEW_HEADER_TO_DB_FIELD['MC DATE'], 'mcDate')
+  assert.equal(CONTRACT_REVIEW_HEADER_TO_DB_FIELD['APPROVAL DATE'], 'approvalDate')
 })
 
 test('every collapsed group child is a real header', () => {

@@ -10,6 +10,7 @@
  */
 
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 import {
   DEBTORS_GID,
   mapDebtorRow,
@@ -256,6 +257,7 @@ export async function runScheduledLedgerSync(
       );
     }
     console.log(`########## [SCHEDULER] ledger done in ${elapsedMs}ms ##########\n`);
+    if (success && !options.dryRun) await recordJobRun("ledger");
     return { success, job: "ledger", startedAt, elapsedMs, report };
   } finally {
     inFlight = false;

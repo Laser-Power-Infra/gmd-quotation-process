@@ -31,8 +31,8 @@ Copy both into the infra repo (keep the `infra/` layout).
    app `.env`.
 4. Add the job block from `pbg-reminders.ofelia.ini` to the Ofelia config:
    ```ini
-   [job-local pbg-reminders]
-   schedule = 0 9 * * *
+   [job-local "pbg-reminders"]
+   schedule = 0 0 9 * * *
    command = /bin/sh /infra/pbg-reminders.sh
    ```
 5. Ensure the Ofelia container can reach the app on the same Docker network:
@@ -42,8 +42,10 @@ Copy both into the infra repo (keep the `infra/` layout).
 
 ## Timezone
 
-- Container on IST: use `schedule = 0 9 * * *` (09:00 IST).
-- Container on UTC: use `schedule = 30 3 * * *` (09:00 IST).
+- Container on IST: use `schedule = 0 0 9 * * *` (09:00 IST).
+- Container on UTC: use `schedule = 0 30 3 * * *` (09:00 IST).
+
+Ofelia's cron has six fields, starting with seconds: `sec min hour dom mon dow`.
 
 Either way, run it **daily**. Do not schedule it weekly; the app calculates the
 7-day PO cadence from `pbg_reminder_log`.
@@ -53,7 +55,8 @@ Either way, run it **daily**. Do not schedule it weekly; the app calculates the
 On every daily run:
 
 - `mail_trigger = CONTINUE` only.
-- `OPEN`, `Running`, `Expired` only; `CLOSED` is excluded.
+- Status shown as `RUNNING` only; anything shown as `CLOSED` (closed,
+  cancelled or returned) is excluded.
 - **30 days before expiry:** one mail per BG.
 - **On expiry date:** first expired mail per PO + contact group.
 - **Every 7 days:** all currently expired, non-closed BGs under that PO are

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import { useDebounce } from "@/lib/hooks/useDebounce";
 import { toast } from "sonner";
 import { Plus, Search, Trash } from "lucide-react";
@@ -22,7 +22,8 @@ import { closeNewEnquiryDialog } from "@/lib/dialogsSlice";
 import { useSession } from "next-auth/react";
 import { clearDraft, isDraftEmpty, parseDraft, readDraftRaw, saveDraft, type NewEnquiryDraft } from "@/lib/newEnquiryDraft";
 import { looseIncludes } from "@/lib/squish";
-import { addPartyOptionAction } from "@/app/actions/enquiry";
+import { addPartyOptionAction, getLastPartyTermsAction } from "@/app/actions/enquiry";
+import { DEFAULT_TERMS, termsForParty } from "@/lib/commercialTerms";
 import { useUtilityDefaultStates } from "@/lib/hooks/useUtilityDefaultStates";
 
 interface NewEnquiryDialogProps {
@@ -109,9 +110,9 @@ export default function NewEnquiryDialog({
   // Enquiry-level metadata states
   const [enquiryType, setEnquiryType] = useState("");
   const [state, setState] = useState("");
-  const [paymentTerms, setPaymentTerms] = useState("");
-  const [inspection, setInspection] = useState("");
-  const [pbg, setPbg] = useState("");
+  const [paymentTerms, setPaymentTerms] = useState(DEFAULT_TERMS.paymentTerms);
+  const [inspection, setInspection] = useState(DEFAULT_TERMS.inspection);
+  const [pbg, setPbg] = useState(DEFAULT_TERMS.pbg);
   const [utility, setUtility] = useState("");
   const utilityDefaultStates = useUtilityDefaultStates();
   // Picking a utility fills a blank State with its master default (still editable).
@@ -147,9 +148,9 @@ export default function NewEnquiryDialog({
     setEnquiryDate(draft?.enquiryDate || today());
     setEnquiryType(draft?.enquiryType ?? "");
     setState(draft?.state ?? "");
-    setPaymentTerms(draft?.paymentTerms ?? "");
-    setInspection(draft?.inspection ?? "");
-    setPbg(draft?.pbg ?? "");
+    setPaymentTerms(draft?.paymentTerms ?? DEFAULT_TERMS.paymentTerms);
+    setInspection(draft?.inspection ?? DEFAULT_TERMS.inspection);
+    setPbg(draft?.pbg ?? DEFAULT_TERMS.pbg);
     setUtility(draft?.utility ?? "");
     setOrderStatus(draft?.orderStatus ?? "");
     setFiles([]);
@@ -372,6 +373,18 @@ export default function NewEnquiryDialog({
     newPartyName.length > 0 &&
     !allParties.some((name) => name.toLowerCase() === newPartyName.toLowerCase());
 
+  // Latest party asked for; a slower reply for an earlier pick must not overwrite the newer one.
+  const latestParty = useRef("");
+  const prefillTerms = async (name: string) => {
+    latestParty.current = name;
+    const res = await getLastPartyTermsAction(name);
+    if (!res.success || latestParty.current !== name) return;
+    const t = termsForParty(res.terms);
+    setPaymentTerms(t.paymentTerms);
+    setInspection(t.inspection);
+    setPbg(t.pbg);
+  };
+
   const handleAddParty = async () => {
     setIsAddingParty(true);
     const res = await addPartyOptionAction(newPartyName);
@@ -382,6 +395,7 @@ export default function NewEnquiryDialog({
     }
     setAddedParties((prev) => [...prev, res.value]);
     setPartyName(res.value);
+    prefillTerms(res.value);
     setIsDropdownOpen(false);
     setPartySearch("");
     toast.success(`Added "${res.value}" to the party list.`);
@@ -508,6 +522,7 @@ export default function NewEnquiryDialog({
                                 type="button"
                                 onClick={() => {
                                   setPartyName(name);
+                                  prefillTerms(name);
                                   setIsDropdownOpen(false);
                                   setPartySearch("");
                                 }}

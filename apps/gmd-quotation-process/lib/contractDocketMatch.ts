@@ -7,6 +7,8 @@
  *    docket split over several contracts, e.g. 312 -> SD26Y-00067..70, still adds up).
  *  - `findCodeMismatches`: a docket line whose (size, qty) matches a line of its
  *    linked contracts but whose item code is on none of those lines.
+ *  - `pickAutoLink` / `planAutoLinks`: the nightly job's rule, the one docket the ranking scores
+ *    as a full match, decided for every contract against the same start-of-run state.
  */
 
 /** Same rule as `normalizeContractKey` in gmd_lib/contract-review-enquiry-backfill (which pulls in Prisma). */
@@ -180,6 +182,65 @@ export function rankDocketsForContracts(
         b.enquiryDate.localeCompare(a.enquiryDate),
     )
     .slice(0, top);
+}
+
+export type AutoLinkPick =
+  | { outcome: "linked"; docketId: string }
+  | { outcome: "ambiguous" | "partial" | "alreadyLinked" };
+
+/**
+ * Nightly auto-link (docket-auto-link job): link only when exactly one of the party's `dockets`
+ * has the contract's total qty on every one of its item codes, scored as the Match button ranks
+ * them. Two such dockets, a partial best match, or a contract some docket already carries
+ * (`linkedContracts` holds normalised keys) is left to the Match button.
+ */
+export function pickAutoLink(
+  contractNo: string,
+  dockets: DocketForMatch[],
+  linesByContract: Map<string, ContractLine[]>,
+  linkedContracts: Set<string>,
+): AutoLinkPick {
+  if (linkedContracts.has(normalizeContractKey(contractNo))) return { outcome: "alreadyLinked" };
+  // The ranking skips a line with no code or qty, so such a contract is never a full match.
+  if (linesFor([contractNo], linesByContract).some((l) => !codeKey(l.itemCode) || !Number.isFinite(parseNum(l.orderQty)))) {
+    return { outcome: "partial" };
+  }
+  const full = rankDocketsForContracts([contractNo], dockets, linesByContract, Infinity).filter(
+    (s) => s.matchedCodes.length === s.contractCodes,
+  );
+  if (full.length > 1) return { outcome: "ambiguous" };
+  return full.length === 1 ? { outcome: "linked", docketId: full[0].id } : { outcome: "partial" };
+}
+
+/**
+ * The nightly job's plan: every contract's `pickAutoLink` against the same start-of-run
+ * state, so the order they are looked at never matters. Contracts that pick the same docket
+ * all link only if each still picks it with the others carried too (a docket split over
+ * several contracts); otherwise all of them are ambiguous. One pick per contract, in order.
+ */
+export function planAutoLinks(
+  contracts: { contractNo: string; dockets: DocketForMatch[] }[],
+  linesByContract: Map<string, ContractLine[]>,
+  linkedContracts: Set<string>,
+): AutoLinkPick[] {
+  const picks = contracts.map((c) => pickAutoLink(c.contractNo, c.dockets, linesByContract, linkedContracts));
+  const byDocket = new Map<string, number[]>();
+  picks.forEach((p, i) => {
+    if (p.outcome === "linked") byDocket.set(p.docketId, [...(byDocket.get(p.docketId) ?? []), i]);
+  });
+  for (const [docketId, group] of byDocket) {
+    if (group.length < 2) continue;
+    const split = group.every((i) => {
+      const others = group.filter((j) => j !== i).map((j) => contracts[j].contractNo);
+      const dockets = contracts[i].dockets.map((d) =>
+        d.id === docketId ? { ...d, selectedContractNo: mergeContractNos(d.selectedContractNo, others) } : d,
+      );
+      const again = pickAutoLink(contracts[i].contractNo, dockets, linesByContract, linkedContracts);
+      return again.outcome === "linked" && again.docketId === docketId;
+    });
+    if (!split) for (const i of group) picks[i] = { outcome: "ambiguous" };
+  }
+  return picks;
 }
 
 /**

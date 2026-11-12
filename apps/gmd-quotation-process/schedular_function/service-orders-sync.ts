@@ -11,6 +11,7 @@
  */
 
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 import { ITEM_MASTER_GID, serviceItemsFrom } from "@/lib/serviceOrders";
 
 export type ServiceOrdersPartReport = { read: number; written: number; skipped: number; inDb: number; error?: string };
@@ -94,7 +95,9 @@ export async function runScheduledServiceOrders(options: { dryRun?: boolean } = 
       console.log(`[scheduler] service-orders ${k}: read=${p.read} written=${p.written} skipped=${p.skipped}` + (p.error ? ` ERROR=${p.error}` : ""));
     }
     console.log(`########## [SCHEDULER] service-orders done in ${elapsedMs}ms ##########\n`);
-    return { success: Object.values(report).every((p) => !p.error), job: "service-orders", startedAt, elapsedMs, report };
+    const success = Object.values(report).every((p) => !p.error);
+    if (success && !options.dryRun) await recordJobRun("service-orders", report.serviceItems.written);
+    return { success, job: "service-orders", startedAt, elapsedMs, report };
   } finally {
     inFlight = false;
   }

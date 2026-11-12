@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { shallowEqual } from "react-redux";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import {
@@ -12,7 +13,7 @@ import {
   selectEnquirySummary,
 } from "@/lib/enquiriesSlice";
 import { setEnquiryStage } from "@/lib/enquiriesSlice";
-import { setFilter } from "@/lib/filtersSlice";
+import { setExactDocket, setFilter } from "@/lib/filtersSlice";
 import { setPage } from "@/lib/paginationSlice";
 import { setAnalyticsOn, setAnalyticsSidebarCollapsed, setClosedBomIds } from "@/lib/uiSlice";
 import type { DropdownOptions } from "@/lib/types";
@@ -129,6 +130,13 @@ export default function DashboardContainer({
     hydratedRef.current = true;
     dispatch(hydrateEnquiryPage({ ...initialPage, key: initialQueryKey }));
   }, [initialPage, initialQueryKey, dispatch]);
+
+  // Contract Review's DOCKET NO links here as /?docket=<no>: that docket only, matched exactly
+  // (docketExact); the typed Docket no box stays a partial match.
+  const docketParam = useSearchParams().get("docket");
+  useEffect(() => {
+    if (docketParam) dispatch(setExactDocket(docketParam));
+  }, [docketParam, dispatch]);
 
   // A new filter/sort/page combination loads exactly one page. Totals are only
   // recomputed when the filters change, not when paging or sorting.

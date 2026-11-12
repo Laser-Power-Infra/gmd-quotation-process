@@ -147,6 +147,8 @@ export interface FiltersState {
   enquiryDateFrom: string;
   enquiryDateTo: string;
   docketNumber: string;
+  /** Exact docket from a Contract Review DOCKET NO link (`/?docket=`); "" = none. */
+  docketExact: string;
   partyNames: string[];
   enquiryType: string[];
   state: string[];

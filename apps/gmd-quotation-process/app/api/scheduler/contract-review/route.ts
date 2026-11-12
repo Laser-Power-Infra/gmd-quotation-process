@@ -1,9 +1,11 @@
 /**
  * Ofelia entry point for the Contract Review hourly sync.
  *
- * Runs four steps in order: CONTRACTS + DUMP sheet sync, Enquiry field
- * backfill, RM AVAIL / physical stock, then the INSPECTION OFFER
- * DUMP offer / inspection / DI union.
+ * Runs seven steps in order: CONTRACTS + DUMP sheet sync (1), ITEM MASTER ERP
+ * item names (1b), Enquiry field backfill (2), RM AVAIL / physical stock (3),
+ * the INSPECTION OFFER DUMP offer / inspection / DI union (4), inspection
+ * offers + draft reports (5), then PROD ENTRY DUMP -> prodEntryDate (6). A
+ * step 6 failure comes back as a `warnings` entry, not a 500.
  *
  * Deliberately thin: all logic lives in `@/schedular_function`. This file only
  * does the HTTP concerns — auth, status codes, and shaping the response.
@@ -72,7 +74,7 @@ export async function GET(request: Request) {
     success: true,
     job: "contract-review",
     auth: "ok",
-    runs: ["sheetSync", "enquiry", "rmAvail", "icDump", "inspectionOffer"],
+    runs: ["sheetSync", "itemNames", "enquiry", "rmAvail", "icDump", "inspectionOffer", "prodEntry"],
     note: "POST to run the job.",
   });
 }

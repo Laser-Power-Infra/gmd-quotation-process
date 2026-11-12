@@ -80,7 +80,7 @@ export default function DebtorsPage() {
       <GMDUpdateHeader
         title="DEBTORS"
         totalRows={data?.rows.length ?? 0}
-        syncedAt={data?.syncedAt ?? undefined}
+        syncedAt={data?.syncedAt}
         onSync={onSync}
         syncing={syncing}
         warnIfStale

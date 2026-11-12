@@ -288,7 +288,7 @@ export default function BisStatusPage() {
         <GMDUpdateHeader
           title="BIS STATUS"
           totalRows={total}
-          syncedAt={syncedAt ?? undefined}
+          syncedAt={syncedAt}
         />
         {error && rows.length > 0 && (
           <div className="mt-2 text-sm text-red-600 dark:text-red-300 shrink-0">

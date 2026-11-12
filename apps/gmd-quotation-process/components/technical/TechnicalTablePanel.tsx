@@ -122,6 +122,7 @@ export default function TechnicalTablePanel({
           <GMDUpdateHeader
             title={tab.label}
             totalRows={0}
+            syncedAt={null}
             actions={syncAction}
           />
           <div className="flex flex-1 min-h-0 flex-col items-center justify-center gap-3 rounded-b-lg border border-t-0 border-border bg-card px-6 py-16 text-center">

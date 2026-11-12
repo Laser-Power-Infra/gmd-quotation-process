@@ -18,6 +18,7 @@
  */
 
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 import {
   runErpContractNoStep,
   type ErpContractNoStepResult,
@@ -84,6 +85,7 @@ export async function runScheduledErpContractNo(
         `unchangedInvoices=${sync.unchangedInvoices} failedWrites=${sync.failedWrites}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    if (!options.dryRun) await recordJobRun(job, sync.sheetRows);
 
     return { success: true, job, startedAt, elapsedMs, steps };
   } finally {

@@ -1,6 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { staleBomItemIds } from '../lib/bomMastStale.js'
+import { erpQtyUpdate, staleBomItemIds } from '../lib/bomMastStale.js'
+
+test('erpQty follows QTYUNIT, and a missing QTYUNIT column wipes nothing', () => {
+  assert.equal(erpQtyUpdate(null, 2.5), 2.5)
+  assert.equal(erpQtyUpdate('2.5', 2.5), undefined) // unchanged (Prisma Decimal reads back via Number)
+  assert.equal(erpQtyUpdate('2.5', null), null) // a blank cell on a present column clears it
+  assert.equal(erpQtyUpdate('2.5', undefined), undefined) // renamed or dropped column: left alone
+})
 
 test('staleBomItemIds unlinks unbacked links, keeps manual and NEW-BOM drafts', () => {
   const items = [

@@ -607,6 +607,9 @@ model BomItem {
 
   // Component-specific fields
   quantity Int?
+  // QTYUNIT from BOM MAST ERP, kept fractional (quantity comes from VERIFY BOM
+  // through parseInt, so 2.5 reads 2). The cost engine prefers it.
+  erpQty   Decimal?
   cost     Decimal?
   noUse    String?
   cBatch   String?

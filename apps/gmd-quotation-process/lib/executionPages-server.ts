@@ -1,10 +1,14 @@
 import "server-only";
 
 import { prisma as tenderPrisma } from "@gmd/db-tender";
+import { prodEntryQty } from "@gmd/contract-review/columns";
 import { prisma } from "@/lib/prisma";
 import { getFiscalYearLabel } from "@/lib/docketNumber";
-import { fiscalYearVariants } from "@/lib/gmd_lib/execution-tracking-columns";
-import { monthKey, num, type ContractLine, type SaleLine } from "@/lib/executionPages";
+import { fiscalYearVariants, normalizeKey } from "@/lib/gmd_lib/execution-tracking-columns";
+import { resolveItemTypes } from "@/lib/erpItemNameLookup";
+import { costLines, supplyCostInput } from "@/lib/lineCost-server";
+import { minVaPercent } from "@/lib/vaRules";
+import { monthKey, num, saleMoney, valveTypeOf, type ContractLine, type SaleLine } from "@/lib/executionPages";
 
 const text = (v: string | null | undefined) => (v ?? "").trim();
 
@@ -14,7 +18,7 @@ export async function getContractLines(): Promise<{ lines: ContractLine[]; synce
     select: {
       contractNo: true, itemCode: true, itemName: true, partyItemName: true, partyNameDump: true,
       erpPartyNameFromGmdSupplyHistory: true, dateOfContract: true, rate: true, orderQty: true, mcQty: true,
-      prodOrdQty: true, diQty: true, billedQty: true, balBillAgMc: true, balBillAgMcVal: true,
+      prodOrdQty: true, balanceToProdEnt: true, prodEntryDate: true, diQty: true, billedQty: true, balBillAgMc: true, balBillAgMcVal: true,
       productionOrderNumber: true, offerNumber: true, inspectionNumber: true, diDate: true, syncedAt: true,
     },
   });
@@ -30,6 +34,8 @@ export async function getContractLines(): Promise<{ lines: ContractLine[]; synce
       orderQty: num(r.orderQty),
       mcQty: num(r.mcQty),
       prodOrdQty: num(r.prodOrdQty),
+      prodEntryQty: prodEntryQty(r.prodOrdQty, r.balanceToProdEnt),
+      prodEntryDate: r.prodEntryDate,
       diQty: num(r.diQty),
       billedQty: num(r.billedQty),
       balBillAgMc: num(r.balBillAgMc),
@@ -59,31 +65,39 @@ export async function getContractInvoices(contractNo: string): Promise<InvoiceLi
   return rows.map((r) => ({ ...r, itemCode: r.erpItemCode, qty: r.quantity }));
 }
 
-/** One fiscal year of invoice lines for the Sales Register. */
+/** One fiscal year of invoice lines for the Sales Register, each with its cost for the gross profit view. */
 export async function getSalesLines(fy?: string): Promise<{ fy: string; years: string[]; lines: SaleLine[]; syncedAt: string | null }> {
   const year = fy && /^\d{4}-\d{2}$/.test(fy) ? fy : getFiscalYearLabel(new Date());
   const [rows, yearRows, run] = await Promise.all([
     prisma.supplyHistoryItem.findMany({
       where: { financialYear: { in: fiscalYearVariants(year) } },
-      select: { invoiceNo: true, date: true, consigneeName: true, erpPartyName: true, partyName: true, typeOfValve: true, derivedItemType: true, sizeOfValve: true, derivedSize: true, classOfValve: true, quantity: true, value: true },
+      select: { invoiceNo: true, date: true, consigneeName: true, erpPartyName: true, partyName: true, typeOfValve: true, derivedItemType: true, sizeOfValve: true, derivedSize: true, classOfValve: true, quantity: true, value: true, erpItemCode: true, erpContractNo: true, itemName: true },
     }),
     prisma.supplyHistoryItem.findMany({ distinct: ["financialYear"], select: { financialYear: true } }),
     prisma.engineeringSync.findUnique({ where: { tabKey: "execution-tracking" }, select: { syncedAt: true } }),
+  ]);
+  const [types, costs] = await Promise.all([
+    resolveItemTypes(rows.map((r) => text(r.erpItemCode))),
+    costLines(rows.map(supplyCostInput)),
   ]);
   const years = [...new Set(yearRows.map((r) => text(r.financialYear)).filter((y) => /^\d{4}-\d{2}$/.test(y)))].sort().reverse();
   return {
     fy: year,
     years: years.includes(year) ? years : [year, ...years],
     syncedAt: run?.syncedAt.toISOString() ?? null,
-    lines: rows.map((r) => ({
-      invoiceNo: r.invoiceNo,
-      month: monthKey(r.date),
-      party: text(r.erpPartyName) || text(r.consigneeName) || text(r.partyName) || "-",
-      valveType: text(r.typeOfValve) || text(r.derivedItemType) || "-",
-      size: text(r.sizeOfValve) || text(r.derivedSize) || "-",
-      pressureClass: text(r.classOfValve) || "-",
-      qty: num(r.quantity),
-      value: num(r.value),
-    })),
+    lines: rows.map((r, i) => {
+      const valveType = valveTypeOf(types.get(normalizeKey(r.erpItemCode)), text(r.typeOfValve) || text(r.derivedItemType));
+      const size = text(r.sizeOfValve) || text(r.derivedSize) || "-";
+      return {
+        invoiceNo: r.invoiceNo,
+        month: monthKey(r.date),
+        party: text(r.erpPartyName) || text(r.consigneeName) || text(r.partyName) || "-",
+        valveType,
+        size,
+        pressureClass: text(r.classOfValve) || "-",
+        ...saleMoney(r.quantity, r.value, costs[i].unitCost, costs[i].quotedUnitCost),
+        minVa: minVaPercent({ itemType: valveType, size, itemName: r.itemName }),
+      };
+    }),
   };
 }

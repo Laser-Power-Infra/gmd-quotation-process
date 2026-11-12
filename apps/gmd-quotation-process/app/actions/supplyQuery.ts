@@ -12,6 +12,7 @@ import {
   type SupplyQuery,
 } from "@/lib/supplyQuery";
 import { buildSupplyRow } from "@/lib/supplyRows";
+import { costLines, supplyCostInput } from "@/lib/lineCost-server";
 
 const MAX_PAGE_SIZE = 500;
 const FACET_LIMIT = 500;
@@ -113,11 +114,12 @@ export async function fetchSupplyPage(
 
   const ids = idRows.map((row) => row.id);
   const items = await hydrateSupplyItems(ids);
+  const costs = await costLines(items.map(supplyCostInput));
 
   const rows: unknown[][] = [];
   const bomIdOptions: Record<string, string[]> = {};
-  for (const item of items) {
-    const built = buildSupplyRow(item);
+  for (const [i, item] of items.entries()) {
+    const built = buildSupplyRow(item, costs[i]);
     rows.push(built.row);
     bomIdOptions[item.id] = built.bomIdOptions;
   }
@@ -184,7 +186,8 @@ export async function fetchAllSupplyRows(
   const rows: unknown[][] = [];
   for (let i = 0; i < ids.length; i += EXPORT_BATCH) {
     const items = await hydrateSupplyItems(ids.slice(i, i + EXPORT_BATCH));
-    for (const item of items) rows.push(buildSupplyRow(item).row);
+    const costs = await costLines(items.map(supplyCostInput));
+    for (const [j, item] of items.entries()) rows.push(buildSupplyRow(item, costs[j]).row);
   }
   return rows;
 }

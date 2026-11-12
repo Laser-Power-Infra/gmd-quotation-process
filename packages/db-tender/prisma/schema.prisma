@@ -1262,6 +1262,14 @@ model ContractReview {
   diDate                           String[] @default([])
   costfromQuotation                String?
   vaPercentfromcost                String?
+  // From the winning quotation (lib/quotedCost.ts), written with costfromQuotation.
+  docketNo                         String?
+  quotedRate                       String?
+  // dd-MMM-yyyy. MC / drawing approval: the mail tag's day while blank, then typed by hand.
+  mcDate                           String?
+  approvalDate                     String?
+  // dd-MMM-yyyy, latest PROD ENTRY DUMP VRDATE for productionOrderNumber + itemCode.
+  prodEntryDate                    String?
   productionOrderNumber            String?
   diagramUrl                       String?
   diagramVerdict                   String?

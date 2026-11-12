@@ -1,7 +1,7 @@
 "use client";
 
 import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { RefreshCw, Loader2 } from "lucide-react";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
 import SyncStaleBanner from "@gmd/dashboard/components/SyncStaleBanner";
@@ -19,6 +19,7 @@ import {
   CONTRACT_REVIEW_HEADERS,
   CONTRACT_REVIEW_COLUMN_GROUPS,
   CONTRACT_REVIEW_COLUMN_WIDTHS,
+  CONTRACT_REVIEW_HEADER_HINTS,
   nBatchBadges,
   nBatchFilter,
   incompleteBadges,
@@ -89,6 +90,7 @@ const layoutStorage = {
 
 const UPLOAD_DIAGRAM_COLUMN = "Upload Drawing";
 const MAIL_DOCS_IDX = CONTRACT_REVIEW_HEADERS.indexOf(MAIL_DOCS_COLUMN);
+const DOCKET_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("DOCKET NO");
 const UPLOAD_DIAGRAM_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf(UPLOAD_DIAGRAM_COLUMN);
 
@@ -141,6 +143,8 @@ const EDITABLE_COLUMN_CANDIDATES = [
   "PAYMENT TERMS",
   "PROD ORDER NO",
   "VA % FROM COST",
+  "MC DATE",
+  "APPROVAL DATE",
 ];
 
 const FIXED_DROPDOWN_OPTIONS: Record<string, string[]> = {
@@ -956,28 +960,43 @@ export function ContractReviewPage({
     [addContractMailDocAction, serverMode, loadServerView],
   );
 
-  const mailDocsCell = useMemo(
-    () =>
-      isEnabled(MAIL_DOCS_COLUMN)
-        ? {
-            column: MAIL_DOCS_COLUMN,
-            render: (row: unknown[]) => {
-              const contractNo = String(row[CONTRACT_NO_IDX] ?? "").trim();
-              return (
-                <MailDocsCell
-                  value={row[MAIL_DOCS_IDX]}
-                  onAdd={
-                    addContractMailDocAction && isEditable(MAIL_DOCS_COLUMN) && contractNo
-                      ? (c, u) => handleAddMailDoc(contractNo, c, u)
-                      : undefined
-                  }
-                />
-              );
-            },
-          }
-        : undefined,
-    [isEnabled, isEditable, addContractMailDocAction, handleAddMailDoc],
-  );
+  const customCells = useMemo(() => {
+    const cells: Record<string, (row: unknown[]) => ReactNode> = {
+      // Back-link to the quotation: the Quotations page opens filtered to this docket.
+      "DOCKET NO": (row) => {
+        const docketNo = String(row[DOCKET_NO_IDX] ?? "").trim();
+        return docketNo ? (
+          <a
+            href={`/?docket=${encodeURIComponent(docketNo)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="underline text-blue-600 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-200"
+          >
+            {docketNo}
+          </a>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        );
+      },
+    };
+    if (isEnabled(MAIL_DOCS_COLUMN)) {
+      cells[MAIL_DOCS_COLUMN] = (row) => {
+        const contractNo = String(row[CONTRACT_NO_IDX] ?? "").trim();
+        return (
+          <MailDocsCell
+            value={row[MAIL_DOCS_IDX]}
+            onAdd={
+              addContractMailDocAction && isEditable(MAIL_DOCS_COLUMN) && contractNo
+                ? (c, u) => handleAddMailDoc(contractNo, c, u)
+                : undefined
+            }
+          />
+        );
+      };
+    }
+    return cells;
+  }, [isEnabled, isEditable, addContractMailDocAction, handleAddMailDoc]);
 
   const handleUploadDiagram = useCallback(
     async (id: string, file: File) => {
@@ -2021,7 +2040,7 @@ export function ContractReviewPage({
           {/* <GMDUpdateHeader
             title="CONTRACT REVIEW"
             totalRows={data?.totalRows ?? 0}
-            syncedAt={data?.syncedAt ?? undefined}
+            syncedAt={data?.syncedAt}
             onSync={sync ? handleSync : undefined}
             syncing={syncing}
             actions={
@@ -2090,7 +2109,8 @@ export function ContractReviewPage({
                 multilineEditableColumns={["Remarks"]}
                 defaultColumnWidths={CONTRACT_REVIEW_COLUMN_WIDTHS}
                 cellBadges={tableCellBadges}
-                customCell={mailDocsCell}
+                customCells={customCells}
+                headerHints={CONTRACT_REVIEW_HEADER_HINTS}
                 batchFilterHeader={batchPresenceFilters.length ? "ITEM_CODE" : undefined}
                 batchPresenceFilters={batchPresenceFilters.length ? batchPresenceFilters : undefined}
                 allowExport={flags.excelExport}

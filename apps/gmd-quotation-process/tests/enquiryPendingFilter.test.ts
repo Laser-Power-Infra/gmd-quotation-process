@@ -11,6 +11,7 @@ test('no filters means no item requirement', () => {
 
 test('enquiry-level filters do not hide a zero-item pending docket', () => {
   assert.equal(hasActiveItemFilters({ ...filters, docketNumber: 'GMD/2026-27/400' }), false)
+  assert.equal(hasActiveItemFilters({ ...filters, docketExact: 'GMD/2026-27/400' }), false)
   assert.equal(hasActiveItemFilters({ ...filters, partyNames: ['ACME'] }), false)
   assert.equal(hasActiveItemFilters({ ...filters, enquiryType: ['ENQUIRY'] }), false)
   assert.equal(hasActiveItemFilters({ ...filters, closureStatus: ['OPEN'] }), false)

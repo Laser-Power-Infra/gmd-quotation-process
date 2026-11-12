@@ -19,6 +19,8 @@
     "bom:cost": "tsx scripts/update-product-cost-from-bom.ts",
     "round:qr": "tsx scripts/round-qr.ts",
     "round:qr:apply": "tsx scripts/round-qr.ts --apply",
+    "terms:backfill": "tsx scripts/backfill-blank-terms.ts",
+    "terms:backfill:apply": "tsx scripts/backfill-blank-terms.ts --apply",
     "po:sync": "tsx scripts/sync-purchase-orders.ts",
     "po:sync:apply": "tsx scripts/sync-purchase-orders.ts --apply",
     "stock:sync": "tsx scripts/sync-available-stock-from-stock-phys.ts",

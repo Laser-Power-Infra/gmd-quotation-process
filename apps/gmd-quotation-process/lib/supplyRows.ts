@@ -3,6 +3,7 @@ import {
   dbItemToRow,
 } from "@/lib/gmd_lib/supply-history-columns";
 import { compareBomIdsDescending } from "@/lib/bomOrder";
+import type { UnitCost } from "@/lib/lineCost";
 import {
   SUPPLY_BOM_COST_HEADER,
   SUPPLY_BOM_ID_HEADER,
@@ -64,7 +65,8 @@ export interface SupplyRowResult {
   bomIdOptions: string[];
 }
 
-export function buildSupplyRow(item: SupplyRowSource): SupplyRowResult {
+/** `cost` (lib/lineCost-server.ts) fills the cost cells the item's own links leave empty. */
+export function buildSupplyRow(item: SupplyRowSource, cost?: UnitCost): SupplyRowResult {
   const canonicalRow = dbItemToRow(item);
   const row = displayColumnMap.map((index) => canonicalRow[index]);
 
@@ -112,6 +114,12 @@ export function buildSupplyRow(item: SupplyRowSource): SupplyRowResult {
     selectedLink?.rawMaterial?.cost != null
       ? formatCost(selectedLink.rawMaterial.cost)
       : null;
+
+  // shortcut: sorting/filtering on BOM COST / RAWMATERIAL COST still use the SQL link costs, upgrade when costs are stored
+  if (cost?.unitCost != null) {
+    const index = cost.basis === "BOM" ? bomCostIndex : rmCostIndex;
+    if (row[index] == null || row[index] === "") row[index] = formatCost(cost.unitCost);
+  }
 
   return { row, bomIdOptions };
 }

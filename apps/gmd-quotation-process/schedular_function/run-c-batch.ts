@@ -12,6 +12,7 @@
 
 import { runCBatchSync, type CBatchSyncResult } from "./c-batch";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 
 export type JobName = "c-batch";
 
@@ -67,6 +68,7 @@ export async function runScheduledCBatch(
         `failedTables=${steps.cBatch.failedTables.length ? steps.cBatch.failedTables.join(",") : "none"}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    if (!options.dryRun) await recordJobRun(job, steps.cBatch.sheetCodes);
 
     return { success: true, job, startedAt, elapsedMs, steps };
   } finally {

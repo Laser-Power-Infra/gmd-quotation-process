@@ -18,6 +18,7 @@
 import { runPendingDocketCreation, type PendingDocketCreationResult } from "./docket-creation";
 import { runPendingDocketDedupe, type PendingDocketDedupeResult } from "./docket-dedupe";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 
 export type JobName = "docket-creation";
 
@@ -85,6 +86,7 @@ export async function runScheduledDocketCreation(
         `dedupeFailed=${steps.dedupe.failed}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    if (!options.dryRun) await recordJobRun(job, steps.creation.pending);
 
     return { success: true, job, startedAt, elapsedMs, steps };
   } finally {

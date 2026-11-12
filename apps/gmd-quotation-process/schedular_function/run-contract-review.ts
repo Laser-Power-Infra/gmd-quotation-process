@@ -1,5 +1,5 @@
 /**
- * Scheduled job — Contract Review, six steps in order.
+ * Scheduled job — Contract Review, seven steps in order.
  *
  *   1.  `runContractReviewSheetSync()`     CONTRACTS + DUMP -> ContractReview
  *   1b. `runContractReviewItemNameSync()`  ITEM MASTER ERP -> ContractReview.itemName
@@ -7,6 +7,7 @@
  *   3.  `runContractReviewRmAvailSync()`   stock-phys -> VerifyBom -> RM AVAIL -> PHYSICAL STOCK
  *   4.  `runIcDumpSync()`                  INSPECTION OFFER DUMP -> offer / inspection / DI
  *   5.  `runInspectionOfferSync()`         INSPECTION OFFER DUMP -> InspectionOffer + draft InspectionReport
+ *   6.  `runProdEntrySync()`               PROD ENTRY DUMP -> ContractReview.prodEntryDate
  *
  * The order is a real dependency chain, not cosmetic:
  *   - 2 depends on 1 for fresh contract rows to match Enquiry against.
@@ -50,7 +51,9 @@ import {
   runInspectionOfferSync,
   type InspectionOfferSyncResult,
 } from "./inspection-offer-sync";
+import { runProdEntrySync, type ProdEntrySyncResult } from "./contract-review-prod-entry";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 
 export type JobName = "contract-review";
 
@@ -66,7 +69,10 @@ export type ScheduledContractReviewResult = {
     rmAvail?: ContractReviewRmAvailResult;
     icDump?: IcDumpSyncResult;
     inspectionOffer?: InspectionOfferSyncResult;
+    prodEntry?: ProdEntrySyncResult;
   };
+  /** Steps that failed without voiding the earlier ones; contract-review-sync.sh fails the run on any. */
+  warnings: string[];
 };
 
 /**
@@ -77,7 +83,7 @@ export type ScheduledContractReviewResult = {
 const inFlight = new Set<JobName>();
 
 export type RunContractReviewOptions = {
-  /** Compute and report without writing. Applies to steps 2, 3, 4 and 5. */
+  /** Compute and report without writing. Applies to steps 2 to 6. */
   dryRun?: boolean;
   concurrency?: number;
 };
@@ -101,6 +107,7 @@ export async function runScheduledContractReview(
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
   const steps: ScheduledContractReviewResult["steps"] = {};
+  const warnings: string[] = [];
   const { dryRun = false } = options;
 
   try {
@@ -132,6 +139,17 @@ export async function runScheduledContractReview(
     // Step 5 — InspectionOffer rows + a draft report per new offer VRNO.
     steps.inspectionOffer = await runInspectionOfferSync({ dryRun });
 
+    // Step 6 — PROD ENTRY DUMP -> the latest production-entry day per prod order + item.
+    // Steps 1-5 have already written, so a Sheets error here must not discard their result:
+    // it is reported as a warning, which still fails the ofelia run.
+    try {
+      steps.prodEntry = await runProdEntrySync({ dryRun });
+    } catch (err) {
+      const message = `prodEntry: ${err instanceof Error ? err.message : "Unknown error"}`;
+      console.error(`[scheduler] ${job} step 6 failed: ${message}`);
+      warnings.push(message);
+    }
+
     const elapsedMs = Date.now() - startedAtMs;
 
     console.log(
@@ -141,9 +159,13 @@ export async function runScheduledContractReview(
         `enquiry(changed=${steps.enquiry.changed}) ` +
         `rmAvail(stock=${steps.rmAvail.stockUpdated}, noUse=${steps.rmAvail.rmAvailUpdated}, physical=${steps.rmAvail.physicalStockUpdated}) ` +
         `icDump(matched=${steps.icDump.matched}, updated=${steps.icDump.rowsToUpdate}, written=${steps.icDump.written}) ` +
-        `inspectionOffer(created=${steps.inspectionOffer.created}, updated=${steps.inspectionOffer.updated}, failed=${steps.inspectionOffer.failed})`,
+        `inspectionOffer(created=${steps.inspectionOffer.created}, updated=${steps.inspectionOffer.updated}, failed=${steps.inspectionOffer.failed}) ` +
+        (steps.prodEntry
+          ? `prodEntry(skipped=${steps.prodEntry.skippedRows}, toUpdate=${steps.prodEntry.rowsToUpdate}, written=${steps.prodEntry.written})`
+          : "prodEntry(FAILED, see warnings)"),
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    if (!dryRun) await recordJobRun(job, steps.sheetSync.totalInContracts);
 
     return {
       success: true,
@@ -151,6 +173,7 @@ export async function runScheduledContractReview(
       startedAt,
       elapsedMs,
       steps,
+      warnings,
     };
   } finally {
     // Always release, so a throw cannot wedge the next hourly run.

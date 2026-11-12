@@ -33,6 +33,13 @@ export const contractReviewDisabledColumns = flag<ContractReviewHeader[]>({
     "PROJECT REFERENCE",
     "ORDER LIST",
     "STATUS",
+    "MC DATE",
+    "APPROVAL DATE",
+    "DOCKET NO",
+    "QUOTED RATE",
+    "RATE DIFF %",
+    "PROD ENTRY QTY",
+    "PROD ENTRY DATE",
   ],
 });
 

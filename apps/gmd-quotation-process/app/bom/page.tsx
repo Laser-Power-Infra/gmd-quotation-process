@@ -940,7 +940,7 @@ function VerifyBomView() {
         <GMDUpdateHeader
           title="VERIFY BOM"
           totalRows={data?.totalRows ?? 0}
-          syncedAt={data?.syncedAt ?? undefined}
+          syncedAt={data?.syncedAt}
           warnIfStale
           onSync={handleSync}
           syncing={syncing}

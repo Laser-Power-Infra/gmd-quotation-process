@@ -1458,3 +1458,17 @@ export async function addPartyOptionAction(rawValue: string) {
   mirrorLookup({ upsertIds: [created.id] });
   return { success: true as const, value };
 }
+
+/** Commercial terms of a party's most recent enquiry, used to prefill the New Enquiry form. */
+export async function getLastPartyTermsAction(partyName: string) {
+  await requireAccess();
+  const denied = await loginRequired(); if (denied) return denied;
+  const name = partyName.trim();
+  if (!name) return { success: true as const, terms: null };
+  const terms = await prisma.enquiry.findFirst({
+    where: { partyName: name },
+    orderBy: [{ enquiryDate: "desc" }, { createdAt: "desc" }],
+    select: { paymentTerms: true, inspection: true, pbg: true },
+  });
+  return { success: true as const, terms };
+}

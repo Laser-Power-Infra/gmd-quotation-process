@@ -64,6 +64,7 @@ const SEARCH_KEYS: ColumnKey[] = [
   "clientName",
   "project",
   "poNumber",
+  "contractNo",
   "bgNo",
   "contactPerson",
   "contactNumber",

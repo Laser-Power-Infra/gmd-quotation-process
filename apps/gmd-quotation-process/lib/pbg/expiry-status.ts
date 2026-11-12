@@ -9,7 +9,7 @@
  * reminder job's existing convention.
  */
 
-import { normalizeStatus } from "@/lib/pbg/reminder-rules";
+import { pbgStatus } from "@/lib/pbg/reminder-rules";
 
 export const EXPIRING_SOON_DAYS = 30;
 
@@ -35,8 +35,7 @@ export function daysBetweenDateOnly(
 }
 
 export function isClosedStatus(status: string | null | undefined): boolean {
-  const key = normalizeStatus(status);
-  return key === "closed" || key === "close";
+  return pbgStatus(status) === "CLOSED";
 }
 
 /**

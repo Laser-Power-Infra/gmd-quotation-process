@@ -350,6 +350,8 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
 
   push("globalSearch", globalSearchSql(q));
   push("docketNumber", containsSql(sql`e."docketNumber"`, f.docketNumber));
+  // Exact, because serials are not zero-padded: a partial /42 also lists /420-/429.
+  push("docketExact", f.docketExact ? sql`e."docketNumber" = ${f.docketExact}` : null);
   push(
     "partyNames",
     f.partyNames.length > 0 ? sql`e."partyName" = ANY(${[...f.partyNames]}::text[])` : null,

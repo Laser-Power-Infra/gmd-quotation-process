@@ -34,6 +34,7 @@ function dbRow(over: Partial<DbRow> = {}): DbRow {
     consigneeName: "NCC LIMITED",
     date: null,
     financialYear: "2026-27",
+    derivedItemType: null,
     ...over,
   };
 }
@@ -49,6 +50,7 @@ function record(over: Partial<MappedRecord> = {}): MappedRecord {
     financialYear: "2026-27",
     stateRaw: "Madhya Pradesh",
     stateCanonical: "Madhya Pradesh",
+    itemType: null,
     ...over,
   };
 }
@@ -278,6 +280,20 @@ test("a blank FY is gap-filled from ACC_YEAR, and a stored one is never rewritte
     computeFieldChanges(record(), dbRow({ financialYear: "26-27" })).changes,
     [],
   );
+});
+
+test("derivedItemType is gap-filled, never overwritten", () => {
+  const type = "SLUICE VALVE-METAL-NON-RISING";
+  assert.deepEqual(computeFieldChanges(record({ itemType: type }), dbRow()).changes, [
+    { field: "derivedItemType", from: null, to: type },
+  ]);
+  assert.deepEqual(
+    computeFieldChanges(record({ itemType: type }), dbRow({ derivedItemType: "SLUICE VALVE" })).changes,
+    [],
+  );
+  // An insert carries it too; a code the item masters do not know adds nothing.
+  assert.ok(computeFieldChanges(record({ itemType: type }), null).changes.some((c) => c.field === "derivedItemType"));
+  assert.deepEqual(computeFieldChanges(record({ itemType: null }), dbRow()).changes, []);
 });
 
 test("VRDATE is normalised to the dd-MMM-yyyy form the filters parse", () => {

@@ -28,6 +28,7 @@ import {
   type StockPhysSyncResult,
 } from "./gmd-update-stock-phys";
 import { runRawMaterialItemNameSync, type ItemNameSyncResult } from "./item-name-sync";
+import { recordJobRun } from "./job-heartbeat";
 import { runActiveBomRules } from "@/lib/autoBomRun";
 
 export type JobName = "gmd-update";
@@ -136,6 +137,8 @@ export async function runScheduledGmdUpdate(
         `autoBom(created=${steps.autoBom.created}, failed=${steps.autoBom.failed})`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    // Scheduled (conf + route) as raw-material; gmd-update is only its internal name.
+    if (!options.dryRunStock) await recordJobRun("raw-material", steps.catalogue.totalInSheet);
 
     return {
       success: true,

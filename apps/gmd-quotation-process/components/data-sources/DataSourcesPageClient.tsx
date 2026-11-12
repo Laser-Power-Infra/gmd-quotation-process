@@ -35,6 +35,14 @@ export type DataSourceRow = {
   envMissing: boolean;
 };
 
+/** One scheduled job's heartbeat, formatted on the server. */
+export type SyncHealthLine = {
+  job: string;
+  status: "OK" | "STALE" | "NEVER";
+  lastRun: string;
+  age: string;
+};
+
 const COLUMNS = 5;
 
 function SheetCell({
@@ -139,10 +147,47 @@ function EnvWarning({ source, envMissing }: DataSourceRow) {
   );
 }
 
+function SyncHealthTable({ health }: { health: SyncHealthLine[] }) {
+  return (
+    <div className="mb-6">
+      <div className="px-4 pt-4 pb-2 text-base font-semibold">
+        Sync Health
+        <span className="ml-2 text-xs font-normal text-muted-foreground">
+          STALE = no successful run in 24 h · NEVER = no run recorded
+        </span>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="px-4 py-3 font-semibold">Job</TableHead>
+            <TableHead className="px-4 py-3 font-semibold">Last successful run (IST)</TableHead>
+            <TableHead className="px-4 py-3 font-semibold">Age</TableHead>
+            <TableHead className="px-4 py-3 font-semibold">Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {health.map((h) => (
+            <TableRow key={h.job}>
+              <TableCell className="px-4 py-2 font-mono text-xs">{h.job}</TableCell>
+              <TableCell className="px-4 py-2 text-sm">{h.lastRun}</TableCell>
+              <TableCell className="px-4 py-2 text-sm">{h.age}</TableCell>
+              <TableCell className="px-4 py-2">
+                <Badge variant={h.status === "OK" ? "outline" : "destructive"}>{h.status}</Badge>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 export default function DataSourcesPageClient({
   rows,
+  health,
 }: {
   rows: DataSourceRow[];
+  health: SyncHealthLine[];
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
 
@@ -219,6 +264,7 @@ export default function DataSourcesPageClient({
 
           <CardContent className="min-h-0 flex-1 overflow-hidden p-0">
             <div className="h-full w-full overflow-auto">
+              <SyncHealthTable health={health} />
               <Table className="min-w-275">
                 <TableHeader className="sticky top-0 z-10 bg-background shadow-sm ">
                   <TableRow>

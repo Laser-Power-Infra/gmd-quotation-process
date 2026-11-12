@@ -30,7 +30,7 @@ export function formatSyncTime(dateStr: string | Date | null): string {
 
 export default function GMDUpdateHeader({
   totalRows,
-  syncedAt = null,
+  syncedAt,
   onSync,
   syncing,
   title = "GMD UPDATE",

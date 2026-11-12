@@ -16,6 +16,7 @@
 
 import { syncClosureStatuses, type ClosureStatusSyncResult } from "@/lib/closureStatusSync";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 
 export type JobName = "closure-status";
 
@@ -58,6 +59,7 @@ export async function runScheduledClosureStatus(): Promise<ScheduledClosureStatu
         `sent=${sync.sent} pending=${sync.pending} threads=${sync.threadCount}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    await recordJobRun(job, sync.scanned);
 
     return { success: true, job, startedAt, elapsedMs, steps };
   } finally {

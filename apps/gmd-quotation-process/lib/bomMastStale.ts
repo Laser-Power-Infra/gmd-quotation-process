@@ -23,3 +23,14 @@ export function staleBomItemIds(
     )
     .map((i) => i.id);
 }
+
+// The erpQty an existing link should get from the sheet's QTYUNIT, or undefined
+// to leave it alone. `sheetQty` undefined = the tab has no QTYUNIT column, so a
+// renamed or dropped column never wipes the stored quantities.
+export function erpQtyUpdate(
+  stored: unknown,
+  sheetQty: number | null | undefined,
+): number | null | undefined {
+  if (sheetQty === undefined) return undefined;
+  return (stored == null ? null : Number(stored)) === sheetQty ? undefined : sheetQty;
+}

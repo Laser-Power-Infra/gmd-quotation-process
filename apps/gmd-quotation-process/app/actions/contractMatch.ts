@@ -21,7 +21,7 @@ import {
 } from "@/lib/contractDocketMatch";
 import { recalculateItem } from "@/lib/costCalculator";
 import { logItemChanges } from "@/lib/itemChangeLog";
-import { updateEnquiryFieldAction } from "@/app/actions/enquiry";
+import { docketsOfParties, linkContractsToDocket } from "@/lib/contractDocketLink";
 import { syncContractReviewEnquiryFieldsBatchAction } from "@/app/actions/contractReview";
 
 const errorMessage = (e: unknown, fallback: string) => (e instanceof Error && e.message) || fallback;
@@ -110,15 +110,7 @@ export async function suggestDocketsForContractsAction(contractNos: string[]) {
     const parties = new Set(picked.map((l) => normalizeParty(l.partyNameDump)).filter(Boolean));
     if (parties.size === 0) return { success: false as const, error: "The picked contract(s) have no party name." };
 
-    const heads = await prisma.enquiry.findMany({ select: { id: true, partyName: true } });
-    const ids = heads.filter((h) => parties.has(normalizeParty(h.partyName))).map((h) => h.id);
-    const dockets = await prisma.enquiry.findMany({
-      where: { id: { in: ids } },
-      select: {
-        id: true, docketNumber: true, partyName: true, enquiryDate: true, selectedContractNo: true,
-        items: { select: { id: true, erpItemCode: true, size: true, quantity: true } },
-      },
-    });
+    const dockets = await docketsOfParties(parties);
     const allContractNos = [...contractNos, ...dockets.flatMap((d) => d.selectedContractNo)];
     const lines = groupLinesByContract(await contractLines(allContractNos));
     return { success: true as const, data: rankDocketsForContracts(contractNos, dockets, lines) };
@@ -163,8 +155,8 @@ export async function applyContractDocketMatchAction(enquiryId: string, contract
     const matched = new Set(equalQtyCodes(contractQtyByCode(lines), docketQtyByCode(enquiry.items)));
     const rates = contractRateByCode(lines.filter((l) => matched.has(codeKey(l.itemCode))));
 
-    const linkRes = await updateEnquiryFieldAction(enquiryId, "selectedContractNo", merged);
-    if (!linkRes.success) return { success: false as const, error: linkRes.error || "Failed to link contract(s)." };
+    // The link write the nightly docket-auto-link job shares; rates below stay a Match-button action.
+    await linkContractsToDocket(enquiryId, contractNos);
 
     const items: MatchedItemResult[] = [];
     for (const it of enquiry.items) {

@@ -170,6 +170,7 @@ const STATIC_PAYMENT_TERMS = [
   "90 days hundi: against MRN & BILL SUBMISSION whichever is later",
   "45 days Letter of credit from date of Dispatch of material",
   "180 days VFS  with interest in Seller'S Account",
+  "30 days",
 ];
 
 const STATIC_INSPECTIONS = [

@@ -18,7 +18,9 @@
  * BOM the sheet no longer lists) are kept but unlinked (component pointers set
  * to null). Hand-picked links (BomItem.manualLink) and auto-BOM drafts
  * (NEW-BOM-*) are never unlinked. Quantity and cost are deliberately not
- * synced, so `BomItem.cost` edits are preserved.
+ * synced, so `BomItem.cost` edits are preserved. The optional QTYUNIT column is
+ * mirrored into `BomItem.erpQty` (null when blank) for the cost engine; when the
+ * column is absent, erpQty is left as it is.
  */
 
 import { prisma } from "@/lib/prisma";
@@ -27,9 +29,11 @@ import {
   BOM_MAST_ERP_GID,
   readSheetTabByGid,
   requireColumns,
+  findColumn,
   cell,
 } from "@/lib/gmd_lib/bomMastErp";
-import { staleBomItemIds } from "@/lib/bomMastStale";
+import { erpQtyUpdate, staleBomItemIds } from "@/lib/bomMastStale";
+import { parseQty } from "@gmd/purchase/in-transit";
 
 const BATCH = 200;
 
@@ -46,6 +50,8 @@ export type BomMastSyncResult = {
   bomUnresolved: number;
   linkCreated: number;
   linkUnlinked: number;
+  /** Existing links whose erpQty changed to the sheet's QTYUNIT. */
+  qtyUpdated: number;
   unresolved: number;
   syncedAt: string;
 };
@@ -54,6 +60,8 @@ type SheetRow = {
   bomId: string;
   itemCode: string;
   rmItemCode: string;
+  /** QTYUNIT; undefined when the tab has no such column. */
+  qty: number | null | undefined;
 };
 
 export async function runBomMastErpSync(): Promise<BomMastSyncResult> {
@@ -66,6 +74,8 @@ export async function runBomMastErpSync(): Promise<BomMastSyncResult> {
     ["BOM_ID", "ITEM_CODE", "RM_ITEM_CODE"],
     tabTitle,
   );
+  // Optional, skipped when absent: the links still sync and erpQty is not touched.
+  const qtyIdx = findColumn(headers, "QTYUNIT");
 
   // Source of truth: last sheet row wins for a given (bomId, rmItemCode).
   const byBomComponent = new Map<string, SheetRow>();
@@ -82,6 +92,7 @@ export async function runBomMastErpSync(): Promise<BomMastSyncResult> {
       bomId,
       itemCode,
       rmItemCode,
+      qty: qtyIdx >= 0 ? parseQty(cell(row, qtyIdx)) : undefined,
     });
   }
   const mapped = [...byBomComponent.values()];
@@ -170,6 +181,7 @@ export async function runBomMastErpSync(): Promise<BomMastSyncResult> {
       rawMaterialId: true,
       fullItemId: true,
       manualLink: true,
+      erpQty: true,
       bom: { select: { bomId: true } },
     },
   });
@@ -189,7 +201,9 @@ export async function runBomMastErpSync(): Promise<BomMastSyncResult> {
     bomId: string;
     rawMaterialId: string | null;
     fullItemId: string | null;
+    erpQty: number | null | undefined; // undefined: no QTYUNIT column, not written
   }[] = [];
+  const qtyUpdates: { id: string; erpQty: number | null }[] = [];
   let unresolved = 0;
   const desiredKeys = new Set<string>();
 
@@ -206,9 +220,13 @@ export async function runBomMastErpSync(): Promise<BomMastSyncResult> {
 
     const key = itemKey(bomDbId, rmId, fiId);
     desiredKeys.add(key);
-    if (!existingByKey.has(key)) {
-      creates.push({ bomId: bomDbId, rawMaterialId: rmId, fullItemId: fiId });
+    const existing = existingByKey.get(key);
+    if (!existing) {
+      creates.push({ bomId: bomDbId, rawMaterialId: rmId, fullItemId: fiId, erpQty: m.qty });
+      continue;
     }
+    const erpQty = erpQtyUpdate(existing.erpQty, m.qty);
+    if (erpQty !== undefined) qtyUpdates.push({ id: existing.id, erpQty });
   }
 
   // DB links the sheet no longer backs — the row is kept but its component
@@ -234,6 +252,14 @@ export async function runBomMastErpSync(): Promise<BomMastSyncResult> {
         .map((c) => prisma.bomItem.create({ data: c })),
     );
   }
+  // shortcut: the first run after the erpQty migration rewrites every backed link here, move this catch-up to the planned RabbitMQ worker if the hourly run gets slow
+  for (let i = 0; i < qtyUpdates.length; i += BATCH) {
+    await prisma.$transaction(
+      qtyUpdates
+        .slice(i, i + BATCH)
+        .map((u) => prisma.bomItem.update({ where: { id: u.id }, data: { erpQty: u.erpQty } })),
+    );
+  }
   for (let i = 0; i < staleIds.length; i += BATCH) {
     await prisma.bomItem.updateMany({
       where: { id: { in: staleIds.slice(i, i + BATCH) } },
@@ -252,6 +278,7 @@ export async function runBomMastErpSync(): Promise<BomMastSyncResult> {
     bomUnresolved,
     linkCreated: creates.length,
     linkUnlinked: staleIds.length,
+    qtyUpdated: qtyUpdates.length,
     unresolved,
     syncedAt: new Date().toISOString(),
   };

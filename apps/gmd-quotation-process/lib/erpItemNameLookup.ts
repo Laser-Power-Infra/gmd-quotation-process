@@ -158,3 +158,33 @@ export async function resolveMasterNames(
 
   return map;
 }
+
+/**
+ * The item master's type for each code: `FullItem.itemType`, else (spares and scrap sold
+ * under RM codes) `RawMaterial.l2ValveType`. Keyed on the normalised code; codes neither
+ * master types are absent.
+ */
+export async function resolveItemTypes(
+  codes: readonly string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const wanted = [...new Set(codes.map(normalizeKey).filter(Boolean))];
+  if (wanted.length === 0) return map;
+
+  const fullItems = await prisma.fullItem.findMany({
+    where: { itemCode: { in: wanted } },
+    select: { itemCode: true, itemType: true },
+  });
+  for (const row of fullItems) putOnce(map, row.itemCode, row.itemType);
+
+  const rest = wanted.filter((code) => !map.has(code));
+  if (rest.length > 0) {
+    const rawMaterials = await prisma.rawMaterial.findMany({
+      where: { erpItemCode: { in: rest } },
+      select: { erpItemCode: true, l2ValveType: true },
+    });
+    for (const row of rawMaterials) putOnce(map, row.erpItemCode, row.l2ValveType);
+  }
+
+  return map;
+}

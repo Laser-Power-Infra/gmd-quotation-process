@@ -16,6 +16,7 @@ export type ColumnKey =
   | "project"
   | "poNumber"
   | "poDate"
+  | "contractNo"
   | "bgNo"
   | "bgDate"
   | "bgAmtFc"
@@ -55,6 +56,7 @@ export const PBG_COLUMN_DEFS: ColumnDef[] = [
   { key: "project", label: "Project", type: "text", width: 150, filter: "multiselect" },
   { key: "poNumber", label: "PO Number", type: "text", width: 190, readonly: true },
   { key: "poDate", label: "PO Date", type: "date", width: 115, readonly: true },
+  { key: "contractNo", label: "Contract No", type: "text", width: 150, readonly: true },
   { key: "bgNo", label: "BG No", type: "text", width: 160 },
   {
     key: "mailTrigger",

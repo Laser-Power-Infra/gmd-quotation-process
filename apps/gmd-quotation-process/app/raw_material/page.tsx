@@ -1307,13 +1307,13 @@ export default function Home() {
     setHeadFilter(null);
   }, []);
 
-  if (loading) {
+  // Skeleton on first load only: a reload keeps the tables mounted with their page, filters and sort.
+  if (loading && !data) {
     return (
       <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader
             totalRows={0}
-            syncedAt={null}
             onSync={handleSync}
             syncing={false}
           />
@@ -1329,7 +1329,6 @@ export default function Home() {
         <div className="flex-1 flex flex-col p-6 min-h-0">
           <GMDUpdateHeader
             totalRows={0}
-            syncedAt={null}
             onSync={handleSync}
             syncing={false}
           />
@@ -1347,7 +1346,7 @@ export default function Home() {
           id="raw-material-horizontal"
           defaultLayout={horizontalLayout}
           onLayoutChanged={onHorizontalLayoutChanged}
-          className="h-full min-h-screen"
+          className="h-full"
         >
           <ResizablePanel
             id="stock-value"
@@ -1395,9 +1394,10 @@ export default function Home() {
                   key={h.head}
                   type="button"
                   aria-pressed={headFilter === h.head}
-                  onClick={() =>
-                    setHeadFilter((s) => (s === h.head ? null : h.head))
-                  }
+                  onClick={() => {
+                    setHeadFilter((s) => (s === h.head ? null : h.head));
+                    setCurrentPage(1);
+                  }}
                   className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
                     headFilter === h.head
                       ? "border-[#38ef7d] dark:border-emerald-400/50 bg-white/10"
@@ -1419,9 +1419,10 @@ export default function Home() {
 
               <button
                 type="button"
-                onClick={() =>
-                  setIndianImported((s) => (s === "indian" ? "all" : "indian"))
-                }
+                onClick={() => {
+                  setIndianImported((s) => (s === "indian" ? "all" : "indian"));
+                  setCurrentPage(1);
+                }}
                 className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
                   indianImported === "indian"
                     ? "border-[#38ef7d] dark:border-emerald-400/50 bg-white/10"
@@ -1442,11 +1443,12 @@ export default function Home() {
 
               <button
                 type="button"
-                onClick={() =>
+                onClick={() => {
                   setIndianImported((s) =>
                     s === "imported" ? "all" : "imported",
-                  )
-                }
+                  );
+                  setCurrentPage(1);
+                }}
                 className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
                   indianImported === "imported"
                     ? "border-[#38ef7d] dark:border-emerald-400/50 bg-white/10"
@@ -1467,9 +1469,10 @@ export default function Home() {
 
               <button
                 type="button"
-                onClick={() =>
-                  setMajorFilter((s) => (s === "major" ? "all" : "major"))
-                }
+                onClick={() => {
+                  setMajorFilter((s) => (s === "major" ? "all" : "major"));
+                  setCurrentPage(1);
+                }}
                 className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
                   majorFilter === "major"
                     ? "border-[#38ef7d] dark:border-emerald-400/50 bg-white/10"
@@ -1490,9 +1493,10 @@ export default function Home() {
 
               <button
                 type="button"
-                onClick={() =>
-                  setMajorFilter((s) => (s === "minor" ? "all" : "minor"))
-                }
+                onClick={() => {
+                  setMajorFilter((s) => (s === "minor" ? "all" : "minor"));
+                  setCurrentPage(1);
+                }}
                 className={`w-full text-left bg-white/5 border rounded-lg p-3 transition-all cursor-pointer ${
                   majorFilter === "minor"
                     ? "border-[#38ef7d] dark:border-emerald-400/50 bg-white/10"
@@ -1516,7 +1520,12 @@ export default function Home() {
           <ResizableHandle withHandle className="mx-2 bg-border" />
 
           <ResizablePanel id="content" minSize="40%">
-            <div className="flex h-full flex-col min-h-0 min-w-0">
+            {/* A reload replaces every row when it lands, so input waits for it instead of being repainted with older data. */}
+            <div
+              inert={loading}
+              aria-busy={loading}
+              className={`flex h-full flex-col min-h-0 min-w-0 ${loading ? "opacity-60" : ""}`}
+            >
               <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
                 <div role="radiogroup" aria-label="Group rows by" className="mr-auto flex items-center gap-1 text-xs">
                   <span className="text-muted-foreground">Group:</span>
@@ -1529,6 +1538,7 @@ export default function Home() {
                       onClick={() => {
                         setGroupBy(g.key);
                         setHeadFilter(null); // head names differ between Item/Valve Type
+                        setCurrentPage(1);
                       }}
                       className={`rounded border px-2 py-1 ${
                         groupBy === g.key

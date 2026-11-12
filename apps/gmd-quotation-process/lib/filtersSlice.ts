@@ -6,6 +6,7 @@ export const initialFiltersState: FiltersState = {
   enquiryDateFrom: "",
   enquiryDateTo: "",
   docketNumber: "",
+  docketExact: "",
   partyNames: [],
   enquiryType: [],
   state: [],
@@ -72,6 +73,13 @@ const filtersSlice = createSlice({
     setFilter(state, action: PayloadAction<{ field: keyof FiltersState; value: unknown }>) {
       const { field, value } = action.payload;
       (state as unknown as Record<string, unknown>)[field] = value;
+      // Typing in the Docket no box goes back to its partial match.
+      if (field === "docketNumber") state.docketExact = "";
+    },
+    /** A DOCKET NO link: exactly that docket, shown in the Docket no box so it can be seen and cleared. */
+    setExactDocket(state, action: PayloadAction<string>) {
+      state.docketNumber = action.payload;
+      state.docketExact = action.payload;
     },
     resetFilters() {
       return initialFiltersState;
@@ -79,6 +87,6 @@ const filtersSlice = createSlice({
   },
 });
 
-export const { setFilter, resetFilters } = filtersSlice.actions;
+export const { setFilter, setExactDocket, resetFilters } = filtersSlice.actions;
 
 export default filtersSlice.reducer;

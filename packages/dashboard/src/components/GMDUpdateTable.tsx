@@ -922,8 +922,10 @@ interface GMDUpdateTableProps {
   onErpCodeChange?: (id: string, code: string) => void;
   fieldOverride?: Record<string, string>;
   filterOptionsOverride?: Record<string, string[]>;
-  /** Renders one column with a host-supplied widget (e.g. a list of links with an add button). */
-  customCell?: { column: string; render: (row: unknown[], id: string) => React.ReactNode };
+  /** Renders these columns, keyed by header, with host-supplied widgets (e.g. a list of links with an add button). */
+  customCells?: Record<string, (row: unknown[], id: string) => React.ReactNode>;
+  /** Hover text for a column header, keyed by header; the caption is dotted-underlined like `Abbr`. */
+  headerHints?: Record<string, string>;
   attachmentColumn?: string;
   onUploadAttachment?: (id: string, file: File) => Promise<void>;
   onClearAttachment?: (id: string) => Promise<void>;
@@ -1165,7 +1167,8 @@ castingRateInputs,
   onErpCodeChange,
   fieldOverride,
   filterOptionsOverride,
-  customCell,
+  customCells,
+  headerHints,
   attachmentColumn,
   onUploadAttachment,
   onClearAttachment,
@@ -2201,8 +2204,8 @@ castingRateInputs,
           }
         />
       );
-    } else if (customCell && header === customCell.column) {
-      cellContent = customCell.render(row, id);
+    } else if (customCells?.[header]) {
+      cellContent = customCells[header](row, id);
     } else if (header === "BOM ID" && onSelectBomId) {
       const options = bomIdOptionsById?.[id] ?? [];
       if (options.length === 0) {
@@ -2729,7 +2732,7 @@ castingRateInputs,
                 </>
               )
             ) : (
-              <>Showing {filteredRows.length} of {rows.length} records</>
+              <>{filteredRows.length.toLocaleString()} of {rows.length.toLocaleString()} records match</>
             )}
           </span>
           {toolbarExtra}
@@ -3197,7 +3200,10 @@ castingRateInputs,
                       className={`flex justify-between gap-1.5 cursor-pointer ${wrapCells ? "items-start" : "items-center"}`}
                       onClick={() => handleSort(idx)}
                     >
-                      <span className={wrapCells ? "wrap-break-word" : "truncate"} title={header}>
+                      <span
+                        className={`${wrapCells ? "wrap-break-word" : "truncate"}${headerHints?.[header] ? " cursor-help underline decoration-dotted" : ""}`}
+                        title={headerHints?.[header] ?? header}
+                      >
                         {header}
                       </span>
                       {isSorted && (
@@ -3706,6 +3712,8 @@ castingRateInputs,
         pageSize={pageSize}
         onPageChange={setCurrentPage}
         onPageSizeChange={setPageSize}
+        // Server pages are size-capped, so "All" there would hide rows.
+        showAll={!isServer}
       />
       {onDeleteRow && (
         <Dialog open={!!confirmDeleteId} onOpenChange={(o) => !o && setConfirmDeleteId(null)}>

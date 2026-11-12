@@ -15,6 +15,7 @@
 
 import { runBomMastErpSync, type BomMastSyncResult } from "./bom-mast-sync";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 import { proposeMissingBoms } from "@/lib/bomChange";
 
 export type JobName = "bom-mast";
@@ -62,6 +63,7 @@ export async function runScheduledBomMast(): Promise<ScheduledBomMastResult> {
         `linkUnlinked=${steps.bomMast.linkUnlinked} unresolved=${steps.bomMast.unresolved}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    await recordJobRun(job, steps.bomMast.sheetRows);
 
     return { success: true, job, startedAt, elapsedMs, steps };
   } finally {

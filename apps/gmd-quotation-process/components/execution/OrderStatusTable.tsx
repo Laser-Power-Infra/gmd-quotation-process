@@ -6,7 +6,7 @@ import { squish } from "@gmd/dashboard/lib/squish";
 import { formatLakh } from "@/lib/debtorsAgeing";
 import { formatIndianNumber } from "@/lib/formatCurrency";
 import { downloadCsv, toCsv } from "@/lib/debtorJoins";
-import { GLOSSARY, PENDING_WITH, STAGES, ageDays, lightOf, stageOf, type ContractLine, type Stage } from "@/lib/executionPages";
+import { GLOSSARY, PENDING_WITH, STAGES, ageDays, lightOf, producedSummary, stageOf, type ContractLine, type Stage } from "@/lib/executionPages";
 import { fetchContractInvoicesAction } from "@/app/actions/executionPages";
 import type { InvoiceLine } from "@/lib/executionPages-server";
 import { Abbr, Dot, TD, TDN, TH, Tile } from "./ui";
@@ -89,6 +89,7 @@ export default function OrderStatusTable({ lines }: { lines: ContractLine[] }) {
             <tbody className="divide-y divide-border/60">
               {shown.map((c) => {
                 const inv = invoices[c.contractNo];
+                const produced = producedSummary(c.lines);
                 return (
                   <Fragment key={c.contractNo}>
                     <tr className="cursor-pointer hover:bg-muted/40" onClick={() => toggle(c.contractNo)}>
@@ -98,7 +99,10 @@ export default function OrderStatusTable({ lines }: { lines: ContractLine[] }) {
                       <td className={TD}>{c.date ?? "-"}</td>
                       <td className={TDN}>{c.lines.length}</td>
                       <td className={TDN}>{formatLakh(c.value)}</td>
-                      <td className={TD}>{c.stage === "Done" ? "Fully billed" : c.stage}</td>
+                      <td className={TD}>
+                        {c.stage === "Done" ? "Fully billed" : c.stage}
+                        {produced && <div className="text-[11px] text-muted-foreground">{produced}</div>}
+                      </td>
                       <td className={TD}>{PENDING_WITH[c.stage]}</td>
                     </tr>
                     {open === c.contractNo && (

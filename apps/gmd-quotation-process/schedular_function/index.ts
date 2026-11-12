@@ -11,6 +11,7 @@
  *   3. Add `app/api/scheduler/<job>/route.ts` as a thin shim.
  *   4. Add `infra/<job>.sh` + a `[job-local]` block to the infra repo.
  *   5. Document it in `schedular_function/README.md`.
+ *   6. Call `recordJobRun("<job>")` on success and add the name to `SYNC_JOBS` (`job-heartbeat.ts`).
  *
  * Prefer calling existing `lib/` helpers over copying logic. Both server-action
  * wrappers ported here (`syncContractReviewEnquiryFieldsAllAction`,
@@ -130,6 +131,11 @@ export {
   type InspectionOfferSyncOptions,
   type InspectionOfferSyncResult,
 } from "./inspection-offer-sync";
+
+export {
+  runProdEntrySync,
+  type ProdEntrySyncResult,
+} from "./contract-review-prod-entry";
 
 export {
   runPendingDocketCreation,
@@ -261,3 +267,14 @@ export {
   type RunPurchaseOrdersOptions,
   type ScheduledPurchaseResult,
 } from "./purchase-orders";
+
+export {
+  runScheduledDocketAutoLink,
+  type DocketAutoLinkCounts,
+  type ScheduledDocketAutoLinkResult,
+} from "./docket-auto-link";
+
+export {
+  runScheduledSyncHealth,
+  type ScheduledSyncHealthResult,
+} from "./sync-health";

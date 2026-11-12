@@ -13,6 +13,7 @@
 import { syncPurchaseOrders, type PurchaseSyncResult } from "@/lib/purchaseOrderSync";
 import { syncGrnLines, type GrnSyncResult } from "@/lib/grnSync";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 
 const JOB = "purchase-orders";
 
@@ -50,6 +51,7 @@ export async function runScheduledPurchaseOrders(
     // `limit` is a PO smoke-test knob; the GRN copy is a full replace, so a limited run skips it.
     const grn = await syncGrnLines({ dryRun: result.dryRun || options.limit !== undefined });
     console.info(`[scheduler-${JOB}] GRN: ${grn.written} written of ${grn.sheetRows} rows, ${grn.linkedToPo} linked to a PO`);
+    if (!result.dryRun && options.limit === undefined) await recordJobRun(JOB, result.sheetRows);
     return { success: true, job: JOB, result, grn };
   } finally {
     inFlight = false;

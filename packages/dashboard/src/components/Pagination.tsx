@@ -6,7 +6,12 @@ interface PaginationProps {
   pageSize: number;
   onPageChange: (page: number) => void;
   onPageSizeChange?: (size: number) => void;
+  /** Adds an "All" size. Only for tables that hold every row client-side. */
+  showAll?: boolean;
 }
+
+// "All" as a page size: everything fits on page 1, so the page maths needs no special case.
+export const ALL_ROWS = Number.MAX_SAFE_INTEGER;
 
 const btnBase =
   "bg-card border border-border rounded text-foreground px-2.5 py-1.5 text-xs font-semibold cursor-pointer transition-all hover:border-muted-foreground/50 disabled:opacity-40 disabled:cursor-not-allowed min-w-[32px] text-center";
@@ -16,7 +21,8 @@ export default function Pagination({
   currentPage,
   pageSize,
   onPageChange,
-  onPageSizeChange
+  onPageSizeChange,
+  showAll,
 }: PaginationProps) {
   const totalPages = Math.ceil(total / pageSize);
   const hasPagination = totalPages > 1;
@@ -52,18 +58,23 @@ export default function Pagination({
         <span className="text-foreground font-medium">
           {total === 0
             ? "No records"
-            : `Showing ${from}–${to} of ${total.toLocaleString()}`}
+            : `Showing ${from.toLocaleString()}–${to.toLocaleString()} of ${total.toLocaleString()}`}
         </span>
-        <select
-          value={pageSize}
-          onChange={(e) => onPageSizeChange?.(Number(e.target.value))}
-          className="bg-card border border-border rounded px-2 py-1 text-xs text-foreground font-semibold outline-none cursor-pointer"
-        >
-          <option value={25}>25</option>
-          <option value={50}>50</option>
-          <option value={100}>100</option>
-          <option value={1000}>1000</option>
-        </select>
+        <label className="flex items-center gap-1.5 text-muted-foreground">
+          Show:
+          <select
+            value={pageSize}
+            onChange={(e) => onPageSizeChange?.(Number(e.target.value))}
+            className="bg-card border border-border rounded px-2 py-1 text-xs text-foreground font-semibold outline-none cursor-pointer"
+          >
+            <option value={25}>25</option>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+            <option value={200}>200</option>
+            <option value={1000}>1000</option>
+            {showAll && <option value={ALL_ROWS}>All</option>}
+          </select>
+        </label>
       </div>
       <div className="flex items-center gap-1.5 h-8">
         {hasPagination && (

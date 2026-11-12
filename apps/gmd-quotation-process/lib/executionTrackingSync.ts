@@ -53,6 +53,10 @@
  *     existing row only when it is blank — a blank FY puts the row outside this
  *     job's scope filter, so this is the one path that can repair it. A stored FY
  *     is never rewritten, not even a differently-spelled one.
+ *   - `derivedItemType` is **gap-fill only**, from the item masters
+ *     (`FullItem.itemType`, else `RawMaterial.l2ValveType`): SALE BILL carries no
+ *     valve type, so without it a line MASTER never typed stays blank in the Sales
+ *     Register. A non-blank value is never overwritten.
  *   - a pair the table does not hold is **inserted**. `itemName` comes from
  *     `resolveItemNames` (`lib/erpItemNameLookup.ts`) — the name the item was
  *     supplied under before, else the ERP master name. Only when no source knows
@@ -81,7 +85,7 @@ import {
   type SaleBillField,
 } from "@/lib/gmd_lib/execution-tracking-columns";
 import { getAccNameMap } from "@/lib/accMasterLookup";
-import { resolveItemNames, resolveMasterNames } from "@/lib/erpItemNameLookup";
+import { resolveItemNames, resolveItemTypes, resolveMasterNames } from "@/lib/erpItemNameLookup";
 import { canonicalizeState } from "@/lib/supplyStateResolver";
 // import {
 //   SYNC_LOG_KIND,
@@ -162,6 +166,8 @@ export type MappedRecord = MergedLine & {
   stateRaw: string | null;
   /** Canonical Title Case state, or `null` when unrecognised. */
   stateCanonical: string | null;
+  /** The item masters' type for the code (`resolveItemTypes`), or `null`; gap-fills `derivedItemType`. */
+  itemType: string | null;
 };
 
 /** The columns preloaded from `SupplyHistoryItem`. */
@@ -179,6 +185,8 @@ export type DbRow = {
   /** Compared only to decide whether VRDATE/ACC_YEAR may fill it — never overwritten once set. */
   date: string | null;
   financialYear: string | null;
+  /** Same: only read to decide whether the item masters' type may fill it. */
+  derivedItemType: string | null;
 };
 
 export type ExecutionTrackingReport = {
@@ -547,6 +555,11 @@ export function computeFieldChanges(
     changes.push({ field: "financialYear", from: null, to: record.financialYear });
   }
 
+  // And `derivedItemType`: the item masters' type only fills a blank.
+  if (record.itemType && !trimmedOrNull(row?.derivedItemType ?? null)) {
+    changes.push({ field: "derivedItemType", from: null, to: record.itemType });
+  }
+
   for (const field of OWNED_FIELDS) {
     if (field === "state") {
       if (!record.stateRaw) continue;
@@ -668,6 +681,7 @@ function buildInsert(
   }
   // The invoice date MASTER never supplied for this row.
   if (record.values.date) data.date = record.values.date;
+  if (record.itemType) data.derivedItemType = record.itemType;
   return data;
 }
 
@@ -770,12 +784,14 @@ export async function runExecutionTrackingSync(
   //   - `nameByCode`     the name a row is stored under (supply first).
   //   - `masterNameByCode` the ERP master name, used only to decide whether two
   //     codes are really the same product (see `mergeByDescription`).
+  //   - `typeByCode`     the item masters' type, gap-filling `derivedItemType`.
   const codesInPlay = mergedLines
     .map((line) => line.values.erpItemCode ?? "")
     .filter(Boolean);
-  const [nameByCode, masterNameByCode] = await Promise.all([
+  const [nameByCode, masterNameByCode, typeByCode] = await Promise.all([
     resolveItemNames(codesInPlay),
     resolveMasterNames(codesInPlay),
+    resolveItemTypes(codesInPlay),
   ]);
 
   // ── Preload the year from the DB ──
@@ -806,6 +822,7 @@ export async function runExecutionTrackingSync(
       consigneeName: true,
       date: true,
       financialYear: true,
+      derivedItemType: true,
     },
   })) as DbRow[];
 
@@ -856,6 +873,7 @@ export async function runExecutionTrackingSync(
       accMiss,
       stateRaw,
       stateCanonical: stateRaw ? canonicalizeState(stateRaw) : null,
+      itemType: typeByCode.get(normalizeKey(line.values.erpItemCode ?? "")) ?? null,
     };
   });
 

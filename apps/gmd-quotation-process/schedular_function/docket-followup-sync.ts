@@ -16,6 +16,7 @@ import {
   type DocketAiThreadInput,
 } from "@/lib/docketAiValidationRunner";
 import { invalidatePendingDocketsCache } from "@/lib/pendingDocketsCache";
+import { recordJobRun } from "./job-heartbeat";
 
 export const DOCKET_PATTERNS = [
   /\bGMD\/\d{4}-\d{2}\/\d+\b/i,
@@ -363,6 +364,7 @@ async function runDocketFollowupSyncInternal(
   lastSyncTimestamp = new Date();
   // The Pending tab reloads right after a sync; don't serve it the stale list.
   invalidatePendingDocketsCache();
+  await recordJobRun("docket-followup", threads.length);
   const elapsedMs = Date.now() - startTime;
 
   return {

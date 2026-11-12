@@ -10,6 +10,7 @@
  */
 
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 import { runAccMasterSync, type AccMasterSyncResult } from "./acc-master-sync";
 
 export type JobName = "acc-master";
@@ -65,6 +66,7 @@ export async function runScheduledAccMaster(
         `failedWrites=${steps.accMaster.failedWrites}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    if (!options.dryRun) await recordJobRun(job, steps.accMaster.sheetRows);
 
     return { success: true, job, startedAt, elapsedMs, steps };
   } finally {

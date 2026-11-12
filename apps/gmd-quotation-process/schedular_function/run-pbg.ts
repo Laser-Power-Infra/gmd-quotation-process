@@ -23,6 +23,7 @@
 
 import { syncPbgData, type PbgSyncResult } from "@/lib/pbg/pbg-data";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 
 export type JobName = "pbg";
 
@@ -63,6 +64,7 @@ export async function runScheduledPbg(): Promise<ScheduledPbgResult> {
         `unchanged=${steps.sync.unchanged} skippedBlankBgNo=${steps.sync.skippedBlankBgNo}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    await recordJobRun(job, steps.sync.totalInSheet);
 
     return { success: true, job, startedAt, elapsedMs, steps };
   } finally {

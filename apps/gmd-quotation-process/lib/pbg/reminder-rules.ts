@@ -1,7 +1,5 @@
 export type ReminderStage = "BEFORE_30_DAYS" | "EXPIRED";
 
-export const ELIGIBLE_STATUSES = ["open", "running", "expired"] as const;
-
 export const PRE_EXPIRY_DAYS = 30;
 export const POST_EXPIRY_INTERVAL_DAYS = 7;
 
@@ -14,11 +12,18 @@ export function normalizeStatus(status: string | null | undefined): string {
   return String(status ?? "").trim().toLowerCase();
 }
 
-/** OPEN, Running and Expired are eligible; CLOSED is never eligible. */
+/**
+ * The only place an ERP status becomes a dashboard status. Blank and unknown
+ * values show as RUNNING so they stay visible instead of being hidden.
+ */
+export function pbgStatus(status: string | null | undefined): "RUNNING" | "CLOSED" {
+  const closed = ["closed", "close", "cancelled", "canceled", "returned"];
+  return closed.includes(normalizeStatus(status)) ? "CLOSED" : "RUNNING";
+}
+
+/** Every status that shows as RUNNING is eligible; CLOSED never is. */
 export function isEligibleStatus(status: string | null | undefined): boolean {
-  return (ELIGIBLE_STATUSES as readonly string[]).includes(
-    normalizeStatus(status),
-  );
+  return pbgStatus(status) === "RUNNING";
 }
 
 /** Only an explicit CONTINUE allows mail; HOLD, blank and unknown mean no. */

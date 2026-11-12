@@ -75,7 +75,7 @@ function DocketRowImpl({
   // Clicks from portals (popovers, dialogs) bubble through React but are not inside the cell: ignore them.
   const open = (e: React.MouseEvent) => {
     if (!e.currentTarget.contains(e.target as Node)) return;
-    if ((e.target as HTMLElement).closest("button,a,input,[role=combobox]")) return;
+    if ((e.target as HTMLElement).closest("button,a,input,[role=combobox],[data-copy-text]")) return;
     actions.edit(enquiry.id);
   };
 
@@ -99,7 +99,8 @@ function DocketRowImpl({
                   {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                 </button>
               )}
-              <span className="font-semibold text-[#0f62fe] dark:text-blue-300 shrink-0 whitespace-nowrap" title={enquiry.docketNumber}>{enquiry.docketNumber}</span>
+              {/* Users copy the docket no: clicking the text selects it instead of opening the drawer. */}
+              <span data-copy-text className="font-semibold text-[#0f62fe] dark:text-blue-300 shrink-0 whitespace-nowrap cursor-text select-all" title={enquiry.docketNumber}>{enquiry.docketNumber}</span>
               {incomplete > 0 && (
                 <button
                   type="button"

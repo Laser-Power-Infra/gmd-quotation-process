@@ -7,6 +7,7 @@ import {
   isMailTriggerContinue,
   isPostExpiryDue,
   isPreExpiryDue,
+  pbgStatus,
 } from '../lib/pbg/reminder-rules.js'
 
 const IST_MORNING = new Date('2026-10-28T03:30:00.000Z') // 09:00 IST
@@ -24,19 +25,23 @@ test('a UTC evening that is already the next day in IST counts as that day', () 
   assert.equal(daysUntilExpiry('2026-11-27', lateUtc), 30)
 })
 
-test('closed is never eligible; open, running and expired are', () => {
-  for (const status of ['OPEN', 'open', 'Running', 'EXPIRED']) {
-    assert.equal(isEligibleStatus(status), true, status)
+test('pbgStatus maps every stored value', () => {
+  for (const status of ['Running', 'RUNNING', 'OPEN', 'Expired']) {
+    assert.equal(pbgStatus(status), 'RUNNING', status)
   }
-  for (const status of [
-    'CLOSED',
-    'Closed',
-    'close',
-    'RETURNED',
-    'Returned',
-    '',
-    null,
-  ]) {
+  for (const status of ['Closed', 'CLOSED', 'close', 'Returned', 'CANCELLED', 'Canceled']) {
+    assert.equal(pbgStatus(status), 'CLOSED', status)
+  }
+  for (const status of ['', null, undefined, '-']) {
+    assert.equal(pbgStatus(status), 'RUNNING', String(status))
+  }
+})
+
+test('closed is never eligible; open, running, expired and blank are', () => {
+  for (const status of ['OPEN', 'open', 'Running', 'EXPIRED', '', null]) {
+    assert.equal(isEligibleStatus(status), true, String(status))
+  }
+  for (const status of ['CLOSED', 'Closed', 'close', 'RETURNED', 'Returned']) {
     assert.equal(isEligibleStatus(status), false, String(status))
   }
 })

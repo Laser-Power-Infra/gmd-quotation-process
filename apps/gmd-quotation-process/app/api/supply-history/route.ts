@@ -2,6 +2,7 @@ import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SUPPLY_DISPLAY_HEADERS, buildSupplyRow } from "@/lib/supplyRows";
+import { costLines, supplyCostInput } from "@/lib/lineCost-server";
 
 export async function GET() {
   const denied = await denyIfNoAccess();
@@ -49,10 +50,12 @@ export async function GET() {
           )
         : null;
 
+    // shortcut: costs the whole table on every call, move to the planned RabbitMQ job (stored costs) if this route gets real traffic
+    const costs = await costLines(items.map(supplyCostInput));
     const rows: unknown[][] = [];
     const bomIdOptions: Record<string, string[]> = {};
-    for (const item of items) {
-      const built = buildSupplyRow(item);
+    for (const [i, item] of items.entries()) {
+      const built = buildSupplyRow(item, costs[i]);
       rows.push(built.row);
       bomIdOptions[item.id] = built.bomIdOptions;
     }

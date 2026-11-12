@@ -3,7 +3,7 @@
  *
  * Selection:
  *   - `mailTrigger = CONTINUE`
- *   - status OPEN / Running / Expired (CLOSED is never eligible)
+ *   - status shows as RUNNING (`pbgStatus`); CLOSED is never eligible
  *   - `expiryDate` is set
  *
  * Cadence:
@@ -44,6 +44,7 @@ import {
 } from "@/lib/pbg/reminder-rules";
 import { mergeReminderCc } from "@/lib/pbg/reminder-cc";
 import { JobAlreadyRunningError } from "./run-gmd-update";
+import { recordJobRun } from "./job-heartbeat";
 
 export type PbgReminderJobName = "pbg-reminders";
 
@@ -475,6 +476,7 @@ export async function runScheduledPbgReminders(
         `skippedBatch=${skippedBatchLimit}`,
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
+    if (!dryRun && emailsFailed === 0) await recordJobRun(job, emailsSent);
 
     return {
       success: emailsFailed === 0,

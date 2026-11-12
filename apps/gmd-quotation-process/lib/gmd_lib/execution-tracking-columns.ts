@@ -123,6 +123,14 @@ export function saleBillGid(): number {
   return requireGid("SALE_BILL_GID");
 }
 
+/**
+ * `PROD_ENTRY_DUMP_GID` — production entries (ITEM_CODE, VRDATE, ORDER_VRNO, QTYRECD). Defaults to
+ * the live tab, so unlike the others it needs no server setting.
+ */
+export function prodEntryDumpGid(): number {
+  return process.env.PROD_ENTRY_DUMP_GID ? requireGid("PROD_ENTRY_DUMP_GID") : 698397877;
+}
+
 const DASH_SENTINELS = new Set(["-", "--", "—", "–"]);
 
 /**

@@ -6,6 +6,9 @@
 #   2.  Enquiry fields (State / Utility / Project Reference)
 #   3.  RM AVAIL: raw-material stock, VerifyBom, RM AVAIL, PHYSICAL STOCK
 #   4.  INSPECTION OFFER DUMP -> offer / inspection / DI
+#   5.  INSPECTION OFFER DUMP -> InspectionOffer + draft InspectionReport
+#   6.  PROD ENTRY DUMP -> ContractReview.prodEntryDate (a failure lands in
+#       `warnings`, which the check below turns into a failed run)
 #
 # Heavier than raw-material-sync.sh — two full-column spreadsheet reads and a
 # large table rewrite — so it is scheduled at :30 rather than :00 to keep the two

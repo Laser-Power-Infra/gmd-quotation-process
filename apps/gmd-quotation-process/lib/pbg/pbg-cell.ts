@@ -5,7 +5,7 @@ import type { PbgRecord } from "@/lib/pbg/pbg-data";
 
 export type CellValue = string | number | Date | null;
 
-export const STATUS_OPTIONS = ["OPEN", "CLOSED", "RUNNING"];
+export const STATUS_OPTIONS = ["RUNNING", "CLOSED"];
 
 const EDITABLE_KEYS = new Set<ColumnKey>(
   PBG_COLUMN_DEFS.filter((d) => d.type !== "files" && !d.readonly).map(

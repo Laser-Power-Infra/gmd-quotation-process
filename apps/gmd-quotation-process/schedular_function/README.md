@@ -34,9 +34,11 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | C Batch marks | `POST /api/scheduler/c-batch` | `c-batch-sync` | `ITEM MASTER ERP` |
 | ERP Contract No sync | `POST /api/scheduler/erp-contract-no` | `erp-contract-no-sync` | `SALE_BILL`, `MC` |
 | Closure Status sync *(every 10m)* | `POST /api/scheduler/closure-status` | `closure-status-sync` | `docket_quotation_threads`, `enquiries` |
+| Docket auto-link *(daily, 01:40)* | `POST /api/scheduler/docket-auto-link` | `docket-auto-link-sync` | `ContractReview`, `enquiries` -> `Enquiry.selectedContractNo` (link only) |
 | Ledger sync *(daily, 01:55)* | `POST /api/scheduler/ledger` | `ledger-sync` | `DEBTORS`, `CREDITORS`, `ADVANCE TO CREDITORS` -> `Debtor`, `Creditor`, `CreditorAdvance` |
 | Purchase Order / GRN sync *(daily, 02:05)* | `POST /api/scheduler/purchase-orders` | `purchase-orders-sync` | `PURCHASE ORD AND GRN` -> stock DB `PurchaseOrderLine`; `GRN` -> stock DB `GrnLine` |
 | Service / Work Orders sync *(daily, 02:10)* | `POST /api/scheduler/service-orders` | `service-orders-sync` | `ITEM MASTER ERP` -> `ServiceItem` |
+| Sync health alert *(daily, 10:00 IST)* | `POST /api/scheduler/sync-health` | `sync-health` | job heartbeats (`EngineeringSync` `job:*`) -> direct SMTP to `SYNC_ALERT_TO` |
 
 The stagger is deliberate. `raw-material`, `supply-history` and
 `contract-review` each full-table-read the tables the others write. `bom-mast`
@@ -129,7 +131,7 @@ pivot/QUERY result). Nothing here sums anything itself.
 
 ## `contract-review`
 
-Six sequential steps in `run-contract-review.ts`:
+Seven sequential steps in `run-contract-review.ts`:
 
 | # | Step | File | What it writes |
 |---|---|---|---|
@@ -139,12 +141,21 @@ Six sequential steps in `run-contract-review.ts`:
 | 3 | `runContractReviewRmAvailSync()` | `contract-review-rm-avail.ts` | `RawMaterial.availableStock`, `VerifyBom`, `ContractReview.noUse`, `ContractReview.rmPhysicalStock` |
 | 4 | `runIcDumpSync()` | `contract-review-ic-dump.ts` | `ContractReview.offerNumber` / `.inspectionNumber` / `.diDate` |
 | 5 | `runInspectionOfferSync()` | `inspection-offer-sync.ts` | `InspectionOffer` + a draft `InspectionReport` per new offer VRNO |
+| 6 | `runProdEntrySync()` | `contract-review-prod-entry.ts` | `ContractReview.prodEntryDate` |
 
 Step 1 reads `CONTRACTS` (GID 734728893, header row 4) and `DUMP` (GID
 1604813523, header row 1) from `CONTRACT_REVIEW_SPREADSHEET_ID`. Step 1b reads
 `ITEM MASTER ERP` (gid 253020709) from the BOM MAST ERP workbook. Step 3 reads
 `stock-phys` from `GOOGLE_SPREADSHEET_ID`. Step 4 reads `INSPECTION OFFER DUMP`
-(GID 148043829) from the BOM MAST ERP workbook.
+(GID 148043829) from the BOM MAST ERP workbook. Step 6 reads `PROD ENTRY DUMP`
+(gid 698397877; `PROD_ENTRY_DUMP_GID` overrides it, no setting needed) from the
+same workbook and writes the latest `VRDATE` per `ORDER_VRNO` + `ITEM_CODE` to the
+rows whose `productionOrderNumber` + `itemCode` match. It is written when it
+differs; a row with no dated entry is left alone, so a blank never clears a date.
+`skippedRows` counts sheet rows with a blank key or an unreadable `VRDATE`, so a
+change in the ERP's date format shows. A step 6 error (a Sheets 429/5xx, a removed
+tab, a renamed column) does not void steps 1–5: it is returned in the top-level
+`warnings`, and `contract-review-sync.sh` still fails the run on it.
 
 The order is a real dependency chain: step 3's RM AVAIL reads `VerifyBom`, whose
 `itemName` is sourced from `ContractReview.itemName` ordered by `syncedAt desc`
@@ -805,6 +816,75 @@ Daily at **02:10** (`0 10 2 * * *`), after `ledger`. Entry:
   `{ serviceItems: { read, written, skipped, inDb, error? } }`.
   `?dryRun=1` reads and counts without writing.
 
+## `docket-auto-link`
+
+Daily at **01:40** (`0 40 1 * * *`), after the hourly `contract-review` run at
+:30. Entry: `runScheduledDocketAutoLink()` in `docket-auto-link.ts`. Fills the
+Quotations page **Contract** column (`Enquiry.selectedContractNo`) without the
+Match button, for the clear-cut case only (Puja, 10 Nov 2026, interlinking A1).
+
+- **Contracts examined:** the live ones (a line with blank STATUS), the same list
+  the Match dialog offers. A contract some docket already carries is skipped.
+- **Rule** (`pickAutoLink` in `lib/contractDocketMatch.ts`): candidates are the
+  dockets of the contract's party (`normalizeParty`), ranked as the Match dialog
+  ranks them. Link only when exactly one docket has the contract's total qty on
+  every one of its item codes. A contract line with no code or qty is never a
+  full match. `planAutoLinks` decides every contract against the state at the
+  start of the run, so the order never matters. When several contracts pick the
+  same docket, they all link only if each still picks it with the others carried
+  (a docket split over several contracts); otherwise all are ambiguous.
+- **Write: the link only.** `linkContractsToDocket` in `lib/contractDocketLink.ts`
+  (the same link write the Match button makes) adds the contract to
+  `selectedContractNo`. An existing link is never replaced or removed.
+- **Rates are never touched.** The job does not change quoted rates, VA% or the
+  item change log, frozen APM dockets included. The contract rate is applied
+  when a user presses Match, so a quoted-vs-contract rate mismatch stays visible.
+  Contract Review State / Utility follow the new link at the next hourly
+  `contract-review` run.
+- **Counts** (`steps.autoLink`):
+  - `examined`;
+  - `linked`;
+  - `ambiguous`: two or more full matches, or exactly one full match on a docket
+    that other contracts also pick when it is not a split between them;
+  - `partial`: no full match, including no candidate docket;
+  - `alreadyLinked`;
+  - `failed`: a full match whose link write failed. The script exits 1 and the
+    next run tries it again.
+
+Ambiguous and partial contracts are left for the Match button. A later run can
+add links that an earlier run left ambiguous, because candidates change as other
+contracts link; it never changes or removes a link.
+
+## `sync-health`
+
+Daily at **10:00 IST** (`0 0 10 * * *` with the container on IST; the conf has the
+UTC line). Entry: `runScheduledSyncHealth()` in `sync-health.ts` (Puja, 10 Nov
+2026, interlinking D11: alert when a page has not synced for 24 h). 10:00 is after
+every daily job (the last is `pbg-reminders` at 09:00), so a healthy daily job is
+always under 24 h old when the alert runs, and one that failed today is about 32 h
+old.
+
+- **Heartbeat:** every scheduled job calls `recordJobRun(job, totalRows)`
+  (`job-heartbeat.ts`) once, at the end of a successful run. It upserts the
+  `EngineeringSync` row `job:<name>` with the finish time; no table or migration
+  of its own. Dry runs, `limit` smoke tests and runs that return `success: false`
+  record nothing. A failed heartbeat write is logged and never fails the job.
+  `docket-followup` has no `runScheduled*` wrapper, so its heartbeat is written at
+  the end of `runDocketFollowupSync` (a run from the Docket Follow Up page counts).
+- **Status** (`syncHealthOf`): `NEVER` = no heartbeat; `STALE` = the last
+  successful run is more than 24 h old (the shared `syncStale` rule); otherwise
+  `OK`. The jobs are `SYNC_JOBS`: one per `infra/*.conf`, plus `pbg-reminders`.
+  `tests/syncHealth.test.ts` fails when a conf and the list disagree.
+- **List:** `/data-sources` shows every job with its last successful run (IST),
+  age and status.
+- **Alert:** mails the `STALE` and `NEVER` jobs, never its own row, to
+  `SYNC_ALERT_TO` (comma-separated) over the PBG SMTP account. Unset, or nothing
+  stale: no mail, only a log line. A failed send returns `success: false` and the
+  script exits 1.
+- Right after a deploy every job shows `NEVER` until its next successful run.
+- /data-sources may briefly show a daily job as STALE in the minutes around its
+  own run time; the alert runs at 10:00 so it never reports that.
+
 ## `execution-tracking`
 
 Single step: `runExecutionTrackingStep()` in `execution-tracking-sync.ts` — the
@@ -1141,6 +1221,7 @@ Stock-step edge cases:
 | `ContractReview.noUse` | step 3 | overwritten |
 | `ContractReview.rmPhysicalStock` | step 3 | overwritten, including to `null` when `costCodeRef` resolves to nothing |
 | `offerNumber` / `inspectionNumber` / `diDate` | step 4 | **union, never shrink** — values are appended, never removed or overwritten. A blank sheet cell adds nothing, so it can never clear a value |
+| `prodEntryDate` | step 6 | the latest `PROD ENTRY DUMP` `VRDATE` (`dd-MMM-yyyy`), overwritten when it differs; a blank or unreadable date never clears it |
 | deletions | — | none, in any step |
 
 ### `supply-history`
@@ -1361,16 +1442,19 @@ The CLI script still has them.
    fail-loudly guards and the credential probe) and a `[job-local]` block.
    Pick a minute offset that does not collide with an existing heavy job.
 5. Export it from `index.ts` and document it in the table at the top.
+6. Call `recordJobRun("<job>")` on the success path and add the name to
+   `SYNC_JOBS` in `job-heartbeat.ts`, so the job shows up in Sync Health.
 
 Prefer calling existing `lib/` helpers over copying logic — check whether the
 button you are wrapping is already a thin wrapper over a lib.
-6. Add any new env vars to `documentation/10-glossary-appendix.md`.
+7. Add any new env vars to `documentation/10-glossary-appendix.md`.
 
 ## `pbg-reminders`
 
 `runScheduledPbgReminders()` in `pbg-reminders.ts` sends the PBG reminder mails
 directly over SMTP (no n8n). It reads only rows whose `mail_trigger` is
-`CONTINUE` and whose status is `OPEN`, `Running` or `Expired`.
+`CONTINUE` and whose status shows as `RUNNING` (`pbgStatus` in
+`lib/pbg/reminder-rules.ts`).
 
 - **Consolidated mail:** one mail per **party + contact** with two sections:
   - **A. Expired (Return Requested):** every currently expired, non-closed BG
@@ -1384,8 +1468,8 @@ directly over SMTP (no n8n). It reads only rows whose `mail_trigger` is
   BGs exist, Section B rides along on the next Section A cycle.
 - **MSEFC:** the Section 18 provision and MSEFC escalation sentence appear only
   from **reminder 2** onward.
-- **Returned BGs:** `CLOSED`/`Closed` rows are never eligible, so reminders stop
-  as soon as the BG is marked returned/closed.
+- **Returned BGs:** rows shown as `CLOSED` (closed, cancelled or returned) are
+  never eligible, so reminders stop as soon as the BG is marked returned/closed.
 - **Recipients:** parsed from the `contact_person` column; one mail per party +
   contact group.
 - **Mail body:** one table per PO with PO number, project, BG details, invoice

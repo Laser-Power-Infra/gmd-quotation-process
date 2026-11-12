@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isBlankTerm, missingValidationTerms, validationBlockedMessage } from '../lib/commercialTerms.js'
+import { DEFAULT_TERMS, isBlankTerm, missingValidationTerms, termsForParty, validationBlockedMessage } from '../lib/commercialTerms.js'
 import {
   BASE_COST_FACTOR,
   computeCostLoading,
@@ -98,4 +98,21 @@ test('PO payment terms only fill a blank Contract Review value', () => {
   assert.equal(pickPoPaymentTerms(null, '#N/A'), undefined)
   assert.equal(pickPoPaymentTerms(null, ''), undefined)
   assert.equal(cleanPoPaymentTerms('#REF!'), null)
+})
+
+test('termsForParty falls back to defaults when there is no prior enquiry', () => {
+  assert.deepEqual(termsForParty(null), DEFAULT_TERMS)
+})
+
+test('termsForParty copies a full prior enquiry', () => {
+  const last = { paymentTerms: '45 days', inspection: 'Client Scope @ 0.75%', pbg: '5%' }
+  assert.deepEqual(termsForParty(last), last)
+})
+
+test('termsForParty defaults only the blank fields', () => {
+  assert.deepEqual(termsForParty({ paymentTerms: '45 days', inspection: '', pbg: '-' }), {
+    paymentTerms: '45 days',
+    inspection: DEFAULT_TERMS.inspection,
+    pbg: DEFAULT_TERMS.pbg,
+  })
 })

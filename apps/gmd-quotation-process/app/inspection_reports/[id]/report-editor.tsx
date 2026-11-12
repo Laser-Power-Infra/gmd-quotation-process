@@ -11,6 +11,7 @@ import {
   checkReport,
   type ReportData,
   type ReportItem,
+  type TeamMember,
 } from "@/lib/inspectionReport";
 
 const ITEM_COLUMNS: [keyof ReportItem, string][] = [
@@ -37,6 +38,12 @@ const QAP_FIELDS: [keyof ReportData["qap"], string][] = [
   ["duration", "Duration"],
 ];
 
+const TEAM_FIELDS: [keyof TeamMember, string][] = [
+  ["agency", "Agency"],
+  ["name", "Name"],
+  ["designation", "Designation"],
+];
+
 const inputCls = "h-8 w-full rounded-md border border-slate-300 px-2 text-sm";
 
 export function ReportEditor({
@@ -59,6 +66,9 @@ export function ReportEditor({
     setData((d) => ({ ...d, header: { ...d.header, [k]: v } }));
   const setItem = (i: number, k: keyof ReportItem, v: string) =>
     setData((d) => ({ ...d, items: d.items.map((it, j) => (j === i ? { ...it, [k]: v } : it)) }));
+  const setTeam = (f: (t: TeamMember[]) => TeamMember[]) => setData((d) => ({ ...d, team: f(d.team ?? []) }));
+  const setMember = (i: number, k: keyof TeamMember, v: string) =>
+    setTeam((t) => t.map((m, j) => (j === i ? { ...m, [k]: v } : m)));
 
   const save = () =>
     startTransition(async () => {
@@ -100,6 +110,41 @@ export function ReportEditor({
               <input className={inputCls} value={data.header[k]} onChange={(e) => setHeader(k, e.target.value)} />
             </label>
           ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 font-medium">Inspecting team</h2>
+        <div className="grid gap-2">
+          {(data.team ?? []).map((m, i) => (
+            <div key={i} className="grid grid-cols-[1fr_1fr_1fr_32px] items-end gap-2">
+              {TEAM_FIELDS.map(([k, label]) => (
+                <label key={k} className="text-xs text-slate-600">
+                  {label}
+                  <input className={inputCls} value={m[k]} onChange={(e) => setMember(i, k, e.target.value)} />
+                </label>
+              ))}
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2"
+                aria-label="Remove member"
+                onClick={() => setTeam((t) => t.filter((_, j) => j !== i))}
+              >
+                ×
+              </Button>
+            </div>
+          ))}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="w-fit"
+            onClick={() => setTeam((t) => [...t, { agency: "", name: "", designation: "" }])}
+          >
+            + Add member
+          </Button>
         </div>
       </section>
 
