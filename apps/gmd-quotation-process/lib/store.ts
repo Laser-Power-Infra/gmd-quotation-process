@@ -8,6 +8,7 @@ import gmdUpdateReducer from "./gmdUpdateSlice";
 import supplyHistoryFiltersReducer from "./supplyHistoryFiltersSlice";
 import bisStatusFiltersReducer from "./bisStatusFiltersSlice";
 import physicalStockTableReducer from "@gmd/physical-stock/state";
+import purchaseTableReducer from "@gmd/purchase/state";
 
 export const makeStore = () => {
   return configureStore({
@@ -21,6 +22,7 @@ export const makeStore = () => {
       supplyHistoryFilters: supplyHistoryFiltersReducer,
       bisStatusFilters: bisStatusFiltersReducer,
       physicalStockTable: physicalStockTableReducer,
+      purchaseTable: purchaseTableReducer,
     },
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({

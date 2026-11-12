@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, memo, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Button } from "../button";
 import { Skeleton } from "../skeleton";
 import { cn } from "../../lib/utils";
@@ -32,6 +32,8 @@ export interface DataTableProps<Row> {
   /** Per-row options for `select` edits (cascading lists, per-row choices). */
   editOptions?: (row: Row, column: DataColumn<Row>) => Promise<readonly string[]>;
   rowClassName?: (row: Row) => string | undefined;
+  /** Detail shown in a full-width row under the selected row (drill-down). */
+  renderDetail?: (row: Row) => ReactNode;
   /** First load: skeleton rows. */
   loading: boolean;
   /** Later loads: sweep bar, rows stay. */
@@ -66,6 +68,7 @@ export function DataTable<Row>({
   onEdit,
   editOptions,
   rowClassName,
+  renderDetail,
   loading,
   refreshing,
   error,
@@ -187,18 +190,27 @@ export function DataTable<Row>({
               : rows.map((row) => {
                   const id = rowId(row);
                   return (
-                    <DataRow
-                      key={id}
-                      id={id}
-                      row={row}
-                      selected={id === selectedId}
-                      columns={columns}
-                      pins={pins}
-                      onSelect={onSelect}
-                      onEdit={onEdit}
-                      editOptions={editOptions}
-                      className={rowClassName?.(row)}
-                    />
+                    <Fragment key={id}>
+                      <DataRow
+                        id={id}
+                        row={row}
+                        selected={id === selectedId}
+                        columns={columns}
+                        pins={pins}
+                        onSelect={onSelect}
+                        onEdit={onEdit}
+                        editOptions={editOptions}
+                        className={rowClassName?.(row)}
+                      />
+                      {renderDetail && id === selectedId && (
+                        <tr>
+                          <td colSpan={columns.length} className="border-b border-border bg-muted/30 p-0">
+                            {/* Pinned left so the detail stays in view while a wide table scrolls. */}
+                            <div className="sticky left-0 w-fit max-w-full p-3">{renderDetail(row)}</div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
           </tbody>
