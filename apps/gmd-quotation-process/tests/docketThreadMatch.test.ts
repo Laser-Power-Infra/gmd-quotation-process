@@ -3,8 +3,11 @@ import assert from 'node:assert/strict'
 import {
   docketLookupKeys,
   docketSerialToken,
+  isThreadOfDocket,
   pickLatestLinkedThread,
+  poTokens,
   splitDocketList,
+  tokenPattern,
   type LinkedThreadCandidate,
 } from '../lib/docketThreadMatch.js'
 
@@ -138,4 +141,46 @@ test('a thread with no docket number is never picked', () => {
 test('a partial numeric overlap does not create a false match', () => {
   const other = thread({ threadId: 'other', docketNo: 'GMD/2026-27/1412' })
   assert.equal(pickLatestLinkedThread([other], DOCKET), null)
+})
+
+test('isThreadOfDocket matches a docket_no column on exact docket keys, in any spelling', () => {
+  assert.equal(isThreadOfDocket('GMD/26-27/412', [DOCKET]), true)
+  assert.equal(isThreadOfDocket('GMD/2026-27/411, GMD/2026-27/412', [DOCKET]), true)
+  assert.equal(isThreadOfDocket(DOCKET, ['GMD/2026-27/999', DOCKET]), true)
+})
+
+test('isThreadOfDocket never falls back to a bare serial or a partial number', () => {
+  assert.equal(isThreadOfDocket('412', [DOCKET]), false)
+  assert.equal(isThreadOfDocket('GMD/2026-27/1412', [DOCKET]), false)
+  assert.equal(isThreadOfDocket('GMD/2025-26/412', [DOCKET]), false)
+  assert.equal(isThreadOfDocket(null, [DOCKET]), false)
+  assert.equal(isThreadOfDocket(DOCKET, []), false)
+})
+
+test('tokenPattern matches any one of the tokens as a whole word, ignoring case', () => {
+  const re = new RegExp(tokenPattern(['SD26Y-00067', '4500012345']), 'i')
+  assert.ok(re.test('Re: MC for sd26y-00067 approved'))
+  assert.ok(re.test('["SD26Y-00067_drawing.pdf"]'))
+  assert.ok(re.test('SD26Y-00067'))
+  assert.ok(re.test('PO 4500012345 dt 01.02.2026'))
+  assert.ok(!re.test('SD26Y-000671'))
+  assert.ok(!re.test('XSD26Y-00067'))
+  assert.ok(!re.test('PO 45000123456'))
+})
+
+test('tokenPattern escapes regex characters in the tokens', () => {
+  const re = new RegExp(tokenPattern(['PO.1(2)', 'A|B']), 'i')
+  assert.ok(re.test('see PO.1(2) attached'))
+  assert.ok(!re.test('see POX1(2) attached'))
+  assert.ok(re.test('ref A|B'))
+  // A "|" inside a token never splits the alternation.
+  assert.ok(!re.test('plan A'))
+  assert.ok(new RegExp(tokenPattern([DOCKET]), 'i').test(`Docket ${DOCKET} received`))
+})
+
+test('poTokens keeps the digit runs of 6 or more', () => {
+  assert.deepEqual(poTokens('PO NO. 4500012345 DT 01.02.2026'), ['4500012345'])
+  assert.deepEqual(poTokens('GEM/2026/B/123456, 7654321'), ['123456', '7654321'])
+  assert.deepEqual(poTokens('PO 12345'), [])
+  assert.deepEqual(poTokens(null), [])
 })

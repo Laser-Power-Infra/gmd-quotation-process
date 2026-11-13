@@ -28,7 +28,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | Pending docket creation + duplicate cleanup | `POST /api/scheduler/docket-creation` | `docket-creation-sync` | `docket_quotation_threads`, `enquiries` |
 | Contract Review sync | `POST /api/scheduler/contract-review` | `contract-review-sync` | `CONTRACTS`, `DUMP`, `stock-phys`, `INSPECTION OFFER DUMP` |
 | ACC Master refresh | `POST /api/scheduler/acc-master` | `acc-master-sync` | `ACC_MASTER` |
-| Execution Tracking sync | `POST /api/scheduler/execution-tracking` | `execution-tracking-sync` | `SALE_BILL` (+ the local `acc_master`) |
+| Execution Tracking sync | `POST /api/scheduler/execution-tracking` | `execution-tracking-sync` | `SALE_BILL` (+ the local `acc_master`); step 2: `MC`, `PROD ORDER DUMP`, `PROD ENTRY DUMP` -> `McRegisterLine`, `ProductionRegisterLine` |
 | PBG sheet sync *(every 1.2h)* | `POST /api/scheduler/pbg` | `pbg-sync` | PBG sheet tab → `PbgData` |
 | PBG reminder emails *(daily, 09:00 IST)* | `POST /api/scheduler/pbg-reminders` | `pbg-reminders` | `PbgData`, `PbgReminderLog` -> direct SMTP |
 | C Batch marks | `POST /api/scheduler/c-batch` | `c-batch-sync` | `ITEM MASTER ERP` |
@@ -887,10 +887,11 @@ old.
 
 ## `execution-tracking`
 
-Single step: `runExecutionTrackingStep()` in `execution-tracking-sync.ts` — the
+Step 1: `runExecutionTrackingStep()` in `execution-tracking-sync.ts` — the
 ACC master refresh above, then `runExecutionTrackingSync()` from
 `lib/executionTrackingSync.ts`, the same engine the CLI
-(`npm run exec:sync`) and the `/supply_history` button use.
+(`npm run exec:sync`) and the `/supply_history` button use. Step 2, the
+Execution Registers copies, is at the end of this section.
 
 Reads the `SALE_BILL_GID` tab of `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` and
 diffs it into `SupplyHistoryItem`, for **one fiscal year**. The scheduler uses
@@ -1086,6 +1087,30 @@ npm run exec:sync -- --fy 26-27 --apply --no-log      # write without a sync_log
 # the same engine over HTTP (dryRun / fy are optional)
 curl -X POST "$BASE/execution-tracking?dryRun=1&fy=2025-26" -H "x-api-key: $GMD_SYNC_API_KEY"
 ```
+
+### Step 2: the Execution Registers copies
+
+`runExecutionRegistersSync()` in `execution-registers-sync.ts` — the
+copies behind `/execution_registers` (rules in `lib/executionRegisters.ts`):
+
+- `MC` tab (gid 1910912133; `MC_GID` overrides, no setting needed) ->
+  `McRegisterLine`, one row per line. Balance = `QTYORDER − QTYCANCELLED − BILLED`,
+  rounded to 3 decimals; status `Open` while it is above 0. Party is `ACC_NAME`
+  from `acc_master` (step 1 just refreshed it), item name from the ERP masters
+  (`resolveMasterNames`). The tab has no date column.
+- `PROD ORDER DUMP` (gid 1735377141; `PROD_ORDER_DUMP_GID` overrides) +
+  `PROD ENTRY DUMP` (gid 698397877; `PROD_ENTRY_DUMP_GID` overrides) ->
+  `ProductionRegisterLine`, one row per
+  `VRNO + ITEM_CODE` (a repeated line adds its quantity). Produced = the summed
+  `QTYRECD` of the entries with the same `ORDER_VRNO + ITEM_CODE`, last entry =
+  their latest `VRDATE`; `Completed` once produced reaches ordered. Entries whose
+  order is not on the dump are only counted (`unmatchedEntries`).
+- Neither tab has a unique key, so each table is a snapshot copy: deleted and
+  re-inserted in one transaction, in chunks of 1000. A renamed column or a tab
+  with no lines throws before anything is written, so the last good copy stays.
+- Each register reports its own `error` in `steps.executionRegisters` and the
+  step never throws, so it cannot fail the SALE BILL step. `?dryRun=1` reads and
+  counts without writing. Dispatch / LR has no copy: it reads `SupplyHistoryItem`.
 
 ## `erp-contract-no`
 

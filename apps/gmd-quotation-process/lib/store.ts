@@ -9,6 +9,9 @@ import supplyHistoryFiltersReducer from "./supplyHistoryFiltersSlice";
 import bisStatusFiltersReducer from "./bisStatusFiltersSlice";
 import physicalStockTableReducer from "@gmd/physical-stock/state";
 import purchaseTableReducer from "@gmd/purchase/state";
+import readyToBillReducer from "@gmd/stock-allocation/state";
+import valveSerialTableReducer from "@gmd/valve-serial/state";
+import executionRegistersReducer from "@gmd/execution-registers/state";
 
 export const makeStore = () => {
   return configureStore({
@@ -23,6 +26,9 @@ export const makeStore = () => {
       bisStatusFilters: bisStatusFiltersReducer,
       physicalStockTable: physicalStockTableReducer,
       purchaseTable: purchaseTableReducer,
+      readyToBill: readyToBillReducer,
+      valveSerialTable: valveSerialTableReducer,
+      executionRegisters: executionRegistersReducer,
     },
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({

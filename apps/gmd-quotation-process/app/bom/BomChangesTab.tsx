@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Button } from "@gmd/ui/components/button";
+import { SortTh } from "@gmd/ui/components/plain-table";
+import type { TableSort } from "@gmd/ui/components/data-table/types";
+import { sortRows } from "@gmd/dashboard/lib/tableSort";
 import {
   approveBomChangeAction,
   deleteBomChangeAction,
@@ -13,7 +16,7 @@ import {
   submitBomChangeAction,
   type BomChangeView,
 } from "@/app/actions/bomChange";
-import { BOM_CHANGE_STATUSES } from "@/lib/bomColumns";
+import { BOM_CHANGE_STATUSES, type BomChangeStatus } from "@/lib/bomColumns";
 import BomChangeDialog, { type BomChangeDraft } from "./BomChangeDialog";
 
 const STATUS_TONE: Record<string, string> = {
@@ -24,6 +27,13 @@ const STATUS_TONE: Record<string, string> = {
 };
 
 const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "");
+
+const TH = "px-2 py-1.5 font-bold uppercase tracking-wider border-b border-border whitespace-nowrap";
+// Sort key per column (null = not sortable); ISO dates sort correctly as text, Status in workflow order.
+const COLS = [
+  ["createdAt", "When"], ["kind", "Kind"], ["status", "Status"], ["itemCode", "Item code"], ["bomId", "BOM ID"],
+  [null, "Lines (code × qty)"], ["source", "Source"], ["note", "Note"], ["createdBy", "Raised by"], ["approvedBy", "Decided by"], [null, ""],
+] as const;
 
 /**
  * BOM change requests: Draft -> Submitted -> Approved / Rejected. The rows are
@@ -36,6 +46,7 @@ export default function BomChangesTab() {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<string>("SUBMITTED");
   const [kind, setKind] = useState<string>("");
+  const [sort, setSort] = useState<TableSort | null>(null);
   const [editing, setEditing] = useState<BomChangeDraft | null>(null);
   const [proposing, setProposing] = useState(false);
 
@@ -53,8 +64,13 @@ export default function BomChangesTab() {
   }, [load]);
 
   const visible = useMemo(
-    () => rows.filter((r) => (!status || r.status === status) && (!kind || r.kind === kind)),
-    [rows, status, kind],
+    () =>
+      sortRows(
+        rows.filter((r) => (!status || r.status === status) && (!kind || r.kind === kind)),
+        sort,
+        (r, k) => (k === "status" ? BOM_CHANGE_STATUSES.indexOf(r.status as BomChangeStatus) : r[k as keyof BomChangeView]),
+      ),
+    [rows, status, kind, sort],
   );
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -120,11 +136,9 @@ export default function BomChangesTab() {
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-muted">
             <tr className="text-left">
-              {["When", "Kind", "Status", "Item code", "BOM ID", "Lines (code × qty)", "Source", "Note", "Raised by", "Decided by", ""].map((h) => (
-                <th key={h} className="px-2 py-1.5 font-bold uppercase tracking-wider border-b border-border whitespace-nowrap">
-                  {h}
-                </th>
-              ))}
+              {COLS.map(([k, h]) =>
+                k ? <SortTh key={k} k={k} label={h} sort={sort} onSort={setSort} className={TH} /> : <th key={h} className={TH}>{h}</th>,
+              )}
             </tr>
           </thead>
           <tbody>

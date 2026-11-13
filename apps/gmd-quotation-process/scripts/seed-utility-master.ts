@@ -7,12 +7,18 @@ import { parseUtilityMaster } from "@gmd/contract-review/utility-master";
 // Makes the UTILITY lookup exactly the utility master (data/utility-master.csv):
 // value = Short Name, code + defaultState set. Any other UTILITY option is
 // deactivated (never deleted). Dry-run by default; --apply writes.
+// Already applied once: the UTILITY LookupOption rows are now the standard list
+// for every dashboard, kept on /admin/lookup-options. Do not run --apply again.
 const APPLY = process.argv.includes("--apply");
 const TYPE = "UTILITY";
 const CSV = path.join(__dirname, "..", "data", "utility-master.csv");
 
 async function main() {
   console.log(`\n=== SEED UTILITY MASTER [${APPLY ? "APPLY" : "DRY RUN"}] ===\n`);
+  console.warn(
+    "WARNING: the master was seeded once already. Do not run --apply again: it reverts admin edits\n" +
+      "to UTILITY options and deactivates every option added on /admin/lookup-options since.\n",
+  );
   const master = parseUtilityMaster(readFileSync(CSV, "utf8"));
   const existing = await prisma.lookupOption.findMany({ where: { type: TYPE } });
   const byValue = new Map(existing.map((o) => [o.value, o]));

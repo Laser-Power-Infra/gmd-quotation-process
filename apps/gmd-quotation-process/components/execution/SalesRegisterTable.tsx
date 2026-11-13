@@ -4,7 +4,10 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import { squish } from "@gmd/dashboard/lib/squish";
+import { sortRows } from "@gmd/dashboard/lib/tableSort";
 import { Segmented } from "@gmd/ui/components/segmented";
+import { SortTh } from "@gmd/ui/components/plain-table";
+import type { TableSort } from "@gmd/ui/components/data-table/types";
 import { formatLakh } from "@/lib/debtorsAgeing";
 import { downloadCsv, toCsv } from "@/lib/debtorJoins";
 import { addLine, emptyCell, fiscalMonths, gpOf, type GpCell, type SaleLine } from "@/lib/executionPages";
@@ -33,6 +36,13 @@ const pct = (n: number) => `${n.toFixed(1)}%`;
 const missingNote = (c: GpCell) => `${formatLakh(c.missingSales)} (${c.missingLines} lines)`;
 const round = (n: number | null, places: number) => (n === null ? "" : Math.round(n * 10 ** places) / 10 ** places);
 
+/** The number a cell shows in the chosen view (what the Total column sorts by); null when its cost is missing. */
+function viewValue(c: GpCell, view: View): number | null {
+  if (view === "sales") return c.sales;
+  const g = gpOf(c);
+  return g.gp === null ? null : view === "cost" ? c.cost : view === "gp" ? g.gp : g.gpPct;
+}
+
 /** One cell in the chosen view; the hover note says how much of it has no cost, and the quoted GP. */
 function Cell({ c, view }: { c: GpCell | undefined; view: View }) {
   if (!c?.lines) return <td className={TDN}>-</td>;
@@ -40,7 +50,7 @@ function Cell({ c, view }: { c: GpCell | undefined; view: View }) {
   // Red only on a GP % that is shown, and never by colour alone: the title says why.
   const red = view === "gpPct" && g.red && g.gpPct !== null;
   const title = [
-    red ? `Below minimum VA% (min ${pct((c.minGp * 100) / c.costedSales)})` : "",
+    red ? `Below minimum VA% (GP floor ${pct((c.minGp * 100) / c.costedSales)} of sales)` : "",
     c.missingLines ? `Cost missing: ${missingNote(c)}` : "",
     g.quotedGpPct === null ? "" : `Quoted GP: ${pct(g.quotedGpPct)}`,
   ]
@@ -61,6 +71,7 @@ export default function SalesRegisterTable({ fy, years, lines }: { fy: string; y
   const [view, setView] = useState<View>("sales");
   const [search, setSearch] = useState("");
   const [month, setMonth] = useState<string | null>(null);
+  const [sort, setSort] = useState<TableSort | null>(null);
   const months = useMemo(() => fiscalMonths(fy), [fy]);
 
   const filtered = useMemo(() => {
@@ -86,6 +97,7 @@ export default function SalesRegisterTable({ fy, years, lines }: { fy: string; y
     }
     return { rows: [...m.values()].sort((a, b) => b.total.sales - a.total.sales), all };
   }, [filtered, group, month]);
+  const sorted = useMemo(() => sortRows(rows, sort, (r, k) => (k === "total" ? viewValue(r.total, view) : r.key)), [rows, sort, view]);
 
   const total = lines.reduce((s, l) => s + l.value, 0);
   const label = GROUPS.find(([k]) => k === group)![1];
@@ -94,7 +106,7 @@ export default function SalesRegisterTable({ fy, years, lines }: { fy: string; y
   const exportCsv = () =>
     downloadCsv(`sales_register_${fy}_${group}.csv`, toCsv(
       [label, "Month", "Sales", "Cost", "GP ₹", "GP %", "Quoted GP %", "Cost missing ₹", "Cost missing lines"],
-      [all, ...rows].flatMap((r) =>
+      [all, ...sorted].flatMap((r) =>
         [...visibleMonths, null].map((m) => {
           const c = (m ? r.byMonth[m] : r.total) ?? emptyCell();
           const g = gpOf(c);
@@ -131,11 +143,13 @@ export default function SalesRegisterTable({ fy, years, lines }: { fy: string; y
           <table className="w-full border-collapse text-left text-[13px]">
             <thead className="sticky top-0 z-10 border-b border-border bg-muted/80">
               <tr>
-                <th className={TH}>{label}</th>
+                <SortTh k="key" label={label} sort={sort} onSort={setSort} />
                 {visibleMonths.map((m) => (
-                  <th key={m} className={`${TH} cursor-pointer text-right hover:text-primary`} title="Click to show only this month" onClick={() => setMonth(month === m ? null : m)}>{monthLabel(m)}</th>
+                  <th key={m} className={`${TH} text-right`}>
+                    <button type="button" className="cursor-pointer [text-transform:inherit] hover:text-primary" title="Click to show only this month" aria-pressed={month === m} onClick={() => setMonth(month === m ? null : m)}>{monthLabel(m)}</button>
+                  </th>
                 ))}
-                <th className={`${TH} text-right`}>Total</th>
+                <SortTh k="total" label="Total" sort={sort} onSort={setSort} className={`${TH} text-right`} />
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -149,7 +163,7 @@ export default function SalesRegisterTable({ fy, years, lines }: { fy: string; y
                 {visibleMonths.map((m) => <td key={m} className={TDN}>{all.byMonth[m]?.missingLines ? missingNote(all.byMonth[m]) : "-"}</td>)}
                 <td className={TDN}>{all.total.missingLines ? missingNote(all.total) : "-"}</td>
               </tr>
-              {rows.map((r) => (
+              {sorted.map((r) => (
                 <tr key={r.key} className="hover:bg-muted/40">
                   <td className={`${TD} font-medium`}>{r.key}</td>
                   {visibleMonths.map((m) => <Cell key={m} c={r.byMonth[m]} view={view} />)}

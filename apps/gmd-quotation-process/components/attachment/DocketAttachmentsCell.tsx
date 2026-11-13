@@ -15,11 +15,14 @@ export default function DocketAttachmentsCell({
   docketNumber,
   attachments,
   onAddClick,
+  addDisabled = false,
   compact = false,
 }: {
   docketNumber: string;
   attachments: AttachmentData[];
   onAddClick: () => void;
+  /** Disables the "+" trigger, e.g. while an upload is running. */
+  addDisabled?: boolean;
   /** Paperclip icon instead of the "Attachments" label. */
   compact?: boolean;
 }) {
@@ -27,6 +30,9 @@ export default function DocketAttachmentsCell({
   const list = attachments ?? [];
   const count = list.length;
   const hasAttachments = count > 0;
+  const title = hasAttachments
+    ? `View ${count} attachment${count === 1 ? "" : "s"}`
+    : "No attachments";
 
   return (
     <div className="inline-flex items-center gap-1.5">
@@ -34,11 +40,8 @@ export default function DocketAttachmentsCell({
         type="button"
         disabled={!hasAttachments}
         onClick={() => hasAttachments && setOpen(true)}
-        title={
-          hasAttachments
-            ? `View ${count} attachment${count === 1 ? "" : "s"}`
-            : "No attachments"
-        }
+        title={title}
+        aria-label={title}
         className={`inline-flex items-center gap-1 text-[10px] font-semibold ${
           hasAttachments
             ? "text-foreground hover:underline cursor-pointer"
@@ -59,8 +62,9 @@ export default function DocketAttachmentsCell({
       <button
         type="button"
         onClick={onAddClick}
+        disabled={addDisabled}
         title="Add attachment"
-        className="inline-flex items-center p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer"
+        className="inline-flex items-center p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer disabled:pointer-events-none disabled:opacity-50"
       >
         <Plus className="h-3 w-3 stroke-[2.5]" />
       </button>

@@ -3,7 +3,8 @@
  *
  * Refreshes `acc_master`, then diffs the `SALE_BILL_GID` tab of
  * `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` into `SupplyHistoryItem` for the
- * current fiscal year (April start).
+ * current fiscal year (April start), then copies the MC / PROD ORDER DUMP /
+ * PROD ENTRY DUMP tabs behind /execution_registers.
  *
  * Manual checks: `?dryRun=1` reports without writing, and `?fy=2025-26` targets
  * a different year. The POST body accepts the same two fields.
@@ -14,7 +15,8 @@
 // Must be Node: `lib/googleAuth.ts` uses the Node-only Google OAuth client.
 export const runtime = "nodejs";
 
-// Matches `wget -T 600` in the ofelia script. One tab read plus the writes.
+// Matches `wget -T 600` in the ofelia script. Four tab reads (SALE BILL, MC, PROD ORDER DUMP,
+// PROD ENTRY DUMP) plus the small ACC master one, and the writes.
 export const maxDuration = 1800;
 
 import { NextResponse } from "next/server";

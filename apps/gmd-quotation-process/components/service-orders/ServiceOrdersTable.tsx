@@ -4,6 +4,9 @@ import { useMemo, useState } from "react";
 import { Wrench } from "lucide-react";
 import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import { squish } from "@gmd/dashboard/lib/squish";
+import { sortRows } from "@gmd/dashboard/lib/tableSort";
+import { SortTh } from "@gmd/ui/components/plain-table";
+import type { TableSort } from "@gmd/ui/components/data-table/types";
 import { formatLakh } from "@/lib/debtorsAgeing";
 import { downloadCsv, toCsv } from "@/lib/debtorJoins";
 import type { ServiceOrderRow } from "@/lib/serviceOrders";
@@ -27,10 +30,17 @@ function Tile({ label, value, danger }: { label: string; value: string; danger?:
   );
 }
 
-const HEADERS = [
-  "Order no", "Order date", "Days pending", "Supplier", "Service code", "Service", "Ordered", "Received",
-  "Pending", "Unit", "Rate", "Pending value", "Due date", "Receipts (GRN)", "Last GRN", "Last GRN date", "Supplier bill no",
-];
+const COLS = [
+  ["orderNo", "Order no"], ["orderDate", "Order date"], ["daysPending", "Days pending"], ["supplier", "Supplier"],
+  ["serviceCode", "Service code"], ["serviceName", "Service"], ["ordered", "Ordered"], ["received", "Received"],
+  ["pending", "Pending"], ["um", "Unit"], ["rate", "Rate"], ["pendingValue", "Pending value"], ["dueDate", "Due date"],
+  ["grnCount", "Receipts (GRN)"], ["lastGrnNo", "Last GRN"], ["lastGrnDate", "Last GRN date"], ["lastBillNo", "Supplier bill no"],
+] as const;
+const HEADERS = COLS.map(([, h]) => h);
+
+// ISO dates sort correctly as text.
+const sortValue = (r: ServiceOrderRow, k: string) =>
+  k === "orderNo" ? `${r.orderNo}/${r.lineNo}` : k === "supplier" ? r.supplier ?? r.supplierCode : r[k as keyof ServiceOrderRow];
 
 interface Props {
   rows: ServiceOrderRow[];
@@ -42,17 +52,19 @@ export default function ServiceOrdersTable({ rows, syncedAt, serviceCodes }: Pro
   const [search, setSearch] = useState("");
   const [showClosed, setShowClosed] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [sort, setSort] = useState<TableSort | null>(null);
 
   const open = useMemo(() => rows.filter((r) => r.open), [rows]);
   const shown = useMemo(() => {
     const needle = squish(search);
-    return rows.filter(
+    const kept = rows.filter(
       (r) =>
         (showClosed || r.open) &&
         (!overdueOnly || r.overdue) &&
         (!needle || squish(`${r.orderNo} ${r.supplier} ${r.supplierCode} ${r.serviceCode} ${r.serviceName}`).includes(needle)),
     );
-  }, [rows, search, showClosed, overdueOnly]);
+    return sortRows(kept, sort, sortValue);
+  }, [rows, search, showClosed, overdueOnly, sort]);
 
   const exportCsv = () =>
     downloadCsv(
@@ -109,7 +121,7 @@ export default function ServiceOrdersTable({ rows, syncedAt, serviceCodes }: Pro
         <div className="min-h-0 flex-1 overflow-auto">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
-              <tr>{HEADERS.map((h) => <th key={h} className={TH}>{h}</th>)}</tr>
+              <tr>{COLS.map(([k, h]) => <SortTh key={k} k={k} label={h} sort={sort} onSort={setSort} className={TH} />)}</tr>
             </thead>
             <tbody className="divide-y divide-border/60">
               {shown.map((r, i) => (

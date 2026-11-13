@@ -1,5 +1,12 @@
+import type { MailThread } from "@gmd/dashboard/components/MailThreadCard";
 import type { ContractReviewImage } from "@gmd/dashboard/lib/types";
 import type { ContractReviewView, SortSpec, ViewQuery } from "./lib/view";
+
+/** A docket follow-up mail thread matched to a contract ("Docket mails"). */
+export interface ContractMail extends MailThread {
+  threadId: string;
+  gmailUrl: string;
+}
 
 /**
  * Loose on purpose: host apps return `{ success, data }` / `{ success, error }`
@@ -80,6 +87,8 @@ export interface ContractReviewActions {
   clearContractReviewDiagramAction: (id: string) => Promise<ActionResult>;
   /** Appends a mail / document link to a contract. Omit to make the column read-only. */
   addContractMailDocAction?: (contractNo: string, category: string, url: string) => Promise<ActionResult<{ contractNo: string; mailDocs: string }>>;
+  /** The contract's docket follow-up mails, newest first. Omit to hide the "Docket mails" button. */
+  loadContractMailsAction?: (contractNo: string) => Promise<ActionResult<ContractMail[]>>;
   setContractReviewDiagramVerdictAction: (
     id: string,
     verdict: string | null,

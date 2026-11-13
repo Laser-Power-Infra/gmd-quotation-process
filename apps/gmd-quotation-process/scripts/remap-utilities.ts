@@ -1,15 +1,18 @@
 /**
- * One-time remap of stored utility text to the utility master Short Name,
- * driven by data/utility-old-new-mapping.csv.
+ * Remap of stored utility text to the standard utility list: the active UTILITY
+ * LookupOption values, with the master full names and
+ * data/utility-old-new-mapping.csv as aliases (loadUtilityResolver).
  *
  * Tables: Enquiry, SupplyHistoryItem (quotation DB); SupplyHistory,
  * SmartsheetTender (tender DB). ContractReview.utility is NOT touched here; it
  * is recomputed from Enquiry by `pnpm cr:backfill-enquiry:apply` afterwards.
  *
- * - Match: trimmed, case/space-insensitive old value (master names also match).
+ * - Match: trimmed, case/space-insensitive.
  * - "Move to Project Reference" rows: Enquiry.projectReference gets the sheet's
  *   project reference (blank → set, else append "; <ref>").
  * - VERIFY rows are never updated; they are written to a CSV for manual review.
+ * - Unmatched values are never updated; the dry run lists them per table. That
+ *   list is the unknown-utilities report to review before --apply.
  * - --apply: per DB, one transaction that first creates backup tables
  *   "_bak_utility_YYYYMMDD_<Table>" (id, utility, projectReference).
  *
@@ -19,16 +22,12 @@
  *   npx tsx scripts/remap-utilities.ts --verify-out=path.csv
  */
 import "dotenv/config";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { prisma as quotation } from "../lib/prisma";
 import { prisma as tender } from "@gmd/db-tender";
-import {
-  buildUtilityResolver,
-  mergeProjectReference,
-  parseUtilityMapping,
-  parseUtilityMaster,
-} from "@gmd/contract-review/utility-master";
+import { mergeProjectReference } from "@gmd/contract-review/utility-master";
+import { loadUtilityResolver } from "@gmd/contract-review/server/utility";
 
 const APPLY = process.argv.includes("--apply");
 const DATA = path.join(__dirname, "..", "data");
@@ -92,10 +91,7 @@ const csvCell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"
 
 async function main() {
   console.log(`\n=== REMAP UTILITIES [${APPLY ? "APPLY" : "DRY RUN"}] ===\n`);
-  const resolve = buildUtilityResolver(
-    parseUtilityMaster(readFileSync(path.join(DATA, "utility-master.csv"), "utf8")),
-    parseUtilityMapping(readFileSync(path.join(DATA, "utility-old-new-mapping.csv"), "utf8")),
-  );
+  const resolve = await loadUtilityResolver();
 
   const verifyLines = ["table,id,ref,oldValue"];
   const plans = new Map<Table, { id: string; utility: string; projectReference?: string | null }[]>();

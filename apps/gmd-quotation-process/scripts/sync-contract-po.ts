@@ -5,7 +5,7 @@ import { PrismaClient } from "@gmd/db-quotation";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { getOAuthClient } from "../lib/googleAuth";
-import { findPoPaymentTermsColumn, cleanPoPaymentTerms, pickPoPaymentTerms } from "../lib/contractPoPaymentTerms";
+import { findPoPaymentTermsColumn, cleanPoPaymentTerms, pickPoNo, pickPoPaymentTerms } from "../lib/contractPoPaymentTerms";
 
 const SPREADSHEET_ID = "1sf-uCfCSAUovNAWJSiSyojTPFvUSzmp23keF0ymkjIE";
 const TAB_TITLE = "CONTRACTS copy";
@@ -143,6 +143,8 @@ async function main() {
   const updates: {
     id: string;
     poNo?: string;
+    /** poNo as read above (blank whenever poNo is set). */
+    poNoRead: string | null;
     orderList: string[];
     paymentTerms?: string;
   }[] = [];
@@ -154,10 +156,7 @@ async function main() {
     if (!sheet) continue;
     matched++;
 
-    const poNo =
-      sheet.poNo.length > 0 && sheet.poNo !== normalizeKey(row.poNo ?? "")
-        ? sheet.poNo
-        : undefined;
+    const poNo = pickPoNo(row.poNo, sheet.poNo);
 
     // Append new attachments, never replace existing array
     const orderList = [...(row.orderList ?? [])];
@@ -177,6 +176,7 @@ async function main() {
       updates.push({
         id: row.id,
         ...(poNo !== undefined ? { poNo } : {}),
+        poNoRead: row.poNo,
         orderList,
         ...(paymentTerms !== undefined ? { paymentTerms } : {}),
       });
@@ -207,12 +207,16 @@ async function main() {
   for (let i = 0; i < updates.length; i += BATCH) {
     const batch = updates.slice(i, i + BATCH);
     await tenderPrisma.$transaction(
-      batch.map((u) =>
+      batch.flatMap((u) => [
         tenderPrisma.contractReview.update({
           where: { id: u.id },
-          data: { poNo: u.poNo, orderList: u.orderList, paymentTerms: u.paymentTerms },
+          data: { orderList: u.orderList, paymentTerms: u.paymentTerms },
         }),
-      ),
+        // Only while the row still holds the blank read above, so a PO NO typed in Contract Review during the run is kept.
+        ...(u.poNo === undefined
+          ? []
+          : [tenderPrisma.contractReview.updateMany({ where: { id: u.id, poNo: u.poNoRead }, data: { poNo: u.poNo } })]),
+      ]),
     );
   }
 

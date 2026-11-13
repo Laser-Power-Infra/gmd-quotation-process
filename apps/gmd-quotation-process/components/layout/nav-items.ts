@@ -17,6 +17,7 @@ export const NAV: NavEntry[] = [
       { label: "Order Status", href: "/order_status" },
       { label: "Ready to Bill", href: "/ready_to_bill" },
       { label: "Sales Register", href: "/sales_register" },
+      { label: "Execution Registers", href: "/execution_registers" },
       { label: "Inspection Reports", href: "/inspection_reports" },
       { label: "Valve Serial No", href: "/valve_serial" },
     ],
@@ -28,7 +29,7 @@ export const NAV: NavEntry[] = [
       { label: "Physical Stock", href: "/physical_stock" },
 
       { label: "Actuator & Gearbox Mapping", href: "/actuator_mapping" },
-      { label: "Purchases & Pending Receipts", href: "/purchase" },
+      { label: "Purchases & Pending Receipts", href: "/v2/purchase" },
 
       { label: "Service / Work Orders", href: "/service_orders" },
       { label: "FG BOM", href: "/bom" },

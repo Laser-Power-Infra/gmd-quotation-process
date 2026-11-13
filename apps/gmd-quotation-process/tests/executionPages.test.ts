@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { addLine, emptyCell, fiscalMonths, gpOf, lightOf, monthKey, producedSummary, readyValue, saleMoney, stageOf, valveTypeOf } from '../lib/executionPages.js'
+import { addLine, emptyCell, fiscalMonths, gpOf, lightOf, monthKey, producedSummary, saleMoney, stageOf, valveTypeOf } from '../lib/executionPages.js'
 import { minVaPercent } from '../lib/vaRules.js'
 
 const base = { orderQty: 10, prodOrdQty: 0, diQty: 0, billedQty: 0, productionOrderNumber: null, offerNumber: [], inspectionNumber: [], diDate: [] }
@@ -29,14 +29,11 @@ test('Order Status per contract: produced X of Y over the lines with a known ent
   assert.equal(producedSummary([{ prodOrdQty: 0, prodEntryQty: 0, prodEntryDate: null }]), null)
 })
 
-test('lightOf and readyValue', () => {
+test('lightOf', () => {
   assert.equal(lightOf('Bill', 30), 'green')
   assert.equal(lightOf('Bill', 90), 'amber')
   assert.equal(lightOf('Bill', 200), 'red')
   assert.equal(lightOf('Done', 200), 'green')
-  assert.equal(readyValue({ balBillAgMc: 2, balBillAgMcVal: 0, rate: 50 }), 100)
-  assert.equal(readyValue({ balBillAgMc: 2, balBillAgMcVal: 120, rate: 50 }), 120)
-  assert.equal(readyValue({ balBillAgMc: 0, balBillAgMcVal: 120, rate: 50 }), 0)
 })
 
 test('monthKey and fiscalMonths', () => {
@@ -89,12 +86,27 @@ test('weighted: the All row adds the lines, never averages the percentages', () 
   assert.equal(gpOf(cellOf(line(100, 50), line(900, 810))).gpPct, 14) // not 30
 })
 
+// VA% is a mark-up on cost (rate = cost × (1 + VA/100)), so the GP floor is sales × VA ÷ (100 + VA):
+// 15% on cost = 13.0% of sales, 30% = 23.1%, 100% = 50%.
 test('red: GP below the minimum VA% of the valve type, sales-weighted', () => {
   const resilient = minVaPercent({ itemType: 'SLUICE VALVE-RESILIENT-NON-RISING' })
   const metal = minVaPercent({ itemType: 'SLUICE VALVE-METAL-NON-RISING' })
-  assert.equal(gpOf(cellOf(line(100_000, 87_700, resilient))).red, true) // 12.3% < 15
-  assert.equal(gpOf(cellOf(line(100_000, 83_300, resilient))).red, false) // 16.7% >= 15
-  assert.equal(gpOf(cellOf(line(100_000, 83_300, metal))).red, true) // 16.7% < 30
-  // mixed cell: GP 33,400 against a floor of 15,000 + 30,000
+  assert.equal(gpOf(cellOf(line(100_000, 87_700, resilient))).red, true) // GP 12.3% of sales < 13.0%
+  assert.equal(gpOf(cellOf(line(100_000, 83_300, resilient))).red, false) // 16.7% >= 13.0%
+  assert.equal(gpOf(cellOf(line(100_000, 83_300, metal))).red, true) // 16.7% < 23.1%
+  // mixed cell: GP 33,400 against a floor of 13,043 + 23,077
   assert.equal(gpOf(cellOf(line(100_000, 83_300, resilient), line(100_000, 83_300, metal))).red, true)
+})
+
+test('red floor reads VA% as a mark-up on cost: a plug valve at 90% GP is not red; a sale at the minimum sits on the line', () => {
+  const plug = minVaPercent({ itemType: 'PLUG VALVE' }) // 100% on cost = 50% GP
+  assert.equal(gpOf(cellOf(line(100_000, 10_000, plug))).red, false)
+  // priced exactly at the minimum (cost × 2): floor = GP, not red; a rupee less is red
+  const atMin = cellOf(line(100_000, 50_000, plug))
+  assert.equal(atMin.minGp, 50_000)
+  assert.equal(gpOf(atMin).red, false)
+  assert.equal(gpOf(cellOf(line(99_999, 50_000, plug))).red, true)
+  // the same for 15%: cost 1,00,000 sold at 1,15,000
+  const resilient = minVaPercent({ itemType: 'SLUICE VALVE-RESILIENT-NON-RISING' })
+  assert.equal(gpOf(cellOf(line(115_000, 100_000, resilient))).red, false)
 })

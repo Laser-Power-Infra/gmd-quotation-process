@@ -39,7 +39,7 @@ What a spreadsheet alone cannot do, and a neighboring tool could not truthfully 
 - Quotation dashboard: search, cascading multi-select filters, sorting, pagination, inline cell edit, Excel-like bulk paste, import/export XLSX, bulk auto-fill actions (blanks, ERP codes, product cost from BOM, VA%, contract-review rates, PD-cost validation).
 - Other read-only + sync dashboards: `/raw_material` (GMD updation + category + stock-phys), `/supply_history` (MASTER + order link), `/contract_review` (CONTRACTS + DUMP merge), `/bom` (VERIFY BOM), `/admin/lookup-options` (lookup-table CRUD).
 - Offer-letter PDF via Puppeteer + Handlebars template.
-- Google Drive attachments per enquiry; AI/keyword validation notes; n8n webhook alerts on invalid VA %.
+- Google Drive attachments per enquiry; AI/keyword validation notes; red row + Validation = Yes blocked when VA% is below the rule minimum.
 - Technical: Next.js 16 App Router, Prisma/Postgres, NextAuth, Redux Toolkit, shadcn/ui, Tailwind v4, Google Sheets API, S3 image storage.
 - ERP item code is read-only in the UI; derived fields (erpItemCode, cost, quotedRate, totals, itemNameMerge) are computed, not typed.
 

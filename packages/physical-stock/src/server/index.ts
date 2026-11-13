@@ -152,12 +152,19 @@ function toQueueItem(row: StockWithHeats): HeatQueueItem {
   };
 }
 
-/** Every assigned serial with its stock row's valve type and size, for screens that record details against a serial. */
-export async function listHeatSerials(): Promise<HeatSerial[]> {
-  const entries = await stockPrisma.heatEntry.findMany({ include: { physical_stock: true }, orderBy: { created_at: "desc" } });
+/** Assigned serials (all, or only `ids`) with their stock row's details, for screens that record details against a serial. */
+export async function listHeatSerials(ids?: string[]): Promise<HeatSerial[]> {
+  const entries = await stockPrisma.heatEntry.findMany({
+    where: ids && { id: { in: ids } },
+    include: { physical_stock: true },
+    orderBy: { created_at: "desc" },
+  });
   return entries.map((e) => ({
     id: e.id,
     serial_no: buildSerial(e.physical_stock, e),
+    erp_code: e.physical_stock.erp_code,
+    location: e.physical_stock.location,
+    available_qty: e.physical_stock.available_qty,
     valve_type: e.physical_stock.l2_valve_type,
     size: e.physical_stock.dimension,
   }));

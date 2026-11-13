@@ -91,10 +91,13 @@ export interface HeatEntryRow extends HeatDims {
   sheet_file_id: string | null;
 }
 
-/** One assigned serial, with the valve type and size of its stock row. */
+/** One assigned serial, with the code, location, available qty, valve type and size of its stock row. */
 export interface HeatSerial {
   id: string;
   serial_no: string;
+  erp_code: string | null;
+  location: string | null;
+  available_qty: string | null;
   valve_type: string | null;
   size: string | null;
 }

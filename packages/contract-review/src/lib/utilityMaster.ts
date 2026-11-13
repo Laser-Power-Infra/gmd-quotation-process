@@ -1,13 +1,17 @@
 // Utility master + old→new mapping shared by the quotation app (seed/remap
-// scripts) and the tender app (Smartsheet upsert, utility filters). Source CSVs
-// live in apps/gmd-quotation-process/data; utilityMasterData.ts embeds the same
-// text (generated alongside the CSVs) so the tender app needs no file access.
+// scripts, supply-history sync) and the tender app (Smartsheet upsert). The
+// standard utility list is the active UTILITY LookupOption rows (quotation DB,
+// loaded by ../server/utility.ts); the CSVs only add aliases for old text.
+// Source CSVs live in apps/gmd-quotation-process/data; utilityMasterData.ts
+// embeds the same text (generated alongside the CSVs) so the tender app needs
+// no file access.
 import { UTILITY_MASTER_CSV, UTILITY_MAPPING_CSV } from "./utilityMasterData";
 export { UTILITY_MASTER_CSV, UTILITY_MAPPING_CSV };
 
 export type UtilityMasterRow = { code: string; name: string; shortName: string; state: string };
 export type UtilityMappingRow = {
   oldValue: string;
+  newCode: string;
   newShortName: string;
   projectReference: string;
   verify: boolean;
@@ -16,6 +20,7 @@ export type UtilityResolution =
   | { kind: "map"; utility: string; projectReference: string }
   | { kind: "verify" }
   | { kind: "unmatched" };
+export type UtilityResolver = (value: string | null | undefined) => UtilityResolution;
 
 /** Minimal RFC-4180 CSV parser (quoted fields, "" escapes, CRLF). Returns header-keyed rows. */
 export function parseCsv(text: string): Record<string, string>[] {
@@ -52,6 +57,7 @@ export function parseUtilityMaster(csv: string): UtilityMasterRow[] {
 export function parseUtilityMapping(csv: string): UtilityMappingRow[] {
   return parseCsv(csv).map((r) => ({
     oldValue: r.oldValue,
+    newCode: r.newCode,
     newShortName: r.newShortName,
     projectReference: r.projectReference,
     verify: r.verify === "Y",
@@ -59,20 +65,18 @@ export function parseUtilityMapping(csv: string): UtilityMappingRow[] {
 }
 
 /**
- * Resolver for a stored utility text: mapping rows first (VERIFY rows resolve
- * to "verify" and must never be bulk-updated), then master full/short names so
- * already-canonical values are recognised. Trim + case/space-insensitive.
+ * Resolver for a stored utility text: master full names, then mapping rows
+ * (VERIFY rows resolve to "verify" and must never be bulk-updated), then master
+ * short names, so a standard name always resolves to itself.
+ * Trim + case/space-insensitive.
  */
 export function buildUtilityResolver(
   master: UtilityMasterRow[],
   mapping: UtilityMappingRow[],
-): (value: string | null | undefined) => UtilityResolution {
+): UtilityResolver {
   const byKey = new Map<string, UtilityResolution>();
-  for (const m of master) {
-    const hit: UtilityResolution = { kind: "map", utility: m.shortName, projectReference: "" };
-    byKey.set(normalizeUtility(m.name), hit);
-    byKey.set(normalizeUtility(m.shortName), hit);
-  }
+  const hit = (m: UtilityMasterRow): UtilityResolution => ({ kind: "map", utility: m.shortName, projectReference: "" });
+  for (const m of master) byKey.set(normalizeUtility(m.name), hit(m));
   for (const m of mapping) {
     byKey.set(
       normalizeUtility(m.oldValue),
@@ -81,7 +85,43 @@ export function buildUtilityResolver(
         : { kind: "map", utility: m.newShortName, projectReference: m.projectReference },
     );
   }
+  for (const m of master) byKey.set(normalizeUtility(m.shortName), hit(m));
   return (value) => byKey.get(normalizeUtility(value)) ?? { kind: "unmatched" };
+}
+
+/**
+ * Resolver onto the active UTILITY LookupOption values. The master CSV full
+ * name and the mapping CSV are aliases, both joined on the LookupOption code.
+ */
+export function lookupUtilityResolver(rows: { value: string; code: string | null }[]): UtilityResolver {
+  const fullName = new Map(parseUtilityMaster(UTILITY_MASTER_CSV).map((m) => [m.code, m.name]));
+  const values = new Set(rows.map((r) => r.value));
+  const valueByCode = new Map(rows.filter((r) => r.code).map((r) => [r.code, r.value]));
+  return buildUtilityResolver(
+    rows.map((r) => ({ code: r.code ?? "", name: fullName.get(r.code ?? "") ?? r.value, shortName: r.value, state: "" })),
+    parseUtilityMapping(UTILITY_MAPPING_CSV)
+      // By code, so renaming a value on /admin/lookup-options keeps its aliases; no code match → the sheet's short name.
+      .map((m) => ({ ...m, newShortName: valueByCode.get(m.newCode) ?? m.newShortName }))
+      // An alias whose target is no longer a LookupOption value maps nothing, so no non-standard name is written.
+      .filter((m) => m.verify || values.has(m.newShortName)),
+  );
+}
+
+/**
+ * Blank or a sheet dash placeholder ("-", "—") → null; a match → its LookupOption
+ * value; any other text is kept as typed (trimmed) and counted in `unknown`.
+ */
+export function standardUtility(
+  resolve: UtilityResolver,
+  value: string | null | undefined,
+  unknown: Map<string, number>,
+): string | null {
+  const raw = (value ?? "").trim();
+  if (!raw || /^[-–—]+$/.test(raw)) return null;
+  const r = resolve(raw);
+  if (r.kind === "map") return r.utility;
+  unknown.set(raw, (unknown.get(raw) ?? 0) + 1);
+  return raw;
 }
 
 /** Blank → value; else append "; value" unless already present (idempotent re-runs). */
@@ -92,26 +132,4 @@ export function mergeProjectReference(current: string | null | undefined, add: s
   if (!cur) return next;
   if (cur.split(";").some((p) => normalizeUtility(p) === normalizeUtility(next))) return cur;
   return `${cur}; ${next}`;
-}
-
-let embedded: ReturnType<typeof buildUtilityResolver> | null = null;
-/** Resolver over the embedded master + mapping (no file/DB access). */
-export function embeddedUtilityResolver() {
-  return (embedded ??= buildUtilityResolver(
-    parseUtilityMaster(UTILITY_MASTER_CSV),
-    parseUtilityMapping(UTILITY_MAPPING_CSV),
-  ));
-}
-
-/** Canonical short name for a raw value, or the trimmed raw value when VERIFY/unmatched. */
-export function canonicalUtility(value: string | null | undefined): string | null {
-  const raw = (value ?? "").trim();
-  if (!raw) return null;
-  const r = embeddedUtilityResolver()(raw);
-  return r.kind === "map" ? r.utility : raw;
-}
-
-/** Standard utility names (master short names), in master order: the only utility filter options. */
-export function utilityMasterNames(): string[] {
-  return parseUtilityMaster(UTILITY_MASTER_CSV).map((m) => m.shortName);
 }

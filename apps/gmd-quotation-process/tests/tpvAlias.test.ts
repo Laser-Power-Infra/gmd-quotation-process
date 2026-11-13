@@ -2,7 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { matchItemType, correctItemType } from '../lib/itemTypePatterns.js'
 import { parseItem } from '../lib/itemVersionResolver.js'
-import { validateVaPercent, getDefaultVaPercent } from '../lib/vaValidation.js'
+import { getDefaultVaPercent } from '../lib/vaValidation.js'
+import { minVaPercent } from '../lib/vaRules.js'
 
 test('TPV item names are detected as TPAV', () => {
   assert.equal(matchItemType('TPV 80mm PN 10'), 'TPAV')
@@ -33,7 +34,7 @@ test('combined TPV/TPAV + SLV strings resolve to the TPAV+SLV base item', () => 
   assert.equal(parseItem('TPV').baseItem, 'TPAV')
 })
 
-test('a stored TPV item type gets the TPAV VA% cap and default', () => {
-  assert.deepEqual(validateVaPercent('TPV', '80', 40), validateVaPercent('TPAV', '80', 40))
+test('a stored TPV item type gets the TPAV VA% minimum and default', () => {
+  assert.equal(minVaPercent({ itemType: 'tpv' }), minVaPercent({ itemType: 'TPAV' }))
   assert.equal(getDefaultVaPercent('tpv', null), getDefaultVaPercent('TPAV', null))
 })

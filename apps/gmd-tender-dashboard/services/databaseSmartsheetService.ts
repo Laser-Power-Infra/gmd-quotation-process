@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { SmartsheetTender } from "@/types/smartsheetTender";
-import { canonicalUtility } from "@gmd/contract-review/utility-master";
+import { standardUtility } from "@gmd/contract-review/utility-master";
+import { loadUtilityResolver } from "@gmd/contract-review/server/utility";
 
 export class DatabaseSmartsheetService {
   static async getAllSmartsheetTenders(): Promise<SmartsheetTender[]> {
@@ -38,6 +39,10 @@ export class DatabaseSmartsheetService {
   static async upsertSmartsheetTenders(records: SmartsheetTender[]): Promise<void> {
     if (!prisma || records.length === 0) return;
 
+    // Loaded before any write: if the quotation DB is unreachable this throws, so
+    // the sync never stores unstandardised utility text.
+    const resolveUtility = await loadUtilityResolver();
+    const unknownUtilities = new Map<string, number>();
     const validRecords = records.filter((r) => r.docketNumber && r.docketNumber.trim() !== "");
 
     for (const record of validRecords) {
@@ -45,8 +50,8 @@ export class DatabaseSmartsheetService {
         enquiryDate: record.enquiryDate || null,
         partyName: record.partyName || null,
         docketNumber: record.docketNumber,
-        // Map through the utility master so a sync doesn't undo the utility remap.
-        utility: canonicalUtility(record.utility),
+        // The standard LookupOption name, so a sync doesn't undo the utility remap.
+        utility: standardUtility(resolveUtility, record.utility, unknownUtilities),
         quotationNumber: record.quotationNumber || null,
         quotationDate: record.quotationDate || null,
         accountHolder: record.accountHolder || null,
@@ -78,5 +83,8 @@ export class DatabaseSmartsheetService {
     }
 
     console.log(`[DatabaseSmartsheetService] Upserted ${validRecords.length} records`);
+    if (unknownUtilities.size) {
+      console.warn("[DatabaseSmartsheetService] Utility text not in the UTILITY list, kept as typed:", Object.fromEntries(unknownUtilities));
+    }
   }
 }

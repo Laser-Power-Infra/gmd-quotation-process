@@ -169,7 +169,7 @@
       "refersTo": "button-primary",
       "description": "The engaged-switch action. Near-black fill, 10px radius, 32px tall.",
       "html": "<button class=\"ds-btn-primary\">Save Changes</button>",
-      "css": ".ds-btn-primary { background: oklch(0.205 0 0); color: oklch(1 0 0); height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 10px; font-family: Poppins, sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; outline: none; transition: background 0.15s ease, transform 0.15s ease; } .ds-btn-primary:hover { background: oklch(0.205 0 0 / 0.8); } .ds-btn-primary:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); } .ds-btn-primary:active:not([aria-haspopup]) { transform: translateY(1px); } .ds-btn-primary:disabled { opacity: 0.5; pointer-events: none; }"
+      "css": ".ds-btn-primary { background: oklch(0.205 0 0); color: oklch(1 0 0); height: 32px; padding: 0 12px; border: 1px solid transparent; border-radius: 10px; font-family: Inter, sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; outline: none; transition: background 0.15s ease, transform 0.15s ease; } .ds-btn-primary:hover { background: oklch(0.205 0 0 / 0.8); } .ds-btn-primary:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); } .ds-btn-primary:active:not([aria-haspopup]) { transform: translateY(1px); } .ds-btn-primary:disabled { opacity: 0.5; pointer-events: none; }"
     },
     {
       "name": "Outline Button",
@@ -177,7 +177,7 @@
       "refersTo": "button-outline",
       "description": "Secondary action. Paper fill, hairline border, muted hover.",
       "html": "<button class=\"ds-btn-outline\">Export</button>",
-      "css": ".ds-btn-outline { background: oklch(1 0 0); color: oklch(0.145 0 0); height: 32px; padding: 0 12px; border: 1px solid oklch(0.922 0 0); border-radius: 10px; font-family: Poppins, sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; outline: none; transition: background 0.15s ease; } .ds-btn-outline:hover { background: oklch(0.97 0 0); } .ds-btn-outline:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); }"
+      "css": ".ds-btn-outline { background: oklch(1 0 0); color: oklch(0.145 0 0); height: 32px; padding: 0 12px; border: 1px solid oklch(0.922 0 0); border-radius: 10px; font-family: Inter, sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; outline: none; transition: background 0.15s ease; } .ds-btn-outline:hover { background: oklch(0.97 0 0); } .ds-btn-outline:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); }"
     },
     {
       "name": "Nav Pill",
@@ -185,7 +185,7 @@
       "refersTo": "nav-pill",
       "description": "Primary navigation. Solid Instrument Blue, the console's live signal.",
       "html": "<a class=\"ds-nav-pill\" href=\"#\">Quotation Process</a>",
-      "css": ".ds-nav-pill { display: inline-flex; align-items: center; height: 36px; padding: 0 16px; background: #0f62fe; color: #ffffff; border: none; border-radius: 8px; font-family: Poppins, sans-serif; font-size: 14px; font-weight: 600; text-decoration: none; transition: background 0.15s ease; } .ds-nav-pill:hover { background: #0353e9; } .ds-nav-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); }"
+      "css": ".ds-nav-pill { display: inline-flex; align-items: center; height: 36px; padding: 0 16px; background: #0f62fe; color: #ffffff; border: none; border-radius: 8px; font-family: Inter, sans-serif; font-size: 14px; font-weight: 600; text-decoration: none; transition: background 0.15s ease; } .ds-nav-pill:hover { background: #0353e9; } .ds-nav-pill:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); }"
     },
     {
       "name": "Text Input",
@@ -193,7 +193,7 @@
       "refersTo": "input",
       "description": "Dense form field. 32px tall, hairline border, unmistakable focus ring.",
       "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Search party...\">",
-      "css": ".ds-input { height: 32px; width: 100%; padding: 0 10px; background: transparent; border: 1px solid oklch(0.922 0 0); border-radius: 10px; font-family: Poppins, sans-serif; font-size: 14px; color: oklch(0.145 0 0); outline: none; transition: border-color 0.15s ease; } .ds-input::placeholder { color: oklch(0.556 0 0); } .ds-input:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); } .ds-input:disabled { opacity: 0.5; background: oklch(0.97 0 0 / 0.5); cursor: not-allowed; }"
+      "css": ".ds-input { height: 32px; width: 100%; padding: 0 10px; background: transparent; border: 1px solid oklch(0.922 0 0); border-radius: 10px; font-family: Inter, sans-serif; font-size: 14px; color: oklch(0.145 0 0); outline: none; transition: border-color 0.15s ease; } .ds-input::placeholder { color: oklch(0.556 0 0); } .ds-input:focus-visible { border-color: oklch(0.708 0 0); box-shadow: 0 0 0 3px oklch(0.708 0 0 / 0.5); } .ds-input:disabled { opacity: 0.5; background: oklch(0.97 0 0 / 0.5); cursor: not-allowed; }"
     },
     {
       "name": "Status Badge",
@@ -201,7 +201,7 @@
       "refersTo": "badge-pill",
       "description": "Order status as a soft-tinted pill. Submitted shown; each status owns a same-hue tint pair.",
       "html": "<span class=\"ds-badge\">Submitted</span>",
-      "css": ".ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 0 10px; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 9999px; font-family: Poppins, sans-serif; font-size: 11px; font-weight: 600; white-space: nowrap; transition: all 0.15s ease; } .ds-badge.won { background: #d1fae5; color: #065f46; border-color: #a7f3d0; } .ds-badge.lost { background: #fee2e2; color: #991b1b; border-color: #fecaca; } .ds-badge.eval { background: #fef3c7; color: #92400e; border-color: #fde68a; }"
+      "css": ".ds-badge { display: inline-flex; align-items: center; height: 20px; padding: 0 10px; background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; border-radius: 9999px; font-family: Inter, sans-serif; font-size: 11px; font-weight: 600; white-space: nowrap; transition: all 0.15s ease; } .ds-badge.won { background: #d1fae5; color: #065f46; border-color: #a7f3d0; } .ds-badge.lost { background: #fee2e2; color: #991b1b; border-color: #fecaca; } .ds-badge.eval { background: #fef3c7; color: #92400e; border-color: #fde68a; }"
     },
     {
       "name": "Active Page Button",
@@ -209,7 +209,7 @@
       "refersTo": "page-button-active",
       "description": "Pagination control. Active page lit in Instrument Blue; the rest paper with hairline border.",
       "html": "<button class=\"ds-page\">3</button>",
-      "css": ".ds-page { display: inline-flex; align-items: center; justify-content: center; height: 28px; min-width: 28px; padding: 0 6px; border: 1px solid oklch(0.922 0 0); border-radius: 4px; background: oklch(1 0 0); color: oklch(0.145 0 0); font-family: Poppins, sans-serif; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; } .ds-page:hover:not(:disabled) { background: oklch(0.97 0 0); } .ds-page.active { background: #0f62fe; color: #ffffff; border-color: #0f62fe; } .ds-page:disabled { opacity: 0.3; pointer-events: none; }"
+      "css": ".ds-page { display: inline-flex; align-items: center; justify-content: center; height: 28px; min-width: 28px; padding: 0 6px; border: 1px solid oklch(0.922 0 0); border-radius: 4px; background: oklch(1 0 0); color: oklch(0.145 0 0); font-family: Inter, sans-serif; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; } .ds-page:hover:not(:disabled) { background: oklch(0.97 0 0); } .ds-page.active { background: #0f62fe; color: #ffffff; border-color: #0f62fe; } .ds-page:disabled { opacity: 0.3; pointer-events: none; }"
     },
     {
       "name": "Column Filter Select",
@@ -217,7 +217,7 @@
       "refersTo": "input",
       "description": "Per-column header filter. 24px tall, 10px type, dense.",
       "html": "<select class=\"ds-colfilter\"><option>All sizes</option></select>",
-      "css": ".ds-colfilter { width: 100%; height: 24px; padding: 0 4px; border: 1px solid oklch(0.922 0 0); border-radius: 4px; background: oklch(1 0 0); color: oklch(0.145 0 0); font-family: Poppins, sans-serif; font-size: 10px; outline: none; } .ds-colfilter:focus { border-color: #94a3b8; }"
+      "css": ".ds-colfilter { width: 100%; height: 24px; padding: 0 4px; border: 1px solid oklch(0.922 0 0); border-radius: 4px; background: oklch(1 0 0); color: oklch(0.145 0 0); font-family: Inter, sans-serif; font-size: 10px; outline: none; } .ds-colfilter:focus { border-color: #94a3b8; }"
     }
   ],
   "narrative": {
@@ -228,7 +228,7 @@
       "Dense by design: small type, small targets, many rows visible per screen.",
       "Flat surfaces with light lift for floating chrome only.",
       "Every interactive element announces its state clearly (hover, focus, active, disabled).",
-      "Poppins everywhere, tight tracking, labels uppercase and small.",
+      "Inter everywhere, tight tracking, labels uppercase and small.",
       "Light theme is canonical; a full neutral dark theme ships and inverts the chassis."
     ],
     "rules": [
@@ -247,7 +247,7 @@
     "donts": [
       "Don't let any decorative element take Instrument Blue; it is a signal, not a theme.",
       "Don't cast shadows on the data table or its rows.",
-      "Don't introduce a second display font; Poppins carries every role.",
+      "Don't introduce a second display font; Inter carries every role.",
       "Don't grow table text past 13px for readability; fix the layout instead.",
       "Don't add circles, gradients, or irregular silhouettes to the control vocabulary - rectangles and pills only.",
       "Don't style new work on /raw_material from the global tokens; use its scoped Material 3 palette."

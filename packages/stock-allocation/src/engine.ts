@@ -1,17 +1,18 @@
-import { parseLine, parseStock, type ParsedLine, type ParsedStock } from "./parse";
+import { ACTUATOR, parseLine, parseStock, type ParsedLine, type ParsedStock } from "./parse";
 import type {
   Allocation, AllocationResult, Basis, ContractLine, LedgerEntry, OfferLine, Stage, StockItem,
 } from "./types";
 
 export { parseLine, parseStock };
 
-const ACT_FLAG = "actuator to be mapped (AUMA / Rotork)";
+const ACT_FLAG = "actuator held from stock";
 const CS_FLAG = "CS offered against DI";
 const SLV = "SLUICE VALVE";
 const bad = (s: string | null | undefined) => { const t = (s ?? "").trim(); return !t || t === "#N/A"; };
 
 /** null = no match; else a sort rank (lower first) and flags. */
 function match(need: string, l: ParsedLine, s: ParsedStock): { rank: number; flags: string[] } | null {
+  if (need === ACTUATOR) return s.act !== null && s.act === l.act ? { rank: 0, flags: [] } : null;
   if (s.vt !== need || s.size !== l.size || (s.metal !== null && s.metal !== l.metal)) return null;
   const flags: string[] = [];
   let rank = 0;
@@ -39,7 +40,7 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
   const live = input.lines.filter((l) => l.balanceQty > 0);
   const pl = new Map(live.map((l) => [l.id, parseLine(l)]));
   const allocations: Allocation[] = [];
-  // per line: qty got per valve type (pair lines need both)
+  // per line: qty got per part (valve type or ACTUATOR); a line with several parts needs all of them
   const got = new Map<string, Map<string, number>>(live.map((l) => [l.id, new Map()]));
   const stageOf = (l: ContractLine): Stage => l.inspection === "DONE" ? "Inspection done" : l.offer === "DONE" ? "Offered" : "Booked";
 
@@ -52,7 +53,8 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
       party: l.party, poNo: l.poNo, qty, stage: stageOf(l),
       basis: acted ? "Actuator to map" : p.kind === "assemble" ? "Assemble" : "Finished",
       source: "auto", ledgerId: null, spare: p.kind === "assemble", allocatedAt: null, ...a,
-      flags: acted ? [...a.flags, ACT_FLAG] : a.flags,
+      // only the actuator's own row says so: a locked valve with no actuator free must not claim one
+      flags: p.vt === ACTUATOR ? [...a.flags, ACT_FLAG] : a.flags,
     });
   };
 
@@ -87,7 +89,8 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
 
   // 2-4. lines by priority
   const pending = (l: ContractLine) => l.inspection !== "DONE" && l.offer !== "DONE";
-  const oldestFirst = (a: ContractLine, b: ContractLine) => pl.get(a.id)!.time - pl.get(b.id)!.time;
+  // same date (or both undated: Infinity - Infinity = NaN) falls back to id, so DB row order never decides
+  const oldestFirst = (a: ContractLine, b: ContractLine) => pl.get(a.id)!.time - pl.get(b.id)!.time || a.id.localeCompare(b.id);
   const order = [
     ...live.filter((l) => l.inspection === "DONE").sort(oldestFirst),
     ...live.filter((l) => l.inspection !== "DONE" && l.offer === "DONE").sort(oldestFirst),
@@ -115,17 +118,20 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
       return cap - left;
     };
     if (!p.needs.length) continue;
-    const cap = (n: string) => l.balanceQty - (got.get(l.id)!.get(n) ?? 0);
-    // pair lines (TPAV+SLV) get min of what each part can supply; shortcut: ignores uneven ledger holdings
-    const extra = Math.min(...p.needs.map((n) => take(n, cap(n), false)));
-    if (extra > 0) p.needs.forEach((n) => take(n, extra, true));
+    const g = got.get(l.id)!, have = (n: string) => g.get(n) ?? 0;
+    // Every part is filled to the same reach: a part the ledger already holds (a locked valve) gets the
+    // others on top, and a line missing one part (no matching actuator) takes nothing, leaving the rest free.
+    const reach = Math.min(...p.needs.map((n) => have(n) + take(n, l.balanceQty - have(n), false)));
+    for (const n of p.needs) if (reach > have(n)) take(n, reach - have(n), true);
   }
 
   // outputs
   const offerNow: OfferLine[] = [];
   for (const l of live) {
-    const qty = offered(l);
-    if (qty <= 0) continue;
+    const qty = Math.min(offered(l), l.balanceQty); // a booking may hold more than the balance
+    const locked = input.ledger.filter((e) => e.source === "locked" && e.contractNo === l.contractNo && e.itemCode === l.itemCode);
+    // a locked line stays listed at 0 (its actuator gone), so Offer sent can be unticked to free the valve
+    if (qty <= 0 && !locked.length) continue;
     const mine = allocations.filter((a) => a.contractNo === l.contractNo && a.itemCode === l.itemCode && a.stage !== "Dispatched");
     const rm = new Map<string, OfferLine["rmCodes"][number]>();
     for (const a of mine) {
@@ -133,7 +139,6 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
       const r = rm.get(k) ?? { erpCode: a.erpCode, location: a.location, qty: 0, spare: a.spare };
       r.qty += a.qty; rm.set(k, r);
     }
-    const locked = input.ledger.filter((e) => e.source === "locked" && e.contractNo === l.contractNo && e.itemCode === l.itemCode);
     const basis: Basis = pl.get(l.id)!.actuated ? "Actuator to map" : mine.some((a) => a.spare) ? "Assemble" : "Finished";
     offerNow.push({
       line: l, offerableQty: qty, offerValue: qty * l.rate, rmCodes: [...rm.values()], basis,
@@ -170,7 +175,7 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
   }
   const notInStock = [...byContract.values()];
 
-  const sum = (b: Basis) => offerNow.filter((o) => o.basis === b);
+  const sum = (b: Basis) => offerNow.filter((o) => o.basis === b && o.offerableQty > 0);
   const val = (b: Basis) => sum(b).reduce((a, o) => a + o.offerValue, 0);
   return {
     allocations, offerNow, ledger: ledgerView, notInStock,

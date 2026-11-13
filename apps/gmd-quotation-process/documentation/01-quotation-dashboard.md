@@ -104,7 +104,7 @@ So filtering/editing happens on **DB data** that was either created here or sync
 - `itemType/moc` manual edit sets `*Source='sheet'` `:727`
 - If `itemName` edit leaves `size` blank → warn toast `EnquiryTable.tsx:581`
 - After edit, if `vaPercent` now blank but `itemType/size` known → fill default `getDefaultVaPercent()` `app/actions/*.ts:737`
-- If field is `vaPercent/quotedRate/productCost/extension/bypass` → **VA validation** `validateVaPercent()` → if invalid → `sendVaAlert()` n8n webhook with `docket/itemName/type/size/va/max` `app/actions/*.ts:745-767`, table flags red via `invalidVaItemIds` `EnquiryTable.tsx:299`
+- **VA% rules** `isVaRuleViolation()` `lib/vaRules.ts`: the row turns red (`invalidVaItemIds` in `EnquiryTable.tsx`) when VA% is below the item's minimum (or negative) or the rate is above the CR rate, and Validation = Yes is refused. No upper VA% limit and no n8n alert (see `07`)
 - **NEW — Auto Item Code + Cost cascade** `app/actions/*.ts:672` `CODE_DERIVED_FIELDS=[itemType,moc,size,pnRating,operationType,itemName]`: after any of those edits, re-reads `itemType/moc/size/pnRating/operationType` + `erpItemCode,productCost`, calls `recomputeItemCodeForValues()` `lib/gmdItemCodeLookup.ts:265` which does gated `lookupItemCodeGated` (5-field + DIRECT M2M `hasDirectM2M` check `lib/gmdBomCostLookup.ts`). If code changed → persists new `erpItemCode` (null if no BOM/match, non-null if gate passes). If `newCode` exists and `productCost == null` → auto `maybeUpdateProductCostFromNewCode()` → `getBomEntry(newCode)` → `buildRmCostMap([rmCode])` → `recalculateItem({productCost})` + `bomId/bomType/rmItemCode`. Existing cost **never cleared**.
 
 ### 5.3 Bulk Paste (Excel-like)

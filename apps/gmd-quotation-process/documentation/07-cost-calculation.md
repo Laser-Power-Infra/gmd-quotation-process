@@ -86,9 +86,9 @@ Directly after cost, still inside `recalculateItem` `lib/costCalculator.ts:142-1
 
 **Example continuation above:** `cost=138,918`, `vaPercent=35%` → `quotedRate = round(138,918*1.35)=round(187,539.3)=187,539.3` → stored `"187539.30"`.
 
-**Defaults:** `getDefaultVaPercent(itemType,size)` `lib/vaValidation.ts:180` — e.g., `BUTTERFLY 0-450→50%, 451-1000→35%, else 65%` `L187-191`; `SLUICE-RESILIENT 0-200→25%,250-450→20%,500-1000→30%` `L38-44` — full table in `08` and `vaValidation.ts:14-243`. Used when creating items `app/actions/*.ts:118` and `autoFillBlanks:977`, `updateVaPercentAction:1024`.
+**Defaults:** `getDefaultVaPercent(itemType,size)` `lib/vaValidation.ts` — e.g., `BUTTERFLY 0-450→50%, 451-1000→35%, else 65%`; `SLUICE-RESILIENT 0-200→25%,250-450→20%,500-1000→30%` — full table in `08`. Never below the VA% rule minimum (next paragraph). Used when creating items `app/actions/*.ts:118` and `autoFillBlanks:977`, `updateVaPercentAction:1024`.
 
-**Validation:** `validateVaPercent(itemType,size,va)` same thresholds `lib/vaValidation.ts:14-178` — if `va > max`, `app/actions/*.ts:752-767` fires `sendVaAlert()` via `lib/services/n8nWebhook.ts` n8n webhook payload `docketNumber,itemName,itemType,size,vaPercent,maxVaPercent` `L754-761` and table flags `invalidVaItemIds` red `components/table/EnquiryTable.tsx:299`.
+**VA% rules:** `lib/vaRules.ts` (Puja, Nov 2026) — rate = CR rate, but VA% is never negative and never below the item minimum: sluice resilient 15%, metal 30%; metal-seated check valve 30%; butterfly ≤DN450 20%, above 35%; TPAV 35%; expansion bellows >DN1000 45%; DPCV ≤DN600 20%, above 35%; plug valve 100%; other types 0%. `isVaRuleViolation()` paints the row red (`invalidVaItemIds` `components/table/EnquiryTable.tsx`) and blocks Validation = Yes; **Apply VA% rules** (`applyVaRulesAction` `app/actions/misc.ts`) sets the rates. There is no upper VA% limit (the old max check and its n8n alert are gone).
 
 ## 4. GST & Totals (Last Steps)
 
@@ -125,5 +125,5 @@ DB write `prisma.enquiryItem.update where id data:{productCost,extension,bypass,
 
 ## 8. Source Files
 
-- `lib/costCalculator.ts:46-257` (core), `lib/rounding.ts:1`, `lib/vaValidation.ts:14-243`, `prisma/schema.prisma:66-82 EnquiryItem,103-146 cost tables,301 LookupOption`, `scripts/seed-*-costs.ts` (extension, bypass, payment, inspection, pbg, transportation), `lib/prisma.ts`
+- `lib/costCalculator.ts:46-257` (core), `lib/rounding.ts:1`, `lib/vaValidation.ts`, `lib/vaRules.ts`, `prisma/schema.prisma:66-82 EnquiryItem,103-146 cost tables,301 LookupOption`, `scripts/seed-*-costs.ts` (extension, bypass, payment, inspection, pbg, transportation), `lib/prisma.ts`
 - Callers: `app/actions/*.ts:14,182,627,672,807,872,922,1002`, `app/page.tsx:61`, `components/table/EnquiryTable.tsx`, `lib/enquiriesSlice.ts:85`

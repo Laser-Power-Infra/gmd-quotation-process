@@ -136,8 +136,8 @@ export default function AttachmentPreviewDialog({
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
             {attachments.length === 1
-              ? "1 file linked to this docket"
-              : `${attachments.length} files linked to this docket`}
+              ? "1 linked file"
+              : `${attachments.length} linked files`}
           </DialogDescription>
         </DialogHeader>
 

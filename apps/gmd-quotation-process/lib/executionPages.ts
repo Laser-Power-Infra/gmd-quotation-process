@@ -1,5 +1,5 @@
 /**
- * Pure logic for the Phase 1 execution pages (Order Status, Ready to Bill, Sales Register).
+ * Pure logic for the Phase 1 execution pages (Order Status, Sales Register; Ready to Bill lives in @gmd/stock-allocation).
  *
  * Data comes from tables the hourly jobs already fill from the GMD EXECUTION TRACKING / CONTRACTS
  * sheets: `ContractReview` (db-tender; order, MC, prod order, offer, inspection, DI and billed
@@ -47,8 +47,6 @@ export type ContractLine = {
   prodEntryDate: string | null;
   diQty: number;
   billedQty: number;
-  balBillAgMc: number;
-  balBillAgMcVal: number;
   productionOrderNumber: string | null;
   offerNumber: string[];
   inspectionNumber: string[];
@@ -102,10 +100,6 @@ export function lightOf(stage: Stage, days: number | null): Light {
   return days <= 120 ? "amber" : "red";
 }
 
-/** Ready-to-bill amount for a line: the sheet's own value, else balance qty x rate. */
-export const readyValue = (l: Pick<ContractLine, "balBillAgMc" | "balBillAgMcVal" | "rate">): number =>
-  l.balBillAgMc > 0 ? l.balBillAgMcVal || l.balBillAgMc * l.rate : 0;
-
 export type SaleLine = {
   invoiceNo: string;
   month: string | null; // YYYY-MM
@@ -142,7 +136,7 @@ export type GpCell = {
   /** Lines with no cost: their sales count in `sales`, never in GP. */
   missingLines: number;
   missingSales: number;
-  /** Sales and cost of the costed lines, and Σ sales × min VA% ÷ 100 over them. */
+  /** Sales and cost of the costed lines, and the GP floor Σ sales × min VA% ÷ (100 + min VA%) over them. */
   costedSales: number;
   cost: number;
   minGp: number;
@@ -165,7 +159,8 @@ export function addLine(c: GpCell, l: Pick<SaleLine, "value" | "cost" | "minVa" 
   } else {
     c.costedSales += l.value;
     c.cost += l.cost;
-    c.minGp += (l.value * l.minVa) / 100;
+    // VA% is a mark-up on cost (rate = cost × (1 + VA/100)), so at the minimum GP is VA/(100+VA) of sales
+    c.minGp += (l.value * l.minVa) / (100 + l.minVa);
   }
   if (l.quotedCost !== null) {
     c.quotedSales += l.value;
@@ -176,7 +171,7 @@ export function addLine(c: GpCell, l: Pick<SaleLine, "value" | "cost" | "minVa" 
 
 /**
  * GP = sales − cost and GP % = GP ÷ sales × 100, over the costed lines only (weighted); null when
- * the cell has no costed line. Red: GP below the sales-weighted minimum VA% of those lines.
+ * the cell has no costed line. Red: GP below what those lines make when priced at their minimum VA% (on cost).
  */
 export function gpOf(c: GpCell): { gp: number | null; gpPct: number | null; red: boolean; quotedGpPct: number | null } {
   const gp = c.lines > c.missingLines ? c.costedSales - c.cost : null;

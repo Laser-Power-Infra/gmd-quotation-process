@@ -20,6 +20,8 @@ import { runBomMastErpSync } from "@/schedular_function/bom-mast-sync";
 import { runSupplyRateBackfill } from "@/lib/supplyRateBackfill";
 import { runExecutionTrackingStep } from "@/schedular_function/execution-tracking-sync";
 import { getFiscalYearLabel } from "@/lib/docketNumber";
+import { standardUtility } from "@gmd/contract-review/utility-master";
+import { loadUtilityResolver } from "@gmd/contract-review/server/utility";
 
 const SPREADSHEET_ID = process.env.SUPPLY_HISTORY_SPREADSHEET_ID;
 const SHEET_NAME = "MASTER";
@@ -177,6 +179,8 @@ export async function POST() {
       existingMap.set(makeRowKey(r.invoiceNo, r.itemName), r);
     }
     console.log(`[supply-sync] Preloaded ${existingRows.length} existing DB rows into map`);
+    const resolveUtility = await loadUtilityResolver();
+    const unknownUtilities = new Map<string, number>();
 
     let inserted = 0;
     let patched = 0;
@@ -208,6 +212,8 @@ export async function POST() {
       mapped.itemName = String(mapped.itemName).trim();
 
       mapped.orderList = matchOrderLink(mapped.partyOrderNo, orderLinkMap);
+      // The standard LookupOption name; other text is kept and reported. Still gap-fill only.
+      mapped.utility = standardUtility(resolveUtility, mapped.utility, unknownUtilities);
 
       const key = makeRowKey(mapped.invoiceNo, mapped.itemName);
       const existing = existingMap.get(key);
@@ -376,7 +382,7 @@ export async function POST() {
     }
 
     const elapsed = Date.now() - syncStart;
-    console.log(`[supply-sync] Done elapsed=${elapsed}ms inserted=${inserted} patched=${patched} touched=${touched} skippedBlankKey=${skippedBlankKey} totalInSheet=${rawRows.length} orderLinkMap=${orderLinkMap.size} unmapped=${unmapped.length ? unmapped.join(",") : "none"}`);
+    console.log(`[supply-sync] Done elapsed=${elapsed}ms inserted=${inserted} patched=${patched} touched=${touched} skippedBlankKey=${skippedBlankKey} totalInSheet=${rawRows.length} orderLinkMap=${orderLinkMap.size} unmapped=${unmapped.length ? unmapped.join(",") : "none"} unknownUtilities=${unknownUtilities.size}`);
     if (sampleChanges.length) {
       console.log(`[supply-sync] Sample changes:\n${sampleChanges.join("\n")}`);
     }
@@ -390,6 +396,7 @@ export async function POST() {
       totalInSheet: rawRows.length,
       totalExisting: existingRows.length,
       unmappedHeaders: unmapped,
+      unknownUtilities: Object.fromEntries(unknownUtilities),
       orderLinkMapSize: orderLinkMap.size,
       syncedAt: syncedAt.toISOString(),
       elapsedMs: elapsed,

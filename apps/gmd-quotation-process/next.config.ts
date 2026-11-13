@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
-  transpilePackages: ["@gmd/db-quotation", "@gmd/db-tender", "@gmd/ui", "@gmd/dashboard", "@gmd/contract-review", "@gmd/physical-stock", "@gmd/stock-allocation"],
+  transpilePackages: ["@gmd/db-quotation", "@gmd/db-tender", "@gmd/ui", "@gmd/dashboard", "@gmd/contract-review", "@gmd/physical-stock", "@gmd/stock-allocation", "@gmd/valve-serial", "@gmd/execution-registers"],
   allowedDevOrigins: ['192.168.1.*', 'localhost', '127.0.0.1'],
   // `unpdf` bundles PDF.js and relies on Node-specific loading; keep it out of
   // the server bundle so the docket-creation route can `require` it natively.

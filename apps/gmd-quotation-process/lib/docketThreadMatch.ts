@@ -8,6 +8,7 @@
  * shapes the sheet stores — "GMD/2026-27/412", "GMD/26-27/412", "GMD2627412" —
  * line up. Threads whose `docketNo` is a bare serial ("412") are matched on the
  * trailing number as a last resort, since the portal docket is always formatted.
+ * Contract Review's "Docket mails" (`contractMails.ts`) uses the exact-key and token helpers.
  *
  * Kept dependency-free (no Prisma import) so it can be unit tested without a
  * database; the DB query lives in `docketThreadResolver.ts`.
@@ -68,16 +69,43 @@ export function docketLookupKeys(docket: string): string[] {
   return Array.from(keys);
 }
 
-function threadMatchesKeys(
-  thread: LinkedThreadCandidate,
+function docketNoMatchesKeys(
+  docketNo: string | null | undefined,
   wantedKeys: Set<string>,
 ): boolean {
-  for (const docket of splitDocketList(thread.docketNo)) {
+  for (const docket of splitDocketList(docketNo)) {
     for (const key of docketLookupKeys(docket)) {
       if (wantedKeys.has(key)) return true;
     }
   }
   return false;
+}
+
+/**
+ * True when a thread's `docketNo` column names one of `dockets`, on exact docket
+ * keys only. No bare-serial fallback: "412" alone could be any year's docket.
+ */
+export function isThreadOfDocket(docketNo: string | null | undefined, dockets: string[]): boolean {
+  return docketNoMatchesKeys(docketNo, new Set(dockets.flatMap(docketLookupKeys)));
+}
+
+/**
+ * One case-insensitive whole-word pattern matching any of the literal tokens, valid in
+ * both JS (flag "i") and Postgres (`~*`): letters or digits right before or after a
+ * token break the match. Pass at least one non-empty token: an empty one matches everything.
+ */
+export function tokenPattern(tokens: string[]): string {
+  const alts = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  return `(?<![a-z0-9])(?:${alts.join("|")})(?![a-z0-9])`;
+}
+
+/**
+ * Digit runs of 6 or more in a PO number ("PO NO. 4500012345 DT 01.02.2026" -> ["4500012345"]).
+ * shortcut: a long digit run can also be a phone number or an amount; match only PO-labelled
+ * numbers if Puja reports wrong mails.
+ */
+export function poTokens(poNo: string | null | undefined): string[] {
+  return String(poNo ?? "").match(/\d{6,}/g) ?? [];
 }
 
 /**
@@ -141,7 +169,7 @@ export function pickLatestLinkedThread<T extends LinkedThreadCandidate>(
   const wanted = new Set(docketLookupKeys(docketNumber));
   if (wanted.size === 0) return null;
 
-  const keyed = pickMostRecent(threads.filter((t) => threadMatchesKeys(t, wanted)));
+  const keyed = pickMostRecent(threads.filter((t) => docketNoMatchesKeys(t.docketNo, wanted)));
   if (keyed) return keyed;
 
   const serial = docketSerialToken(docketNumber);

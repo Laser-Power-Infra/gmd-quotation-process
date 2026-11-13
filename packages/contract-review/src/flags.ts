@@ -47,6 +47,11 @@ export const DEFAULT_CONTRACT_REVIEW_FLAGS: ContractReviewFlags = {
   hiddenSidebar: [],
 };
 
+/** blankOnlyColumns for a user's role, the same in every app: anyone may fill a blank PO NO, only the admin role may change a saved one. */
+export function fillOnceColumns(role?: string | null): ContractReviewHeader[] {
+  return role === "admin" ? [] : ["PO NO"];
+}
+
 export function resolveContractReviewFlags(
   partial: Partial<ContractReviewFlags>,
 ): ContractReviewFlags {

@@ -3,6 +3,9 @@
 import { Fragment, useMemo, useState } from "react";
 import DebouncedSearchInput from "@/components/table/DebouncedSearchInput";
 import { squish } from "@gmd/dashboard/lib/squish";
+import { sortRows } from "@gmd/dashboard/lib/tableSort";
+import { SortTh } from "@gmd/ui/components/plain-table";
+import type { TableSort } from "@gmd/ui/components/data-table/types";
 import { formatLakh } from "@/lib/debtorsAgeing";
 import { formatIndianNumber } from "@/lib/formatCurrency";
 import { downloadCsv, toCsv } from "@/lib/debtorJoins";
@@ -15,11 +18,23 @@ type Contract = { contractNo: string; party: string; date: string | null; days: 
 
 const list = (a: string[]) => (a.length ? a.join(", ") : "-");
 
+// Sort key per column (null = not sortable); "Where it is" sorts in stage order.
+const COLS = [
+  [null, ""], ["contractNo", "Contract no"], ["party", "Party"], ["date", "Contract date"], ["items", "Items"],
+  ["value", "Order value"], ["stage", "Where it is"], ["pendingWith", "Pending with"],
+] as const;
+const sortValue = (c: Contract, k: string) =>
+  k === "items" ? c.lines.length
+  : k === "stage" ? STAGES.indexOf(c.stage)
+  : k === "pendingWith" ? PENDING_WITH[c.stage]
+  : c[k as keyof Contract];
+
 export default function OrderStatusTable({ lines }: { lines: ContractLine[] }) {
   const [search, setSearch] = useState("");
   const [stage, setStage] = useState<Stage | null>(null);
   const [showDone, setShowDone] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [sort, setSort] = useState<TableSort | null>(null);
   const [invoices, setInvoices] = useState<Record<string, InvoiceLine[] | string>>({});
   const today = useMemo(() => new Date(), []);
 
@@ -41,11 +56,12 @@ export default function OrderStatusTable({ lines }: { lines: ContractLine[] }) {
 
   const shown = useMemo(() => {
     const needle = squish(search);
-    return contracts.filter((c) => {
+    const kept = contracts.filter((c) => {
       if (stage ? c.stage !== stage : !showDone && c.stage === "Done") return false;
       return !needle || squish(`${c.contractNo} ${c.party} ${c.lines.map((l) => `${l.itemCode} ${l.itemName}`).join(" ")}`).includes(needle);
     });
-  }, [contracts, search, stage, showDone]);
+    return sortRows(kept, sort, sortValue, ["date"]);
+  }, [contracts, search, stage, showDone, sort]);
 
   const toggle = async (no: string) => {
     setOpen(open === no ? null : no);
@@ -83,7 +99,10 @@ export default function OrderStatusTable({ lines }: { lines: ContractLine[] }) {
           <table className="w-full border-collapse text-left text-[13px]">
             <thead className="sticky top-0 z-10 border-b border-border bg-muted/80">
               <tr>
-                {["", "Contract no", "Party", "Contract date", "Items", "Order value", "Where it is", "Pending with"].map((h, i) => <th key={i} className={`${TH} ${i === 5 ? "text-right" : ""}`}>{h}</th>)}
+                {COLS.map(([k, h]) => {
+                  const cls = `${TH} ${k === "value" ? "text-right" : ""}`;
+                  return k ? <SortTh key={k} k={k} label={h} sort={sort} onSort={setSort} className={cls} /> : <th key={h} className={cls}>{h}</th>;
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">

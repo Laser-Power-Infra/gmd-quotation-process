@@ -11,6 +11,7 @@ import { Segmented } from "@gmd/ui/components/segmented";
 import { DataTable } from "@gmd/ui/components/data-table/DataTable";
 import type { DataColumn, TableSort } from "@gmd/ui/components/data-table/types";
 import { applyTable, facetValues } from "./localTable";
+import { basisText, rmText as rm } from "../readyToBill";
 import type { AllocationResult, OfferLine, StockAllocationActions } from "../types";
 
 type View = "offer" | "ledger" | "short";
@@ -20,7 +21,6 @@ const VIEWS = [
   { value: "short", label: "Not in Stock" },
 ] as const;
 const key = (o: OfferLine) => `${o.line.contractNo}|${o.line.itemCode}`;
-const rm = (r: OfferLine["rmCodes"][number]) => `${r.erpCode}${r.location ? ` @${r.location}` : ""} ×${r.qty}${r.spare ? " (spare)" : ""}`;
 const input = "rounded border border-border bg-background px-2 py-1 text-xs";
 
 // Cosmetic only: the figures are still in the data sent to the browser.
@@ -122,7 +122,7 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
     .map((o) => ({
       id: key(o), contractNo: o.line.contractNo, party: o.line.party, date: o.line.dateOfContract, itemCode: o.line.itemCode,
       itemName: o.line.itemName, rate: o.line.rate, balanceQty: o.line.balanceQty, offerableQty: o.offerableQty,
-      offerValue: o.offerValue, rmCodes: o.rmCodes.map(rm).join("; "), basis: o.basis, flags: o.flags.join(", "),
+      offerValue: o.offerValue, rmCodes: o.rmCodes.map(rm).join("; "), basis: basisText(o.basis), flags: o.flags.join(", "),
       project: o.line.project, offerSent: o.offerSent, remarks: o.remarks ?? "", o,
     })), [data, needle]);
   const ledgerRows = useMemo<LedgerRow[]>(() => data.ledger
@@ -210,7 +210,7 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
       <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-5">
         {tile("Finished offerable", s.finished, s.finishedLines)}
         {tile("Assemble", s.assemble, s.assembleLines)}
-        {tile("Actuator to map", s.actuator, s.actuatorLines)}
+        {tile(basisText("Actuator to map"), s.actuator, s.actuatorLines)}
         {tile("Total offerable", s.finished + s.assemble + s.actuator, s.finishedLines + s.assembleLines + s.actuatorLines)}
         {tile("Not in stock (short)", s.short, undefined, true)}
       </div>

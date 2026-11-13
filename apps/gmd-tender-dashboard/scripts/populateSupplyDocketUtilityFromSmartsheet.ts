@@ -1,13 +1,17 @@
 /**
  * One-time script to populate docketNo + utility in SupplyHistory
  * from the Smartsheet "Sales Enquiry" sheet (id 611531051296644),
- * matching on the quotation number.
+ * matching on the quotation number. The utility is written as its standard
+ * LookupOption UTILITY name, like the utility remap; unknown text is kept and listed.
  *
  * Usage:
- *   cd v2 && npx tsx scripts/populateSupplyDocketUtilityFromSmartsheet.ts
+ *   cd apps/gmd-tender-dashboard && npx tsx scripts/populateSupplyDocketUtilityFromSmartsheet.ts
  */
 import "dotenv/config";
 import { prisma } from "@/lib/prisma";
+import { prisma as quotationPrisma } from "@gmd/db-quotation";
+import { standardUtility } from "@gmd/contract-review/utility-master";
+import { loadUtilityResolver } from "@gmd/contract-review/server/utility";
 
 const SHEET_ID = "5621905471000452";
 const DOCKET_NO_COLUMN = "Docket No  (Debosmita Nath)";
@@ -78,6 +82,9 @@ function main() {
   console.log("=".repeat(60));
 
   async function run() {
+    // Before any write: throws if the quotation DB is unreachable or has no UTILITY list.
+    const resolveUtility = await loadUtilityResolver();
+    const unknownUtilities = new Map<string, number>();
     const { columns, rows } = await fetchSmartsheetById();
 
     const columnIndex = new Map<string, number>();
@@ -140,7 +147,8 @@ function main() {
       matched++;
 
       const newDocket = mapping.docketNo || null;
-      const newUtility = mapping.utility || null;
+      // A blank cell keeps the stored utility.
+      const newUtility = standardUtility(resolveUtility, mapping.utility, unknownUtilities) ?? record.utility ?? null;
       const changed = (record.docketNo ?? null) !== newDocket || (record.utility ?? null) !== newUtility;
 
       if (!changed) continue;
@@ -162,6 +170,10 @@ function main() {
     console.log(`    Updated:                ${updated}`);
     console.log(`    Not found in sheet:     ${notFound}`);
     console.log(`    Errors:                 ${errors}`);
+    if (unknownUtilities.size) {
+      console.log(`\n  Utility text not in the LookupOption UTILITY list, kept as typed (${unknownUtilities.size}):`);
+      for (const [text, n] of [...unknownUtilities].sort()) console.log(`    ${String(n).padStart(5)}  ${JSON.stringify(text)}`);
+    }
     console.log("=".repeat(60));
   }
 
@@ -170,7 +182,7 @@ function main() {
       console.error("Script failed:", err);
       process.exit(1);
     })
-    .finally(() => prisma.$disconnect());
+    .finally(() => Promise.all([prisma.$disconnect(), quotationPrisma.$disconnect()]));
 }
 
 main();

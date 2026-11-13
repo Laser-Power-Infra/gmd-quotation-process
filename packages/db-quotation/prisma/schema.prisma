@@ -1173,7 +1173,7 @@ model EngineeringSync {
 /// One valve serial number and the dimensions measured against it at
 /// assignment. Dimension columns are String? like the engineering tables so the
 /// inspector's entry survives verbatim. `standard` snapshots the pre-filled
-/// standard values + tolerances (lib/valveSerial.ts) so the out-of-tolerance
+/// standard values + tolerances (packages/valve-serial/src/fields.ts) so the out-of-tolerance
 /// flag does not move when the Technicals sheet is re-synced. The serial itself
 /// is assigned by the heat-entry form (stock DB `HeatEntry`); `heatEntryId`
 /// links to it (cross-database, so no FK) and survives an ERP-code rename.
@@ -1200,6 +1200,25 @@ model ValveSerial {
   discMoc           String?
   seatMoc           String?
   actuatorGearbox   String?
+  // Test results; dates are ISO yyyy-mm-dd text.
+  testDate          String?
+  bodyTestPressure  String?
+  seatTestPressure  String?
+  testDuration      String?
+  testResult        String?
+  // Dispatch, imported from the "GMD DISPATCH SL NO" sheet (scripts/import-dispatch-serials.ts) or typed in the app.
+  itemCode          String?
+  itemName          String?
+  partyName         String?
+  invoiceNo         String?
+  invoiceDate       String?
+  heatNo            String?
+  actuatorModel     String?
+  actuatorSerial    String?
+  gearboxModel      String?
+  gearboxSerial     String?
+  tcLink            String?
+  remarks           String?
   standard          Json?
   assignedBy        String?
   createdAt         DateTime @default(now())
@@ -1480,6 +1499,54 @@ model ServiceItem {
   itemCode String   @id
   itemName String?
   syncedAt DateTime @default(now())
+}
+
+/// MC (material clearance) lines from the MC tab of the GMD EXECUTION TRACKING workbook
+/// (gid 1910912133). balance = ordered - cancelled - billed; status Open while it is above 0.
+/// The tab has no date column. Snapshot-replaced by the execution-tracking job; read by /execution_registers.
+model McRegisterLine {
+  id             String   @id @default(cuid())
+  mcNo           String
+  slNo           String?
+  contractNo     String?
+  contractSlNo   String?
+  itemCode       String?
+  itemName       String?
+  partyItemName  String?
+  bomId          String?
+  accCode        String?
+  party          String?
+  orderedQty     Float    @default(0)
+  cancelledQty   Float    @default(0)
+  billedQty      Float    @default(0)
+  balanceQty     Float    @default(0)
+  inspOfferedQty Float?
+  inspectedQty   Float?
+  rate           Float?
+  status         String
+  syncedAt       DateTime @default(now())
+
+  @@index([mcNo])
+}
+
+/// Production orders from PROD ORDER DUMP (gid 1735377141), one row per order + item, with the
+/// PROD ENTRY DUMP receipts (gid 698397877) summed in. Dates are dd-MMM-yyyy text like the other
+/// sheet copies. Snapshot-replaced by the execution-tracking job; read by /execution_registers.
+model ProductionRegisterLine {
+  id            String   @id @default(cuid())
+  prodOrderNo   String
+  prodOrderDate String?
+  mcNo          String?
+  itemCode      String
+  itemName      String?
+  bomId         String?
+  orderedQty    Float    @default(0)
+  producedQty   Float    @default(0)
+  balanceQty    Float    @default(0)
+  entries       Int      @default(0)
+  lastEntryDate String?
+  status        String
+  syncedAt      DateTime @default(now())
 }
 
 // ---------------------------------------------------------------------------

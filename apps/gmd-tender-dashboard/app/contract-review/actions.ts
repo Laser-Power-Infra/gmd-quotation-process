@@ -6,6 +6,7 @@ import {
   backfillInspection,
   backfillOfferPendingDone,
   backfillPnRating,
+  blankOnlyFieldsFor,
   clearDiagram,
   confirmDiagramUpload,
   createDiagramUpload,
@@ -46,7 +47,8 @@ export const updateContractReviewFieldAction = withLog(
   async (id: string, field: string, value: string | null) => {
     await requireUser();
     if (!(await inScope(id))) return NOT_ALLOWED;
-    return updateContractReviewField(id, field, value, editableFieldsFor(await getContractReviewFlags()));
+    const flags = await getContractReviewFlags();
+    return updateContractReviewField(id, field, value, editableFieldsFor(flags), blankOnlyFieldsFor(flags));
   },
   (res, id, field) =>
     res.success

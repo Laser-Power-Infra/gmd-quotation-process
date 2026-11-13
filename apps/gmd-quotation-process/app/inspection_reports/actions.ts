@@ -7,6 +7,7 @@ import {
   GATED_STATUSES,
   REPORT_STATUSES,
   checkReport,
+  cleanTeam,
   type ReportData,
   type ReportStatus,
 } from "@/lib/inspectionReport";
@@ -25,6 +26,8 @@ export async function saveInspectionReportAction(
   if (!REPORT_STATUSES.includes(status as ReportStatus)) {
     return { success: false, error: `Unknown status "${status}"` };
   }
+  // Client input: a malformed team would crash checkReport here and the list page once saved.
+  data = { ...data, team: cleanTeam(data.team) };
   if (GATED_STATUSES.includes(status as ReportStatus)) {
     const failing = checkReport(data).filter((c) => !c.ok);
     if (failing.length) {

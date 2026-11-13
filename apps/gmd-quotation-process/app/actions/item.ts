@@ -8,7 +8,7 @@ import { ensureCfSetItem } from "@/lib/cfSetItem";
 import { isActuated } from "@/lib/actuatorCost";
 import { correctItemType } from "@/lib/itemTypePatterns";
 import { DETAILS_FIELDS, pnFromName, type AutoFillChange, type DetailsField } from "@/lib/detailsCheck";
-import { validateVaPercent, getDefaultVaPercent } from "@/lib/vaValidation";
+import { getDefaultVaPercent } from "@/lib/vaValidation";
 import { recomputeItemCodeForValues, fetchBomIdSet, refreshItemCodeForItem, syncGmdItemCodes, clearBomIdCache } from "@/lib/gmdItemCodeLookup";
 import { fetchBomRows, buildRmCostMap, DIRECT_M2M, getBomEntry, getCachedBomRows, clearBomCache } from "@/lib/gmdBomCostLookup";
 import { update2to1CostForItems, buildRawMaterialsCostMap, clear2to1BomCache } from "@/lib/gmd2to1CostLookup";
@@ -352,31 +352,6 @@ export async function updateItemFieldAction(
           newValue: after[f],
         })),
       );
-    }
-
-    if (["vaPercent", "quotedRate", "productCost", "extension", "bypass"].includes(field) && updatedItem) {
-      const itemWithDocket = await prisma.enquiryItem.findUnique({
-        where: { id: itemId },
-        include: { enquiry: { select: { docketNumber: true } } },
-      });
-      if (itemWithDocket?.enquiry) {
-        const vaNum = updatedItem.vaPercent !== null && updatedItem.vaPercent !== undefined ? Number(updatedItem.vaPercent) : null;
-        const result = validateVaPercent(updatedItem.itemType, updatedItem.size, vaNum);
-        if (!result.isValid && result.maxVaPercent !== null && vaNum !== null) {
-          const alertPayload = {
-            docketNumber: itemWithDocket.enquiry.docketNumber,
-            itemName: updatedItem.itemName,
-            itemNameMerge: updatedItem.itemNameMerge || null,
-            itemType: updatedItem.itemType,
-            size: updatedItem.size,
-            vaPercent: vaNum,
-            maxVaPercent: result.maxVaPercent,
-          };
-          import("@/lib/services/n8nWebhook").then(({ sendVaAlert }) => {
-            sendVaAlert(alertPayload);
-          });
-        }
-      }
     }
 
     // Auto-recompute erpItemCode if derived fields changed, and cascade productCost if code changed and productCost was null

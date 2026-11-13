@@ -24,26 +24,26 @@ colors:
   status-submitted-fg: "#1e40af"
 typography:
   display:
-    fontFamily: "Poppins, sans-serif"
+    fontFamily: "Inter, sans-serif"
     fontSize: "32px"
     lineHeight: "40px"
     fontWeight: 600
     letterSpacing: "-0.02em"
   title:
-    fontFamily: "Poppins, sans-serif"
+    fontFamily: "Inter, sans-serif"
     fontSize: "14px"
     fontWeight: 600
   body:
-    fontFamily: "Poppins, sans-serif"
+    fontFamily: "Inter, sans-serif"
     fontSize: "14px"
     lineHeight: "20px"
     fontWeight: 400
   table:
-    fontFamily: "Poppins, sans-serif"
+    fontFamily: "Inter, sans-serif"
     fontSize: "13px"
     fontWeight: 400
   label:
-    fontFamily: "Poppins, sans-serif"
+    fontFamily: "Inter, sans-serif"
     fontSize: "10px"
     fontWeight: 600
     letterSpacing: "0.05em"
@@ -133,10 +133,10 @@ Depth is lightly lifted. Surfaces are flat by default; modest separation comes f
 - Dense by design: small type, small targets, many rows visible per screen.
 - Flat surfaces with light lift for floating chrome only.
 - Every interactive element announces its state clearly (hover, focus, active, disabled).
-- Poppins everywhere, tight tracking, labels uppercase and small.
+- Inter everywhere, tight tracking, labels uppercase and small.
 - Light theme is canonical; a full neutral dark theme ships and inverts the chassis.
 
-A second, scoped Material 3 palette lives in `app/raw_material/globals.css` and applies only to `/raw_material`. It keeps the same Poppins family and the same Instrument Blue as its primary, but re-tints the neutral chassis to a lavender-washed surface family (`#fbf8ff`). New work on that route follows its local tokens; work elsewhere follows the global tokens.
+A second, scoped Material 3 palette lives in `app/raw_material/globals.css` and applies only to `/raw_material`. It keeps the same Inter family and the same Instrument Blue as its primary, but re-tints the neutral chassis to a lavender-washed surface family (`#fbf8ff`). New work on that route follows its local tokens; work elsewhere follows the global tokens.
 
 ## Colors
 
@@ -163,19 +163,19 @@ The palette is achromatic with two live accents: Instrument Blue for navigation 
 
 ## Typography
 
-**Display Font:** Poppins (with sans-serif fallback)
-**Body Font:** Poppins (with sans-serif fallback)
-**Label Font:** Poppins, 10-12px, 600 weight, 0.05em tracking
+**Display Font:** Inter (with sans-serif fallback)
+**Body Font:** Inter (with sans-serif fallback)
+**Label Font:** Inter, 10-12px, 600 weight, 0.05em tracking
 
-**Character:** One family, two weights, tight tracking. Poppins' geometric, slightly mechanical letterforms suit an instrument-panel aesthetic. All caps is avoided except in tiny uppercase labels; numerals (docket numbers, rates, quantities) are the most important characters on screen and get full weight at rest.
+**Character:** One family, two weights, tight tracking. Inter's neutral, screen-tuned letterforms and tabular figures suit an instrument-panel aesthetic. All caps is avoided except in tiny uppercase labels; numerals (docket numbers, rates, quantities) are the most important characters on screen and get full weight at rest.
 
 ### Hierarchy
-- **Display** (Poppins 600, 32px, 40px line-height, -0.02em tracking): page-level titles on dashboard screens. Used sparingly.
-- **Headline** (Poppins 600, 18-24px, -0.01em): section headers and dialog titles.
-- **Title** (Poppins 600, 14px): navbar links, button labels, card headers.
-- **Body** (Poppins 400, 14px, 20px line-height): general interface text, forms, cell content at rest.
-- **Table** (Poppins 400, 13px): dense grid cell content. This is the workhorse role.
-- **Label** (Poppins 600, 10px, 0.05em tracking): column-filter selects, micro-labels, uppercase status text.
+- **Display** (Inter 600, 32px, 40px line-height, -0.02em tracking): page-level titles on dashboard screens. Used sparingly.
+- **Headline** (Inter 600, 18-24px, -0.01em): section headers and dialog titles.
+- **Title** (Inter 600, 14px): navbar links, button labels, card headers.
+- **Body** (Inter 400, 14px, 20px line-height): general interface text, forms, cell content at rest.
+- **Table** (Inter 400, 13px): dense grid cell content. This is the workhorse role.
+- **Label** (Inter 600, 10px, 0.05em tracking): column-filter selects, micro-labels, uppercase status text.
 
 ### Named Rules
 **The Density Rule.** Table text is 13px and never grows for readability alone; density is the point. If a value cannot be read at 13px, the row layout is wrong, not the font size.
@@ -256,7 +256,7 @@ The quotation grid is the signature surface: resizable columns via a 4px handle,
 ### Don't:
 - **Don't** let any decorative element take Instrument Blue; it is a signal, not a theme.
 - **Don't** cast shadows on the data table or its rows.
-- **Don't** introduce a second display font; Poppins carries every role.
+- **Don't** introduce a second display font; Inter carries every role.
 - **Don't** grow table text past 13px for readability; fix the layout instead.
 - **Don't** add circles, gradients, or irregular silhouettes to the control vocabulary - rectangles and pills only.
 - **Don't** style new work on `/raw_material` from the global tokens; use its scoped Material 3 palette.

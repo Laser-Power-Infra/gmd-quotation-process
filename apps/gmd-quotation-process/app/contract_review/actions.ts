@@ -16,9 +16,10 @@ import {
   setDiagramVerdict,
   updateContractReviewField,
 } from "@gmd/contract-review/server";
-import type { ActionResult, ContractReviewData, DiagramFileMeta } from "@gmd/contract-review/types";
+import type { ActionResult, ContractMail, ContractReviewData, DiagramFileMeta } from "@gmd/contract-review/types";
 import { columnAccess } from "@gmd/contract-review/flags";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
+import { findContractMails } from "@/lib/contractMails";
 import { invalidateContractReviewCache } from "@/lib/contractReviewView";
 import { GET } from "@/app/api/contract-review/route";
 import { POST } from "@/app/api/contract-review/sync/route";
@@ -135,4 +136,19 @@ export async function addContractMailDocAction(contractNo: string, category: str
   const res = await addContractMailDoc(contractNo, category, url);
   invalidateContractReviewCache();
   return res;
+}
+
+/** The contract's docket follow-up mails ("Docket mails"); read-only. */
+export async function loadContractMailsAction(contractNo: string): Promise<ActionResult<ContractMail[]>> {
+  await requireAccess();
+  if (!(await access()).isEnabled(MAIL_DOCS)) return NOT_ALLOWED;
+  if (typeof contractNo !== "string" || !contractNo.trim() || contractNo.length > 100) {
+    return { success: false, error: "Invalid contract no." };
+  }
+  try {
+    return { success: true, data: await findContractMails(contractNo) };
+  } catch (error) {
+    console.error("Error loading contract mails:", error);
+    return { success: false, error: "Failed to load the docket mails." };
+  }
 }

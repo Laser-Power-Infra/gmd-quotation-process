@@ -12,6 +12,11 @@ import { fetchDriveFile } from "@/lib/gdrive";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Only these render inline: a Drive HTML or SVG file shown in the preview iframe
+// would run its script on our origin, so anything else goes out as a download.
+const INLINE_TYPE = /^(application\/pdf|image\/(png|jpeg|gif|webp|bmp|tiff))$/;
+const NOSNIFF = { "X-Content-Type-Options": "nosniff" };
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ fileId: string }> },
@@ -21,18 +26,20 @@ export async function GET(
   const { fileId } = await params;
 
   if (!fileId || !/^[a-zA-Z0-9_-]+$/.test(fileId)) {
-    return new Response("Invalid file id", { status: 400 });
+    return new Response("Invalid file id", { status: 400, headers: NOSNIFF });
   }
 
   try {
     const { buffer, mimeType, name } = await fetchDriveFile(fileId);
+    const inline = INLINE_TYPE.test(mimeType);
 
     return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {
-        "Content-Type": mimeType,
+        ...NOSNIFF,
+        "Content-Type": inline ? mimeType : "application/octet-stream",
         "Content-Length": String(buffer.length),
-        "Content-Disposition": `inline; filename="${encodeURIComponent(name)}"`,
+        "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(name)}`,
         "Cache-Control": "private, max-age=300",
       },
     });
@@ -40,6 +47,6 @@ export async function GET(
     console.error(`[attachments] failed to fetch Drive file ${fileId}:`, err);
     const message =
       err instanceof Error ? err.message : "Failed to load attachment.";
-    return new Response(message, { status: 502 });
+    return new Response(message, { status: 502, headers: NOSNIFF });
   }
 }

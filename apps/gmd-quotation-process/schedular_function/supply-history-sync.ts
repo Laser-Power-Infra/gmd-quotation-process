@@ -17,7 +17,9 @@
  * `normalizeKey(invoiceNo) + "||" + normalizeKey(itemName)`.
  *
  * Write policy, preserved exactly:
- *   - `partyMailAddress` / `state` / `utility` are gap-fill only.
+ *   - `partyMailAddress` / `state` / `utility` are gap-fill only. `utility` is
+ *     written as its LookupOption UTILITY value; other text is kept as typed
+ *     and reported in `unknownUtilities`.
  *   - `derivedItemType` / `derivedMoc` / `derivedSize` are unreachable — the
  *     mapper never returns them, so the original's `derived*` guard is dead
  *     code. They are populated out of band by `scripts/derive-supply-fields.ts`
@@ -53,6 +55,8 @@ import {
   rebuildSupplyHistoryBomLinks,
   type SupplyHistoryBomSyncResult,
 } from "@/lib/supplyHistoryBomSync";
+import { standardUtility } from "@gmd/contract-review/utility-master";
+import { loadUtilityResolver } from "@gmd/contract-review/server/utility";
 
 const SHEET_NAME = "MASTER";
 
@@ -153,6 +157,8 @@ export type SupplyHistorySyncResult = {
   elapsedMs: number;
   /** BOM-link reconciliation stats (SupplyHistoryItem <-> BomItem). */
   bomLinks: SupplyHistoryBomSyncResult;
+  /** Sheet UTILITY text not in the LookupOption UTILITY list (kept as typed) -> row count. */
+  unknownUtilities: Record<string, number>;
 };
 
 /**
@@ -213,6 +219,7 @@ export async function runSupplyHistorySync(): Promise<SupplyHistorySyncResult> {
         selectionsCleared: 0,
         unmatchedItemCodes: 0,
       },
+      unknownUtilities: {},
     };
   }
 
@@ -244,6 +251,8 @@ export async function runSupplyHistorySync(): Promise<SupplyHistorySyncResult> {
   const existingRows = (await prisma.supplyHistoryItem.findMany({
     select: EXISTING_SELECT,
   })) as unknown as ExistingRow[];
+  const resolveUtility = await loadUtilityResolver();
+  const unknownUtilities = new Map<string, number>();
 
   const existingMap = new Map<string, ExistingRow>();
   for (const r of existingRows) {
@@ -284,6 +293,8 @@ export async function runSupplyHistorySync(): Promise<SupplyHistorySyncResult> {
     mapped.invoiceNo = String(mapped.invoiceNo).trim();
     mapped.itemName = String(mapped.itemName).trim();
     mapped.orderList = matchOrderLink(mapped.partyOrderNo, orderLinkMap);
+    // The standard LookupOption name; other text is kept and reported. Still gap-fill only.
+    mapped.utility = standardUtility(resolveUtility, mapped.utility, unknownUtilities);
 
     const key = makeRowKey(mapped.invoiceNo, mapped.itemName);
     if (seenSheetKeys.has(key)) {
@@ -469,6 +480,7 @@ export async function runSupplyHistorySync(): Promise<SupplyHistorySyncResult> {
     }`,
   );
   console.log(`[scheduler] elapsed          : ${elapsedMs}ms`);
+  console.log(`[scheduler] unknown utilities: ${unknownUtilities.size}`);
   console.log(
     `[scheduler] bom links         : items=${bomLinks.itemsScanned} withLinks=${bomLinks.itemsWithLinks} +${bomLinks.linksCreated}/-${bomLinks.linksRemoved} defaulted=${bomLinks.selectionsDefaulted} kept=${bomLinks.selectionsKept} cleared=${bomLinks.selectionsCleared} unmatchedCodes=${bomLinks.unmatchedItemCodes}`,
   );
@@ -492,5 +504,6 @@ export async function runSupplyHistorySync(): Promise<SupplyHistorySyncResult> {
     sampleChanges,
     elapsedMs,
     bomLinks,
+    unknownUtilities: Object.fromEntries(unknownUtilities),
   };
 }

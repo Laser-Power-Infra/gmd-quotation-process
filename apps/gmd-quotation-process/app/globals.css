@@ -6,6 +6,8 @@
 @import "@gmd/physical-stock/styles.css";
 @import "@gmd/purchase/styles.css";
 @import "@gmd/stock-allocation/styles.css";
+@import "@gmd/valve-serial/styles.css";
+@import "@gmd/execution-registers/styles.css";
 
 @custom-variant dark (&:is(.dark *));
 

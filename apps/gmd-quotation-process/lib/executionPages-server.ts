@@ -18,7 +18,7 @@ export async function getContractLines(): Promise<{ lines: ContractLine[]; synce
     select: {
       contractNo: true, itemCode: true, itemName: true, partyItemName: true, partyNameDump: true,
       erpPartyNameFromGmdSupplyHistory: true, dateOfContract: true, rate: true, orderQty: true, mcQty: true,
-      prodOrdQty: true, balanceToProdEnt: true, prodEntryDate: true, diQty: true, billedQty: true, balBillAgMc: true, balBillAgMcVal: true,
+      prodOrdQty: true, balanceToProdEnt: true, prodEntryDate: true, diQty: true, billedQty: true,
       productionOrderNumber: true, offerNumber: true, inspectionNumber: true, diDate: true, syncedAt: true,
     },
   });
@@ -38,8 +38,6 @@ export async function getContractLines(): Promise<{ lines: ContractLine[]; synce
       prodEntryDate: r.prodEntryDate,
       diQty: num(r.diQty),
       billedQty: num(r.billedQty),
-      balBillAgMc: num(r.balBillAgMc),
-      balBillAgMcVal: num(r.balBillAgMcVal),
       productionOrderNumber: r.productionOrderNumber,
       offerNumber: r.offerNumber,
       inspectionNumber: r.inspectionNumber,

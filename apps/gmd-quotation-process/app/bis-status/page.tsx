@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
 import GMDUpdateTable, {
   type ServerTableMode,
@@ -10,10 +10,13 @@ import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkel
 import { toast } from "sonner";
 import {
   addBisStatusUpdateAction,
+  createBisStatusAction,
   getBisStaleIdsAction,
   getBisStatusHistoryAction,
   updateBisStatusFieldAction,
+  uploadBisDocsAction,
 } from "@/app/actions/misc";
+import DocketAttachmentsCell from "@/components/attachment/DocketAttachmentsCell";
 import { Button } from "@gmd/ui/components/button";
 import { Input } from "@gmd/ui/components/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@gmd/ui/components/dialog";
@@ -40,6 +43,12 @@ import type { TableSort } from "@/lib/tableQuery";
 
 const EDITABLE_FIELDS = new Set(["remark", "licenseNo", "bisDocs"]);
 const EMPTY_FORM = { status: "", nextStep: "", nextDate: "", remark: "", updatedBy: "" };
+const EMPTY_NEW_ROW = { itemName: "", bisNo: "", licenseNo: "", applicationStatus: "", expiryDate: "" };
+const DOCS_HEADER = "BIS Documents (Link)";
+const DOCS_IDX = BIS_STATUS_HEADERS.indexOf(DOCS_HEADER);
+const BIS_NO_IDX = BIS_STATUS_HEADERS.indexOf("bisNo");
+// Same per-file limit as uploadBisDocsAction, checked here so an oversized file is never sent.
+const MAX_DOC_MB = 25;
 type HistoryRow = {
   id: string;
   createdAt: string | Date;
@@ -51,6 +60,63 @@ type HistoryRow = {
 };
 const fmtDate = (v: string | Date | null) => (v ? new Date(v).toLocaleDateString() : "");
 
+/** Docs cell: paste links as before, upload licence copies (appended), preview every link. */
+function BisDocsCell({
+  value,
+  bisNo,
+  onSave,
+  onUpload,
+}: {
+  value: string;
+  bisNo: string;
+  onSave: (value: string) => void;
+  onUpload: (files: File[]) => Promise<void>;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  // Unique: each link is its own attachment id, so the preview keeps its place when the list changes.
+  const links = [...new Set(value.split(",").map((s) => s.trim()).filter(Boolean))];
+  return (
+    <div className="flex items-center gap-1.5 min-w-0">
+      <input
+        key={value}
+        defaultValue={value}
+        placeholder="Paste links or upload"
+        aria-label="BIS document links"
+        onBlur={(e) => {
+          if (e.target.value !== value) onSave(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        className="flex-1 min-w-0 text-xs bg-transparent border-none outline-none"
+      />
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        // Same PDF/image rule as uploadBisDocsAction.
+        accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = "";
+          if (files.length === 0) return;
+          setUploading(true);
+          void onUpload(files).finally(() => setUploading(false));
+        }}
+      />
+      <DocketAttachmentsCell
+        compact
+        docketNumber={bisNo}
+        attachments={links.map((url, i) => ({ id: url, name: `File ${i + 1}`, url, type: null, size: null }))}
+        onAddClick={() => fileRef.current?.click()}
+        addDisabled={uploading}
+      />
+    </div>
+  );
+}
+
 export default function BisStatusPage() {
   const dispatch = useAppDispatch();
   const filterState = useAppSelector((s) => s.bisStatusFilters);
@@ -58,6 +124,7 @@ export default function BisStatusPage() {
   const [sort, setSort] = useState<TableSort | null>(null);
   const [staleIds, setStaleIds] = useState<ReadonlySet<string>>(new Set());
   const [form, setForm] = useState<typeof EMPTY_FORM | null>(null);
+  const [newRow, setNewRow] = useState<typeof EMPTY_NEW_ROW | null>(null);
   const [saving, setSaving] = useState(false);
   const [history, setHistory] = useState<HistoryRow[] | null>(null);
 
@@ -141,6 +208,26 @@ export default function BisStatusPage() {
     }
   };
 
+  const submitNewRow = async () => {
+    if (!newRow) return;
+    setSaving(true);
+    try {
+      const res = await createBisStatusAction(newRow);
+      if (!res.success) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("BIS row added");
+      setNewRow(null);
+      void refresh();
+      void loadStale();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add BIS row");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openHistory = async () => {
     if (!selectedId) return toast.error("Select a row first");
     const res = await getBisStatusHistoryAction(selectedId);
@@ -208,6 +295,48 @@ export default function BisStatusPage() {
       }
     },
     [headers, patchCell, refresh],
+  );
+
+  const uploadDocs = useCallback(
+    async (id: string, files: File[]) => {
+      let uploaded = 0;
+      // One file per call: a failure costs only that file, and no request nears the server's body limit.
+      for (const file of files) {
+        if (file.size > MAX_DOC_MB * 1024 * 1024) {
+          toast.error(`"${file.name}" is ${(file.size / 1024 / 1024).toFixed(1)} MB. Files must be ${MAX_DOC_MB} MB or smaller.`);
+          continue;
+        }
+        const toastId = toast.loading(`Uploading "${file.name}"...`);
+        try {
+          const res = await uploadBisDocsAction(id, [file]);
+          if (!res.success) {
+            toast.error(res.error, { id: toastId });
+            continue;
+          }
+          patchCell(id, DOCS_IDX, res.data.bisDocs);
+          toast.success(`Uploaded "${file.name}"`, { id: toastId });
+          uploaded++;
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : `Upload of "${file.name}" failed`, { id: toastId });
+        }
+      }
+      if (uploaded > 0) void refresh();
+    },
+    [patchCell, refresh],
+  );
+
+  const customCells = useMemo(
+    () => ({
+      [DOCS_HEADER]: (row: unknown[], id: string) => (
+        <BisDocsCell
+          value={String(row[DOCS_IDX] ?? "")}
+          bisNo={String(row[BIS_NO_IDX] ?? "")}
+          onSave={(value) => void handleCellUpdate(id, DOCS_IDX, value)}
+          onUpload={(files) => uploadDocs(id, files)}
+        />
+      ),
+    }),
+    [handleCellUpdate, uploadDocs],
   );
 
   const serverSort = useMemo(
@@ -304,11 +433,12 @@ export default function BisStatusPage() {
             onSelect={setSelectedIndex}
             title="BIS Status"
             editable
-            editableColumns={["remark", "licenseNo", "BIS Documents (Link)"]}
+            editableColumns={["remark", "licenseNo", DOCS_HEADER]}
             onCellUpdate={handleCellUpdate}
+            customCells={customCells}
             uniqueKeyColumns={["bisNo"]}
             // The docs cell is an input for pasting links; this adds a clickable links button next to the item name.
-            linkedFilesColumn="BIS Documents (Link)"
+            linkedFilesColumn={DOCS_HEADER}
             linkedFilesIconColumn="itemName"
             filterState={filterState}
             filterActions={filterActions}
@@ -318,6 +448,7 @@ export default function BisStatusPage() {
             warningTitle="No update in 3+ days"
             toolbarExtra={
               <>
+                <Button size="sm" variant="outline" onClick={() => setNewRow(EMPTY_NEW_ROW)}>New BIS row</Button>
                 <Button size="sm" variant="outline" onClick={openAdd}>Add update</Button>
                 <Button size="sm" variant="outline" onClick={openHistory}>History</Button>
               </>
@@ -351,6 +482,35 @@ export default function BisStatusPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setForm(null)}>Cancel</Button>
               <Button onClick={submitAdd} disabled={saving}>Save</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={!!newRow} onOpenChange={(o) => !o && setNewRow(null)}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>New BIS row</DialogTitle></DialogHeader>
+            {newRow && (
+              <div className="grid gap-2">
+                {([
+                  ["itemName", "Product", "text"],
+                  ["bisNo", "BIS No (required)", "text"],
+                  ["licenseNo", "Licence / application no", "text"],
+                  ["applicationStatus", "Status", "text"],
+                  ["expiryDate", "Expiry date", "date"],
+                ] as const).map(([key, label, type]) => (
+                  <label key={key} className="grid gap-1 text-sm">
+                    {label}
+                    <Input
+                      type={type}
+                      value={newRow[key]}
+                      onChange={(e) => setNewRow({ ...newRow, [key]: e.target.value })}
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setNewRow(null)}>Cancel</Button>
+              <Button onClick={submitNewRow} disabled={saving}>Save</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -176,23 +176,25 @@ Default: `STANDARD` `lib/itemCategoryResolver.ts:121`.
 
 ---
 
-## 8. VA Validation Table — `lib/vaValidation.ts:14-243` (Used for Auto-Fill + Alert)
+## 8. Default VA% Table — `lib/vaValidation.ts` (Used for Auto-Fill)
 
-Same table powers `getDefaultVaPercent(itemType,size)` and max check `validateVaPercent`.
+`getDefaultVaPercent(itemType,size)`. A default is never below the VA% rule minimum in `lib/vaRules.ts` (see `07`), so a new item does not start red. There is no upper VA% limit.
 
-| Item Type Contains | Size Bands (mm) → VA% (Default = Max) | Lines |
-|--------------------|----------------------------------------|-------|
-| **BUTTERFLY VALVE** | 0-450→50%, 451-1000→35%, >1000 or blank→65% | `L27-31/187-191` |
-| **SLUICE VALVE- RESILIENT (rising/non)** | 0-200→25%, 250-450→20%, 500-1000→30%, else 30% | `L38-44` |
-| **SLUICE VALVE- METAL** | 0-450→35%, 500-1200→40%, else 30% | `L50-54,118-122` |
-| Fixed 15%: `DPCV, COMPANION FLANGE, DISMANTLING JOINT, EXPANSION BELLOWS, FLOAT VALVE` | 15% | `L68-100` |
-| 20-35%: `TPAV 35%, AIR CUSHION 75%, AIR VALVE 35%` | | `L57-75` |
-| 200%: `PRESSURE RELIEF VALVE, CHECK VALVE, ALTITUDE VALVE` | | `L60, L-same` |
-| 40-50%: `BALL 50%, FOOT 20%, GLOBE 40%, KNIFE GATE 20%, GASKET 40%` | | `L...` |
-| 20-100%: `BUSH 100%, GEAR BOX 20%, O-RING 40%, PLUG 45%, RETAINER 20%, RING 20%, SEAL 20%, SHAFT 20%, SOLENOID 50%, SPINDLE 20%, WASHER 20%, ZERO VELOCITY 50%` | | `L76-176` |
-| Unknown type | Always valid, no max `L177`, default 65%? Actually `getDefault` returns 65% fallback? See file — unknown returns `null`? Check `L177` — returns `{valid:true}` and default `null` for unknown | |
+| Item Type Contains | Size Bands (mm) → default VA% |
+|--------------------|-------------------------------|
+| **BUTTERFLY VALVE** | 0-450→50%, 451-1000→35%, >1000 or blank→65% |
+| **SLUICE VALVE- RESILIENT (rising/non)** | 0-200→25%, 250-450→20%, 500-1000→30%, else 30% |
+| **SLUICE VALVE- METAL** | 0-450→35%, 500-1200→40%, else 30% |
+| **DPCV** | 0-600 or blank→20%, >600→35% |
+| **EXPANSION BELLOWS** | 0-1000 or blank→15%, >1000→45% |
+| Fixed 15%: `COMPANION FLANGE, DISMANTLING JOINT, FLOAT VALVE` | 15% |
+| 20-35%: `TPAV 35%, AIR CUSHION 75%, AIR VALVE 35%` | |
+| 200%: `PRESSURE RELIEF VALVE, CHECK VALVE, ALTITUDE VALVE` | |
+| 40-50%: `BALL 50%, FOOT 20%, GLOBE 40%, KNIFE GATE 20%, GASKET 40%` | |
+| 20-100%: `BUSH 100%, GEAR BOX 20%, O-RING 40%, PLUG 100%, RETAINER 20%, RING 20%, SEAL 20%, SHAFT 20%, SOLENOID 50%, SPINDLE 20%, WASHER 20%, ZERO VELOCITY 50%` | |
+| Unknown type | no default (`null`), VA% stays blank |
 
-> When `autoFillBlanks` fills missing VA, it calls `getDefaultVaPercent(itemType,size)` `app/actions/*.ts:977`; when quotation VA is too high, n8n alert `app/actions/*.ts:752` fires.
+> When `autoFillBlanks` fills missing VA, it calls `getDefaultVaPercent(itemType,size)` `app/actions/*.ts:977`.
 
 ---
 

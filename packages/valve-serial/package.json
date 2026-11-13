@@ -1,0 +1,36 @@
+{
+  "name": "@gmd/valve-serial",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    "./ui": "./src/ui/ValveSerialPage.tsx",
+    "./server": "./src/server/index.ts",
+    "./fields": "./src/fields.ts",
+    "./columns": "./src/columns.ts",
+    "./state": "./src/state/tableSlice.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "dependencies": {
+    "@gmd/db-quotation": "workspace:*",
+    "@gmd/ui": "workspace:*",
+    "@reduxjs/toolkit": "^2.12.0",
+    "lucide-react": "^1.23.0",
+    "react-redux": "^9.3.0",
+    "server-only": "^0.0.1",
+    "sonner": "^2.0.7"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "tsx": "^4.19.0"
+  },
+  "peerDependencies": {
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --conditions=react-server --test test/*.test.ts"
+  }
+}

@@ -4,6 +4,8 @@
   "private": true,
   "exports": {
     "./ui": "./src/ui/StockAllocationTable.tsx",
+    "./ready-to-bill": "./src/ui/ReadyToBillPage.tsx",
+    "./state": "./src/state/readyToBillSlice.ts",
     "./server": "./src/server/index.ts",
     "./engine": "./src/engine.ts",
     "./types": "./src/types.ts",
@@ -14,6 +16,8 @@
     "@gmd/db-stock": "workspace:*",
     "@gmd/db-tender": "workspace:*",
     "@gmd/ui": "workspace:*",
+    "@reduxjs/toolkit": "^2.12.0",
+    "react-redux": "^9.3.0",
     "server-only": "^0.0.1"
   },
   "devDependencies": {

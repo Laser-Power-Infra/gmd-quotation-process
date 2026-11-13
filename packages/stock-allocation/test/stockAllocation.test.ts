@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { allocateStock } from '../src/engine'
+import { actKey } from '../src/parse'
 import type { ContractLine, LedgerEntry, StockItem } from '../src/types'
 
 let n = 0
@@ -26,6 +27,13 @@ const ledgerEntry = (o: Partial<LedgerEntry> = {}): LedgerEntry => ({
 })
 const run = (stockRows: StockItem[], lines: ContractLine[], ledger: LedgerEntry[] = []) =>
   allocateStock({ stock: stockRows, lines, ledger })
+// An ACTUATORS stock row: its model is L7 (pn) + L6 (std), the same pair a line stores as "L7@L6".
+const actStock = (o: Partial<StockItem> = {}) => stock({
+  erpCode: 'RAA010001', valveType: 'ACTUATOR', dimension: null, component: null, material: null,
+  pn: 'K30/RPM24', std: 'WDAF87Z50CT6', category: 'ACTUATORS', itemType: null, ...o,
+})
+const actLine = (o: Partial<ContractLine> = {}) => line({ itemName: `${SLV_NAME}_ACT_`, actuator: 'K30/RPM24@WDAF87Z50CT6', ...o })
+const held = (r: ReturnType<typeof run>, erpCode: string) => r.ledger.find((v) => v.erpCode === erpCode)
 
 test('exact erp code is taken before other matching finished rows', () => {
   const other = stock({ erpCode: 'FSD040051' })
@@ -128,15 +136,90 @@ test('TPAV+SLV needs both a TPAV and a sluice valve; qty is the smaller of the t
   assert.equal(r.allocations.every((a) => a.qty === 3), true)
   assert.equal(run([tpav], [pair]).offerNow.length, 0)
   assert.equal(run([tpav], [pair]).notInStock[0].lines[0].shortQty, 4)
+
+  // a part already held by the ledger gets the other part on top
+  const booked = run([stock({ ...tpav, availableQty: 2 }), slv], [pair], [ledgerEntry({ erpCode: 'FTD050005', itemCode: 'FTD050005', qty: 2 })])
+  assert.equal(booked.offerNow[0]?.offerableQty, 2)
+  assert.equal(held(booked, 'FSD040040')?.allocatedQty, 2)
 })
 
-test('actuated lines still allocate the valve but get the actuator flag and basis', () => {
-  const act = line({ itemName: `${SLV_NAME}_ACT_`, actuator: 'K30/RPM24@WDAF87Z50CT6' })
-  const r = run([stock()], [act])
-  assert.equal(r.offerNow[0].basis, 'Actuator to map')
-  assert.ok(r.offerNow[0].flags.includes('actuator to be mapped (AUMA / Rotork)'))
+test('actuated lines take the valve and the actuator model named in their Actuator field', () => {
+  const r = run([stock(), actStock()], [actLine()])
+  assert.equal(r.offerNow[0].offerableQty, 2)
+  assert.deepEqual(r.offerNow[0].rmCodes.map((x) => `${x.erpCode}×${x.qty}`).sort(), ['FSD040050×2', 'RAA010001×2'])
+  assert.equal(r.offerNow[0].basis, 'Actuator to map') // stored value; shown as "With actuator"
+  assert.deepEqual(r.offerNow[0].flags, ['actuator held from stock'])
   assert.equal(r.summary.actuator, 2000)
   assert.equal(r.summary.actuatorLines, 1)
+  // an actuator row never serves as a valve, and the line takes no more actuators than valves
+  assert.equal(run([actStock({ valveType: 'SLUICE VALVE', dimension: '65MM' })], [line()]).offerNow.length, 0)
+  assert.equal(held(run([stock({ availableQty: 1 }), actStock()], [actLine()]), 'RAA010001')?.allocatedQty, 1)
+})
+
+test('actuator model matches whatever the order and case of its two parts', () => {
+  assert.equal(actKey(' k30/rpm24', 'WDAF87Z50CT6 '), actKey('WDAF87Z50CT6', 'K30/RPM24'))
+  assert.equal(actKey('K30/RPM24', ''), null)
+  assert.equal(actKey('K30/RPM24', undefined), null)
+  const reversed = actLine({ actuator: 'wdaf87z50ct6@k30/rpm24' })
+  assert.equal(run([stock(), actStock()], [reversed]).offerNow[0]?.offerableQty, 2)
+  // stock that keeps the two parts the other way round
+  assert.equal(run([stock(), actStock({ pn: 'WDAF87Z50CT6', std: 'K30/RPM24' })], [actLine()]).offerNow[0]?.offerableQty, 2)
+})
+
+test('an actuated line with no matching actuator in stock does not hold its valve', () => {
+  const act = actLine({ contractNo: 'ACT', balanceQty: 1, dateOfContract: '2-May-2024' })
+  const plain = line({ contractNo: 'PLAIN', balanceQty: 1, dateOfContract: '30-Sep-2025' })
+  const r = run([stock({ availableQty: 1 }), actStock({ pn: 'K40/RPM24' })], [act, plain])
+  assert.deepEqual(r.offerNow.map((o) => o.line.contractNo), ['PLAIN'])
+  assert.equal(r.notInStock.find((c) => c.contractNo === 'ACT')?.lines[0].shortQty, 1)
+  assert.equal(held(r, 'RAA010001')?.allocatedQty, 0)
+})
+
+test('one actuator in stock serves one line; the other line leaves its valve free', () => {
+  const a = actLine({ contractNo: 'A', balanceQty: 1, dateOfContract: '2-May-2024' })
+  const b = actLine({ contractNo: 'B', balanceQty: 1, dateOfContract: '30-Sep-2025' })
+  const r = run([stock({ availableQty: 2 }), actStock({ availableQty: 1 })], [b, a])
+  assert.deepEqual(r.offerNow.map((o) => o.line.contractNo), ['A'])
+  assert.equal(held(r, 'FSD040050')?.freeBalance, 1)
+  assert.equal(held(r, 'RAA010001')?.freeBalance, 0)
+})
+
+test('a line locked by Offer sent keeps its valve and gets the actuator added on top', () => {
+  const l = actLine({ balanceQty: 2 })
+  const locked = ledgerEntry({ source: 'locked', basis: 'Actuator to map', qty: 2 })
+  const r = run([stock({ availableQty: 2 }), actStock()], [l], [locked])
+  assert.equal(r.offerNow[0].offerableQty, 2)
+  assert.equal(r.offerNow[0].offerSent, true)
+  assert.deepEqual(r.allocations.map((a) => `${a.erpCode}:${a.source}:${a.qty}`).sort(), ['FSD040050:locked:2', 'RAA010001:auto:2'])
+})
+
+test('a locked line with no actuator free keeps its valve and stays in Offer Now at 0, so the lock can be released', () => {
+  const locked = ledgerEntry({ source: 'locked', basis: 'Actuator to map', qty: 2 })
+  const bare = run([stock({ availableQty: 2 })], [actLine({ balanceQty: 2 })], [locked])
+  assert.deepEqual(bare.offerNow.map((o) => [o.offerableQty, o.offerValue, o.offerSent]), [[0, 0, true]])
+  assert.deepEqual(bare.offerNow[0].flags, []) // no actuator held, so no flag saying so
+  assert.equal(bare.summary.actuatorLines, 0) // not ready: no tile counts it
+  assert.equal(held(bare, 'FSD040050')?.allocatedQty, 2)
+  assert.equal(bare.notInStock[0].lines[0].shortQty, 2)
+})
+
+test('an Actuator field without "@" (-, NA, #N/A, MANUAL) is a placeholder: the line needs only its valve', () => {
+  for (const actuator of ['-', 'NA', '#N/A', 'MANUAL']) {
+    const r = run([stock()], [line({ actuator })])
+    assert.equal(r.offerNow[0]?.offerableQty, 2, actuator)
+    assert.equal(r.offerNow[0]?.basis, 'Finished', actuator)
+  }
+})
+
+test('an actuated line with a blank Actuator field stays not ready and holds nothing', () => {
+  const r = run([stock(), actStock()], [actLine({ actuator: '' })]) // actuated by the _ACT_ in its name
+  assert.equal(r.offerNow.length, 0)
+  assert.equal(r.allocations.length, 0)
+})
+
+test('an actuator alone never makes a line ready', () => {
+  const gate = actLine({ item: 'GATE VALVE', itemName: 'GATE VALVE_ACT_', itemCode: 'XYZ' })
+  assert.equal(run([actStock()], [gate]).offerNow.length, 0)
 })
 
 test('assemble stock is used for pending lines only, as spare', () => {
@@ -174,6 +257,23 @@ test('priority: inspection done, then offer done, then oldest pending', () => {
   assert.deepEqual(winner([pendNew, pendOld]), ['OLD:Booked'])
   assert.deepEqual(winner([pendOld, offerDone]), ['OFR:Offered'])
   assert.deepEqual(winner([pendOld, offerDone, insp]), ['INS:Inspection done'])
+})
+
+test('lines of the same date (or both undated) compete in id order, whatever order they arrive in', () => {
+  for (const dateOfContract of ['2-May-2024', null]) {
+    const a = line({ id: 'a', contractNo: 'A', balanceQty: 1, dateOfContract })
+    const b = line({ id: 'b', contractNo: 'B', balanceQty: 1, dateOfContract })
+    const winner = (lines: ContractLine[]) => run([stock({ availableQty: 1 })], lines).offerNow.map((o) => o.line.contractNo)
+    assert.deepEqual(winner([a, b]), ['A'], String(dateOfContract))
+    assert.deepEqual(winner([b, a]), ['A'], String(dateOfContract))
+  }
+})
+
+test('ready qty never exceeds the balance, even when a booking holds more', () => {
+  const r = run([stock()], [line({ balanceQty: 2 })], [ledgerEntry({ qty: 5 })])
+  assert.equal(r.offerNow[0].offerableQty, 2)
+  assert.equal(r.offerNow[0].offerValue, 2000)
+  assert.equal(r.summary.finished, 2000)
 })
 
 test('free balance never goes below zero', () => {

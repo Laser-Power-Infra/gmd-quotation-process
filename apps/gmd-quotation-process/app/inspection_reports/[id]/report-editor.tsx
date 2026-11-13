@@ -7,42 +7,19 @@ import { Button } from "@gmd/ui/components/button";
 import { saveInspectionReportAction } from "../actions";
 import {
   HEADER_FIELDS,
+  ITEM_COLUMNS,
+  OFFER_HEADINGS,
+  QAP_FIELDS,
   REPORT_STATUSES,
+  TEAM_FIELDS,
   checkReport,
+  offerChecks,
+  reportHtml,
+  type OfferedStock,
   type ReportData,
   type ReportItem,
   type TeamMember,
 } from "@/lib/inspectionReport";
-
-const ITEM_COLUMNS: [keyof ReportItem, string][] = [
-  ["itemCode", "Item code"],
-  ["itemName", "Description"],
-  ["size", "Size"],
-  ["pnRating", "PN"],
-  ["material", "Material"],
-  ["um", "UM"],
-  ["contractQty", "Contract qty"],
-  ["alreadyInspected", "Already inspected"],
-  ["qtyOffered", "Qty offered"],
-  ["reportQty", "Report qty"],
-  ["serialFrom", "Serial from"],
-  ["serialTo", "Serial to"],
-  ["remarks", "Remarks"],
-];
-
-const QAP_FIELDS: [keyof ReportData["qap"], string][] = [
-  ["qapNo", "QAP no."],
-  ["mfgStandard", "MFG standard"],
-  ["bodyPressure", "Hydro body pressure"],
-  ["seatPressure", "Hydro seat pressure"],
-  ["duration", "Duration"],
-];
-
-const TEAM_FIELDS: [keyof TeamMember, string][] = [
-  ["agency", "Agency"],
-  ["name", "Name"],
-  ["designation", "Designation"],
-];
 
 const inputCls = "h-8 w-full rounded-md border border-slate-300 px-2 text-sm";
 
@@ -51,16 +28,20 @@ export function ReportEditor({
   offerNo,
   initialStatus,
   initialData,
+  offered,
 }: {
   id: string;
   offerNo: string;
   initialStatus: string;
   initialData: ReportData;
+  /** Stock the allocation sets against this contract; null = allocation unavailable. */
+  offered: OfferedStock[] | null;
 }) {
   const [data, setData] = useState(initialData);
   const [status, setStatus] = useState(initialStatus);
   const [pending, startTransition] = useTransition();
   const checks = useMemo(() => checkReport(data), [data]);
+  const offers = useMemo(() => offered && offerChecks(data.items, offered), [data.items, offered]);
 
   const setHeader = (k: keyof ReportData["header"], v: string) =>
     setData((d) => ({ ...d, header: { ...d.header, [k]: v } }));
@@ -76,6 +57,15 @@ export function ReportEditor({
       if (res.success) toast.success("Saved");
       else toast.error(res.error);
     });
+
+  // Prints what is on screen, saved or not.
+  const print = () => {
+    const w = window.open("", "_blank");
+    if (!w) return toast.error("Allow pop-ups to print the report");
+    w.document.write(reportHtml(data, offers));
+    w.document.close();
+    w.print();
+  };
 
   return (
     <div className="space-y-4">
@@ -96,6 +86,9 @@ export function ReportEditor({
             </option>
           ))}
         </select>
+        <Button variant="outline" onClick={print}>
+          Print
+        </Button>
         <Button onClick={save} disabled={pending}>
           {pending ? "Saving…" : "Save"}
         </Button>
@@ -179,6 +172,41 @@ export function ReportEditor({
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 font-medium">Required vs offered (stock allocation)</h2>
+        {offers ? (
+          <table className="w-full border-collapse text-sm">
+            <thead className="bg-slate-100 text-left">
+              <tr>
+                {OFFER_HEADINGS.map((h) => (
+                  <th key={h} className="px-1 py-1 font-medium">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {offers.map((o, i) => (
+                <tr key={i} className={o.diff ? "bg-amber-50 text-amber-800" : undefined}>
+                  {[o.itemCode, o.required, o.offered, o.diff || "OK"].map((v, j) => (
+                    <td key={j} className="px-1 py-0.5">
+                      {v}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="text-sm text-amber-700">
+            {/* The comparison uses the saved contract no., read when the page loads. */}
+            {initialData.header.contractNo.trim()
+              ? "Stock allocation unavailable"
+              : "Fill the contract no., save and reload to compare with the stock allocation"}
+          </p>
+        )}
       </section>
 
       <section>

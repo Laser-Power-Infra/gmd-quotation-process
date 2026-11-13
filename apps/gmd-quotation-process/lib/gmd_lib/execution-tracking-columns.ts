@@ -131,6 +131,23 @@ export function prodEntryDumpGid(): number {
   return process.env.PROD_ENTRY_DUMP_GID ? requireGid("PROD_ENTRY_DUMP_GID") : 698397877;
 }
 
+/**
+ * `PROD_ORDER_DUMP_GID` — production orders (CONTRACT_VRNO = the MC no, VRNO, VRDATE, ITEM_CODE,
+ * NET_QTYORDER, BOM_ID). Defaults to the live tab, like PROD ENTRY DUMP.
+ */
+export function prodOrderDumpGid(): number {
+  return process.env.PROD_ORDER_DUMP_GID ? requireGid("PROD_ORDER_DUMP_GID") : 1735377141;
+}
+
+/**
+ * The MC tab for the read-only Execution Registers copy: `MC_GID` when set, else the live tab.
+ * `mcGid()` (erp-contract-no) keeps requiring the setting, because that job overwrites
+ * SupplyHistoryItem values and so must be switched on deliberately.
+ */
+export function mcRegisterGid(): number {
+  return process.env.MC_GID ? requireGid("MC_GID") : 1910912133;
+}
+
 const DASH_SENTINELS = new Set(["-", "--", "—", "–"]);
 
 /**

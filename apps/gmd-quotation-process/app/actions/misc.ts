@@ -227,7 +227,7 @@ export async function getBisStatusHistoryAction(bisStatusId: string) {
   }
 }
 
-/** BisStatus ids with no update in the last 3 calendar days (or never updated). */
+/** BisStatus ids with no update in the last 3 calendar days (or never updated and added before that). */
 export async function getBisStaleIdsAction() {
   "use server";
   await requireAccess();
@@ -242,12 +242,110 @@ export async function getBisStaleIdsAction() {
     });
     const freshIds = fresh.map((f) => f.bisStatusId);
     const stale = await prisma.bisStatus.findMany({
-      where: { id: { notIn: freshIds } },
+      // A row's updates can't predate the row, so this only spares never-updated rows added inside the window.
+      where: { id: { notIn: freshIds }, createdAt: { lt: cutoff } },
       select: { id: true },
     });
     return { success: true, data: stale.map((s) => s.id) } as any;
   } catch (error: any) {
     return { success: false, error: error.message || "Failed to load stale rows." } as any;
+  }
+}
+
+const MAX_BIS_DOC_SIZE = 25 * 1024 * 1024;
+const MAX_BIS_DOCS_PER_CALL = 10;
+// The dashboard previews these inline from our own origin, so only PDFs and plain images,
+// matched on their first bytes so a renamed HTML or script file can't pass as one.
+const BIS_DOC_MAGIC = new Map([
+  ["application/pdf", /^%PDF-/],
+  ["image/png", /^\x89PNG/],
+  ["image/jpeg", /^\xff\xd8\xff/],
+  ["image/gif", /^GIF8/],
+  ["image/webp", /^RIFF[\s\S]{4}WEBP/],
+]);
+
+/**
+ * Uploads BIS licence copies to Google Drive (anyone with the link can view them)
+ * and appends their links to the row's comma-separated `bisDocs`.
+ */
+export async function uploadBisDocsAction(id: string, files: File[]) {
+  "use server";
+  await requireAccess();
+  if (!Array.isArray(files) || files.length === 0) {
+    return { success: false as const, error: "No files selected." };
+  }
+  if (files.length > MAX_BIS_DOCS_PER_CALL) {
+    return { success: false as const, error: `Upload at most ${MAX_BIS_DOCS_PER_CALL} files at a time.` };
+  }
+  try {
+    for (const file of files) {
+      if (file.size > MAX_BIS_DOC_SIZE) {
+        return { success: false as const, error: `"${file.name}" is larger than 25 MB.` };
+      }
+      const head = Buffer.from(await file.slice(0, 12).arrayBuffer()).toString("latin1");
+      if (!BIS_DOC_MAGIC.get(file.type)?.test(head)) {
+        return { success: false as const, error: `"${file.name}" is not a PDF, PNG, JPEG, WEBP or GIF file.` };
+      }
+    }
+    const row = await prisma.bisStatus.findUnique({ where: { id }, select: { id: true } });
+    if (!row) return { success: false as const, error: "BIS row not found." };
+
+    const urls: string[] = [];
+    for (const file of files) {
+      const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
+      urls.push((await uploadFileToDrive(file.name || "bis-document", file.type, base64)).url);
+    }
+    // One statement, so a link saved during the upload is kept. No de-dup: every Drive upload
+    // gets a new file id, so these links can't already be in the cell. UTC like Prisma's @updatedAt.
+    const [saved] = await prisma.$queryRaw<{ bisDocs: string }[]>`
+      UPDATE "BisStatus"
+      SET "bisDocs" = concat_ws(', ', NULLIF(btrim("bisDocs", ' ,'), ''), ${urls.join(", ")}::text),
+          "updatedAt" = now() AT TIME ZONE 'UTC'
+      WHERE "id" = ${id}
+      RETURNING "bisDocs"`;
+    if (!saved) return { success: false as const, error: "BIS row not found." };
+    return { success: true as const, data: { bisDocs: saved.bisDocs } };
+  } catch (error: unknown) {
+    console.error("[uploadBisDocsAction] failed:", error);
+    return { success: false as const, error: error instanceof Error ? error.message : "Upload failed." };
+  }
+}
+
+/** Adds a BIS licence or application row from the dashboard. BIS No is the unique key. */
+export async function createBisStatusAction(input: {
+  itemName?: string | null;
+  bisNo?: string | null;
+  licenseNo?: string | null;
+  applicationStatus?: string | null;
+  expiryDate?: string | null;
+}) {
+  "use server";
+  await requireAccess();
+  const clean = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const bisNo = clean(input?.bisNo);
+  if (!bisNo) return { success: false as const, error: "BIS No is required." };
+  const expiry = clean(input.expiryDate);
+  const expiryDate = expiry ? new Date(expiry) : null;
+  if (expiryDate && isNaN(expiryDate.getTime())) {
+    return { success: false as const, error: "Expiry date is not a valid date." };
+  }
+  try {
+    const created = await prisma.bisStatus.create({
+      data: {
+        itemName: clean(input.itemName),
+        bisNo,
+        licenseNo: clean(input.licenseNo),
+        applicationStatus: clean(input.applicationStatus),
+        expiryDate,
+      },
+      select: { id: true },
+    });
+    return { success: true as const, data: created };
+  } catch (error: unknown) {
+    if ((error as { code?: string })?.code === "P2002") {
+      return { success: false as const, error: `BIS No "${bisNo}" already exists.` };
+    }
+    return { success: false as const, error: error instanceof Error ? error.message : "Failed to add the BIS row." };
   }
 }
 

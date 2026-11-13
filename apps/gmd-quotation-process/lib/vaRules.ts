@@ -29,6 +29,7 @@ export function minVaPercent(it: VaItem): number {
   if (type === "TPAV" || type === "TPV") return 35;
   if (type === "EXPANSION BELOWS") return dn !== null && dn > 1000 ? 45 : 0;
   if (type === "DPCV") return dn !== null && dn > 600 ? 35 : 20;
+  if (type === "PLUG VALVE") return 100;
   return 0;
 }
 

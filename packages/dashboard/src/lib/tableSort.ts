@@ -1,7 +1,41 @@
 import { parseGmdDate } from "@gmd/ui/lib/dateParse";
+import type { TableSort } from "@gmd/ui/components/data-table/types";
 
 // Cell comparators shared by GMDUpdateTable's client-side sort and by server
 // pipelines that sort before paging, so both order rows identically.
+
+const isBlank = (v: unknown) =>
+  v === null || v === undefined || (typeof v === "number" ? Number.isNaN(v) : String(v).trim() === "");
+
+/**
+ * Sort for the plain tables behind a SortTh header. `value` reads a column from a row; keys in
+ * `dateKeys` compare as GMD text dates, Date values by time. Blanks go last both ways, ties keep the incoming order,
+ * and `rows` is never changed (no sort returns it as is).
+ */
+export function sortRows<Row>(
+  rows: Row[],
+  sort: TableSort | null,
+  value: (row: Row, key: string) => unknown,
+  dateKeys: readonly string[] = [],
+): Row[] {
+  if (!sort) return rows;
+  const dir = sort.dir === "asc" ? 1 : -1;
+  const compare = dateKeys.includes(sort.key) ? compareDates : cellCompare;
+  // A Date compares by its time; as text it would order by weekday name.
+  const at = (row: Row) => {
+    const v = value(row, sort.key);
+    return v instanceof Date ? v.getTime() : v;
+  };
+  return [...rows].sort((a, b) => {
+    const av = at(a);
+    const bv = at(b);
+    const aBlank = isBlank(av);
+    const bBlank = isBlank(bv);
+    if (aBlank || bBlank) return Number(aBlank) - Number(bBlank);
+    // Numbers (Dates included) compare as numbers; the text-date parser would read them as blank.
+    return (typeof av === "number" && typeof bv === "number" ? cellCompare : compare)(av, bv, dir);
+  });
+}
 
 export function compareDates(aVal: unknown, bVal: unknown, dir: number): number {
   const aStr = String(aVal ?? "").trim();

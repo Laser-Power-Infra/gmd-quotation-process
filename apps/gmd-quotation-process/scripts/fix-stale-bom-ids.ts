@@ -9,7 +9,8 @@
  *    - Updates rmItemCode, bomType, rmType, and availableStock
  *    - Re-derives productCost from RawMaterial / SupplyHistory
  *    - Recalculates cost, quotedRate, and total values via recalculateItem()
- *    - If vaPercent was invalid (> allowed max, e.g. 222.43%), resets to default VA% and recalculates rate.
+ *    - Never sets VA%: normal rows keep their VA% (rate follows the cost); validated rows (Validation = Yes)
+ *      keep their rate. Rows below the VA% rule minimum turn red and are fixed with "Apply VA% rules".
  * 3. When valid candidates > 1:
  *    - Clears bomId, rmItemCode, bomType to null so the dropdown appears with candidate options.
  * 4. When valid candidates = 0:
@@ -29,7 +30,6 @@ import { buildRawMaterialsCostMap } from "../lib/gmd2to1CostLookup";
 import { buildRmCostMap, DIRECT_M2M } from "../lib/gmdBomCostLookup";
 import { getRmStockMap, getRmTypeMap } from "../lib/directM2MStockLookup";
 import { recalculateItem } from "../lib/costCalculator";
-import { validateVaPercent, getDefaultVaPercent } from "../lib/vaValidation";
 import { isEnquiryFrozen } from "../lib/oneClickAccess";
 
 const args = process.argv.slice(2);
@@ -59,7 +59,6 @@ interface StalePlanItem {
   newRmType: string | null;
   newStock: string | null;
   newProductCost: number | null;
-  newVaPercent: number | null;
 }
 
 async function main() {
@@ -128,7 +127,6 @@ async function main() {
           newRmType: null,
           newStock: null,
           newProductCost: null,
-          newVaPercent: null,
         });
       } else if (validCandidates.length > 1) {
         stalePlan.push({
@@ -153,7 +151,6 @@ async function main() {
           newRmType: null,
           newStock: null,
           newProductCost: null,
-          newVaPercent: null,
         });
       } else {
         stalePlan.push({
@@ -178,7 +175,6 @@ async function main() {
           newRmType: null,
           newStock: null,
           newProductCost: null,
-          newVaPercent: null,
         });
       }
     }
@@ -242,17 +238,6 @@ async function main() {
       let cost = rawCostMap.get(vb.rmItemCode);
       if (cost === undefined) cost = supplyCostMap.get(vb.rmItemCode);
       s.newProductCost = cost !== undefined ? cost : s.oldProductCost;
-
-      // Check VA% validity
-      const vaNum = s.oldVaPercent ? parseFloat(s.oldVaPercent) : null;
-      const vaCheck = validateVaPercent(s.itemType, s.size, vaNum);
-      if (!vaCheck.isValid) {
-        // Reset invalid VA% to category default
-        const defVa = getDefaultVaPercent(s.itemType, s.size);
-        s.newVaPercent = defVa !== null ? defVa : null;
-      } else {
-        s.newVaPercent = vaNum;
-      }
     }
   }
 
@@ -272,9 +257,6 @@ async function main() {
     const costChange = s.newProductCost !== null && s.newProductCost !== s.oldProductCost
       ? `cost ${s.oldProductCost ?? "null"} -> ${s.newProductCost}`
       : `cost kept (${s.oldProductCost ?? "null"})`;
-    const vaChange = s.newVaPercent !== null && s.oldVaPercent !== null && s.newVaPercent !== parseFloat(s.oldVaPercent)
-      ? `, VA% ${s.oldVaPercent}% -> ${s.newVaPercent}%`
-      : "";
 
     console.log(
       s.docketNumber.padEnd(18) +
@@ -282,7 +264,7 @@ async function main() {
       s.oldBomId.padEnd(16) +
       `-> ${(s.newBomId ?? "<clear>").padEnd(15)}` +
       s.action.padEnd(26) +
-      costChange + vaChange
+      costChange
     );
   }
 
@@ -331,14 +313,8 @@ async function main() {
           data: dataToUpdate,
         });
 
-        // Recalculate cost & rates
-        const recalcUpdates: any = {};
-        if (s.newProductCost !== null) recalcUpdates.productCost = s.newProductCost;
-        if (s.newVaPercent !== null) recalcUpdates.vaPercent = s.newVaPercent;
-
-        if (Object.keys(recalcUpdates).length > 0) {
-          await recalculateItem(s.id, recalcUpdates);
-        }
+        // Recalculate cost & rates. No vaPercent: passing it would re-price validated rows (lib/rateAnchor.ts).
+        if (s.newProductCost !== null) await recalculateItem(s.id, { productCost: s.newProductCost });
       } else {
         // Clear stale BOM
         await prisma.enquiryItem.update({

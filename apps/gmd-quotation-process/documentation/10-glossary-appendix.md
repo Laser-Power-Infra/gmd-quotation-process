@@ -20,7 +20,7 @@
 | **Execution Tracking** `MC` | `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` | Env | `MC_GID` 1910912133 | `A1:ZZZ` | `FORMATTED_VALUE` | `getOAuthClient` | `lib/erpContractNoSync.ts` → `SupplyHistoryItem.erpContractNo` |
 | **Execution Tracking** `PROD ENTRY DUMP` | `GMD_EXECUTION_TRACKING_SPREADSHEET_ID` | Env | `PROD_ENTRY_DUMP_GID` 698397877 (optional; the default) | `A1:ZZZ` | `FORMATTED_VALUE` | `getOAuthClient` | `schedular_function/contract-review-prod-entry.ts` → `ContractReview.prodEntryDate` |
 
-**Env vars (set in deployment `.env`):** Only `DATABASE_URL` currently present locally `D:\gmd-quotation-process\.env`; expected but missing locally: `GOOGLE_SPREADSHEET_ID`, `SUPPLY_HISTORY_SPREADSHEET_ID`, `CONTRACT_SHEET_SPREADSHEET_ID`, `SALE_BILL_SPREADSHEET_ID`, `GDRIVE_*`, `OPENAI*`, `GEMINI*`, `N8N_WEBHOOK`, `GOOGLE_DRIVE` etc — see `lib/gmd_lib/google-sheets.ts`, `app/api/**/sync/route.ts`.
+**Env vars (set in deployment `.env`):** Only `DATABASE_URL` currently present locally `D:\gmd-quotation-process\.env`; expected but missing locally: `GOOGLE_SPREADSHEET_ID`, `SUPPLY_HISTORY_SPREADSHEET_ID`, `CONTRACT_SHEET_SPREADSHEET_ID`, `SALE_BILL_SPREADSHEET_ID`, `GDRIVE_*`, `OPENAI*`, `GEMINI*`, `GOOGLE_DRIVE` etc — see `lib/gmd_lib/google-sheets.ts`, `app/api/**/sync/route.ts`.
 
 ## 2. Header Normalization (Why Column Matching Works or Fails)
 
@@ -102,9 +102,9 @@ Label pct **is** stored pct: `5% For 24 Months→5.00%`, `10% For 12 Months→10
 
 Threshold 5,000,000 picks `full` vs `part` as above.
 
-### VA% Bands `lib/vaValidation.ts:14-243`
+### VA% Bands `lib/vaValidation.ts` (defaults), `lib/vaRules.ts` (minimums)
 
-See `08-auto-detection.md` §8 table — key: `BUTTERFLY 450→50%,451-1000→35%,>1000→65%`; `RESILIENT 0-200→25%,250-450→20%,500-1000→30%`; fixed 15% DPCV/Flange etc, 200% PRV/Check etc.
+See `08-auto-detection.md` §8 table — key: `BUTTERFLY 450→50%,451-1000→35%,>1000→65%`; `RESILIENT 0-200→25%,250-450→20%,500-1000→30%`; DPCV 20% (>600 35%); fixed 15% Flange etc, 200% PRV/Check etc. Minimums: `07-cost-calculation.md` VA% rules.
 
 ## 5. Column Index Cheat Sheet (Quick Find)
 
@@ -152,9 +152,6 @@ GDRIVE_...
 AI_VALIDATION_ENABLED=true
 AI_FALLBACK_ENABLED=false
 AI_EXTRACTION_MODEL=gpt-6-luna
-
-# VA Alert
-N8N_WEBHOOK_URL=
 
 # Sync health alert: comma-separated recipients of the daily 10:00 IST mail (unset = no mail)
 SYNC_ALERT_TO=

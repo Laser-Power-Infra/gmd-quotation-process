@@ -1,0 +1,18 @@
+-- AlterTable: Valve Serial No test results and dispatch fields (GMD DISPATCH SL NO sheet). All nullable, existing rows untouched.
+ALTER TABLE "valve_serial" ADD COLUMN "testDate" TEXT,
+ADD COLUMN "bodyTestPressure" TEXT,
+ADD COLUMN "seatTestPressure" TEXT,
+ADD COLUMN "testDuration" TEXT,
+ADD COLUMN "testResult" TEXT,
+ADD COLUMN "itemCode" TEXT,
+ADD COLUMN "itemName" TEXT,
+ADD COLUMN "partyName" TEXT,
+ADD COLUMN "invoiceNo" TEXT,
+ADD COLUMN "invoiceDate" TEXT,
+ADD COLUMN "heatNo" TEXT,
+ADD COLUMN "actuatorModel" TEXT,
+ADD COLUMN "actuatorSerial" TEXT,
+ADD COLUMN "gearboxModel" TEXT,
+ADD COLUMN "gearboxSerial" TEXT,
+ADD COLUMN "tcLink" TEXT,
+ADD COLUMN "remarks" TEXT;

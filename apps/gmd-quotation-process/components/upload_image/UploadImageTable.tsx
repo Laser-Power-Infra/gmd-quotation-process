@@ -7,6 +7,9 @@ import { toast } from "sonner";
 import { uploadImageForComboAction, createGeneratedImageAction } from "@/app/actions/misc";
 import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter";
+import { SortTh } from "@gmd/ui/components/plain-table";
+import type { TableSort } from "@gmd/ui/components/data-table/types";
+import { sortRows } from "@gmd/dashboard/lib/tableSort";
 import { squish } from "@/lib/squish";
 
 export type UploadImageComboRow = {
@@ -51,6 +54,10 @@ function statusLabel(row: UploadImageComboRow): string {
   return row.hasImage ? "ready" : (row.status || "pending").toLowerCase();
 }
 
+const FILTER_TH = "relative px-3 py-2 align-top border-b-2 border-border border-r";
+const sortLabel = (text: string) => <span className="text-xs font-bold uppercase tracking-wider">{text}</span>;
+const sortValue = (r: UploadImageComboRow, k: string) => (k === "status" ? statusLabel(r) : r[k as keyof UploadImageComboRow]);
+
 export default function UploadImageTable({
   items,
   onUploaded,
@@ -60,6 +67,7 @@ export default function UploadImageTable({
 }) {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState<TableSort | null>(null);
   const pageSize = 25;
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [assigningKey, setAssigningKey] = useState<string | null>(null);
@@ -141,7 +149,11 @@ export default function UploadImageTable({
     return true;
   };
 
-  const filtered = useMemo(() => items.filter((r) => rowPassesExcept(r, null)), [items, search, itemTypeFilter, operationTypeFilter, rmTypeFilter, statusFilter]);
+  const filtered = useMemo(() => sortRows(items.filter((r) => rowPassesExcept(r, null)), sort, sortValue), [items, search, itemTypeFilter, operationTypeFilter, rmTypeFilter, statusFilter, sort]);
+  const onSort = (next: TableSort | null) => {
+    setSort(next);
+    setPage(1);
+  };
 
   const cascaded = useMemo(() => {
     const collect = (field: "itemType" | "operationType" | "rmType" | "status"): string[] => {
@@ -337,8 +349,7 @@ export default function UploadImageTable({
           </colgroup>
           <thead className="sticky top-0 z-10">
             <tr className="bg-muted">
-              <th className="relative px-3 py-2 align-top border-b-2 border-border border-r">
-                <div className="text-xs font-bold uppercase tracking-wider text-foreground">Item Type</div>
+              <SortTh k="itemType" label={sortLabel("Item Type")} sort={sort} onSort={onSort} className={FILTER_TH}>
                 <div className="mt-1.5">
                   <MultiSelectFilter
                     label="Item Type"
@@ -353,9 +364,8 @@ export default function UploadImageTable({
                     searchPlaceholder="Search item types..."
                   />
                 </div>
-              </th>
-              <th className="relative px-3 py-2 align-top border-b-2 border-border border-r">
-                <div className="text-xs font-bold uppercase tracking-wider text-foreground">Operation Type</div>
+              </SortTh>
+              <SortTh k="operationType" label={sortLabel("Operation Type")} sort={sort} onSort={onSort} className={FILTER_TH}>
                 <div className="mt-1.5">
                   <MultiSelectFilter
                     label="Operation Type"
@@ -370,9 +380,8 @@ export default function UploadImageTable({
                     searchPlaceholder="Search operation types..."
                   />
                 </div>
-              </th>
-              <th className="relative px-3 py-2 align-top border-b-2 border-border border-r">
-                <div className="text-xs font-bold uppercase tracking-wider text-foreground">RM Type</div>
+              </SortTh>
+              <SortTh k="rmType" label={sortLabel("RM Type")} sort={sort} onSort={onSort} className={FILTER_TH}>
                 <div className="mt-1.5">
                   <MultiSelectFilter
                     label="RM Type"
@@ -388,9 +397,8 @@ export default function UploadImageTable({
                     includeBlank
                   />
                 </div>
-              </th>
-              <th className="relative px-3 py-2 align-top border-b-2 border-border border-r">
-                <div className="text-xs font-bold uppercase tracking-wider text-foreground">Status</div>
+              </SortTh>
+              <SortTh k="status" label={sortLabel("Status")} sort={sort} onSort={onSort} className={FILTER_TH}>
                 <div className="mt-1.5">
                   <MultiSelectFilter
                     label="Status"
@@ -405,7 +413,7 @@ export default function UploadImageTable({
                     searchPlaceholder="Search statuses..."
                   />
                 </div>
-              </th>
+              </SortTh>
               <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-foreground border-b-2 border-border border-r">Image</th>
               <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-foreground border-b-2 border-border">Upload</th>
             </tr>

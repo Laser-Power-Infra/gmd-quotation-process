@@ -13,6 +13,7 @@ import {
 import {
   cleanPoPaymentTerms,
   findPoPaymentTermsColumn,
+  pickPoNo,
   pickPoPaymentTerms,
 } from '../lib/contractPoPaymentTerms.js'
 
@@ -98,6 +99,13 @@ test('PO payment terms only fill a blank Contract Review value', () => {
   assert.equal(pickPoPaymentTerms(null, '#N/A'), undefined)
   assert.equal(pickPoPaymentTerms(null, ''), undefined)
   assert.equal(cleanPoPaymentTerms('#REF!'), null)
+})
+
+test('the PO sync fills a blank PO NO and never overwrites a saved one', () => {
+  assert.equal(pickPoNo(null, 'PO-1'), 'PO-1')
+  assert.equal(pickPoNo(' ', ' PO-1 '), 'PO-1')
+  assert.equal(pickPoNo('PO-typed', 'PO-1'), undefined)
+  assert.equal(pickPoNo(null, ''), undefined)
 })
 
 test('termsForParty falls back to defaults when there is no prior enquiry', () => {

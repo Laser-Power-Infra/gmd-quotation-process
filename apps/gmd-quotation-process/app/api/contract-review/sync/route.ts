@@ -90,7 +90,7 @@ export async function POST() {
   try {
     if (!SPREADSHEET_ID) {
       throw new Error(
-        "CONTRACT_REVIEW_SPREADSHEET_ID (or CONTRACT_SHEET_SPREADSHEET_ID) not configured",
+        "CONTRACT_REVIEW_SPREADSHEET_ID not configured",
       );
     }
 

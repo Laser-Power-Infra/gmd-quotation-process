@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useSmartsheetTenders } from "@/hooks/useSmartsheetTenders";
 import { SmartsheetTender } from "@/types/smartsheetTender";
-import { utilityMasterNames } from "@gmd/contract-review/utility-master";
+import { useUtilityOptions } from "@/hooks/useUtilityOptions";
 import { ClipboardList, RefreshCw, Eraser, FileSpreadsheet, AlertTriangle, Search, ChevronUp, ChevronDown, ArrowUpDown, X, Inbox, Paperclip } from "lucide-react";
 import {
   Select,
@@ -492,8 +492,9 @@ export const TenderDashboardPage: React.FC = () => {
     cuMax
   ]);
 
-  // Utility filter options come from the utility master only, never from row text.
-  const utilitiesList = useMemo(() => ["All", ...utilityMasterNames().sort()], []);
+  // Utility filter options are the standard utility list (LookupOption UTILITY), never row text.
+  const utilityOptions = useUtilityOptions();
+  const utilitiesList = useMemo(() => ["All", ...utilityOptions], [utilityOptions]);
 
   // Sort
   const sorted = useMemo<SmartsheetTender[]>(() => {

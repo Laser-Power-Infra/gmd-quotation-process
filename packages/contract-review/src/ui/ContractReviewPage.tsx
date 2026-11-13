@@ -71,6 +71,7 @@ import {
 } from "@gmd/ui/components/resizable";
 import { useDefaultLayout } from "react-resizable-panels";
 import { MailDocsCell } from "./MailDocsCell";
+import { ContractMailsDialog } from "./ContractMailsDialog";
 import { FillOnceCell } from "./FillOnceCell";
 import { FlowDiagram } from "./graph_flow/FlowDiagram";
 import {
@@ -241,6 +242,7 @@ export function ContractReviewPage({
     updateContractReviewFieldAction,
     clearContractReviewDiagramAction,
     addContractMailDocAction,
+    loadContractMailsAction,
     setContractReviewDiagramVerdictAction,
     backfillContractReviewOfferPendingDoneBatchAction,
     backfillContractReviewInspectionBatchAction,
@@ -297,6 +299,7 @@ export function ContractReviewPage({
   const [rmAvailSyncing, setRmAvailSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [mailsContractNo, setMailsContractNo] = useState<string | null>(null);
   const [balBillFilter, setBalBillFilter] = useState<BalBillFilter>("all");
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [tileItems, setTileItems] = useState<string[]>([]);
@@ -998,6 +1001,7 @@ export function ContractReviewPage({
                 ? (c, u) => handleAddMailDoc(contractNo, c, u)
                 : undefined
             }
+            onShowMails={loadContractMailsAction && contractNo ? () => setMailsContractNo(contractNo) : undefined}
           />
         );
       };
@@ -1013,7 +1017,7 @@ export function ContractReviewPage({
       );
     }
     return cells;
-  }, [isEnabled, isEditable, addContractMailDocAction, handleAddMailDoc, flags.blankOnlyColumns, handleCellUpdate]);
+  }, [isEnabled, isEditable, addContractMailDocAction, handleAddMailDoc, loadContractMailsAction, flags.blankOnlyColumns, handleCellUpdate]);
 
   const handleUploadDiagram = useCallback(
     async (id: string, file: File) => {
@@ -2200,6 +2204,13 @@ export function ContractReviewPage({
           </ResizablePanelGroup>
         </div>
       </div>
+      {loadContractMailsAction && (
+        <ContractMailsDialog
+          contractNo={mailsContractNo}
+          load={loadContractMailsAction}
+          onClose={() => setMailsContractNo(null)}
+        />
+      )}
     </main>
   );
 }

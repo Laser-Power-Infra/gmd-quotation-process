@@ -37,3 +37,12 @@ export function pickPoPaymentTerms(current: string | null | undefined, fromPo: s
   if (!isBlankTerm(current)) return undefined;
   return po;
 }
+
+/**
+ * Value to write to ContractReview.poNo, or undefined to leave it.
+ * Gap-fill only: a saved PO NO (typed in Contract Review or synced earlier) is never overwritten.
+ */
+export function pickPoNo(current: string | null | undefined, fromPo: string | null | undefined): string | undefined {
+  const po = (fromPo ?? "").trim();
+  return po && !(current ?? "").trim() ? po : undefined;
+}

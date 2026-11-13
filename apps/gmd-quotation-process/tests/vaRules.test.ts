@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { minVaPercent, vaRuleRate, isVaRuleViolation } from '../lib/vaRules.js'
+import { getDefaultVaPercent } from '../lib/vaValidation.js'
 
 const it = (itemType: string, size = '100', extra = {}) => ({ itemType, size, itemName: itemType, cost: 1000, ...extra })
 
@@ -16,6 +17,14 @@ test('minimum VA% per item type and size', () => {
   assert.equal(minVaPercent(it('EXPANSION BELOWS', '1100')), 45)
   assert.equal(minVaPercent(it('DPCV', '600')), 20)
   assert.equal(minVaPercent(it('DPCV', '700')), 35)
+  assert.equal(minVaPercent(it('PLUG VALVE')), 100)
+})
+
+test('a new item never starts red: default VA% is at least the minimum', () => {
+  const types = ['SLUICE VALVE-RESILIENT-RISING', 'SLUICE VALVE-METAL-RISING', 'CHECK VALVE', 'BUTTERFLY VALVE', 'TPAV', 'TPV', 'EXPANSION BELOWS', 'DPCV', 'PLUG VALVE']
+  for (const type of types)
+    for (const size of ['', '80', '450', '500', '600', '700', '1000', '1100', '1400'])
+      assert.ok(getDefaultVaPercent(type, size)! >= minVaPercent(it(type, size)), `${type} DN${size}`)
 })
 
 test('rate = CR rate, lifted to the minimum VA% when CR gives less', () => {

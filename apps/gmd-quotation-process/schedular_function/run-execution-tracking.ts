@@ -17,6 +17,10 @@ import {
   runExecutionTrackingStep,
   type ExecutionTrackingStepResult,
 } from "./execution-tracking-sync";
+import {
+  runExecutionRegistersSync,
+  type ExecutionRegistersReport,
+} from "./execution-registers-sync";
 
 export type JobName = "execution-tracking";
 
@@ -27,6 +31,8 @@ export type ScheduledExecutionTrackingResult = {
   elapsedMs: number;
   steps: {
     executionTracking?: ExecutionTrackingStepResult;
+    /** Step 2: the MC and Production register copies; a failed register carries its own `error`. */
+    executionRegisters?: ExecutionRegistersReport;
   };
 };
 
@@ -40,12 +46,13 @@ export type RunExecutionTrackingOptions = {
 };
 
 /**
- * Diffs the execution-tracking tab into `SupplyHistoryItem` for one fiscal year.
+ * Diffs the execution-tracking tab into `SupplyHistoryItem` for one fiscal year,
+ * then refreshes the MC and Production register copies (step 2).
  *
  * Throws `JobAlreadyRunningError` when this job is already in flight, and
  * rethrows a fatal error (workbook/columns/DB unreachable). Per-row write
  * failures surface in `steps.executionTracking.sync.failedWrites` rather than
- * failing the run.
+ * failing the run; a failed register lands on `steps.executionRegisters`.
  */
 export async function runScheduledExecutionTracking(
   options: RunExecutionTrackingOptions = {},
@@ -68,6 +75,9 @@ export async function runScheduledExecutionTracking(
       dryRun: options.dryRun,
       financialYear: options.financialYear,
     });
+
+    // Never throws: a register that fails reports it here and the SALE BILL result above stands.
+    steps.executionRegisters = await runExecutionRegistersSync({ dryRun: options.dryRun });
 
     const elapsedMs = Date.now() - startedAtMs;
     const sync = steps.executionTracking.sync;

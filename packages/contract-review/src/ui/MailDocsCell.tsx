@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Mail, Plus } from "lucide-react";
 import { MAIL_DOC_CATEGORIES, parseMailDocs } from "../lib/columns";
 
-/** Clickable "Category: link" list for one contract, with an optional add form. */
+/** Clickable "Category: link" list for one contract, with an optional add form and "Docket mails" button. */
 export function MailDocsCell({
   value,
   onAdd,
+  onShowMails,
 }: {
   value: unknown;
   onAdd?: (category: string, url: string) => Promise<boolean>;
+  onShowMails?: () => void;
 }) {
   const docs = parseMailDocs(value);
   const [open, setOpen] = useState(false);
@@ -43,6 +45,15 @@ export function MailDocsCell({
         </a>
       ))}
       {docs.length === 0 && !open && <span className="text-muted-foreground">—</span>}
+      {onShowMails && (
+        <button
+          type="button"
+          onClick={onShowMails}
+          className="inline-flex items-center gap-1 self-start text-muted-foreground hover:text-foreground"
+        >
+          <Mail size={12} /> Docket mails
+        </button>
+      )}
       {onAdd &&
         (open ? (
           <div className="flex flex-col gap-1">

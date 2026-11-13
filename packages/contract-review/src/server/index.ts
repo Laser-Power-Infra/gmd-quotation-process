@@ -158,11 +158,14 @@ export async function updateContractReviewField(
       value = validated.contracts.length > 0 ? validated.contracts[0] : null;
     }
     if (blankOnly.has(field)) {
-      // Conditional write, so a value filled in meanwhile is never overwritten.
-      const { count } = await tenderPrisma.contractReview.updateMany({
-        where: { id, OR: [{ [field]: null }, { [field]: "" }] },
-        data: { [field]: value },
-      });
+      value = value?.trim() || null;
+      const row = await tenderPrisma.contractReview.findUnique({ where: { id } });
+      if (!row) return { success: false, error: "Contract review row not found." };
+      const saved = ((row as Record<string, unknown>)[field] ?? null) as string | null;
+      // Written only over the blank just read (null, "" or spaces), so a value saved meanwhile is never overwritten.
+      const { count } = saved?.trim()
+        ? { count: 0 }
+        : await tenderPrisma.contractReview.updateMany({ where: { id, [field]: saved }, data: { [field]: value } });
       if (count === 0) return { success: false, error: "This value is already saved and cannot be changed." };
       return { success: true, data: { id, field, value } };
     }

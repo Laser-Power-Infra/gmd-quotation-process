@@ -2,7 +2,9 @@
 # Usage: execution-tracking-sync.sh  -- POSTs to $GMD_APP_SERVER/api/scheduler/execution-tracking
 # Refreshes acc_master, then diffs the SALE_BILL_GID tab of
 # GMD_EXECUTION_TRACKING_SPREADSHEET_ID into SupplyHistoryItem for the current
-# fiscal year (April start).
+# fiscal year (April start). Step 2 then replaces the McRegisterLine and
+# ProductionRegisterLine tables behind /execution_registers with fresh copies of
+# the MC, PROD ORDER DUMP and PROD ENTRY DUMP tabs, every run.
 #
 # Scheduled at :40 of every even hour (every 2 hours) — after acc-master (:35) has
 # the name list ready and after supply-history (:15) has written the MASTER rows
@@ -60,6 +62,12 @@ fi
 # name (the DB key is invoiceNo + itemName). Visible, not silent.
 if echo "$body" | grep -q '"blockedInserts":[1-9]'; then
   echo "WARN: execution-tracking could not insert one or more rows (name already used on the invoice)"
+fi
+
+# A failed register (step 2) keeps its last good table and does not fail the run;
+# it reports an "error" under executionRegisters, the last key of the body.
+if echo "$body" | grep -q '"executionRegisters".*"error":'; then
+  echo "WARN: an execution register failed and its table was left as it was (see body)"
 fi
 
 echo "OK: execution-tracking sync completed"

@@ -6,7 +6,12 @@
  * then the Gate Valve tab (the in-app copy of the CONSOLIDATED_VALVES valve data)
  * for anything the Flange tab has no column for. Every field stays editable.
  */
-import { parseNumber } from "./technical/formulas";
+
+/** "1,000" -> 1000, "+2" -> 2; blank or not a number -> null. */
+function parseNumber(value: unknown): number | null {
+  const n = parseFloat(String(value ?? "").replace(/,/g, "").trim());
+  return Number.isFinite(n) ? n : null;
+}
 
 export const ID_FIELDS = [
   ["serialNo", "Serial No"],
@@ -34,7 +39,32 @@ export const DIM_FIELDS = [
   ["actuatorGearbox", "Actuator / gearbox"],
 ] as const;
 
-export const VALVE_SERIAL_FIELDS = [...ID_FIELDS, ...DIM_FIELDS];
+/** Dates are ISO yyyy-mm-dd text (date inputs). Pressures pre-fill from the standard, never flagged. */
+export const TEST_FIELDS = [
+  ["testDate", "Test date"],
+  ["bodyTestPressure", "Body test pressure"],
+  ["seatTestPressure", "Seat test pressure"],
+  ["testDuration", "Test duration"],
+  ["testResult", "Test result"],
+] as const;
+
+/** Mostly imported from the "GMD DISPATCH SL NO" sheet; typed here once the sheet is frozen. */
+export const DISPATCH_FIELDS = [
+  ["itemCode", "Item code"],
+  ["itemName", "Item name"],
+  ["partyName", "Party name"],
+  ["invoiceNo", "Invoice no"],
+  ["invoiceDate", "Invoice date"],
+  ["heatNo", "Heat no"],
+  ["actuatorModel", "Actuator model"],
+  ["actuatorSerial", "Actuator serial no"],
+  ["gearboxModel", "Gearbox model"],
+  ["gearboxSerial", "Gearbox serial no"],
+  ["tcLink", "TC link"],
+  ["remarks", "Remarks"],
+] as const;
+
+export const VALVE_SERIAL_FIELDS = [...ID_FIELDS, ...DIM_FIELDS, ...TEST_FIELDS, ...DISPATCH_FIELDS];
 export type ValveSerialField = (typeof VALVE_SERIAL_FIELDS)[number][0];
 export type ValveSerialView = Record<ValveSerialField, string | null>;
 
@@ -47,8 +77,10 @@ type Row = Record<string, unknown>;
 const key = (v: unknown) => String(v ?? "").toUpperCase().replace(/[^A-Z0-9.]/g, "");
 // "DN 50", "50 MM" and "50" are the same size.
 const size = (v: unknown) => parseNumber(String(v ?? "").replace(/^[^\d.]+/, ""));
-// "PN - 10", "PN10" and "10" are the same rating; "CLASS-300#" stays CLASS300.
-const pn = (v: unknown) => key(v).replace(/^PN/, "");
+/** The dispatch sheet gives PN in MPa ("1.6"); Technicals and the app use bar ("16"). Anything else is returned as is. */
+export const mpaToBar = (v: string) => (/^\d\.\d+$/.test(v) ? String(Math.round(Number(v) * 10)) : v);
+// "PN - 10", "PN10", "10" and "1.0" (MPa) are the same rating; "CLASS-300#" stays CLASS300.
+const pn = (v: unknown) => mpaToBar(key(v).replace(/^PN/, ""));
 // Tolerances arrive as "±2", "+1.0", "-1"; the sign is implied by the column.
 const tol = (v: unknown) => parseNumber(String(v ?? "").replace(/[^\d.]/g, ""));
 
@@ -64,8 +96,9 @@ export function pickStandard(
   const flanges = flangeRows.filter((r) => match(r.size, r.pnRatingClass));
   // The Flange tab has one row per MOC; take the body MOC's row when it is known.
   const f = flanges.find((r) => input.bodyMoc && key(r.moc) === key(input.bodyMoc)) ?? flanges[0];
-  // Gate Valve dimensions (face-to-face, weight) are only valid for gate/sluice valves.
-  const g = /gate|sluice/i.test(input.valveType ?? "") ? gateRows.find((r) => match(r.sizeMm, r.pnRatingClass)) : undefined;
+  // Gate Valve dimensions (face-to-face, weight) are only valid for gate/sluice valves; a knife gate valve is built differently.
+  const t = input.valveType ?? "";
+  const g = !/knife/i.test(t) && /gate|sluice/i.test(t) ? gateRows.find((r) => match(r.sizeMm, r.pnRatingClass)) : undefined;
 
   const std: ValveStandard = {};
   const put = (field: ValveSerialField, value: unknown, source: StdValue["source"], plus?: unknown, minus?: unknown) => {
@@ -82,6 +115,8 @@ export function pickStandard(
     put("flangeThicknessMm", f.thicknessOfFlange, "Flange", f.thicknessTolerancePlus, f.thicknessToleranceMinus);
     put("flangeStandard", f.standards, "Flange");
     put("bodyMoc", f.moc, "Flange");
+    put("bodyTestPressure", f.bodyPressure, "Flange");
+    put("seatTestPressure", f.seatPressure, "Flange");
   }
   if (g) {
     put("odMm", g.flangeOdMm, "Gate Valve", g.flangeOdTolerance, g.flangeOdTolerance);
@@ -90,8 +125,20 @@ export function pickStandard(
     put("faceToFaceMm", g.faceToFaceLengthMm, "Gate Valve", g.faceToFaceLengthTolerance, g.faceToFaceLengthTolerance);
     put("weightKg", g.approxWeightKg, "Gate Valve");
     put("bodyMoc", g.material, "Gate Valve");
+    put("bodyTestPressure", g.bodyPressure, "Gate Valve");
+    put("seatTestPressure", g.seatPressure, "Gate Valve");
   }
   return std;
+}
+
+/**
+ * Whether a save (re)takes the standard snapshot: on create, when the row has none or an
+ * empty one (nothing matched then, e.g. imported before MPa PN matched), or when type, size
+ * or PN change. Otherwise it is kept, so a Technicals re-sync cannot move a flag.
+ */
+export function needsStandard(existing: (Partial<ValveSerialView> & { standard: unknown }) | null, next: Partial<ValveSerialView>): boolean {
+  if (!existing || JSON.stringify(existing.standard ?? {}) === "{}") return true;
+  return (["valveType", "sizeDn", "pnRating"] as const).some((f) => existing[f] !== next[f]);
 }
 
 /** True when a measured number falls outside the standard's band. No band, or no number, is never flagged. */
