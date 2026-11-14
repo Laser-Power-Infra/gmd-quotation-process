@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronDown, Search } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+import { ChevronDown, Loader2, Search } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
   Popover,
@@ -36,6 +36,12 @@ interface MultiSelectFilterProps {
   optionHints?: Record<string, string>;
   /** Enter in the search box (or the "Rows containing" button) submits the typed text and closes the panel. */
   onSearchSubmit?: (text: string) => void;
+  /** Replaces the label + chevron inside the trigger (e.g. an icon); style the trigger through `className`. */
+  trigger?: ReactNode;
+  /** Accessible name and tooltip for an icon-only trigger. */
+  ariaLabel?: string;
+  /** Options are still being fetched: show a loading line instead of "No options found". */
+  loading?: boolean;
 }
 
 export default function MultiSelectFilter({
@@ -57,6 +63,9 @@ export default function MultiSelectFilter({
   onOpen,
   optionHints,
   onSearchSubmit,
+  trigger,
+  ariaLabel,
+  loading = false,
 }: MultiSelectFilterProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -113,13 +122,19 @@ export default function MultiSelectFilter({
     >
       <PopoverTrigger
         type="button"
+        aria-label={ariaLabel}
+        title={ariaLabel}
         className={cn(
           "w-full h-7 rounded border border-border bg-background px-2 py-0.5 text-[10px] text-left cursor-pointer flex items-center justify-between hover:bg-accent outline-none normal-case",
           className
         )}
       >
-        <span className="truncate">{buttonLabel}</span>
-        <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0 ml-1" />
+        {trigger ?? (
+          <>
+            <span className="truncate">{buttonLabel}</span>
+            <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0 ml-1" />
+          </>
+        )}
       </PopoverTrigger>
 
       <PopoverContent
@@ -228,7 +243,13 @@ export default function MultiSelectFilter({
               </label>
             );
           })}
-          {visibleOptions.length === 0 && !includeBlank && !includeAvailable && (
+          {loading && (
+            <div role="status" className="flex items-center gap-2 py-2 px-1 text-[10px] text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin motion-reduce:animate-none" />
+              Loading values…
+            </div>
+          )}
+          {!loading && visibleOptions.length === 0 && !includeBlank && !includeAvailable && (
             <div className="py-2 px-3 text-xs text-muted-foreground italic">
               No options found
             </div>

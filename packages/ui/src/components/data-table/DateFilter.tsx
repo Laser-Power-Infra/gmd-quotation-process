@@ -1,11 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarRange } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "../popover";
 import { Button } from "../button";
 import { Input } from "../input";
-import { cn } from "../../lib/utils";
+import { FilterIcon, filterIconClass } from "./FacetFilter";
 import type { DateRange } from "./types";
 
 interface DateFilterProps {
@@ -29,14 +28,10 @@ export function DateFilter({ label, value = EMPTY, onChange }: DateFilterProps) 
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         aria-label={`Filter ${label} by date`}
-        className={cn(
-          "relative flex size-6 shrink-0 items-center justify-center rounded-md text-primary-foreground/70 transition-[background-color,color,transform] duration-100 outline-none hover:bg-primary-foreground/15 hover:text-primary-foreground focus-visible:ring-2 focus-visible:ring-primary-foreground/60 active:scale-90 motion-reduce:transition-none",
-          (active || open) && "bg-primary-foreground/15 text-primary-foreground",
-          !active && "opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100",
-        )}
+        title={`Filter ${label} by date`}
+        className={filterIconClass(active)}
       >
-        <CalendarRange size={13} />
-        {active && <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary-foreground" />}
+        <FilterIcon active={active} />
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={6} className="w-60 gap-2 p-2">
         <div className="flex items-center justify-between px-0.5">

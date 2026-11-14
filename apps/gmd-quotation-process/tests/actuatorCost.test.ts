@@ -21,7 +21,8 @@ test('MAP KEY from item type, size and PN; ACTUATOR lines read the valve type fr
   assert.equal(deriveMapKey({ itemType: 'SLUICE VALVE-METAL-NON-RISING', size: '700', pnRating: 'PN-10' }), 'SLUICE|700|PN10')
   assert.equal(deriveMapKey({ itemType: 'KNIFE GATE VALVE', size: '150', pnRating: 'PN-10' }), 'KGV|150|PN10')
   assert.equal(deriveMapKey({ itemType: 'ACTUATOR', itemName: 'Electric actuator for BFV', size: '1900', pnRating: 'PN-16' }), 'BFV|1900|PN16')
-  assert.equal(deriveMapKey({ itemType: 'BUTTERFLY VALVE', size: '500', pnRating: 'PN-10/16' }), null) // two PNs
+  assert.equal(deriveMapKey({ itemType: 'BUTTERFLY VALVE', size: '500', pnRating: 'PN-10/16' }), 'BFV|500|PN16') // dual rating: the higher one sizes the actuator
+  assert.equal(deriveMapKey({ itemType: 'BUTTERFLY VALVE', size: '500', pnRating: 'PN 1.6' }), null) // not a "/" list
   assert.equal(deriveMapKey({ itemType: 'CHECK VALVE', size: '500', pnRating: 'PN-16' }), null)
   assert.equal(deriveMapKey({ itemType: 'BUTTERFLY VALVE', size: null, pnRating: 'PN-16' }), null)
 })

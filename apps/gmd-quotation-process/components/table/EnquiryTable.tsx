@@ -16,7 +16,7 @@ import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField
 import { enquiryFilterKey } from "@/lib/enquiryQuery";
 import { fetchDocketNumbers, fetchFilteredEnquiryExport, fetchGeneratedImageMap } from "@/app/actions/enquiryQuery";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
-import { itemDeletedStatus, DELETED_STATUS_OPTIONS } from "@/lib/filterUtils";
+import { itemDeletedStatus, DELETED_STATUS_OPTIONS, itemCostFlag, COST_FLAG_OPTIONS } from "@/lib/filterUtils";
 import { setPage, setPageSize } from "@/lib/paginationSlice";
 import { toggleRow, setRowExpanded, setColumnWidth, setVisibleColumns, setExpandedRows, DEFAULT_COLUMN_WIDTHS, setGeneratedImages, toggleEnquirySelection, setSelectedEnquiries, clearEnquirySelection } from "@/lib/uiSlice";
 import type { DropdownOptions, EnquiryData, EnquiryItemData, FiltersState } from "@/lib/types";
@@ -1071,6 +1071,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
         if (wantBlank && !wantPresent && hasImg) return false;
       }
       if (!itemDeletedStatus(item, filters.deletedStatus)) return false;
+      if (!itemCostFlag(item, filters.costFlag)) return false;
       if (incompleteOnly && missingDetails(item).length === 0) return false;
       if (costWarningOnly && !item.costWarnings?.length) return false;
       if (closedBomOnly) {
@@ -2995,6 +2996,18 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                 className="mt-1 h-6 w-full rounded border border-input bg-background px-1 text-[10px] focus:outline-none focus:ring-1 focus:ring-ring"
                 panelClassName="w-56 z-80"
               />
+              <div className="relative mt-1 normal-case font-normal text-left text-foreground">
+                <MultiSelectFilter
+                  label="Cost chip"
+                  allLabel="All chips"
+                  options={COST_FLAG_OPTIONS}
+                  cascadedOptions={COST_FLAG_OPTIONS}
+                  selected={filters.costFlag ?? []}
+                  onChange={(v) => dispatch(setFilter({ field: "costFlag", value: v }))}
+                  searchPlaceholder="Search chip..."
+                  panelClassName="w-56 z-80"
+                />
+              </div>
               <div
                 onMouseDown={(e) => handleMouseDown(15, e)}
                 className="absolute top-0 right-0 h-full w-[6px] cursor-col-resize z-20 group"

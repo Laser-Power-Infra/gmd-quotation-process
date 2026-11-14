@@ -18,6 +18,7 @@
     "utility:remap": "tsx scripts/remap-utilities.ts",
     "utility:remap:apply": "tsx scripts/remap-utilities.ts --apply",
     "bom:cost": "tsx scripts/update-product-cost-from-bom.ts",
+    "images:item-codes": "tsx scripts/sync-generated-image-item-codes.ts",
     "round:qr": "tsx scripts/round-qr.ts",
     "round:qr:apply": "tsx scripts/round-qr.ts --apply",
     "terms:backfill": "tsx scripts/backfill-blank-terms.ts",

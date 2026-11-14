@@ -5,10 +5,11 @@
 // Re-runnable: upserts by key (ACT CODE, GB CODE, MAP KEY, ERP code, ...) and deletes rows no
 // longer in the file. offerDate / offerValidTill on ActuatorMaster are not in the workbook and
 // are left as they are. SUITABILITY (4k+ rows) is replaced as a whole inside one transaction.
+// Ends by re-pricing every linked actuated docket item with the new prices.
+import "dotenv/config"; // first: lib/prisma (used by the re-price below) reads the env when it loads
 import { PrismaClient } from "@gmd/db-quotation";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
-import "dotenv/config";
 import { readActuatorWorkbook, updateData } from "../lib/actuatorMaster";
 
 const path = process.argv[2];
@@ -47,6 +48,11 @@ async function main() {
     prisma.actuatorSuitability.createMany({ data: p.suitability }),
   ]);
   console.log(`ActuatorSuitability: ${p.suitability.length} rows written.`);
+
+  // New prices / mapping reach the dockets straight away: no Fetch Actuator press needed.
+  const { repriceLinkedActuatorItems } = await import("../lib/actuatorItem");
+  const r = await repriceLinkedActuatorItems();
+  console.log(`Docket items re-priced: ${r.priced} priced, ${r.pending} still pending, ${r.skipped} skipped (frozen), ${r.failed} failed.`);
 }
 
 main()

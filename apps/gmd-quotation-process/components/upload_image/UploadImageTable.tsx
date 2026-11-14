@@ -17,6 +17,7 @@ export type UploadImageComboRow = {
   operationType: string;
   rmType: string;
   imageKey: string;
+  itemCodes?: string[];
   generatedImageId: string | null;
   url: string | null;
   driveFileId: string | null;
@@ -120,7 +121,7 @@ export default function UploadImageTable({
   ): boolean => {
     const q = squish(search);
     if (q) {
-      const hay = squish([r.itemType, r.operationType, r.rmType, r.status, r.imageKey, r.driveFileId].join(" "));
+      const hay = squish([r.itemType, r.operationType, r.rmType, r.status, r.imageKey, r.driveFileId, ...(r.itemCodes ?? [])].join(" "));
       if (!hay.includes(q)) return false;
     }
     if (exclude !== "itemType" && itemTypeFilter.length > 0) {
@@ -344,6 +345,7 @@ export default function UploadImageTable({
             <col style={{ width: 210 }} />
             <col style={{ width: 140 }} />
             <col style={{ width: 110 }} />
+            <col style={{ width: 200 }} />
             <col style={{ width: 230 }} />
             <col style={{ width: 160 }} />
           </colgroup>
@@ -414,6 +416,7 @@ export default function UploadImageTable({
                   />
                 </div>
               </SortTh>
+              <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-foreground border-b-2 border-border border-r">Item Codes</th>
               <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-foreground border-b-2 border-border border-r">Image</th>
               <th className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-foreground border-b-2 border-border">Upload</th>
             </tr>
@@ -421,7 +424,7 @@ export default function UploadImageTable({
           <tbody>
             {paged.length === 0 ? (
               <tr>
-                <td colSpan={6} className="h-24 text-center text-xs text-muted-foreground">
+                <td colSpan={7} className="h-24 text-center text-xs text-muted-foreground">
                   No matching rows — no distinct itemType/operationType combos found in enquiry items.
                 </td>
               </tr>
@@ -470,6 +473,9 @@ export default function UploadImageTable({
                     </td>
                     <td className="px-3 py-2 border-r border-border">
                       <StatusBadge status={row.status} hasImage={hasImage} />
+                    </td>
+                    <td className="px-3 py-2 text-xs text-foreground border-r border-border truncate" title={row.itemCodes?.join(", ")}>
+                      {row.itemCodes?.length ? row.itemCodes.join(", ") : <span className="text-muted-foreground italic">—</span>}
                     </td>
                     <td className="px-3 py-2 border-r border-border">
                       {hasImage ? (

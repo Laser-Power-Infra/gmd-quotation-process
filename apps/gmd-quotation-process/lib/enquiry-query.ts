@@ -20,6 +20,9 @@ export const AVAILABLE = "__available__";
 const SIZE_BLANK_VALUES = ["Not detectable", "Not mentioned/cant detect size"];
 const DELETED_CLOSED = "Deleted as Closed";
 const DELETED_CURRENT_REQT = "Deleted as Current Reqt = No";
+const COST_FLAG_CF_SET = "CF set";
+const COST_FLAG_CF_INCOMPLETE = "CF set · incomplete";
+const COST_FLAG_ACT_PENDING = "Actuator · price pending";
 const C_BATCH_VALUE = "C";
 const N_BATCH_VALUE = "N";
 
@@ -277,6 +280,21 @@ export function buildItemWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): Pri
     }
     if (f.deletedStatus.includes(DELETED_CURRENT_REQT)) {
       branches.push(sql`btrim(i."nBatch") = ${N_BATCH_VALUE}`);
+    }
+    if (branches.length > 0) parts.push(sql`(${Prisma.join(branches, " OR ")})`);
+  }
+
+  // Cost column chips; keep in step with itemCostFlag in filterUtils.ts. A stored filter state may predate the field.
+  if (f.costFlag?.length > 0 && "costFlag" !== skip) {
+    const cfSet = sql`(i."parentItemId" IS NOT NULL AND jsonb_typeof(i."cfSetBreakdown") = 'object')`;
+    const branches: Prisma.Sql[] = [];
+    if (f.costFlag.includes(COST_FLAG_CF_SET)) branches.push(cfSet);
+    if (f.costFlag.includes(COST_FLAG_CF_INCOMPLETE)) {
+      branches.push(sql`(${cfSet} AND jsonb_array_length(COALESCE(i."cfSetBreakdown"->'missing', '[]'::jsonb)) > 0)`);
+    }
+    if (f.costFlag.includes(COST_FLAG_ACT_PENDING)) {
+      branches.push(sql`((upper(btrim(COALESCE(i."operationType", ''))) IN ('ACT', 'ACT+GB', 'ELECTRIC') OR upper(btrim(COALESCE(i."itemType", ''))) = 'ACTUATOR')
+        AND (jsonb_typeof(i."actuatorBreakdown") IS DISTINCT FROM 'object' OR jsonb_array_length(COALESCE(i."actuatorBreakdown"->'pending', '[]'::jsonb)) > 0))`);
     }
     if (branches.length > 0) parts.push(sql`(${Prisma.join(branches, " OR ")})`);
   }

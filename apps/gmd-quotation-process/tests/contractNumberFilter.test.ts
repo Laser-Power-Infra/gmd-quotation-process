@@ -61,6 +61,7 @@ const baseFilters = {
   pdcostValidationSearch: '',
   contractNo: [],
   image: [],
+  costFlag: [],
 } as unknown as FiltersState
 
 test('Blank filter matches when selectedContractNo is empty array', () => {

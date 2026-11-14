@@ -945,6 +945,16 @@ export async function bulkUpdateValidationAction(itemIds: string[], validation: 
   }
 }
 
+// Best-effort: a failed item-code refresh must never fail an image save.
+async function refreshImageItemCodes() {
+  try {
+    const { syncGeneratedImageItemCodes } = await import("@/lib/generatedImageItemCodes");
+    await syncGeneratedImageItemCodes();
+  } catch (e) {
+    console.warn("[generated images] itemCodes refresh failed:", e);
+  }
+}
+
 export async function createGeneratedImageAction(data: {
   itemType: string;
   operationType: string;
@@ -973,6 +983,7 @@ export async function createGeneratedImageAction(data: {
         status: "pending",
       },
     });
+    await refreshImageItemCodes();
     return { success: true, data: created };
   } catch (error: any) {
     if (error?.code === "P2002") {
@@ -1070,6 +1081,7 @@ export async function uploadImageForComboAction(data: {
         generatedAt: new Date(),
       },
     });
+    await refreshImageItemCodes();
     return { success: true, data: upserted, url, driveFileId: fileId };
   } catch (error: any) {
     console.error("uploadImageForComboAction failed:", error);

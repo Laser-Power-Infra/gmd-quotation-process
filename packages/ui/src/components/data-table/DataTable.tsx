@@ -104,13 +104,14 @@ export function DataTable<Row>({
   }, [columns, widths]);
 
   // During a drag only the DOM moves (th width + table width); React gets the final width.
-  const resize = (key: string, width: number, final: boolean) => {
-    if (final) return onColumnResize(key, width);
-    const th = tableRef.current?.querySelector<HTMLElement>(`th[data-key="${CSS.escape(key)}"]`);
+  // The table width is computed, never measured: measured widths are fractional under browser zoom, and the
+  // error added up over a drag, so the surplus was spread across every other column.
+  const resize = (c: DataColumn<Row>, width: number, final: boolean) => {
+    if (final) return onColumnResize(c.key, width);
+    const th = tableRef.current?.querySelector<HTMLElement>(`th[data-key="${CSS.escape(c.key)}"]`);
     if (!th || !tableRef.current) return;
-    const delta = width - th.getBoundingClientRect().width;
     th.style.width = `${width}px`;
-    tableRef.current.style.width = `${tableRef.current.getBoundingClientRect().width + delta}px`;
+    tableRef.current.style.width = `${totalWidth - widthOf(c) + width}px`;
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -170,7 +171,7 @@ export function DataTable<Row>({
                       search={columnSearch[c.key]}
                       onSearchChange={onColumnSearchChange && ((value) => onColumnSearchChange(c.key, value))}
                     />
-                    <ResizeHandle label={c.label} onResize={(w, final) => resize(c.key, w, final)} onReset={() => onColumnResize(c.key, 0)} />
+                    <ResizeHandle label={c.label} onResize={(w, final) => resize(c, w, final)} onReset={() => onColumnResize(c.key, 0)} />
                   </th>
                 );
               })}

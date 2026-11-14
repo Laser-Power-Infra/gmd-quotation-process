@@ -207,6 +207,8 @@ export interface FiltersState {
   image: string[];
   /** Item code "deleted" statuses: "Deleted as Closed" / "Deleted as Current Reqt = No". */
   deletedStatus: string[];
+  /** Cost column chips: "CF set" / "CF set · incomplete" / "Actuator · price pending". */
+  costFlag: string[];
 }
 
 export interface UiState {

@@ -174,6 +174,13 @@ async function refreshContractReviewCurrentReqtMark(): Promise<void> {
   } catch (e) {
     console.warn("[GmdItemCode] current reqt mark failed:", e);
   }
+  // The backfill above may have changed item codes; keep the image list in step.
+  try {
+    const { syncGeneratedImageItemCodes } = await import("@/lib/generatedImageItemCodes");
+    await syncGeneratedImageItemCodes();
+  } catch (e) {
+    console.warn("[GmdItemCode] generated image itemCodes refresh failed:", e);
+  }
 }
 
 async function lookupItemCodeDirect(params: {

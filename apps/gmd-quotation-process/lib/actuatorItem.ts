@@ -63,6 +63,28 @@ export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch &
   return { item: serializeItem(fresh), pending: res.pending.length > 0, special: res.pending.includes(SPECIAL_OEM), reason: plan.reason };
 }
 
+/**
+ * Re-price every linked actuated item after the masters changed (new prices, new mapping), so nobody has to press
+ * Fetch Actuator. Only linked items: a legacy ACT row with no link keeps its cost. Frozen dockets are skipped.
+ */
+export async function repriceLinkedActuatorItems() {
+  const rows = await prisma.enquiryItem.findMany({
+    where: { OR: [{ actCode: { not: null } }, { gbCode: { not: null } }, { actuatorBreakdown: { not: Prisma.DbNull } }] },
+    select: { id: true, operationType: true, itemType: true },
+  });
+  const out = { priced: 0, pending: 0, skipped: 0, failed: 0 };
+  for (const row of rows.filter(isActuatorCandidate)) {
+    try {
+      const r = await applyActuatorToItem(row.id);
+      if (!r.item) out.skipped++; else if (r.pending) out.pending++; else out.priced++;
+    } catch (e) {
+      out.failed++;
+      console.warn(`[repriceLinkedActuatorItems] ${row.id}:`, e);
+    }
+  }
+  return out;
+}
+
 type Specs = { operationType?: string | null; itemType?: string | null; size?: string | null; pnRating?: string | null; itemName?: string | null };
 
 /**

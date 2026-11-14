@@ -844,6 +844,9 @@ model GeneratedImage {
   operationType String?
   rmType        String?
   imageKey      String    @unique
+  // ERP item codes of the enquiry items sharing this itemType/operationType/rmType.
+  // Derived: rewritten by syncGeneratedImageItemCodes(), never edited by hand.
+  itemCodes     String[]  @default([])
   url           String?
   driveFileId   String?
   prompt        String?

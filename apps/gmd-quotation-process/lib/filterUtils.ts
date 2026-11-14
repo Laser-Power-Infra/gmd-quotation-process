@@ -3,6 +3,7 @@ import { looseIncludes, squish } from "@gmd/dashboard/lib/squish";
 import { makeImageKey } from "./imageKey";
 import { C_BATCH_VALUE } from "./gmd_lib/verify-bom-columns";
 import { N_BATCH_VALUE } from "./gmd_lib/contract-review-columns";
+import { isActuatorCandidate } from "./actuatorCost";
 
 export const BLANK = "__blank__";
 
@@ -26,6 +27,27 @@ export function itemDeletedStatus(
   return (
     (values.includes(DELETED_CLOSED) && isClosed) ||
     (values.includes(DELETED_CURRENT_REQT) && isNotCurrent)
+  );
+}
+
+/** Dropdown options for the Cost column chip filter: same wording as the chips under Cost. */
+export const COST_FLAG_CF_SET = "CF set";
+export const COST_FLAG_CF_INCOMPLETE = "CF set · incomplete";
+export const COST_FLAG_ACT_PENDING = "Actuator · price pending";
+export const COST_FLAG_OPTIONS = [COST_FLAG_CF_SET, COST_FLAG_CF_INCOMPLETE, COST_FLAG_ACT_PENDING];
+
+/** Cost chip filter. Empty selection passes everything; otherwise the item must carry one of the selected chips. */
+export function itemCostFlag(
+  item: Pick<EnquiryItemData, "parentItemId" | "cfSetBreakdown" | "actuatorBreakdown" | "operationType" | "itemType">,
+  values: string[] | undefined,
+): boolean {
+  if (!values || values.length === 0) return true;
+  const cf = item.parentItemId && item.cfSetBreakdown ? (item.cfSetBreakdown as { missing?: string[] }) : null;
+  const act = item.actuatorBreakdown as { pending?: string[] } | null | undefined;
+  return (
+    (values.includes(COST_FLAG_CF_SET) && !!cf) ||
+    (values.includes(COST_FLAG_CF_INCOMPLETE) && !!cf?.missing?.length) ||
+    (values.includes(COST_FLAG_ACT_PENDING) && isActuatorCandidate(item) && (!act || !!act.pending?.length))
   );
 }
 
@@ -203,6 +225,7 @@ export function itemPassesFilters(item: EnquiryItemData, filters: FiltersState, 
   if (filters.itemWiseTotalValue && !matchesText(filters.itemWiseTotalValue, item.itemWiseTotalValue || "")) return false;
   if (filters.validation.length > 0 && !matchesMulti(filters.validation, item.validation)) return false;
   if (!itemDeletedStatus(item, filters.deletedStatus)) return false;
+  if (!itemCostFlag(item, filters.costFlag)) return false;
 
   return true;
 }

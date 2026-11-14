@@ -64,6 +64,7 @@ export const initialFiltersState: FiltersState = {
   contractNo: [],
   image: [],
   deletedStatus: [],
+  costFlag: [],
 };
 
 const filtersSlice = createSlice({

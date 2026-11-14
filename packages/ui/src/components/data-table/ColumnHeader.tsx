@@ -27,7 +27,8 @@ export function ColumnHeader<Row>({ column, sort, onSortChange, selected, facetO
   const Icon = dir === "asc" ? ArrowUp : dir === "desc" ? ArrowDown : ChevronsUpDown;
 
   return (
-    <div className="flex h-full items-center gap-0.5 pr-3 pl-2">
+    // overflow-hidden: at the narrowest width the label truncates and nothing spills into the next column.
+    <div className="flex h-full items-center gap-0.5 overflow-hidden pr-3 pl-2">
       {column.sortable ? (
         <button
           type="button"

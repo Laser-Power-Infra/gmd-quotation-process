@@ -43,7 +43,9 @@ export function deriveMapKey(it: { itemType?: string | null; itemName?: string |
   const isActuator = (it.itemType ?? "").trim().toUpperCase() === "ACTUATOR";
   const type = mapType(isActuator ? matchItemType(it.itemName) : it.itemType);
   const dn = /\d+/.exec(it.size ?? "")?.[0];
-  const pn = /^\D*(\d+)\D*$/.exec(it.pnRating ?? "")?.[1]; // "PN-10/16" has two numbers: not derivable
+  // Dual rating "PN-10/16": the higher one sizes the actuator (PN16). Anything else with two numbers ("PN 1.6") is not derivable.
+  const list = /^\D*(\d+(?:\s*\/\s*\d+)*)\D*$/.exec(it.pnRating ?? "")?.[1];
+  const pn = list && Math.max(...list.split("/").map(Number));
   return type && dn && pn ? `${type}|${Number(dn)}|PN${pn}` : null;
 }
 
@@ -133,7 +135,7 @@ export function planActuator(
   let reason: string | null = null;
   let gbWanted = !!gbCode; // no MAPPING row: only a code typed by hand asks for a gearbox
   if (!mapping) {
-    if (!actCode) reason = key ? `No MAPPING row for ${key}` : "MAP KEY not derivable (needs a valve type, size and a single PN)";
+    if (!actCode) reason = key ? `No MAPPING row for ${key}` : "MAP KEY not derivable (needs a valve type, size and PN)";
   } else {
     const pick = pickCodes(mapping, make, gearboxes);
     special = pick.special;
