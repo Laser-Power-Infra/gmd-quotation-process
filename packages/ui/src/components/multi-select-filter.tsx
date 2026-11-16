@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, Loader2, Search } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
@@ -69,6 +69,20 @@ export default function MultiSelectFilter({
 }: MultiSelectFilterProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+
+  // The panel is portaled and follows its button, so scrolling the table would drag it across
+  // the page (and over the sidebar once the button is clipped). Close it instead. Scroll events
+  // do not bubble, hence capture; scrolling the option list inside the panel is left alone.
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: Event) => {
+      if (e.target instanceof Element && e.target.closest('[data-slot="popover-content"]')) return;
+      setOpen(false);
+      setSearch("");
+    };
+    window.addEventListener("scroll", close, true);
+    return () => window.removeEventListener("scroll", close, true);
+  }, [open]);
 
   const visibleOptions = useMemo(() => {
     // Cascaded values are the source of truth once loaded: they include live

@@ -300,19 +300,27 @@ export async function setDiagramVerdict(
 
 type Field = "offerPendingDone" | "inspection" | "pnRating";
 
-/** Writes derived values for one field in chunked tender-DB transactions. */
+/**
+ * Writes derived values for one field, one row at a time (10 in flight).
+ * No transaction: a 200-row one runs close to its timeout against the remote DB
+ * and takes the whole batch down with it. Every row is attempted; if any failed
+ * this throws after the rest are written, and the next run retries them.
+ */
 async function applyDerived(field: Field, updates: { id: string; value: string }[]) {
-  for (let i = 0; i < updates.length; i += 200) {
-    await tenderPrisma.$transaction(
-      updates.slice(i, i + 200).map((u) =>
-        tenderPrisma.contractReview.update({
-          where: { id: u.id },
-          data: { [field]: u.value },
-        }),
+  let failed = 0;
+  for (let i = 0; i < updates.length; i += 10) {
+    await Promise.all(
+      updates.slice(i, i + 10).map((u) =>
+        tenderPrisma.contractReview
+          .update({ where: { id: u.id }, data: { [field]: u.value } })
+          .catch((error) => {
+            failed++;
+            console.error(`ContractReview ${field} write failed for ${u.id}:`, errorMessage(error, "unknown"));
+          }),
       ),
-      { timeout: 30_000 },
     );
   }
+  if (failed) throw new Error(`${failed} of ${updates.length} ${field} row(s) failed to write.`);
   return updates.map((u) => ({ id: u.id, [field]: u.value }));
 }
 

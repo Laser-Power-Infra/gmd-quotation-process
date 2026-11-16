@@ -267,8 +267,6 @@ export function ContractReviewPage({
     loadView,
     loadFacet,
     loadAllRows,
-    runBackfillsAction,
-    backfillEndpoint,
   } = actions;
   // With a server view the browser only ever holds one page of rows; the
   // filters, sidebar aggregates and flow-diagram counts are computed server-side.
@@ -698,32 +696,6 @@ export function ContractReviewPage({
   useEffect(() => {
     if (serverMode) void loadServerView(false);
   }, [serverMode, serverQueryKey, loadServerView]);
-
-  // First page is on screen: now fill the derived columns server-side (they
-  // persist), then reload once so the aggregates include them.
-  const backfillStartedRef = useRef(false);
-  useEffect(() => {
-    if (
-      !serverMode ||
-      !serverView ||
-      !(backfillEndpoint || runBackfillsAction) ||
-      backfillStartedRef.current
-    )
-      return;
-    backfillStartedRef.current = true;
-    const run = backfillEndpoint
-      ? () =>
-          fetch(backfillEndpoint, { method: "POST" }).then(
-            (r) => r.json() as ReturnType<NonNullable<typeof runBackfillsAction>>,
-          )
-      : runBackfillsAction!;
-    run()
-      .then((res) => {
-        // `ran: false` = the server skipped it (ran moments ago): nothing new.
-        if (res?.success && res.data?.ran !== false) void loadServerView(true);
-      })
-      .catch((err) => console.error("contract review backfill failed", err));
-  }, [serverMode, serverView, runBackfillsAction, backfillEndpoint, loadServerView]);
 
   useEffect(() => {
     getActuatorOptionsAction?.().then((res) => {

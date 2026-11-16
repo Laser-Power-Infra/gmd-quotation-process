@@ -117,13 +117,6 @@ export interface ContractReviewActions {
   loadAllRows?: (
     query: ContractReviewViewQuery,
   ) => Promise<ActionResult<unknown[][]>>;
-  /**
-   * Runs the derived-column backfills over every row on the server, once the
-   * first page has painted. The page refreshes its view afterwards.
-   */
-  runBackfillsAction?: () => Promise<ActionResult>;
-  /** Route to POST instead of calling runBackfillsAction, so it is not queued behind view requests. */
-  backfillEndpoint?: string;
 
   sync?: () => Promise<ActionResult>;
   recomputeIndentListingVersionsAction?: () => Promise<ActionResult>;
