@@ -366,16 +366,15 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
   }, [rows, open, bucket, today]);
 
   // exports exactly what is on screen: `parties` is already filtered and in the current sort order
-  const exportParties = () =>
-    downloadCsv(
-      "debtors_party_wise.csv",
-      toCsv(
-        ["Party", "Total dues", "Overdue", ...BUCKETS, "Unadjusted credit", "Net", "BG exposure", ...MSME_COLS.map(([, l]) => l), ...FOLLOW_UP_COLS.map((c) => c.label), ...LEGAL_COLS.map((c) => c.label)],
-        parties.map((p) => {
-          return [p.accName, p.totalDues, p.overdue, ...BUCKETS.map((b) => p.buckets[b]), p.credits, p.net, p.bg, p.msme.stage, p.msme.daysPastDue, Math.round(p.msme.interest), Math.round(p.msme.claimable), p.promise, ...FOLLOW_UP_COLS.map((c) => p.follow[c.field]), ...LEGAL_COLS.map((c) => p.legal[c.field])];
-        }),
-      ),
-    );
+  const PARTY_HEADER = ["Party", "Total dues", "Overdue", ...BUCKETS, "Unadjusted credit", "Net", "BG exposure", ...MSME_COLS.map(([, l]) => l), ...FOLLOW_UP_COLS.map((c) => c.label), ...LEGAL_COLS.map((c) => c.label)];
+  const partyRows = () =>
+    parties.map((p) => [p.accName, p.totalDues, p.overdue, ...BUCKETS.map((b) => p.buckets[b]), p.credits, p.net, p.bg, p.msme.stage, p.msme.daysPastDue, Math.round(p.msme.interest), Math.round(p.msme.claimable), p.promise, ...FOLLOW_UP_COLS.map((c) => p.follow[c.field]), ...LEGAL_COLS.map((c) => p.legal[c.field])]);
+  const exportParties = () => downloadCsv("debtors_party_wise.csv", toCsv(PARTY_HEADER, partyRows()));
+  const exportPartiesXlsx = () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([PARTY_HEADER, ...partyRows()]), "Debtors");
+    XLSX.writeFile(wb, "debtors_party_wise.xlsx");
+  };
 
   const STATEMENT_HEADER = ["Invoice no", "Date", "Order no", "PO ref", "Items", "Amount", "Allocated", "Balance", "Due date", "Days overdue", "Credit note"];
   const statementRows = () =>
@@ -505,6 +504,7 @@ export default function DebtorsTable({ rows, billInfo, bgs, followUps, legalCase
             {prefs.amountFormat === "lakh" ? "₹ L" : "₹"}
           </button>
           <button type="button" className="rounded border border-border px-2 py-1 text-sm" onClick={exportParties}>Download CSV</button>
+          <button type="button" className="rounded border border-border px-2 py-1 text-sm" onClick={exportPartiesXlsx}>Export Excel</button>
           <div className="w-full sm:ml-auto sm:w-72">
             <DebouncedSearchInput value={search} onCommit={(v) => setFilter("search", v)} placeholder="Search party name or code" />
           </div>
