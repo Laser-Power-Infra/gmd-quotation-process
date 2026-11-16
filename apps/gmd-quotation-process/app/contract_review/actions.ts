@@ -20,7 +20,6 @@ import type { ActionResult, ContractMail, ContractReviewData, DiagramFileMeta } 
 import { columnAccess } from "@gmd/contract-review/flags";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
 import { findContractMails } from "@/lib/contractMails";
-import { invalidateContractReviewCache } from "@/lib/contractReviewView";
 import { GET } from "@/app/api/contract-review/route";
 import { POST } from "@/app/api/contract-review/sync/route";
 
@@ -59,7 +58,6 @@ export async function load() {
 export async function sync() {
   await requireAccess();
   const res = await fromRoute(await POST());
-  invalidateContractReviewCache();
   return res;
 }
 
@@ -71,7 +69,6 @@ export async function updateContractReviewFieldAction(
   await requireAccess();
   const flags = await getContractReviewFlags();
   const res = await updateContractReviewField(id, field, value, editableFieldsFor(flags), blankOnlyFieldsFor(flags));
-  invalidateContractReviewCache();
   return res;
 }
 
@@ -85,7 +82,6 @@ export async function confirmDiagramUploadAction(id: string, key: string) {
   await requireAccess();
   if (!(await access()).isEditable(DRAWING)) return NOT_ALLOWED;
   const res = await confirmDiagramUpload(id, key);
-  invalidateContractReviewCache();
   return res;
 }
 
@@ -93,7 +89,6 @@ export async function clearContractReviewDiagramAction(id: string) {
   await requireAccess();
   if (!(await access()).isEditable(DRAWING)) return NOT_ALLOWED;
   const res = await clearDiagram(id);
-  invalidateContractReviewCache();
   return res;
 }
 
@@ -101,7 +96,6 @@ export async function setContractReviewDiagramVerdictAction(id: string, verdict:
   await requireAccess();
   if (!(await access()).isEditable(DRAWING)) return NOT_ALLOWED;
   const res = await setDiagramVerdict(id, verdict);
-  invalidateContractReviewCache();
   return res;
 }
 
@@ -134,7 +128,6 @@ export async function addContractMailDocAction(contractNo: string, category: str
   await requireAccess();
   if (!(await access()).isEditable(MAIL_DOCS)) return NOT_ALLOWED;
   const res = await addContractMailDoc(contractNo, category, url);
-  invalidateContractReviewCache();
   return res;
 }
 

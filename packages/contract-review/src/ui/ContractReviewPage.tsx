@@ -773,6 +773,8 @@ export function ContractReviewPage({
       requestFacet,
       getAllRows,
       onPresenceFiltersChange: handlePresenceChange,
+      // Each commit is a server round-trip: wait for a full second of silence.
+      searchDelay: 1000,
     };
   }, [
     serverMode,

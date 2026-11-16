@@ -1077,6 +1077,8 @@ export interface ServerTableMode {
   requestFacet: (header: string) => void;
   /** Every row matching the current filters, for the Excel export. */
   getAllRows: () => Promise<unknown[][]>;
+  /** Quiet time (ms) before a typed search / text filter is sent; default SEARCH_DEBOUNCE_MS. */
+  searchDelay?: number;
   /**
    * The "Drawing present" / "Image present" checkboxes are table-local, so in
    * server mode they are reported here for the server query to apply.
@@ -2892,6 +2894,7 @@ castingRateInputs,
               className="absolute left-2.5 top-1/2 -translate-y-1/2 text-foreground/40"
             />
             <DebouncedSearchInput
+              delay={serverMode?.searchDelay}
               value={globalSearch}
               onCommit={(val) => {
                 if (isControlled) filterActions!.onGlobalSearch(val);
@@ -3110,6 +3113,7 @@ castingRateInputs,
                               )}
                               <div className="flex items-center gap-1">
                                 <DebouncedSearchInput
+                                  delay={serverMode?.searchDelay}
                                   value={columnFilters[ch] ?? ""}
                                   onCommit={(val) => handleColumnFilter(ch, val)}
                                   placeholder={`Search ${ch}...`}
@@ -3279,6 +3283,7 @@ castingRateInputs,
                           )}
                           <div className="flex items-center gap-1">
                             <DebouncedSearchInput
+                              delay={serverMode?.searchDelay}
                               value={columnFilters[header] ?? ""}
                               onCommit={(val) =>
                                 handleColumnFilter(header, val)
@@ -3367,6 +3372,7 @@ castingRateInputs,
                           />
                           <div className="flex items-center gap-1">
                             <DebouncedSearchInput
+                              delay={serverMode?.searchDelay}
                               value={columnFilters[header] ?? ""}
                               onCommit={(val) =>
                                 handleColumnFilter(header, val)
