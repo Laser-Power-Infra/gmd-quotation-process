@@ -31,6 +31,7 @@
     "contract:sync": "tsx scripts/sync-contract-numbers.ts",
     "ic:sync": "tsx scripts/sync-ic-dump.ts",
     "ic:sync:apply": "tsx scripts/sync-ic-dump.ts --apply",
+    "cr:status:backfill": "node --env-file=.env --import tsx --import ./tests/server-only-stub.mjs scripts/backfill-offer-inspection-status.ts",
     "cr:backfill-enquiry": "tsx scripts/backfill-contract-review-enquiry-fields.ts",
     "cr:backfill-enquiry:apply": "tsx scripts/backfill-contract-review-enquiry-fields.ts --apply",
     "cr:contract-dump": "tsx scripts/backfill-contract-review-contract-dump.ts",

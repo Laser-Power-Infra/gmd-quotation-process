@@ -1,5 +1,5 @@
 /**
- * Scheduled job — Contract Review, seven steps in order.
+ * Scheduled job — Contract Review, eight steps in order.
  *
  *   1.  `runContractReviewSheetSync()`     CONTRACTS + DUMP -> ContractReview
  *   1b. `runContractReviewItemNameSync()`  ITEM MASTER ERP -> ContractReview.itemName
@@ -8,6 +8,7 @@
  *   4.  `runIcDumpSync()`                  INSPECTION OFFER DUMP -> offer / inspection / DI
  *   5.  `runInspectionOfferSync()`         INSPECTION OFFER DUMP -> InspectionOffer + draft InspectionReport
  *   6.  `runProdEntrySync()`               PROD ENTRY DUMP -> ContractReview.prodEntryDate
+ *   7.  `runContractReviewBackfills()`     derived columns (BOM ID, RM AVAIL, cost, MC / approval dates, flags)
  *
  * The order is a real dependency chain, not cosmetic:
  *   - 2 depends on 1 for fresh contract rows to match Enquiry against.
@@ -52,6 +53,7 @@ import {
   type InspectionOfferSyncResult,
 } from "./inspection-offer-sync";
 import { runProdEntrySync, type ProdEntrySyncResult } from "./contract-review-prod-entry";
+import { runContractReviewBackfills } from "@/lib/contractReviewBackfill";
 import { JobAlreadyRunningError } from "./run-gmd-update";
 import { recordJobRun } from "./job-heartbeat";
 
@@ -70,6 +72,7 @@ export type ScheduledContractReviewResult = {
     icDump?: IcDumpSyncResult;
     inspectionOffer?: InspectionOfferSyncResult;
     prodEntry?: ProdEntrySyncResult;
+    derivedBackfill?: { failed: number };
   };
   /** Steps that failed without voiding the earlier ones; contract-review-sync.sh fails the run on any. */
   warnings: string[];
@@ -148,6 +151,21 @@ export async function runScheduledContractReview(
       const message = `prodEntry: ${err instanceof Error ? err.message : "Unknown error"}`;
       console.error(`[scheduler] ${job} step 6 failed: ${message}`);
       warnings.push(message);
+    }
+
+    // Step 7 — derived-column backfills, formerly fired on every page open. Last, so they
+    // read what steps 1-6 wrote. Always writes, so a dry run skips it.
+    if (!dryRun) {
+      try {
+        const res = await runContractReviewBackfills();
+        steps.derivedBackfill = { failed: res.data?.failed ?? 0 };
+        if (steps.derivedBackfill.failed)
+          warnings.push(`derivedBackfill: ${steps.derivedBackfill.failed} task(s) failed, see the app log`);
+      } catch (err) {
+        const message = `derivedBackfill: ${err instanceof Error ? err.message : "Unknown error"}`;
+        console.error(`[scheduler] ${job} step 7 failed: ${message}`);
+        warnings.push(message);
+      }
     }
 
     const elapsedMs = Date.now() - startedAtMs;

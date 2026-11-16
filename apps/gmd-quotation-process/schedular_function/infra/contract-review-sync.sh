@@ -9,6 +9,7 @@
 #   5.  INSPECTION OFFER DUMP -> InspectionOffer + draft InspectionReport
 #   6.  PROD ENTRY DUMP -> ContractReview.prodEntryDate (a failure lands in
 #       `warnings`, which the check below turns into a failed run)
+#   7.  Derived-column backfills (formerly on page open; failures also land in `warnings`)
 #
 # Heavier than raw-material-sync.sh — two full-column spreadsheet reads and a
 # large table rewrite — so it is scheduled at :30 rather than :00 to keep the two

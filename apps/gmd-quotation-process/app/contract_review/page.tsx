@@ -7,7 +7,6 @@ import {
   loadAllRows,
   loadFacet,
   loadView,
-  runBackfillsAction,
 } from "./viewActions";
 
 export default async function Page() {
@@ -21,8 +20,6 @@ export default async function Page() {
         loadView,
         loadFacet,
         loadAllRows,
-        runBackfillsAction,
-        backfillEndpoint: "/api/contract-review/backfill",
         // Quotation-only extras: need the quotation DB / Google Sheets.
         autoAssignContractReviewBomIdFromActuator,
         backfillContractReviewCostFromQuotationAction,

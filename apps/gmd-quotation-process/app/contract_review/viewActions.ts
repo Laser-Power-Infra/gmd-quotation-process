@@ -11,7 +11,6 @@ import {
   buildContractReviewFacet,
   buildContractReviewView,
 } from "@/lib/contractReviewView";
-import { runContractReviewBackfills } from "@/lib/contractReviewBackfill";
 
 // Contract review in this app is public (no auth), as for ./actions.
 
@@ -54,10 +53,4 @@ export async function loadAllRows(
   } catch (error) {
     return { success: false, error: errorMessage(error) };
   }
-}
-
-/** Kept for callers that use the action; the page itself calls the route handler so it isn't queued behind view requests. */
-export async function runBackfillsAction(): Promise<ActionResult> {
-  await requireAccess();
-  return runContractReviewBackfills();
 }

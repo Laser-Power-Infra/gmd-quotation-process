@@ -255,26 +255,34 @@ async function main() {
     return;
   }
 
-  const BATCH = 200;
+  // No transaction: 200 updates in one exceeded Prisma's 5 s transaction timeout.
+  // Each row is written on its own; the union is idempotent, so re-run to retry failures.
+  const CONCURRENCY = 10;
   let written = 0;
-  for (let i = 0; i < updates.length; i += BATCH) {
-    const batch = updates.slice(i, i + BATCH);
-    await tenderPrisma.$transaction(
-      batch.map((u) =>
-        tenderPrisma.contractReview.update({
-          where: { id: u.id },
-          data: {
-            offerNumber: u.offerNumber,
-            inspectionNumber: u.inspectionNumber,
-            diDate: u.diDate,
-          },
-        }),
-      ),
+  let failed = 0;
+  for (let i = 0; i < updates.length; i += CONCURRENCY) {
+    await Promise.all(
+      updates.slice(i, i + CONCURRENCY).map(async (u) => {
+        try {
+          await tenderPrisma.contractReview.update({
+            where: { id: u.id },
+            data: {
+              offerNumber: u.offerNumber,
+              inspectionNumber: u.inspectionNumber,
+              diDate: u.diDate,
+            },
+          });
+          written++;
+        } catch (err) {
+          failed++;
+          console.error(`row ${u.id} failed: ${err instanceof Error ? err.message : err}`);
+        }
+      }),
     );
-    written += batch.length;
   }
 
-  console.log(`\nApplied ${written} row update(s).\n`);
+  console.log(`\nApplied ${written} row update(s), ${failed} failed.\n`);
+  if (failed) process.exitCode = 1;
 }
 
 main()

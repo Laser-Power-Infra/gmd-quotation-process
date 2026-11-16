@@ -4675,7 +4675,7 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
         state: enquiry.state || "",
         partyName: enquiry.partyName,
         subject: `Offer For Supply under @ ${enquiry.utility || ""}`,
-        price: "The Quoted prices are on Firm basis, valid for 60days.",
+        price: `The Quoted prices are on ${enquiry.priceExWorks ? "Ex-Works" : "Firm"} basis, valid for 60days.`,
         paymentTerms: enquiry.paymentTerms || "",
         inspection: enquiry.inspection || "",
         warranty: (() => {
@@ -4727,6 +4727,29 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
     }
   };
 
+  // Saved on the docket so the downloaded PDF and the emailed PDF always agree.
+  const exWorksToggle = (
+    <label
+      className="flex items-center gap-1 text-[9px] font-medium text-muted-foreground cursor-pointer whitespace-nowrap"
+      title='Ticked: term 1 of the offer reads "Ex-Works basis" instead of "Firm basis"'
+    >
+      <input
+        type="checkbox"
+        className="h-3 w-3 cursor-pointer"
+        checked={!!enquiry.priceExWorks}
+        onChange={(e) =>
+          dispatch(updateEnquiryField({ enquiryId: enquiry.id, field: "priceExWorks", value: e.target.checked }))
+            .unwrap()
+            .catch((err: unknown) => {
+              setErrorMessage(typeof err === "string" ? err : "Could not save Ex-Works");
+              setStatus("error");
+            })
+        }
+      />
+      Ex-Works
+    </label>
+  );
+
   // Frozen/disabled states before idle render
   if (!access.allowed) {
     const isFrozen = apm === "Yes" && !!generatedAt;
@@ -4738,6 +4761,7 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
         </span>
         {isFrozen && generatedAt && <span className="text-[8px] text-muted-foreground">{new Date(generatedAt as any).toLocaleString()}</span>}
         {isNo && <span className="text-[8px] text-muted-foreground">APM=No blocks offer</span>}
+        {exWorksToggle}
       </div>
     );
   }
@@ -4757,6 +4781,7 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
         </button>
         {apm === "Yes" && !generatedAt && <span className="text-[8px] text-amber-600 dark:text-amber-300 font-medium">One-time only</span>}
         {(!apm || apm === "") && <span className="text-[8px] text-muted-foreground">Unlimited (APM empty)</span>}
+        {exWorksToggle}
       </div>
     );
   }

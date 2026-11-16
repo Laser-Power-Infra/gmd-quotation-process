@@ -967,9 +967,9 @@ export async function updateEnquiryFieldAction(
     }
     // Docket email approval (tick/cross). Cross (false) also clears the sent
     // marker so the docket can be re-approved and sent again.
-    if (field === "emailApproved") {
+    if (field === "emailApproved" || field === "priceExWorks") {
       if (value !== true && value !== false) {
-        return { success: false, error: "emailApproved must be true or false." };
+        return { success: false, error: `${field} must be true or false.` };
       }
     }
     // Stage owners must be blank or a real user.

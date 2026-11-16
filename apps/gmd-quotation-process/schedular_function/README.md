@@ -131,7 +131,7 @@ pivot/QUERY result). Nothing here sums anything itself.
 
 ## `contract-review`
 
-Seven sequential steps in `run-contract-review.ts`:
+Eight sequential steps in `run-contract-review.ts`:
 
 | # | Step | File | What it writes |
 |---|---|---|---|
@@ -142,6 +142,7 @@ Seven sequential steps in `run-contract-review.ts`:
 | 4 | `runIcDumpSync()` | `contract-review-ic-dump.ts` | `ContractReview.offerNumber` / `.inspectionNumber` / `.diDate` |
 | 5 | `runInspectionOfferSync()` | `inspection-offer-sync.ts` | `InspectionOffer` + a draft `InspectionReport` per new offer VRNO |
 | 6 | `runProdEntrySync()` | `contract-review-prod-entry.ts` | `ContractReview.prodEntryDate` |
+| 7 | `runContractReviewBackfills()` | `lib/contractReviewBackfill.ts` | derived columns: BOM ID defaults, RM AVAIL, VA % from cost, State / Utility / Project Ref, MC / approval dates, Offer / Inspection / PN rating / Clearance flags. Formerly ran on every page open; a failed task is a `warnings` entry |
 
 Step 1 reads `CONTRACTS` (GID 734728893, header row 4) and `DUMP` (GID
 1604813523, header row 1) from `CONTRACT_REVIEW_SPREADSHEET_ID`. Step 1b reads
@@ -281,11 +282,12 @@ into one shared implementation is a reasonable follow-up.
 
 1. **No `--apply` gate** — the scheduled path always writes. `dryRun` is
    forwarded from the orchestrator for a manual check.
-2. **Per-batch error containment** — each 200-row transaction is caught
-   individually, so one failed batch increments `failedWrites` and the run
-   continues, instead of aborting with the rest unwritten.
+2. **Per-row writes, no transaction** — each row is updated on its own and
+   caught individually, so one failed row increments `failedWrites` and the run
+   continues. (A 200-row transaction used to exceed Prisma's 5 s timeout and drop
+   the whole batch.)
 
-Because a failed batch still returns `200` with `success: true`,
+Because a failed row still returns `200` with `success: true`,
 `contract-review-sync.sh` greps for `"failedWrites":[1-9]` as well as
 `"success": *false`.
 

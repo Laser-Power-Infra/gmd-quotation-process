@@ -105,6 +105,7 @@ export interface EnquiryData {
   emailApproved?: boolean | null;
   emailSentBy?: string | null;
   offerRevised?: boolean | null;
+  priceExWorks?: boolean | null;
   detailsAssigneeId?: string | null;
   costAssigneeId?: string | null;
   validationAssigneeId?: string | null;

@@ -250,7 +250,7 @@ export async function generateOfferPdfAction(
         state: dbEnquiry.state || "",
         partyName: dbEnquiry.partyName,
         subject: `${reverseAuctionPrefix(options?.raRound)}Offer For Supply under @ ${dbEnquiry.utility || ""}`,
-        price: "The Quoted prices are on Firm basis, valid for 60days.",
+        price: `The Quoted prices are on ${dbEnquiry.priceExWorks ? "Ex-Works" : "Firm"} basis, valid for 60days.`,
         paymentTerms: dbEnquiry.paymentTerms || "",
         inspection: dbEnquiry.inspection || "",
         warranty: `The warranty shall be valid as per the standard maintenance clause on our website and to the maximum period of ${months} months from the date of supply.`,

@@ -24,17 +24,10 @@ import {
   backfillContractReviewPnRatingBatchAction,
 } from "@/app/contract_review/actions";
 
-const errorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : "Unknown error";
-
 // The derived columns (RM AVAIL, STATE / UTILITY, OFFER / INSPECTION, PN RATING,
 // BOM ID defaults ...) are filled by idempotent batch actions that persist what
-// they compute. They used to be fired from the browser, one request per
-// column, over every row on every page open. Run them here instead, one run at
-// a time and not more than once a minute.
-const BACKFILL_MIN_INTERVAL_MS = 60_000;
-let backfillRunning: Promise<ActionResult> | null = null;
-let backfillFinishedAt = 0;
+// they compute. They used to run on every page open; they now run only as step 7
+// of the hourly contract-review scheduler job (schedular_function/run-contract-review.ts).
 
 async function inChunks<T>(items: T[], size: number, fn: (item: T) => Promise<unknown>) {
   for (let i = 0; i < items.length; i += size) {
@@ -42,7 +35,7 @@ async function inChunks<T>(items: T[], size: number, fn: (item: T) => Promise<un
   }
 }
 
-async function backfillAll(): Promise<ActionResult> {
+export async function runContractReviewBackfills(): Promise<ActionResult<{ failed: number }>> {
   const startedAt = Date.now();
   const flags = await getContractReviewFlags();
   const { isEnabled, isEditable } = columnAccess(flags);
@@ -92,8 +85,8 @@ async function backfillAll(): Promise<ActionResult> {
   }
   // MC DATE / APPROVAL DATE from the mail tags. `where: null` re-checks the DB cell, so a date
   // typed after these cached rows were read is never overwritten.
-  // shortcut: a newly added tag's date appears after the next run (next page open, at most once a
-  // minute), not at once; fill it in addContractMailDoc too if that lag bothers anyone.
+  // shortcut: a newly added tag's date appears after the next hourly scheduler run, not at once;
+  // fill it in addContractMailDoc too if that lag bothers anyone.
   const mailDocsIdx = data.headers.indexOf(MAIL_DOCS_COLUMN);
   const tagDays = (header: string, tag: MailDocCategory) => {
     const idx = data.headers.indexOf(header);
@@ -145,18 +138,5 @@ async function backfillAll(): Promise<ActionResult> {
     console.info(`${summary}: ok`);
   }
   invalidateContractReviewCache();
-  return { success: true, data: { ran: true, failed: failed.length } };
-}
-
-export async function runContractReviewBackfills(): Promise<ActionResult> {
-  if (backfillRunning) return backfillRunning;
-  if (Date.now() - backfillFinishedAt < BACKFILL_MIN_INTERVAL_MS)
-    return { success: true, data: { ran: false } };
-  backfillRunning = backfillAll()
-    .catch((error): ActionResult => ({ success: false, error: errorMessage(error) }))
-    .finally(() => {
-      backfillFinishedAt = Date.now();
-      backfillRunning = null;
-    });
-  return backfillRunning;
+  return { success: true, data: { failed: failed.length + softFailed.length } };
 }

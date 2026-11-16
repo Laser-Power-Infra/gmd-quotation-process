@@ -36,9 +36,9 @@
  * Two deliberate differences from the CLI script:
  *   1. No `--apply` gate — the scheduled path always writes. `dryRun` remains
  *      available as an option for a manual check.
- *   2. Each 200-row transaction is individually caught, so one failed batch is
- *      counted in `failedWrites` and the run continues, rather than aborting
- *      with the remaining batches unwritten.
+ *   2. Each row is written on its own (no transaction) and individually
+ *      caught, so one failed row is counted in `failedWrites` and the run
+ *      continues, rather than aborting with the remaining rows unwritten.
  */
 
 import { prisma as tenderPrisma } from "@gmd/db-tender";
@@ -72,7 +72,8 @@ const EXPECTED_HEADERS: { idx: number; header: string }[] = [
   { idx: DI_DATE_IDX, header: "DI_DATE" },
 ];
 
-const WRITE_BATCH = 200;
+/** Row updates in flight at once. */
+const WRITE_CONCURRENCY = 10;
 const SAMPLE_SIZE = 5;
 
 type SheetRecord = { offer: string[]; insp: string[]; di: string[] };
@@ -97,7 +98,7 @@ export type IcDumpSyncResult = {
   unmatchedSheetKeys: number;
   /** Rows actually written (0 on a dry run). */
   written: number;
-  /** Batches that threw. */
+  /** Rows whose update threw. */
   failedWrites: number;
   dryRun: boolean;
   sampleMerges: string[];
@@ -288,35 +289,37 @@ export async function runIcDumpSync(
     (k) => !seenDbKeys.has(k),
   ).length;
 
-  // --- Write, in independently-guarded batches ---------------------------
+  // --- Write, one independently-guarded update per row --------------------
+  // No transaction: 200 updates in one exceeded Prisma's 5 s transaction timeout
+  // against the remote DB, so whole batches were silently dropped. The union is
+  // idempotent, so a row that fails here is simply retried on the next run.
   let written = 0;
   let failedWrites = 0;
 
   if (!dryRun && updates.length > 0) {
-    for (let i = 0; i < updates.length; i += WRITE_BATCH) {
-      const batch = updates.slice(i, i + WRITE_BATCH);
-      try {
-        await tenderPrisma.$transaction(
-          batch.map((u) =>
-            tenderPrisma.contractReview.update({
+    for (let i = 0; i < updates.length; i += WRITE_CONCURRENCY) {
+      await Promise.all(
+        updates.slice(i, i + WRITE_CONCURRENCY).map(async (u) => {
+          try {
+            await tenderPrisma.contractReview.update({
               where: { id: u.id },
               data: {
                 offerNumber: u.offerNumber,
                 inspectionNumber: u.inspectionNumber,
                 diDate: u.diDate,
               },
-            }),
-          ),
-        );
-        written += batch.length;
-      } catch (err) {
-        failedWrites += batch.length;
-        console.error(
-          `[ic-dump] batch failed (${batch.length} rows, offset ${i}) err=${
-            err instanceof Error ? err.message : "Unknown error"
-          }`,
-        );
-      }
+            });
+            written++;
+          } catch (err) {
+            failedWrites++;
+            console.error(
+              `[ic-dump] row ${u.id} failed err=${
+                err instanceof Error ? err.message : "Unknown error"
+              }`,
+            );
+          }
+        }),
+      );
     }
   }
 
