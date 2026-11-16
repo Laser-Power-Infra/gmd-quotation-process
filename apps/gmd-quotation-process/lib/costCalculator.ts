@@ -4,6 +4,7 @@ import { roundUp } from "./rounding";
 import { isActuated, withoutProductCost } from "./actuatorCost";
 import { resolveCostChangeAnchor, isOfferRevision } from "./rateAnchor";
 import { BASE_COST_FACTOR, FULL_LOAD_THRESHOLD, normalizeStateName } from "./costLoading";
+import { isRecalcBlocked } from "./oneClickAccess";
 
 export function serializeItem(item: any) {
   return {
@@ -85,7 +86,8 @@ export async function recalculateItem(
   },
   // Contract-match: store the quoted rate as given (no round-up) and skip the offer-revised flag.
   // actuatorTotal: the write comes from lib/actuatorItem.ts and already includes the actuator parts.
-  opts?: { exactQuotedRate?: boolean; actuatorTotal?: boolean }
+  // allowFrozen: re-price even a frozen docket (contract-match, maintenance scripts).
+  opts?: { exactQuotedRate?: boolean; actuatorTotal?: boolean; allowFrozen?: boolean }
 ) {
   // Fetch item and its parent enquiry
   const item = await prisma.enquiryItem.findUnique({
@@ -93,6 +95,8 @@ export async function recalculateItem(
     include: { enquiry: true },
   });
   if (!item) return null;
+  // Every price write funnels through here: a frozen docket (APM Yes, offer PDF out) keeps the prices it was offered at.
+  if (isRecalcBlocked(item.enquiry.apm, item.enquiry.offerPdfGeneratedAt, opts?.allowFrozen)) return serializeItem(item);
 
   // An actuated item's product cost must always include its actuator/gearbox parts. Any other writer
   // (BOM fill, Update BOM Costs, code change, hand edit) supplies the valve cost only: hand it to the

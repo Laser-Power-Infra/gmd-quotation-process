@@ -23,6 +23,7 @@ import { findContractMails } from "@/lib/contractMails";
 import { invalidateContractReviewCache } from "@/lib/contractReviewView";
 import { GET } from "@/app/api/contract-review/route";
 import { POST } from "@/app/api/contract-review/sync/route";
+import { runningJobs } from "@/schedular_function/job-latch";
 
 // Contract review in this app is public (no auth), as before the move to
 // @gmd/contract-review. Add an auth() check here to restrict it.
@@ -41,7 +42,7 @@ async function fromRoute(res: Response): Promise<ActionResult> {
   const body = await res.json().catch(() => ({}));
   return res.ok
     ? { success: true, data: body }
-    : { success: false, error: body.error ?? `Request failed (${res.status})` };
+    : { success: false, error: body.error ?? `Request failed (${res.status})`, busy: body.busy };
 }
 
 /** Rows plus quotation-DB extras (RM AVAIL, BOM ID options, item images). */
@@ -61,6 +62,12 @@ export async function sync() {
   const res = await fromRoute(await POST());
   invalidateContractReviewCache();
   return res;
+}
+
+/** True while a CONTRACTS + DUMP sync (the hourly job or a SYNC click) is running. */
+export async function syncRunning() {
+  await requireAccess();
+  return runningJobs.has("contract-review");
 }
 
 export async function updateContractReviewFieldAction(

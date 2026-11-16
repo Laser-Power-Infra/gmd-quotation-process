@@ -78,3 +78,34 @@ test('a renamed creditors column fails loudly and writes nothing', async () => {
   assert.ok(report.creditors.error)
   assert.equal(writes.creditors.length, 0)
 })
+
+// An emptied tab or a changed date format must not replace a ledger with almost nothing.
+const f = fixture()
+const badDate = fill(f.dH, { [DEBTORS_HEADERS.accCode]: 'D2', [DEBTORS_HEADERS.vrDate]: '05/11/2026' })
+function withDebtorRows(rows: string[][]) {
+  const base = deps().d
+  return deps({ readByGid: async (g) => (g === DEBTORS_GID ? { tabTitle: 'DEBTORS', headers: f.dH, rows } : base.readByGid(g)) })
+}
+
+test('a header-only tab is refused and its table left as it was', async () => {
+  const { d, writes } = withDebtorRows([])
+  const report = await runLedgerSync({ deps: d })
+  assert.match(report.debtors.error ?? '', /0 of 0 rows readable/)
+  assert.equal(writes.debtors.length, 0)
+  assert.equal(report.creditors.written, 1) // the other ledgers still sync
+})
+
+test('more unreadable rows than readable ones is refused', async () => {
+  const { d, writes } = withDebtorRows([f.dRow, badDate, badDate])
+  const report = await runLedgerSync({ deps: d })
+  assert.match(report.debtors.error ?? '', /1 of 3 rows readable.*DD-MM-YYYY/)
+  assert.equal(writes.debtors.length, 0)
+})
+
+test('a few unreadable rows still replace the table', async () => {
+  const { d, writes } = withDebtorRows([f.dRow, f.dRow, f.dRow, badDate])
+  const report = await runLedgerSync({ deps: d })
+  assert.equal(report.debtors.error, undefined)
+  assert.equal(report.debtors.skipped, 1)
+  assert.equal(writes.debtors[0]?.length, 3)
+})

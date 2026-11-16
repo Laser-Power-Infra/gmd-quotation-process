@@ -252,6 +252,16 @@ export async function addItemsAction(formData: {
   await requireAccess();
   const denied = await loginRequired(); if (denied) return denied;
   try {
+    {
+      const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+      const parent = await prisma.enquiry.findUnique({
+        where: { id: formData.enquiryId },
+        select: { apm: true, offerPdfGeneratedAt: true },
+      });
+      if (parent && isEnquiryFrozen(parent.apm, parent.offerPdfGeneratedAt)) {
+        return { success: false, error: "Cannot add items: rate & cost columns are frozen after one-time PDF generation — revert APM to edit." };
+      }
+    }
     console.log(`[Server] addItems enquiry=${formData.enquiryId} items=${formData.items.length}`);
     for (const it of formData.items) {
       console.log(`  item: "${it.itemName}" qty=${it.quantity} type=${it.itemType || "?"} moc=${it.moc || "?"} size=${it.size || "?"}`);
@@ -328,16 +338,16 @@ export async function addItemsAction(formData: {
       }),
     });
 
-    // Run recalculation on all items of this enquiry to set correct costs
+    // Price only the new lines: re-running the existing ones would wipe their typed or pasted costs.
     const items = await prisma.enquiryItem.findMany({
-      where: { enquiryId: formData.enquiryId },
+      where: { enquiryId: formData.enquiryId, position: { gte: startPos } },
     });
     for (const item of items) {
       await recalculateItem(item.id);
     }
     // New Op Type ACT / ACT+GB / ELECTRIC items get auto-filled (linked); their created cost is the valve cost.
     for (const item of items) {
-      if (item.position < startPos || !isActuatorCandidate(item)) continue;
+      if (!isActuatorCandidate(item)) continue;
       try {
         const { applyActuatorToItem } = await import("@/lib/actuatorItem");
         await applyActuatorToItem(item.id);
@@ -575,7 +585,8 @@ export async function updateEnquiryItemAction(formData: {
         operationType: finalOperationType,
         extension: formData.extension || null,
         bypass: formData.bypass || null,
-        others: (()=>{ const v=(formData as any).others ?? (formData as any).other ?? null; if(Array.isArray(v)) return v; if(typeof v==="string" && v.trim()!=="") return [v.trim()]; if(v==null) return []; return []; })(),
+        // Not sent at all (the Edit Enquiry dialog has no Other control) = keep the stored ticks; an explicit [] still clears.
+        others: formData.others === undefined && (formData as any).other === undefined ? undefined : (()=>{ const v=(formData as any).others ?? (formData as any).other ?? null; if(Array.isArray(v)) return v; if(typeof v==="string" && v.trim()!=="") return [v.trim()]; if(v==null) return []; return []; })(),
         productCost: formData.productCost || null,
         costRefCode: formData.costRefCode || null,
         cost: formData.cost || null,
@@ -1144,8 +1155,8 @@ export async function sendDocketEmailAction(
 
     const raRound = reverseAuction ? enquiry.reverseAuctionCount + 1 : 0;
     // Reuse the Offer PDF pipeline for the attachment.
-    const { generateOfferPdfAction } = await import("@/lib/generate-offer-pdf");
-    const pdfRes = await generateOfferPdfAction(
+    const { buildOfferPdf } = await import("@/lib/offerPdf");
+    const pdfRes = await buildOfferPdf(
       { docketNo: enquiry.docketNumber } as unknown as OfferLetterTemplateData,
       enquiryId,
       { bypassFreeze: true, raRound },

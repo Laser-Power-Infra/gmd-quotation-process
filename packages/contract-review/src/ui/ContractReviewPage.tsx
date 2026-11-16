@@ -262,6 +262,7 @@ export function ContractReviewPage({
   const {
     load,
     sync,
+    syncRunning,
     createDiagramUploadAction,
     confirmDiagramUploadAction,
     loadView,
@@ -293,6 +294,11 @@ export function ContractReviewPage({
   const [data, setData] = useState<ContractReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  // Another sync (the hourly job or another user) holds the latch; checked on load, no polling.
+  const [syncBusy, setSyncBusy] = useState(false);
+  useEffect(() => {
+    syncRunning?.().then(setSyncBusy, () => {});
+  }, [syncRunning]);
   const [enquirySyncing, setEnquirySyncing] = useState(false);
   const [rmAvailSyncing, setRmAvailSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -596,7 +602,10 @@ export function ContractReviewPage({
     const toastId = toast.loading("Syncing Contract Review from CONTRACTS + DUMP...");
     try {
       const res = await sync();
-      if (!res.success) throw new Error(res.error ?? "Sync failed");
+      if (!res.success) {
+        if (res.busy) setSyncBusy(true);
+        throw new Error(res.error ?? "Sync failed");
+      }
       const summary = res.data ?? {};
       const syncSummary = `Synced: ${summary.created ?? 0} created, ${summary.updated ?? 0} updated, ${summary.unchanged ?? 0} unchanged`;
 
@@ -1635,7 +1644,7 @@ export function ContractReviewPage({
           <button
             type="button"
             onClick={handleSync}
-            disabled={syncing}
+            disabled={syncing || syncBusy}
             className="flex items-center justify-center gap-1.5 bg-[#38ef7d]/10 dark:bg-emerald-500/10 hover:bg-[#38ef7d]/20 dark:hover:bg-emerald-500/20 border border-[#38ef7d]/40 dark:border-emerald-500/30 rounded px-3 py-2 text-[11px] font-semibold text-[#38ef7d] dark:text-emerald-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             title="Sync CONTRACTS + DUMP from the sheet into Contract Review"
           >
@@ -1644,7 +1653,7 @@ export function ContractReviewPage({
             ) : (
               <RefreshCw size={12} />
             )}
-            {syncing ? "Syncing..." : "Sync Contract Review"}
+            {syncing ? "Syncing..." : syncBusy ? "Sync running..." : "Sync Contract Review"}
           </button>
           )}
           {syncContractReviewRmAvailAction && (

@@ -21,7 +21,8 @@ export function oneClickAccess(
 /**
  * Pricing columns are frozen when an enquiry is in the one-time-consumed state
  * (apm === "Yes" && offerPdfGeneratedAt is set). Covers the user's
- * "rate and cost columns" requirement including quantity.
+ * "rate and cost columns" requirement including quantity. Extension and
+ * Bypass add flat costs, so they freeze too.
  */
 export const FROZEN_ITEM_FIELDS = [
   "quantity",
@@ -33,6 +34,8 @@ export const FROZEN_ITEM_FIELDS = [
   "quotedRate",
   "totalValue",
   "itemWiseTotalValue",
+  "extension",
+  "bypass",
 ] as const
 export type FrozenItemField = typeof FROZEN_ITEM_FIELDS[number]
 export const FROZEN_ITEM_FIELD_SET: ReadonlySet<string> = new Set<string>(FROZEN_ITEM_FIELDS as unknown as string[])
@@ -42,4 +45,13 @@ export function isEnquiryFrozen(
   offerPdfGeneratedAt: Date | string | null | undefined
 ): boolean {
   return apm === "Yes" && !!offerPdfGeneratedAt
+}
+
+/** recalculateItem's gate: a frozen enquiry keeps its prices unless the caller re-prices on purpose (allowFrozen). */
+export function isRecalcBlocked(
+  apm: string | null | undefined,
+  offerPdfGeneratedAt: Date | string | null | undefined,
+  allowFrozen = false
+): boolean {
+  return !allowFrozen && isEnquiryFrozen(apm, offerPdfGeneratedAt)
 }

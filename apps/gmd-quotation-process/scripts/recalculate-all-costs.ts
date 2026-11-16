@@ -40,7 +40,7 @@ async function main() {
   let successCount = 0;
   for (const item of items) {
     try {
-      await recalculateItem(item.id);
+      await recalculateItem(item.id, undefined, { allowFrozen: true });
       successCount++;
     } catch (error) {
       console.error(`Failed to recalculate item ${item.id}:`, error);

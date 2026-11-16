@@ -167,7 +167,7 @@ export async function applyContractDocketMatchAction(enquiryId: string, contract
       try {
         // Contract rate is final: bypasses the validation / APM-frozen guards of updateItemFieldAction.
         await prisma.enquiryItem.update({ where: { id: it.id }, data: { contractReviewRate: String(rate) } });
-        const after = await recalculateItem(it.id, { quotedRate: rate }, { exactQuotedRate: true });
+        const after = await recalculateItem(it.id, { quotedRate: rate }, { exactQuotedRate: true, allowFrozen: true });
         const va = after?.vaPercent == null ? null : parseNum(after.vaPercent);
         await logItemChanges(
           [

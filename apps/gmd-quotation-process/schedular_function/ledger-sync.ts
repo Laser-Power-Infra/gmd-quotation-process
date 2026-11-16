@@ -125,6 +125,16 @@ async function defaultDeps(): Promise<LedgerSyncDeps> {
   };
 }
 
+/** Throws when the read would wipe the ledger: an emptied tab, or more rows skipped than mapped (a changed date format). */
+function assertReplaceable(p: LedgerPartReport): void {
+  if (p.mapped > 0 && p.skipped <= p.mapped) return;
+  const first = p.skippedRows[0];
+  throw new Error(
+    `${p.mapped} of ${p.read} rows readable${first ? ` (line ${first.line}: ${first.error})` : ""}` +
+      " — tab empty or its format changed? Table left unchanged.",
+  );
+}
+
 async function syncOne<T>(
   dryRun: boolean,
   readTab: () => Promise<Tab>,
@@ -151,6 +161,7 @@ async function syncOne<T>(
     part.read = tab.rows.length;
     part.mapped = records.length;
     part.inDb = await writer.count();
+    assertReplaceable(part); // throws on an empty or mostly unreadable tab, before any write
     if (!dryRun) {
       await writer.replace(records);
       part.written = records.length;

@@ -4113,6 +4113,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                     <td style={{ right: 0 }} className="sticky z-20 bg-background [tr:hover>&]:bg-muted shadow-[inset_1px_0_0_var(--border),inset_0_-1px_0_var(--border)] py-1.5 px-4 text-right border-b border-border">
                       {firstItem && (
                         <ActionsDropdown
+                          key={firstItem.id}
                           item={firstItem}
                           enquiry={enquiry}
                           dropdownOptions={dropdownOptions}

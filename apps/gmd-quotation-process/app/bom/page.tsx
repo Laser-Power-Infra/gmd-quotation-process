@@ -24,7 +24,7 @@ import { looseIncludes } from "@/lib/squish";
 import ErpBomTab from "./ErpBomTab";
 import BomChangesTab from "./BomChangesTab";
 import BomChangeDialog, { type BomChangeDraft } from "./BomChangeDialog";
-import { markCorrectBomAction } from "@/app/actions/bomChange";
+import { bomSyncRunningAction, markCorrectBomAction } from "@/app/actions/bomChange";
 import {
   BOM_ISSUES_HEADER,
   BOM_MISMATCH_HEADER,
@@ -292,6 +292,11 @@ function VerifyBomView() {
   const [syncingMeta, setSyncingMeta] = useState(false);
   const [syncingStock, setSyncingStock] = useState(false);
   const [syncingItemName, setSyncingItemName] = useState(false);
+  // A BOM sync (the hourly job or another user) holds the latch; checked on load, no polling.
+  const [bomBusy, setBomBusy] = useState(false);
+  useEffect(() => {
+    bomSyncRunningAction().then(setBomBusy, () => {});
+  }, []);
   const [confirmItemName, setConfirmItemName] = useState(false);
   const [itemNamePlan, setItemNamePlan] = useState<ItemNamePlan | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -435,6 +440,7 @@ function VerifyBomView() {
     try {
       const res = await syncBomMastItemNamesAction();
       if (!res || !res.success || !res.applied) {
+        if (res?.busy) setBomBusy(true);
         toast.error(res?.error || "Failed to sync item names", { id: toastId });
         return;
       }
@@ -466,6 +472,11 @@ function VerifyBomView() {
       const res = await fetch("/api/bom/sync", { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        if (body.busy) {
+          setBomBusy(true);
+          toast.error(body.error);
+          return;
+        }
         throw new Error(body.error ?? `Sync failed (${res.status})`);
       }
       await fetchData();
@@ -943,7 +954,7 @@ function VerifyBomView() {
           syncedAt={data?.syncedAt}
           warnIfStale
           onSync={handleSync}
-          syncing={syncing}
+          syncing={syncing || bomBusy}
           actions={
             <>
             <button
@@ -977,7 +988,7 @@ function VerifyBomView() {
             <button
               type="button"
               onClick={handleCheckItemNames}
-              disabled={syncingItemName || loading}
+              disabled={syncingItemName || loading || bomBusy}
               className="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/30 rounded px-3 py-1.5 text-[11px] font-semibold text-amber-400 dark:text-amber-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               title="Mark TO_DATE rows from BOM MAST ERP as NO USE + batch C, then fill item names from ITEM MASTER ERP"
             >

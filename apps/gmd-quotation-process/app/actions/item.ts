@@ -1145,8 +1145,10 @@ export async function importExcelDataAction(rows: any[]) {
   await requireAccess();
   const denied = await loginRequired(); if (denied) return denied;
   try {
+    const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
     let matchedCount = 0;
     let updatedCount = 0;
+    let skippedCount = 0;
     const updatedItems: any[] = [];
 
     for (const row of rows) {
@@ -1178,6 +1180,12 @@ export async function importExcelDataAction(rows: any[]) {
         updates.quotedRate = parseFloat(String(quotedRate));
       }
 
+      // Same refusals as a hand edit (updateItemFieldAction): frozen docket, or a quoted rate on a Validation = Yes item.
+      if (isEnquiryFrozen(enquiry.apm, enquiry.offerPdfGeneratedAt) || (updates.quotedRate !== undefined && item.validation === "Yes")) {
+        skippedCount++;
+        continue;
+      }
+
       await recalculateItem(item.id, updates);
       const refreshed = await prisma.enquiryItem.findUnique({ where: { id: item.id } });
       if (refreshed) {
@@ -1186,7 +1194,7 @@ export async function importExcelDataAction(rows: any[]) {
       updatedCount++;
     }
 
-    return { success: true, matchedCount, updatedCount, data: { items: updatedItems } };
+    return { success: true, matchedCount, updatedCount, skippedCount, data: { items: updatedItems } };
   } catch (error: any) {
     console.error("Error importing excel data:", error);
     return { success: false, error: error.message || "Failed to import excel data." };

@@ -15,6 +15,12 @@ import {
   BANK_GUARANTEE_DRIVE_FOLDER_ID,
   uploadFileToDrive,
 } from "@/lib/gdrive";
+import {
+  busyMessage,
+  JobAlreadyRunningError,
+  runningJobs,
+  withJobLatch,
+} from "@/schedular_function/job-latch";
 
 export type SyncResult =
   | {
@@ -27,13 +33,15 @@ export type SyncResult =
       duplicateInSheet: number;
       durationMs: number;
     }
-  | { ok: false; error: string };
+  | { ok: false; error: string; busy?: true };
 
 export async function syncPbgDataAction(): Promise<SyncResult> {
   await requireAccess();
   const startedAt = Date.now();
   try {
-    const result = await syncPbgData();
+    // Same latch as the scheduled PBG job: PbgData has no unique key, so an
+    // overlapping run would insert a new BG twice.
+    const result = await withJobLatch("pbg", syncPbgData);
     revalidatePath("/pbg");
     return {
       ok: true,
@@ -41,11 +49,20 @@ export async function syncPbgDataAction(): Promise<SyncResult> {
       durationMs: Date.now() - startedAt,
     };
   } catch (error) {
+    if (error instanceof JobAlreadyRunningError) {
+      return { ok: false, busy: true, error: busyMessage("PBG") };
+    }
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Sync failed",
     };
   }
+}
+
+/** True while a PBG sync (the scheduled job or a Sync click) is running. */
+export async function pbgSyncRunningAction(): Promise<boolean> {
+  await requireAccess();
+  return runningJobs.has("pbg");
 }
 
 export type UpdateCellResult = { ok: true } | { ok: false; error: string };

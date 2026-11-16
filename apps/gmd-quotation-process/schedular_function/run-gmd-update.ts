@@ -29,7 +29,11 @@ import {
 } from "./gmd-update-stock-phys";
 import { runRawMaterialItemNameSync, type ItemNameSyncResult } from "./item-name-sync";
 import { recordJobRun } from "./job-heartbeat";
+import { JobAlreadyRunningError } from "./job-latch";
 import { runActiveBomRules } from "@/lib/autoBomRun";
+
+// Lives in job-latch.ts now; re-exported so every `from "./run-gmd-update"` import keeps working.
+export { JobAlreadyRunningError };
 
 export type JobName = "gmd-update";
 
@@ -55,18 +59,6 @@ export type ScheduledJobError = {
   /** Whatever completed before the failure. */
   steps: ScheduledJobResult["steps"];
 };
-
-/**
- * Thrown when a job is asked to run while an earlier run of the same job is
- * still in flight. Shared by every scheduled job in this folder, so the
- * constructor takes any job name rather than one job's union.
- */
-export class JobAlreadyRunningError extends Error {
-  constructor(job: string) {
-    super(`Job "${job}" is already running.`);
-    this.name = "JobAlreadyRunningError";
-  }
-}
 
 /**
  * In-process latch. Ofelia's `no-overlap = true` only stops ofelia jobs from
