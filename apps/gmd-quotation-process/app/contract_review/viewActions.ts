@@ -20,11 +20,10 @@ const errorMessage = (error: unknown) =>
 /** One filtered, sorted page plus the sidebar / flow-diagram aggregates. */
 export async function loadView(
   query: ContractReviewViewQuery,
-  opts?: { fresh?: boolean },
 ): Promise<ActionResult<ContractReviewViewResult>> {
   await requireAccess();
   try {
-    return { success: true, data: await buildContractReviewView(query, !!opts?.fresh) };
+    return { success: true, data: await buildContractReviewView(query) };
   } catch (error) {
     console.error("Error loading contract review view:", error);
     return { success: false, error: errorMessage(error) };

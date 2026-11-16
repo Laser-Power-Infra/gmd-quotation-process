@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { addContractMailDoc } from "@gmd/contract-review/server";
 import { requireSyncApiKey } from "@/schedular_function";
-import { invalidateContractReviewCache } from "@/lib/contractReviewView";
 
 // Entry point for the external email-tracking agent: appends one mail / saved
 // attachment link to a contract. Same API key as the scheduler routes
@@ -20,6 +19,5 @@ export async function POST(request: Request) {
     );
   }
   const res = await addContractMailDoc(body.contractNo, body.category, body.url);
-  if (res.success) invalidateContractReviewCache();
   return NextResponse.json(res, { status: res.success ? 200 : res.error === "Contract not found." ? 404 : 400 });
 }

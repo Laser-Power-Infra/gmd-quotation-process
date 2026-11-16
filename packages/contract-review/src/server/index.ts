@@ -20,6 +20,15 @@ import {
 import type { ActionResult, ContractReviewData, DiagramFileMeta } from "../types";
 import { columnAccess, headerForField, type ContractReviewFlags } from "../flags";
 
+export {
+  BLANK_STATUS_SCOPE,
+  listContractReviewAllRows,
+  listContractReviewFacet,
+  listContractReviewPage,
+  type ContractReviewLookups,
+  type ContractReviewQueryOptions,
+} from "./query";
+
 // Pure operations on the ContractReview table (tender DB). No auth, no
 // logging: the host app's Server Actions own those and call into here.
 
