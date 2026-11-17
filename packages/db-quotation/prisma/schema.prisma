@@ -72,6 +72,8 @@ model Enquiry {
   sourceThreadId String? @unique
   emailApproved    Boolean   @default(false)
   emailSentBy      String?
+  // Set while a docket email send is in flight (claimed atomically); cleared on success or failure.
+  emailSendingAt   DateTime?
   // A quoted rate changed after the offer was sent; cleared by the next send.
   offerRevised     Boolean   @default(false)
   // Offer PDF term 1 reads "Ex-Works basis" instead of "Firm basis" when ticked.

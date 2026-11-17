@@ -11,7 +11,7 @@ import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { ensureCfSetItem } from "@/lib/cfSetItem";
 import { roundUp } from "@/lib/rounding";
 import { getDefaultVaPercent } from "@/lib/vaValidation";
-import { buildDocketEmailHtml, buildDocketEmailSubject, buildItemsClause } from "@/lib/docketEmailTemplate";
+import { buildDocketEmailHtml, buildDocketEmailSubject, buildItemsClause, DOCKET_EMAIL_SENDING_STALE_MS } from "@/lib/docketEmailTemplate";
 import { sendDocketEmailViaN8n, DOCKET_EMAIL_ALWAYS_CC } from "@/lib/services/n8nEmail";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { computeDeliverySchedule, DEFAULT_DELIVERY_SCHEDULE } from "@/lib/deliverySchedule";
@@ -1138,6 +1138,24 @@ export async function sendDocketEmailAction(
       };
     }
 
+    // Claim the send in one conditional write so two clicks (or a refresh mid-send) cannot both pass the
+    // "not sent" check above. A claim older than the stale window is treated as abandoned (crash/restart).
+    const claimedAt = new Date();
+    const claim = await prisma.enquiry.updateMany({
+      where: {
+        id: enquiryId,
+        emailSentBy: null,
+        OR: [
+          { emailSendingAt: null },
+          { emailSendingAt: { lt: new Date(claimedAt.getTime() - DOCKET_EMAIL_SENDING_STALE_MS) } },
+        ],
+      },
+      data: { emailSendingAt: claimedAt },
+    });
+    if (claim.count === 0) {
+      return { success: false, error: "This docket email is already being sent (or was just sent). Refresh to see its status." };
+    }
+    try {
     // Always Cc the fixed address, merged with the docket's other emails and
     // de-duplicated case-insensitively. Blocked addresses are dropped and the
     // party's mandatory Cc is (re)added.
@@ -1215,6 +1233,7 @@ export async function sendDocketEmailAction(
         where: { id: enquiryId },
         data: {
           emailSentBy: userId,
+          emailSendingAt: null,
           offerRevised: false,
           ...(raRound ? { reverseAuctionCount: raRound, reverseAuctionStatus: "Yes" } : {}),
         },
@@ -1225,6 +1244,12 @@ export async function sendDocketEmailAction(
         : []),
     ]);
     return { success: true, data: serializeEnquiry(updated) };
+    } finally {
+      // Success already cleared the flag with the sent marker; this only releases a failed or thrown send.
+      await prisma.enquiry
+        .updateMany({ where: { id: enquiryId, emailSendingAt: claimedAt }, data: { emailSendingAt: null } })
+        .catch((e: unknown) => console.error("[send-docket-email] failed to release sending flag", e));
+    }
   } catch (error: any) {
     console.error("Error sending docket email:", error);
     return { success: false, error: error.message || "Failed to send the docket email." };
