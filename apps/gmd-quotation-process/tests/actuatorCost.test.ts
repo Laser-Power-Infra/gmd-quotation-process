@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { readActuatorWorkbook } from '../lib/actuatorMaster.js'
-import { twoToOneUpdate } from '../lib/actuatorCost.js'
+import { pendingValveCost, twoToOneUpdate } from '../lib/actuatorCost.js'
 import { actuatorOp, bareValveOf, buildActuatorCost, deriveMapKey, hasActuatorLink, isActuated, isActuatorCandidate, latestOffer, pickCodes, planActuator, SPECIAL_OEM, withoutProductCost } from '../lib/actuatorCost.js'
 import { evaluateCostWarnings, COST_WARNING } from '../lib/costSanity.js'
 
@@ -232,4 +232,15 @@ test('ACT -> manual -> ACT never double counts', () => {
   assert.equal(a1.productCost, 180)
   assert.equal(a2.productCost, 180)
   assert.equal(a2.bareValveCost, 100)
+})
+
+test('pendingValveCost: the saved valve cost shows only while the actuator price is pending', () => {
+  // Docket GMD/2026-27/340, 250 sluice ACT+GB: no MAPPING row, so productCost stays blank.
+  const pending = { productCost: null, bareValveCost: 123123, actuatorBreakdown: { pending: ['actuator code'], total: null } }
+  assert.equal(pendingValveCost(pending), 123123)
+  assert.equal(pendingValveCost({ ...pending, bareValveCost: '96730' }), 96730)
+  assert.equal(pendingValveCost({ ...pending, productCost: 200000 }), null)
+  assert.equal(pendingValveCost({ ...pending, bareValveCost: null }), null)
+  assert.equal(pendingValveCost({ ...pending, actuatorBreakdown: { pending: [], total: 1 } }), null)
+  assert.equal(pendingValveCost({ ...pending, actuatorBreakdown: null }), null)
 })

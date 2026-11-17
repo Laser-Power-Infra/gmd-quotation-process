@@ -166,6 +166,16 @@ export function planActuator(
 export const twoToOneUpdate = (it: Parameters<typeof isActuated>[0], sum: number): { cost: number } | { productCost: number } =>
   isActuated(it) ? { productCost: sum } : { cost: sum };
 
+/**
+ * A hand-typed product cost on an actuated item is stored as the valve-only cost, and productCost stays blank
+ * while the actuator price is pending. This is that saved valve cost, so the cell can still show it; null otherwise.
+ */
+export function pendingValveCost(it: { productCost?: number | string | null; bareValveCost?: number | string | null; actuatorBreakdown?: unknown }): number | null {
+  if (it.productCost != null || it.bareValveCost == null) return null;
+  const pending = (it.actuatorBreakdown as { pending?: unknown[] } | null | undefined)?.pending;
+  return Array.isArray(pending) && pending.length > 0 ? Number(it.bareValveCost) : null;
+}
+
 /** The update minus productCost, or null when nothing else was passed. */
 export function withoutProductCost<T extends { productCost?: unknown }>(updates: T): Omit<T, "productCost"> | null {
   const { productCost: _drop, ...rest } = updates;

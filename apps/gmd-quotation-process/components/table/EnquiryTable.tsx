@@ -7,6 +7,7 @@ import { shallowEqual } from "react-redux";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
 import ActuatorChip from "./ActuatorChip";
+import { pendingValveCost } from "@/lib/actuatorCost";
 import Pagination from "./Pagination";
 import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter";
 import CellSelect, { optionsWithCurrent } from "./CellSelect";
@@ -69,6 +70,15 @@ interface EnquiryTableProps {
 // Red warning icon beside Product Cost; the reasons come from lib/costSanity.ts.
 /** Shared empty list, so a docket with no items keeps a stable prop identity. */
 const EMPTY_ITEMS: EnquiryItemData[] = [];
+
+const FROZEN_TITLE = "Frozen after one-time PDF — revert APM to edit";
+/** Product Cost cell text: the saved valve cost stands in, dimmed, while an actuated item's price is pending. */
+function productCostCell(item: EnquiryItemData, isFrozen: boolean) {
+  const valve = pendingValveCost(item);
+  if (valve === null) return { value: item.productCost, title: isFrozen ? FROZEN_TITLE : undefined, dim: false };
+  const why = (item.actuatorBreakdown as { text?: string } | null)?.text ?? "Actuator price pending";
+  return { value: valve, title: `Valve cost only. Product cost and Cost stay blank until the actuator is priced. ${why}`, dim: true };
+}
 
 function CostWarningIcon({ warnings }: { warnings?: string[] | null }) {
   if (!warnings?.length) return null;
@@ -1279,7 +1289,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
     try {
       const result = await dispatch(updateItemField({ itemId, field, value: dbVal })).unwrap();
-      toast.success(`Saved successfully.`, { id: toastId });
+      // An actuated item keeps a typed product cost as its valve cost; say why the cell stays blank.
+      const valve = field === "productCost" ? pendingValveCost(result) : null;
+      if (valve !== null) {
+        const why = (result.actuatorBreakdown as { text?: string } | null)?.text ?? "Actuator price pending";
+        toast.warning(`Saved as valve cost ${formatIndianNumber(valve)}. Product cost and Cost stay blank until the actuator is priced. ${why}`, { id: toastId, duration: 8000 });
+      } else {
+        toast.success(`Saved successfully.`, { id: toastId });
+      }
 
       // Toast when QR is rounded up after manual entry
       const newQr = result?.quotedRate ? parseFloat(String(result.quotedRate)) : null;
@@ -3781,16 +3798,16 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         <div className="flex items-center gap-1">
                         <CostWarningIcon warnings={firstItem.costWarnings} />
                         <EditableText
-                          value={formatIndianNumber(firstItem.productCost)}
+                          value={formatIndianNumber(productCostCell(firstItem, isFrozen).value)}
                           disabled={isFrozen}
-                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+                          title={productCostCell(firstItem, isFrozen).title}
                           onCommit={(v) => {
                             const next = cleanNumberInput(v);
-                            if (hasNumberChanged(next, firstItem.productCost)) {
+                            if (hasNumberChanged(next, productCostCell(firstItem, isFrozen).value)) {
                               handleItemFieldChange(firstItem.id, "productCost", next);
                             }
                           }}
-                          className="w-full bg-transparent border-none text-[11px] text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                          className={`w-full bg-transparent border-none text-[11px] ${productCostCell(firstItem, isFrozen).dim ? "text-amber-700 italic dark:text-amber-300" : "text-foreground"} outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed`}
                         />
                         </div>
                       ) : "-"}
@@ -4253,16 +4270,16 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           <div className="flex items-center gap-1">
                           <CostWarningIcon warnings={item.costWarnings} />
                           <EditableText
-                            value={formatIndianNumber(item.productCost)}
+                            value={formatIndianNumber(productCostCell(item, isFrozen).value)}
                             disabled={isFrozen}
-                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+                            title={productCostCell(item, isFrozen).title}
                             onCommit={(v) => {
                             const next = cleanNumberInput(v);
-                            if (hasNumberChanged(next, item.productCost)) {
+                            if (hasNumberChanged(next, productCostCell(item, isFrozen).value)) {
                               handleItemFieldChange(item.id, "productCost", next);
                             }
                             }}
-                            className="w-full bg-transparent border-none text-[11px] text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                            className={`w-full bg-transparent border-none text-[11px] ${productCostCell(item, isFrozen).dim ? "text-amber-700 italic dark:text-amber-300" : "text-foreground"} outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed`}
                           />
                           </div>
                       </td>

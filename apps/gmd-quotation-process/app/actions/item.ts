@@ -229,7 +229,19 @@ export async function updateItemFieldAction(
     }
 
     let updatedItem;
-    if (["productCost", "extension", "bypass", "quantity", "vaPercent", "quotedRate", "cost"].includes(field)) {
+    // Clearing Product Cost on an actuated item: the typed number lives in bareValveCost, so clear it there and
+    // re-price (Product cost / Cost go blank, "bare valve cost" pending). Hand edits only: a BOM refresh with no
+    // cost must not wipe a typed valve cost, so this stays out of recalculateItem.
+    const clearActuatedValve =
+      field === "productCost" && parsedVal === null &&
+      isActuated((await prisma.enquiryItem.findUnique({ where: { id: itemId }, select: { operationType: true, itemType: true, actCode: true, gbCode: true, actuatorBreakdown: true } }))!);
+    if (clearActuatedValve) {
+      const { applyActuatorToItem } = await import("@/lib/actuatorItem");
+      await prisma.enquiryItem.update({ where: { id: itemId }, data: { bareValveCost: null, productCost: null } });
+      const r = await applyActuatorToItem(itemId);
+      if (!r.item) return { success: false, error: r.skipped ?? "Not saved" };
+      updatedItem = r.item;
+    } else if (["productCost", "extension", "bypass", "quantity", "vaPercent", "quotedRate", "cost"].includes(field)) {
       const updates: any = {};
       if (field === "vaPercent") {
         updates.vaPercent = parsedVal !== null ? parseFloat(parsedVal) : null;
