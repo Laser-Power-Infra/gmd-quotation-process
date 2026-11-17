@@ -702,9 +702,21 @@ export function ContractReviewPage({
     if (!serverMode) legacyFetchData();
   }, [serverMode, legacyFetchData]);
 
+  // Filter changes wait 300 ms so ticking several boxes sends one request
+  // (same rule as useServerTable); first load, paging and sorting load at once.
+  const viewKey = useMemo(() => JSON.stringify(viewQuery), [viewQuery]);
+  const loadedViewKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (serverMode) void loadServerView(false);
-  }, [serverMode, serverQueryKey, loadServerView]);
+    if (!serverMode) return;
+    const immediate = loadedViewKeyRef.current === null || loadedViewKeyRef.current === viewKey;
+    const run = () => {
+      loadedViewKeyRef.current = viewKey;
+      void loadServerView(false);
+    };
+    if (immediate) return run();
+    const timer = setTimeout(run, 300);
+    return () => clearTimeout(timer);
+  }, [serverMode, serverQueryKey, viewKey, loadServerView]);
 
   useEffect(() => {
     getActuatorOptionsAction?.().then((res) => {
