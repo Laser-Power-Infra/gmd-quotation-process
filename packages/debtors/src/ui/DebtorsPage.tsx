@@ -166,7 +166,7 @@ export function DebtorsPage({ actions, legalStatuses, statementUrl, header }: De
     if (chip.key === "__week") return dispatch(setWeekOnly(false));
     if (chip.date) return dispatch(setDateRange({ key: chip.key, range: undefined }));
     if (chip.search) return dispatch(setColumnSearch({ key: chip.key, value: "" }));
-    dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => v !== chip.value) }));
+    dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => !(chip.values ?? [chip.value]).includes(v)) }));
   };
   const hasFilters = chips.length > 0;
 
@@ -175,7 +175,7 @@ export function DebtorsPage({ actions, legalStatuses, statementUrl, header }: De
 
   // Every page under the current filters and sort, in the on-screen column order.
   const [exporting, setExporting] = useState(false);
-  const exportCsv = useCallback(async () => {
+  const exportXlsx = useCallback(async () => {
     setExporting(true);
     try {
       const all: DebtorPartyRow[] = [];
@@ -185,13 +185,13 @@ export function DebtorsPage({ actions, legalStatuses, statementUrl, header }: De
         all.push(...res.data.rows);
         if (all.length >= res.data.total || res.data.rows.length === 0) break;
       }
-      const esc = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
       const cell = (r: DebtorPartyRow, key: string) => {
         const v = r[key as keyof DebtorPartyRow];
         return key === "msmeInterest" || key === "msmeClaimable" ? Math.round(Number(v)) : v;
       };
-      const lines = [columns.map((c) => esc(c.label)).join(","), ...all.map((r) => columns.map((c) => esc(cell(r, c.key))).join(","))];
-      download(new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv" }), "debtors_party_wise.csv");
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([columns.map((c) => c.label), ...all.map((r) => columns.map((c) => cell(r, c.key)))]), "Debtors");
+      XLSX.writeFile(wb, "debtors_party_wise.xlsx");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Export failed");
     } finally {
@@ -238,9 +238,9 @@ export function DebtorsPage({ actions, legalStatuses, statementUrl, header }: De
               <Button variant="outline" size="sm" onClick={() => dispatch(toggleAmountFormat())} aria-label={state.amountFormat === "lakh" ? "Show amounts in full rupees" : "Show amounts in lakh"}>
                 {state.amountFormat === "lakh" ? "₹ L" : "₹"}
               </Button>
-              <Button variant="outline" size="sm" onClick={() => void exportCsv()} disabled={exporting || !total}>
+              <Button variant="outline" size="sm" onClick={() => void exportXlsx()} disabled={exporting || !total}>
                 <Download />
-                {exporting ? "Exporting…" : "CSV"}
+                {exporting ? "Exporting…" : "Excel"}
               </Button>
               <Button variant="outline" size="sm" aria-expanded={chartsOpen} aria-controls="debtor-charts" onClick={() => setChartsOpen((o) => !o)} className={cn(chartsOpen && "border-primary bg-primary/10")}>
                 <BarChart3 />

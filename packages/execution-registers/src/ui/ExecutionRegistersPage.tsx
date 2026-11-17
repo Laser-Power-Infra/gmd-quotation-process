@@ -154,7 +154,7 @@ function RegisterTable({ register, actions, onLoaded }: { register: RegisterKey;
               ? dispatch(setDateRange({ register, key: chip.key, range: undefined }))
               : chip.search
                 ? dispatch(setColumnSearch({ register, key: chip.key, value: "" }))
-                : dispatch(setFilter({ register, key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => v !== chip.value) }))
+                : dispatch(setFilter({ register, key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => !(chip.values ?? [chip.value]).includes(v)) }))
           }
           onClear={() => dispatch(clearFilters(register))}
         />
