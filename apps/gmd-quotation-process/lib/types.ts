@@ -104,6 +104,7 @@ export interface EnquiryData {
   duplicateOfDocket?: string | null;
   emailApproved?: boolean | null;
   emailSentBy?: string | null;
+  emailSendingAt?: string | Date | null;
   offerRevised?: boolean | null;
   priceExWorks?: boolean | null;
   detailsAssigneeId?: string | null;

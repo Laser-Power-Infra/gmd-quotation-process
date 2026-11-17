@@ -32,6 +32,7 @@ import { applyVaRulesAction } from "@/app/actions/misc";
 import { markEnquiryPageStale } from "@/lib/enquiriesSlice";
 import { parseAndValidateContractNumbers } from "@/lib/contractValidation";
 import { makeImageKey } from "@/lib/imageKey";
+import { isDocketEmailSending } from "@/lib/docketEmailTemplate";
 import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import { C_BATCH_VALUE } from "@/lib/gmd_lib/verify-bom-columns";
 import { N_BATCH_VALUE } from "@/lib/gmd_lib/contract-review-columns";
@@ -4852,9 +4853,12 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
   const approved = !!enquiry.emailApproved;
   const sentBy = enquiry.emailSentBy ?? null;
   const sent = !!sentBy;
+  // Persisted in the DB, so it survives a refresh while the first send is still running server-side.
+  const sendingElsewhere = isDocketEmailSending(enquiry.emailSendingAt);
+  const busySending = sending || sendingElsewhere;
   const to = (enquiry.senderEmail || "").trim();
   const cc = (enquiry.emailAddress || "").trim();
-  const canSend = approved && !sent && to !== "" && !sending;
+  const canSend = approved && !sent && to !== "" && !busySending;
 
   const handleApprove = async () => {
     setBusy(true);
@@ -5006,7 +5010,9 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
         onClick={handleSend}
         disabled={!canSend}
         title={
-          !approved
+          sendingElsewhere && !sending
+            ? "This email is already being sent — refresh in a moment to see Sent"
+            : !approved
             ? "Frozen — approve (tick) first"
             : !to
               ? "No recipient (sender email) on this docket"
@@ -5018,8 +5024,8 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
             : "text-muted-foreground border-border bg-muted cursor-not-allowed"
         }`}
       >
-        {sending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
-        {sending ? "Sending" : "Send"}
+        {busySending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
+        {busySending ? "Sending" : "Send"}
       </button>
 
       <Dialog

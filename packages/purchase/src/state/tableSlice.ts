@@ -62,6 +62,10 @@ const slice = createSlice({
       s.search = "";
       s.page = 1;
     },
+    /** Back to the first-load view: filters, search, sort, Open lines; keeps page size. */
+    resetAll(s) {
+      return { ...initialState, pageSize: s.pageSize };
+    },
     setOpenOnly(s, a: PayloadAction<boolean>) {
       s.openOnly = a.payload;
       s.page = 1;
@@ -83,7 +87,7 @@ const slice = createSlice({
   },
 });
 
-export const { setSearch, setFilter, setDateRange, setColumnSearch, clearFilters, setOpenOnly, setSort, setPage, setPageSize, select } = slice.actions;
+export const { setSearch, setFilter, setDateRange, setColumnSearch, clearFilters, resetAll, setOpenOnly, setSort, setPage, setPageSize, select } = slice.actions;
 
 export const selectPurchaseTable = (s: { purchaseTable: PurchaseTableState }) => s.purchaseTable;
 
