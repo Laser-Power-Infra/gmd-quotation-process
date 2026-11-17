@@ -12,6 +12,7 @@ import purchaseTableReducer from "@gmd/purchase/state";
 import readyToBillReducer from "@gmd/stock-allocation/state";
 import valveSerialTableReducer from "@gmd/valve-serial/state";
 import executionRegistersReducer from "@gmd/execution-registers/state";
+import debtorsTableReducer from "@gmd/debtors/state";
 
 export const makeStore = () => {
   return configureStore({
@@ -29,6 +30,7 @@ export const makeStore = () => {
       readyToBill: readyToBillReducer,
       valveSerialTable: valveSerialTableReducer,
       executionRegisters: executionRegistersReducer,
+      debtorsTable: debtorsTableReducer,
     },
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({

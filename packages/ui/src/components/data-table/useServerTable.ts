@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+const FILTER_DEBOUNCE_MS = 300;
+
 interface FacetEntry {
   values: string[];
   /** Filter signature the options were computed for. */
@@ -68,12 +70,20 @@ export function useServerTable<TPage>({ queryKey, filterKey, facetKey, fetchPage
   }, []);
 
   // Query changes refresh in the background: the previous page stays on screen.
+  // Filter changes wait FILTER_DEBOUNCE_MS so ticking several boxes sends one request; paging/sorting load at once.
+  const loadedFilterRef = useRef<string | null>(null);
   useEffect(() => {
     if (loadedKeyRef.current === queryKey) return;
     const first = loadedKeyRef.current === null;
-    loadedKeyRef.current = queryKey;
-    void load(!first);
-  }, [queryKey, load]);
+    const run = () => {
+      loadedKeyRef.current = queryKey;
+      loadedFilterRef.current = filterKey;
+      void load(!first);
+    };
+    if (first || loadedFilterRef.current === filterKey) return run();
+    const timer = setTimeout(run, FILTER_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [queryKey, filterKey, load]);
 
   const refresh = useCallback(() => load(true), [load]);
 

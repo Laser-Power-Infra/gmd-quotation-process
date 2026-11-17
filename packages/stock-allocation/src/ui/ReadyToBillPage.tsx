@@ -100,7 +100,7 @@ export default function ReadyToBillPage({ actions, syncedAt }: { actions: ReadyT
           <SearchField value={state.search} onCommit={(v) => dispatch(setSearch(v))} busy={table.refreshing} placeholder="Search contract, party, item, RM code" />
           <FilterChips
             chips={chips}
-            onRemove={(chip) => dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => v !== chip.value) }))}
+            onRemove={(chip) => dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => !(chip.values ?? [chip.value]).includes(v)) }))}
             onClear={() => dispatch(clearFilters())}
           />
           {/* load errors show in the table (with Retry); only the export's own error goes here */}

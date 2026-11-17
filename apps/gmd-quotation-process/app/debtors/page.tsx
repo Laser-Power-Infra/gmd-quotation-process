@@ -1,27 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
-import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkeleton";
-import DebtorsTable from "@/components/debtors/DebtorsTable";
+import { DebtorsPage } from "@gmd/debtors/ui";
 import { syncLedgerAction } from "@/app/actions/ledgerSync";
-import { DEFAULT_MSME_SETTINGS } from "@/lib/msme";
-import type { DebtorTotals, DebtorsResult } from "@/lib/debtors";
+import { LEGAL_STATUSES } from "@/lib/legalStatus";
+import * as actions from "./actions";
 
-type DebtorsData = DebtorsResult;
+const statementUrl = (accCode: string) => `/api/debtors/${encodeURIComponent(accCode)}/interest-statement`;
 
-const EMPTY_TOTALS: DebtorTotals = {
-  drAmt: 0,
-  drAllocAmt: 0,
-  unAllocDr: 0,
-  unAllocCr: 0,
-};
-
-export default function DebtorsPage() {
-  const [data, setData] = useState<DebtorsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+export default function Page() {
   const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Remounting the page after a sync reloads the table and the sidebar; filters live in Redux and survive.
   const [reloadKey, setReloadKey] = useState(0);
 
   const onSync = async () => {
@@ -29,78 +20,27 @@ export default function DebtorsPage() {
     const result = await syncLedgerAction();
     if (result.success) {
       setError(null);
-      setReloadKey((k) => k + 1); // re-fetch the page data
+      setReloadKey((k) => k + 1);
     } else {
       setError(result.error);
     }
     setSyncing(false);
   };
 
-  useEffect(() => {
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const res = await fetch("/api/debtors");
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error ?? `Failed to load (${res.status})`);
-        }
-        const json = await res.json();
-        if (!cancelled) setData(json);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load data");
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadKey]);
-
-  if (loading) {
-    return (
-      <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
-        <GMDUpdateHeader
-          title="DEBTORS"
-          totalRows={0}
-          syncedAt={undefined}
-        />
-        <GMDUpdateSkeleton />
-      </main>
-    );
-  }
-
   return (
-    <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
-      <GMDUpdateHeader
-        title="DEBTORS"
-        totalRows={data?.rows.length ?? 0}
-        syncedAt={data?.syncedAt}
-        onSync={onSync}
-        syncing={syncing}
-        warnIfStale
+    <main className="flex-1 min-h-0 min-w-0 flex flex-col bg-background overflow-hidden">
+      <DebtorsPage
+        key={reloadKey}
+        actions={{ ...actions }}
+        legalStatuses={LEGAL_STATUSES}
+        statementUrl={statementUrl}
+        header={(s) => (
+          <>
+            <GMDUpdateHeader title="DEBTORS" totalRows={s?.parties ?? 0} syncedAt={s?.syncedAt ?? undefined} onSync={onSync} syncing={syncing} warnIfStale />
+            {error && <div className="px-6 pb-3 text-sm text-red-600">{error}</div>}
+          </>
+        )}
       />
-      {error && (
-        <div className="px-6 py-4 text-sm text-red-600">{error}</div>
-      )}
-      <div className="flex-1 min-h-0 px-6 pb-6 flex gap-4">
-        <div className="flex-1 min-h-0">
-          <DebtorsTable
-            rows={data?.rows ?? []}
-            totals={data?.totals ?? EMPTY_TOTALS}
-            billInfo={data?.billInfo ?? {}}
-            bgs={data?.bgs ?? []}
-            followUps={data?.followUps ?? {}}
-            legalCases={data?.legalCases ?? {}}
-            msme={data?.msme ?? DEFAULT_MSME_SETTINGS}
-          />
-        </div>
-      </div>
     </main>
   );
 }
