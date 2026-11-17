@@ -15,6 +15,7 @@ import {
   BOM_ISSUES_HEADER,
   MULTI_OPEN_BOM_HEADER,
   BOM_MISMATCH_HEADER,
+  DRAWING_HEADER,
   FLAG_YES,
 } from "@/lib/bomColumns";
 
@@ -143,7 +144,7 @@ export async function GET() {
           bomItemQtyCost: null,
           merged,
         });
-        rows.push([...row, bomCost, ...extras(bom, [])]);
+        rows.push([...row, bomCost, ...extras(bom, []), ""]);
         ids.push(bom ? `bom:${bom.id}` : `item:${fullItem.id}`);
         touch(fullItem.updatedAt);
         if (bom) touch(bom.updatedAt);
@@ -207,7 +208,7 @@ export async function GET() {
                   : { name: compFull?.itemName, size: compFull?.size, moc: compFull?.moc, pn: compFull?.pnGmd },
               )
             : [];
-          rows.push([...row, bomCost, ...extras(bom, issues)]);
+          rows.push([...row, bomCost, ...extras(bom, issues), rm?.drawingUrl ?? ""]);
           ids.push(c.id);
           emitted++;
 
@@ -221,7 +222,7 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      headers: [...VERIFY_BOM_HEADERS, "BOM COST", ...BOM_EXTRA_HEADERS],
+      headers: [...VERIFY_BOM_HEADERS, "BOM COST", ...BOM_EXTRA_HEADERS, DRAWING_HEADER],
       rows,
       ids,
       totalRows: rows.length,

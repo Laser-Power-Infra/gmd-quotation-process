@@ -14,6 +14,7 @@
  *   - `lib/docketSnapshot`            -> mail attachment parsing
  *   - `lib/docketSnapshotPdf`         -> snapshot PDF render + Drive upload
  *   - `lib/enquiryEmailParty`         -> extractEmailsFromValue
+ *   - `lib/docketContact`             -> contact person / phone / utility from the mail
  *
  * Full parity with the manual action: mail file attachments are linked as-is and
  * a mail-snapshot PDF is generated and uploaded to Google Drive per docket. A
@@ -48,6 +49,8 @@ import {
   isPurchaseOrderMail,
   istDayWindow,
 } from "@/lib/docketPending";
+import { contactFromMail, firstMessage, utilityEntries, utilityFromText } from "@/lib/docketContact";
+import { fillContactWithAi } from "@/lib/docketContactAi";
 import { extractDocketItems } from "./docket-item-extraction";
 import type { ParsedDocketItem } from "./docket-item-parser";
 import pLimit from "p-limit";
@@ -74,6 +77,10 @@ export interface PendingDocketCreated {
   source: PartyNameSource;
   /** EnquiryItem rows created from the mail content. */
   itemCount: number;
+  /** From the mail signature / utility master (or the AI fallback); null when not found. */
+  contactPerson: string | null;
+  contactNo: string | null;
+  utility: string | null;
 }
 
 export interface PendingDocketCreationResult {
@@ -225,15 +232,22 @@ export async function runPendingDocketCreation(
     new Date(),
   );
 
-  // shortcut: buildPartyMatcher ignores names under 4 chars (e.g. "Goa"), upgrade if those matter.
-  const [matchState, matchUtility] = await Promise.all(
-    (["STATE", "UTILITY"] as const).map(async (type) => {
-      const rows = await prisma.lookupOption.findMany({
+  const [stateRows, utilityRows] = await Promise.all(
+    (["STATE", "UTILITY"] as const).map((type) =>
+      prisma.lookupOption.findMany({
         where: { type, isActive: true },
-        select: { value: true },
-      });
-      return buildPartyMatcher(rows.map((r) => r.value));
-    }),
+        select: { value: true, code: true, defaultState: true },
+      }),
+    ),
+  );
+  // shortcut: buildPartyMatcher ignores names under 4 chars (e.g. "Goa"), upgrade if those matter.
+  const matchState = buildPartyMatcher(stateRows.map((r) => r.value));
+  const matchUtility = buildPartyMatcher(utilityRows.map((r) => r.value));
+  // Master full names + aliases for utilityFromText, and each utility's default state when it is a STATE option.
+  const utilityAliases = utilityEntries(utilityRows);
+  const states = new Set(stateRows.map((r) => r.value));
+  const defaultState = new Map(
+    utilityRows.filter((r) => r.defaultState && states.has(r.defaultState)).map((r) => [r.value, r.defaultState!]),
   );
 
   // Existing docket parties, tried against the mail text only when nothing else names the party.
@@ -248,6 +262,7 @@ export async function runPendingDocketCreation(
     // internal mailboxes, fall back to the party's most recent docket emails.
     const partyExternal = partyEmailMap.byPartyKey.get(partyKey(resolved.partyName));
     const split = splitThreadEmails(thread, partyExternal);
+    const contact = contactFromMail({ firstMessage: firstMessage(thread), senderEmail: split.senderEmail });
     return {
       threadId: thread.threadId,
       threadRowId: thread.id,
@@ -255,7 +270,9 @@ export async function runPendingDocketCreation(
       docketNumber: docketNumbers[index],
       partyName: resolved.partyName,
       state: matchState(searchText),
-      utility: matchUtility(searchText),
+      utility: matchUtility(searchText) ?? utilityFromText(searchText, utilityAliases),
+      contactPerson: contact.contactPerson,
+      contactNo: contact.phone,
       source: resolved.source,
       senderEmail: split.senderEmail,
       emailAddress: mergeMandatoryCc(resolved.partyName, split.ccEmails).join(", ") || null,
@@ -286,7 +303,30 @@ export async function runPendingDocketCreation(
     ),
   );
 
-  const enriched = plan.map((p, index) => ({ ...p, items: extractions[index].items }));
+  // Phone / utility the rules left blank: opt-in AI fallback (no-op when off; never the contact person).
+  const contacts = await Promise.all(
+    pending.map((thread, index) =>
+      extractionLimit(() =>
+        fillContactWithAi(
+          { subject: thread.subject, firstMessage: firstMessage(thread), ocrText: thread.ocrText },
+          { contactPerson: plan[index].contactPerson, phone: plan[index].contactNo, utility: plan[index].utility },
+          utilityAliases,
+        ),
+      ),
+    ),
+  );
+
+  const enriched = plan.map((p, index) => {
+    const c = contacts[index];
+    return {
+      ...p,
+      contactNo: c.phone,
+      utility: c.utility,
+      // A utility found without a state brings its master default state, as picking it in the UI does.
+      state: p.state ?? (c.utility ? (defaultState.get(c.utility) ?? null) : null),
+      items: extractions[index].items,
+    };
+  });
 
   let itemsExtracted = 0;
   let threadsWithItems = 0;
@@ -325,6 +365,9 @@ export async function runPendingDocketCreation(
         threadId: p.threadId,
         source: p.source,
         itemCount: p.items.length,
+        contactPerson: p.contactPerson,
+        contactNo: p.contactNo,
+        utility: p.utility,
       })),
     };
   }
@@ -377,6 +420,8 @@ export async function runPendingDocketCreation(
             enquiryDate: p.date ?? new Date(),
             emailAddress: p.emailAddress,
             senderEmail: p.senderEmail,
+            contactPerson: p.contactPerson,
+            contactNo: p.contactNo,
             // Durable "this mail is already docketed" link — see the note above.
             sourceThreadId: p.threadId,
             attachments: { create: attachmentRows },
@@ -398,6 +443,9 @@ export async function runPendingDocketCreation(
         threadId: p.threadId,
         source: p.source,
         itemCount: p.items.length,
+        contactPerson: p.contactPerson,
+        contactNo: p.contactNo,
+        utility: p.utility,
       });
     } catch (e) {
       // Two runs overlapping (or a manual docket landing mid-run) cannot both

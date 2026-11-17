@@ -2,6 +2,7 @@ import { Prisma } from "@gmd/db-quotation";
 import { squish } from "./squish";
 import { hasActiveItemFilters } from "./enquiryFilterScope";
 import { hasCostWarningSql } from "./costSanity";
+import { PENDING_CLOSURE_STATUS } from "./closureStatus";
 import type { EnquiryQuery } from "./enquiryQuery";
 
 /**
@@ -357,6 +358,9 @@ const AUTO_CREATED_SQL = sql`(
   )
 )`;
 
+/** Closure blank or Pending: no quotation has gone out for the docket yet. */
+const CLOSURE_BLANK_OR_PENDING_SQL = sql`(e."closureStatus" IS NULL OR btrim(e."closureStatus") = '' OR lower(btrim(e."closureStatus")) = ${PENDING_CLOSURE_STATUS.toLowerCase()})`;
+
 /** Predicates on the `e` alias (Enquiry), including the item-match rule. */
 export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): Prisma.Sql {
   const f = q.filters;
@@ -406,6 +410,13 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
     parts.push(sql`e.id = ANY(${[...q.selectedEnquiryIds]}::text[])`);
   }
   if (q.stage && skip !== "stage") parts.push(sql`${STAGE_SQL} = ${q.stage}`);
+  // Offer not gone out yet (closure blank or Pending; "-" is legacy Not Sent) and a contact detail it needs is blank;
+  // same rule as missingContactFields (the DocketRow badge) in lib/enquiryQuery.ts.
+  if (q.contactMissingOnly) {
+    const blanks = ["contactPerson", "senderEmail", "contactNo", "utility"].map((f) => blankSql(sql`e.${Prisma.raw(`"${f}"`)}`));
+    parts.push(CLOSURE_BLANK_OR_PENDING_SQL);
+    parts.push(sql`(${Prisma.join(blanks, " OR ")})`);
+  }
 
   // Pending = auto-created, still no items, closure status blank/Pending. Once
   // items exist or closure moves (Sent, Rejected, …) the docket leaves the list.
@@ -414,9 +425,7 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
   if (q.pendingOnly) {
     parts.push(AUTO_CREATED_SQL);
     parts.push(sql`NOT EXISTS (SELECT 1 FROM "EnquiryItem" i0 WHERE i0."enquiryId" = e.id)`);
-    parts.push(
-      sql`(e."closureStatus" IS NULL OR btrim(e."closureStatus") = '' OR lower(btrim(e."closureStatus")) = 'pending')`,
-    );
+    parts.push(CLOSURE_BLANK_OR_PENDING_SQL);
     if (hasActiveItemFilters(f, q.closedBomOnly || q.incompleteOnly || q.costWarningOnly)) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,

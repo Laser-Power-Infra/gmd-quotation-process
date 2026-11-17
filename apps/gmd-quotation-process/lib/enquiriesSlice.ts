@@ -406,6 +406,7 @@ interface EnquiryPageState {
   sort: EnquirySort;
   projectReference: string;
   pendingOnly: boolean;
+  contactMissingOnly: boolean;
   closedBomOnly: boolean;
   incompleteOnly: boolean;
   costWarningOnly: boolean;
@@ -456,6 +457,7 @@ const initialState: EnquiriesState = {
     sort: null,
     projectReference: "",
     pendingOnly: false,
+    contactMissingOnly: false,
     closedBomOnly: false,
     incompleteOnly: false,
     costWarningOnly: false,
@@ -579,6 +581,9 @@ const enquiriesSlice = createSlice({
     },
     setEnquiryPendingOnly(state, action: PayloadAction<boolean>) {
       state.page.pendingOnly = action.payload;
+    },
+    setEnquiryContactMissingOnly(state, action: PayloadAction<boolean>) {
+      state.page.contactMissingOnly = action.payload;
     },
     setEnquiryClosedBomOnly(state, action: PayloadAction<boolean>) {
       state.page.closedBomOnly = action.payload;
@@ -1243,6 +1248,7 @@ export const {
   setEnquirySort,
   setEnquiryProjectReference,
   setEnquiryPendingOnly,
+  setEnquiryContactMissingOnly,
   setEnquiryClosedBomOnly,
   setEnquiryIncompleteOnly,
   setEnquiryCostWarningOnly,
@@ -1287,6 +1293,7 @@ export const selectEnquiryQuery = (state: RootState): EnquiryQuery => ({
   globalSearch: state.filters.globalSearch,
   projectReference: state.enquiries.page.projectReference,
   pendingOnly: state.enquiries.page.pendingOnly,
+  contactMissingOnly: state.enquiries.page.contactMissingOnly,
   closedBomOnly: state.enquiries.page.closedBomOnly,
   incompleteOnly: state.enquiries.page.incompleteOnly,
   costWarningOnly: state.enquiries.page.costWarningOnly,

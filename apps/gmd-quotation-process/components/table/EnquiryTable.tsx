@@ -13,7 +13,7 @@ import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter
 import CellSelect, { optionsWithCurrent } from "./CellSelect";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, fetchActuator, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, loadEnquiryItems, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, fetchActuator, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, loadEnquiryItems, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryContactMissingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
 import { enquiryFilterKey } from "@/lib/enquiryQuery";
 import { fetchDocketNumbers, fetchFilteredEnquiryExport, fetchGeneratedImageMap } from "@/app/actions/enquiryQuery";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
@@ -591,6 +591,9 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       ),
     );
   };
+  // Filter bar toggle: dockets with a blank Contact person, Email, Phone or Utility.
+  const contactMissingOnly = pageState.contactMissingOnly;
+  const setContactMissingOnly = (value: boolean) => dispatch(setEnquiryContactMissingOnly(value));
   // BOM ID header filter: show only items whose selected BOM is closed (VerifyBom.cBatch = "C").
   const closedBomOnly = pageState.closedBomOnly;
   const setClosedBomOnly = (value: boolean) => dispatch(setEnquiryClosedBomOnly(value));
@@ -851,6 +854,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const handleResetAllFilters = () => {
     dispatch(resetFilters());
     setPendingOnly(false);
+    setContactMissingOnly(false);
     setClosedBomOnly(false);
     setIncompleteOnly(false);
     setCostWarningOnly(false);
@@ -1599,6 +1603,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             "Enquiry Date": new Date(enquiry.enquiryDate).toLocaleDateString("en-GB"),
             "Docket No": enquiry.docketNumber,
             "Party Name": enquiry.partyName,
+            "Contact Person": enquiry.contactPerson || "",
             "Enquiry Type": enquiry.enquiryType || "",
             "State": enquiry.state || "",
             "Payment Terms": enquiry.paymentTerms || "",
@@ -1650,6 +1655,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               "Enquiry Date": new Date(enquiry.enquiryDate).toLocaleDateString("en-GB"),
               "Docket No": enquiry.docketNumber,
               "Party Name": enquiry.partyName,
+              "Contact Person": enquiry.contactPerson || "",
               "Enquiry Type": enquiry.enquiryType || "",
               "State": enquiry.state || "",
               "Payment Terms": enquiry.paymentTerms || "",
@@ -2371,6 +2377,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
         contractOptions={allSelectedContractOptions}
         pendingOnly={pendingOnly}
         onTogglePending={() => setPendingOnly((v) => !v)}
+        contactMissingOnly={contactMissingOnly}
+        onToggleContactMissing={() => setContactMissingOnly(!contactMissingOnly)}
         hasActiveFilters={hasActiveFilters}
         onClearAll={handleResetAllFilters}
         visibleColumns={visibleColumns}

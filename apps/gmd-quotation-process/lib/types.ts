@@ -100,6 +100,7 @@ export interface EnquiryData {
   senderEmail?: string | null;
   emailAddress?: string | null;
   contactNo?: string | null;
+  contactPerson?: string | null;
   duplicate?: string | null;
   duplicateOfDocket?: string | null;
   emailApproved?: boolean | null;

@@ -63,7 +63,7 @@ const aiValidationSchema = z.object({
   ),
 });
 
-function aiFallbackEnabled(): boolean {
+export function aiFallbackEnabled(): boolean {
   const flag = (process.env.AI_FALLBACK_ENABLED ?? "").trim().toLowerCase();
   return (flag === "true" || flag === "1") && !!process.env.OPENAI_API_KEY;
 }

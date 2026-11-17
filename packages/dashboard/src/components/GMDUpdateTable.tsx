@@ -2559,7 +2559,13 @@ castingRateInputs,
           )}
         </div>
       );
-    } else if (display && isUrl(display)) {
+    } else if (
+      display &&
+      isUrl(display) &&
+      // "url1, url2" also parses as ONE URL (the list lands in its path), so
+      // lists fall through to the per-link branch below.
+      display.split(",").filter((p) => isUrl(p.trim())).length < 2
+    ) {
       // Single URL case (non-ORDER LIST columns)
       cellContent = (
         <a

@@ -50,6 +50,7 @@ export async function GET() {
         cBatch: true,
         costMerged: true,
         syncedAt: true,
+        drawingUrl: true,
       },
     }),
     // RM → BOM links now live in BomItem (RawMaterial no longer carries bomId).
@@ -122,6 +123,7 @@ export async function GET() {
         headOf(l8Map, i.l8ItemCategory),
         headOf(l2Map, i.l2ValveType),
         costBasisOf(getCastingKey(i.l8ItemCategory ?? "", i.l5Material ?? "") !== null, i.pcsWgt, cost),
+        i.drawingUrl,
       ];
     });
     const ids = items.map((item) => item.id);

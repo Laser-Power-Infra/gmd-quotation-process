@@ -126,7 +126,11 @@
     "creditors:sync:apply": "tsx scripts/sync-creditors.ts --apply",
     "debtors:joins:sync": "tsx scripts/sync-debtor-joins.ts",
     "debtors:joins:sync:apply": "tsx scripts/sync-debtor-joins.ts --apply",
-    "totals:outliers": "tsx scripts/list-total-outliers.ts"
+    "totals:outliers": "tsx scripts/list-total-outliers.ts",
+    "docket:contact": "tsx scripts/backfill-docket-contact.ts",
+    "docket:contact:apply": "tsx scripts/backfill-docket-contact.ts --apply",
+    "rm:drawings": "tsx scripts/sync-rm-drawings.ts",
+    "rm:drawings:apply": "tsx scripts/sync-rm-drawings.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.11",

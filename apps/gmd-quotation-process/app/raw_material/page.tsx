@@ -22,6 +22,7 @@ import {
 } from "@/lib/gmdUpdateSlice";
 import {
   CASTING_KEYS,
+  DRAWING_HEADER,
   applyCastingCost,
   computeCardStats,
   computeDuplicateDerivedIds,
@@ -166,6 +167,8 @@ const PROCESSED_ITEMS_HIDDEN_COLUMNS = [
   C_BATCH_HEADER,
 ];
 const TRANSFERRED_ITEMS_HIDDEN_COLUMNS = ["BOM ID", C_BATCH_HEADER];
+// The tables below make every column editable; the sheet-owned drawing stays a plain link.
+const DRAWING_NOT_EDITABLE = (header: string) => header !== DRAWING_HEADER;
 
 const RAW_MATERIAL_TABS = [
   { key: "new-items", label: "New Items (Blank Status)" },
@@ -180,10 +183,12 @@ function rowToGMDUpdateItem(
   cBatchIdx: number,
   costMerged = false,
   headIdx: { item: number; valve: number } = { item: -1, valve: -1 },
+  drawingIdx = -1,
 ): GMDUpdateRow {
   return {
     majorHeadItemType: headIdx.item >= 0 ? String(row[headIdx.item] ?? "") : null,
     majorHeadValveType: headIdx.valve >= 0 ? String(row[headIdx.valve] ?? "") : null,
+    drawingUrl: drawingIdx >= 0 ? String(row[drawingIdx] ?? "") : null,
     id,
     erpItemCode: String(row[0] ?? ""),
     itemNameAuto: String(row[1] ?? ""),
@@ -538,6 +543,7 @@ export default function Home() {
         valve: (data.headers ?? []).indexOf(MAJOR_HEAD_VALVE_TYPE_HEADER),
       };
       const costMergedIdSet = new Set(data.costMergedIds ?? []);
+      const drawingIdx = (data.headers ?? []).indexOf(DRAWING_HEADER);
       const items = validIndices.map((i) =>
         rowToGMDUpdateItem(
           data.ids[i],
@@ -545,6 +551,7 @@ export default function Home() {
           cBatchIdx,
           costMergedIdSet.has(data.ids[i]),
           headIdx,
+          drawingIdx,
         ),
       );
       dispatch(hydrateGMDUpdate(items));
@@ -1693,6 +1700,7 @@ export default function Home() {
                     onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
                     hiddenColumns={PROCESSED_ITEMS_HIDDEN_COLUMNS}
+                    dropdownRowCondition={DRAWING_NOT_EDITABLE}
                     cellBadges={ERP_CODE_BADGES}
                     batchFilterHeader="ERP ITEM CODE"
                     batchPresenceFilters={RAW_MATERIAL_BATCH_FILTERS}
@@ -1730,6 +1738,7 @@ export default function Home() {
                     onUsdCostUpdate={handleUsdCostUpdate}
                     onRefreshRate={refreshRate}
                     hiddenColumns={TRANSFERRED_ITEMS_HIDDEN_COLUMNS}
+                    dropdownRowCondition={DRAWING_NOT_EDITABLE}
                     cellBadges={ERP_CODE_BADGES}
                     batchFilterHeader="ERP ITEM CODE"
                     batchPresenceFilters={RAW_MATERIAL_BATCH_FILTERS}

@@ -95,7 +95,7 @@ cached Server Action result.
 
 ## `raw-material`
 
-Four sequential steps in `run-gmd-update.ts`:
+Five sequential steps in `run-gmd-update.ts`:
 
 1. **`runGmdCatalogueSync()`** (`gmd-update-catalogue.ts`) — `GMD UPDATION`
    tab → `RawMaterial`. Creates rows for ERP codes not yet in the DB; on
@@ -115,6 +115,12 @@ Four sequential steps in `run-gmd-update.ts`:
    Auto BOM rule (`/bom/auto`) and creates `NEW-BOM-…` BOMs for full items
    that have no BOM. Inactive rules are skipped. Never throws: a failing rule
    is logged and counted in `steps.autoBom.failed`.
+5. **`syncRmDrawings()`** (`lib/gmd_lib/rmDrawings.ts`) — Puja's `RM drawing
+   map (Asmita)` tab (gid 588349458) `DRAWING LINK` → `RawMaterial.drawingUrl`,
+   matched on `erpItemCode`; a code's distinct links are joined `", "`. Set-only:
+   codes absent from the sheet or listed without a link keep their value. A
+   failure lands in the result's `warnings` and does not fail the job. Manual
+   run: `pnpm rm:drawings` (dry run) / `pnpm rm:drawings:apply`.
 
 Steps are strictly sequential: a fatal failure in step 1 aborts before step 2,
 because refreshing stock against a half-synced table is not useful.

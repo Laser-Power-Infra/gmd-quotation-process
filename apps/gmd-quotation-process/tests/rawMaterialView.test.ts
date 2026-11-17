@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GMDUpdateRow } from "../lib/gmdUpdateSlice";
 import {
+  DERIVED_TAIL_HEADERS,
   applyCastingCost,
   computeCardStats,
   computeDuplicateDerivedIds,
@@ -22,15 +23,17 @@ const item = (o: Partial<GMDUpdateRow>): GMDUpdateRow =>
 const RATES = { DI: "100", CS: "", CI: "", SS: "", Bronze: "", MS: "", GI: "" };
 
 test("itemToRow is cached per item identity and inserts derived name + cBatch", () => {
-  const a = item({ id: "a", erpItemCode: "E1", itemNameDerived: "NAME", cBatch: "C" });
+  const a = item({ id: "a", erpItemCode: "E1", itemNameDerived: "NAME", cBatch: "C", drawingUrl: "https://d/1" });
   const row = itemToRow(a);
   assert.equal(itemToRow(a), row);
   assert.equal(row[2], "NAME");
-  // Tail: cBatch, then the derived Major Heads and cost basis.
-  assert.equal(row[row.length - 4], "C");
+  // Tail: cBatch, then the derived Major Heads, cost basis and the drawing link.
+  assert.equal(row[row.length - 5], "C");
+  assert.equal(row[row.length - 4], "UNCLASSIFIED");
   assert.equal(row[row.length - 3], "UNCLASSIFIED");
-  assert.equal(row[row.length - 2], "UNCLASSIFIED");
-  assert.equal(row[row.length - 1], "Missing");
+  assert.equal(row[row.length - 2], "Missing");
+  assert.equal(row[row.length - 1], "https://d/1");
+  assert.equal(row.length - DERIVED_TAIL_HEADERS.length - 1, row.indexOf("C"));
   assert.notEqual(itemToRow({ ...a }), row);
 });
 

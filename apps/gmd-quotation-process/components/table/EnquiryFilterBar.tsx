@@ -21,6 +21,8 @@ export default function EnquiryFilterBar({
   contractOptions,
   pendingOnly,
   onTogglePending,
+  contactMissingOnly,
+  onToggleContactMissing,
   hasActiveFilters,
   onClearAll,
   visibleColumns,
@@ -33,6 +35,8 @@ export default function EnquiryFilterBar({
   contractOptions: string[];
   pendingOnly: boolean;
   onTogglePending: () => void;
+  contactMissingOnly: boolean;
+  onToggleContactMissing: () => void;
   hasActiveFilters: boolean;
   onClearAll: () => void;
   visibleColumns: string[];
@@ -96,6 +100,18 @@ export default function EnquiryFilterBar({
         }`}
       >
         {pendingOnly ? "Pending only ✓" : "Pending only"}
+      </button>
+      <button
+        type="button"
+        onClick={onToggleContactMissing}
+        title="Show only dockets whose offer has not gone out (closure blank or Pending) with a blank Contact person, Email, Phone or Utility"
+        className={`h-7 shrink-0 rounded border px-2 text-[10px] font-semibold cursor-pointer ${
+          contactMissingOnly
+            ? "bg-amber-500 text-white border-amber-500"
+            : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/25"
+        }`}
+      >
+        {contactMissingOnly ? "Contact / utility missing ✓" : "Contact / utility missing"}
       </button>
       {hasActiveFilters && (
         <button

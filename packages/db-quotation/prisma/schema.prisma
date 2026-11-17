@@ -67,6 +67,8 @@ model Enquiry {
   senderEmail String?
   emailAddress        String?
   contactNo           String?
+  // Contact person's name; auto-filled from the enquiry mail's signature at docket creation.
+  contactPerson       String?
   duplicate String?
   duplicateOfDocket String?
   sourceThreadId String? @unique
@@ -462,6 +464,8 @@ model RawMaterial {
   attachmentUrl     String?
   orderDelivery     String?
   cBatch            String?
+  // Google Drive drawing link(s) from Puja's "RM drawing map" sheet; comma-joined when one code has several drawings.
+  drawingUrl        String?
 
   // BOMs where this RawMaterial is used as a component
   bomComponents BomItem[]

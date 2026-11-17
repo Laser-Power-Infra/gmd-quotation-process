@@ -47,6 +47,8 @@ export interface GMDUpdateRow {
   /** Major Heads derived by the /raw_material route from the LookupOption mapping (see lib/gmd_lib/majorHead). */
   majorHeadItemType?: string | null;
   majorHeadValveType?: string | null;
+  /** Drawing link(s), comma-joined; synced from the RM drawing map sheet, read-only here. */
+  drawingUrl?: string | null;
   /**
    * Hidden flag: the row's blank NEW ITEM STATUS was merged into an existing
    * New Item (same ITEM NAME (proposed)-AUTO), so it must stay in Filtered
