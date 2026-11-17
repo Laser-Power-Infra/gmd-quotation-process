@@ -69,7 +69,7 @@ async function main() {
       }
 
       if (validCount > 0 && sumCost > 0) {
-        await recalculateItem(item.id, { cost: sumCost });
+        await recalculateItem(item.id, { cost: sumCost }, { allowFrozen: true });
         await prisma.enquiryItem.update({
           where: { id: item.id },
           data: {

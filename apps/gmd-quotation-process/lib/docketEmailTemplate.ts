@@ -6,6 +6,19 @@
  * swap the visual format here without touching the send pipeline.
  */
 
+/**
+ * A docket's `emailSendingAt` claim older than this is treated as abandoned (server crash or restart
+ * mid-send) and may be re-claimed. Longer than any real send (PDF build + Drive + n8n).
+ */
+export const DOCKET_EMAIL_SENDING_STALE_MS = 10 * 60 * 1000;
+
+/** True while a send claimed at `sendingAt` is still in flight (not yet stale). */
+export function isDocketEmailSending(sendingAt: string | Date | null | undefined, now = Date.now()): boolean {
+  if (!sendingAt) return false;
+  const t = new Date(sendingAt).getTime();
+  return Number.isFinite(t) && now - t < DOCKET_EMAIL_SENDING_STALE_MS;
+}
+
 export interface DocketEmailData {
   docketNumber: string;
   /** Mail revises the prices of an earlier offer. */

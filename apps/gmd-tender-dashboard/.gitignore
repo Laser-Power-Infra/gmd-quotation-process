@@ -52,3 +52,5 @@ kestra/data/database.mv.db
 *.tar
 # *.sql
 *.xls
+# Legacy WhatsApp (Evolution) service data: holds login session keys, never commit
+evolution/

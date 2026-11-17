@@ -16,13 +16,13 @@
  * Run by ofelia on `@every 1h12m` (72 minutes), a cadence a plain cron cannot
  * express. Safe to overlap: `pbgData` is written by no other scheduled job.
  *
- * A single-step job still owns an in-flight latch: ofelia's `no-overlap = true`
- * cannot see a user clicking the manual Sync button (or a second app instance)
- * overlapping the same run.
+ * A single-step job still holds the shared "pbg" latch (`job-latch.ts`): the
+ * Sync button takes the same latch, so a click during this run is refused
+ * instead of inserting a new BG twice (`PbgData` has no unique key).
  */
 
 import { syncPbgData, type PbgSyncResult } from "@/lib/pbg/pbg-data";
-import { JobAlreadyRunningError } from "./run-gmd-update";
+import { JobAlreadyRunningError, runningJobs as inFlight } from "./job-latch";
 import { recordJobRun } from "./job-heartbeat";
 
 export type JobName = "pbg";
@@ -36,8 +36,6 @@ export type ScheduledPbgResult = {
     sync?: PbgSyncResult;
   };
 };
-
-const inFlight = new Set<JobName>();
 
 export async function runScheduledPbg(): Promise<ScheduledPbgResult> {
   const job: JobName = "pbg";

@@ -67,7 +67,7 @@ async function main() {
         data: { bypass: "-" },
       });
       try {
-        await recalculateItem(item.id, { bypass: "-" });
+        await recalculateItem(item.id, { bypass: "-" }, { allowFrozen: true });
       } catch (e) {
         console.warn(`\n  warn recalc failed for ${item.id}:`, e);
       }

@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { getDistinctBomIds, getBomRmAvailBatch, resolveContractReviewBomIdsFromActuator, computeContractReviewRmAvail, findBomForItem } from "@/lib/verifyBomLookup";
 import { splitCsvLinks } from "@/lib/gmd_lib/contract-order-links";
 import { latestByContractItem, quoteKey } from "@/lib/quotedCost";
+import { busyMessage, runningJobs } from "@/schedular_function/job-latch";
 
 export async function selectContractReviewBomIdAction(
   id: string,
@@ -1336,6 +1337,12 @@ export async function checkBomMastSyncAction() {
 export async function syncBomMastItemNamesAction() {
   "use server";
   await requireAccess();
+  // Creates BomItem links like the BOM MAST sync, so it holds the same latch:
+  // an overlapping run would create the same links twice.
+  if (runningJobs.has("bom-mast")) {
+    return { success: false, busy: true, error: busyMessage("BOM") };
+  }
+  runningJobs.add("bom-mast");
   try {
     const plan = await buildBomMastSyncPlan();
     const { readBomMastErp, readItemMasterErp } = await import(
@@ -1504,6 +1511,8 @@ export async function syncBomMastItemNamesAction() {
       success: false,
       error: error.message || "Failed to sync item names from sheets.",
     };
+  } finally {
+    runningJobs.delete("bom-mast");
   }
 }
 

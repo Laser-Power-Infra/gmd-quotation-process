@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { syncPbgDataAction } from "@/app/pbg/actions";
+import { toast } from "sonner";
+import { pbgSyncRunningAction, syncPbgDataAction } from "@/app/pbg/actions";
 
 type Status = { tone: "success" | "error"; text: string } | null;
 
@@ -47,6 +48,11 @@ export function SyncButton() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<Status>(null);
+  // Another PBG sync (the scheduled job or another user) holds the latch; checked on load, no polling.
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    pbgSyncRunningAction().then(setBusy, () => {});
+  }, []);
 
   function handleClick() {
     setStatus(null);
@@ -59,6 +65,9 @@ export function SyncButton() {
           text: `Inserted ${result.inserted} · Updated ${result.updated} · Unchanged ${result.unchanged} in ${seconds}s`,
         });
         router.refresh();
+      } else if (result.busy) {
+        setBusy(true);
+        toast.error(result.error);
       } else {
         setStatus({ tone: "error", text: result.error });
       }
@@ -70,11 +79,11 @@ export function SyncButton() {
       <button
         type="button"
         onClick={handleClick}
-        disabled={isPending}
+        disabled={isPending || busy}
         className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
       >
         {isPending ? <Spinner /> : <RefreshIcon />}
-        {isPending ? "Syncing…" : "Sync from Sheet"}
+        {isPending ? "Syncing…" : busy ? "Sync running…" : "Sync from Sheet"}
       </button>
       {status && (
         <p

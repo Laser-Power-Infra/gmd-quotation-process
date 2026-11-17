@@ -17,6 +17,7 @@ import {
 } from "@/lib/gmd_lib/contract-order-links";
 import { rebuildSupplyHistoryBomLinks } from "@/lib/supplyHistoryBomSync";
 import { runBomMastErpSync } from "@/schedular_function/bom-mast-sync";
+import { busyMessage, JobAlreadyRunningError, withJobLatch } from "@/schedular_function/job-latch";
 import { runSupplyRateBackfill } from "@/lib/supplyRateBackfill";
 import { runExecutionTrackingStep } from "@/schedular_function/execution-tracking-sync";
 import { getFiscalYearLabel } from "@/lib/docketNumber";
@@ -67,13 +68,18 @@ export async function POST() {
     // Refresh the BOM graph first so the manual Sync button does not have to wait
     // for the :05 hourly bom-mast job — the link rebuild below reads it. A
     // failure here is logged and swallowed; the MASTER row sync still stands.
+    // A BOM sync already running refuses the whole click (409): a second one
+    // would insert the same BomItem links again.
     let bomMast: Awaited<ReturnType<typeof runBomMastErpSync>> | null = null;
     try {
-      bomMast = await runBomMastErpSync();
+      bomMast = await withJobLatch("bom-mast", runBomMastErpSync);
       console.log(
         `[supply-sync] BOM MAST ERP synced: sheetRows=${bomMast.sheetRows} bomCreated=${bomMast.bomCreated} linkCreated=${bomMast.linkCreated}`,
       );
     } catch (err) {
+      if (err instanceof JobAlreadyRunningError) {
+        return NextResponse.json({ success: false, busy: true, error: busyMessage("BOM") }, { status: 409 });
+      }
       console.error("[supply-sync] BOM MAST ERP sync failed:", err);
     }
 

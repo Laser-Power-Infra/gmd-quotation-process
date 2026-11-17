@@ -17,6 +17,7 @@ import {
   computeContractReviewEnquiryBackfill,
   applyContractReviewEnquiryBackfill,
 } from "@/lib/gmd_lib/contract-review-enquiry-backfill";
+import { busyMessage, runningJobs } from "@/schedular_function/job-latch";
 
 const SPREADSHEET_ID =
   process.env.CONTRACT_REVIEW_SPREADSHEET_ID
@@ -87,6 +88,15 @@ const SKIP_FIELDS = new Set([
 export async function POST() {
   const denied = await denyIfNoAccess();
   if (denied) return denied;
+  // Same latch as the hourly contract-review job: ContractReview has no unique
+  // key, so two overlapping runs would both insert the same new contract lines.
+  if (runningJobs.has("contract-review")) {
+    return NextResponse.json(
+      { success: false, busy: true, error: busyMessage("Contract Review") },
+      { status: 409 },
+    );
+  }
+  runningJobs.add("contract-review");
   try {
     if (!SPREADSHEET_ID) {
       throw new Error(
@@ -312,5 +322,7 @@ export async function POST() {
     const message =
       error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    runningJobs.delete("contract-review");
   }
 }

@@ -10,10 +10,11 @@ export interface ContractMail extends MailThread {
 
 /**
  * Loose on purpose: host apps return `{ success, data }` / `{ success, error }`
- * objects whose `data` shape is read field-by-field by the page.
+ * objects whose `data` shape is read field-by-field by the page. `busy` marks a
+ * sync refused because the same sync is already running.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ActionResult<T = any> = { success: boolean; data?: T; error?: string };
+export type ActionResult<T = any> = { success: boolean; data?: T; error?: string; busy?: boolean };
 
 /** Per-row field values written by a batch action. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,6 +120,8 @@ export interface ContractReviewActions {
   ) => Promise<ActionResult<unknown[][]>>;
 
   sync?: () => Promise<ActionResult>;
+  /** True while a sync (scheduled or another click) is running; the SYNC button then shows as running. */
+  syncRunning?: () => Promise<boolean>;
   recomputeIndentListingVersionsAction?: () => Promise<ActionResult>;
   syncContractReviewEnquiryFieldsAllAction?: () => Promise<ActionResult>;
   syncContractReviewEnquiryFieldsBatchAction?: BatchAction;

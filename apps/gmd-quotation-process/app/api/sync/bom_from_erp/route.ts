@@ -1,6 +1,7 @@
 import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { runBomMastErpSync } from "@/schedular_function/bom-mast-sync";
+import { busyMessage, JobAlreadyRunningError, withJobLatch } from "@/schedular_function/job-latch";
 
 // Uses the Node-only Google OAuth client (GOOGLE_* env vars), so it must run on Node.
 export const runtime = "nodejs";
@@ -12,15 +13,19 @@ export const maxDuration = 1800;
  *
  * Thin HTTP wrapper around the shared, action-free service. The hourly
  * scheduler (`POST /api/scheduler/bom-mast`) calls the exact same function, so
- * the two paths cannot drift.
+ * the two paths cannot drift, and under the same "bom-mast" latch, so they
+ * cannot overlap.
  */
 export async function POST() {
   const denied = await denyIfNoAccess();
   if (denied) return denied;
   try {
-    const result = await runBomMastErpSync();
+    const result = await withJobLatch("bom-mast", runBomMastErpSync);
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
+    if (error instanceof JobAlreadyRunningError) {
+      return NextResponse.json({ success: false, busy: true, error: busyMessage("BOM") }, { status: 409 });
+    }
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("Error syncing BOM MAST ERP -> Bom/BomItem:", error);
     return NextResponse.json({ success: false, error: message }, { status: 500 });

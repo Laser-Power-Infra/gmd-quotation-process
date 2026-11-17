@@ -10,10 +10,8 @@ import {
   CONTRACT_NO_IDX,
   MC_IDX,
 } from "@gmd/contract-review/view";
-import {
-  getContractReviewDataset,
-  invalidateContractReviewCache,
-} from "@/lib/contractReviewView";
+import { applyColumnFlags, loadContractReviewItems, toContractReviewData } from "@gmd/contract-review/server";
+import { getBatchDistinctBomIds } from "@/lib/verifyBomLookup";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
 import { mailTagDay } from "@/lib/contractReviewLinks";
 import { autoAssignContractReviewBomIdFromActuator, backfillContractReviewCostFromQuotationAction, backfillContractReviewNoUseBatchAction, selectContractReviewBomIdAction, syncContractReviewEnquiryFieldsBatchAction } from "@/app/actions/contractReview";
@@ -39,10 +37,12 @@ export async function runContractReviewBackfills(): Promise<ActionResult<{ faile
   const startedAt = Date.now();
   const flags = await getContractReviewFlags();
   const { isEnabled, isEditable } = columnAccess(flags);
-  // The backfills are idempotent, so the cached rows are good enough; a stale
-  // copy only means a few redundant writes, not wrong ones.
-  const { data, bomIdOptions } = await getContractReviewDataset();
-  const { rows, ids } = data;
+  // This job works on every row, so it is the one place that still loads the whole table.
+  const items = await loadContractReviewItems();
+  const { rows, ids, headers } = applyColumnFlags(toContractReviewData(items), flags);
+  const bomIdsByCode = await getBatchDistinctBomIds(items.map((i) => i.itemCode));
+  const bomIdOptions: Record<string, string[]> = {};
+  for (const item of items) bomIdOptions[item.id] = bomIdsByCode.get(item.itemCode) ?? [];
 
   const blank = (row: unknown[], idx: number) =>
     idx === -1 || String(row[idx] ?? "").trim() === "";
@@ -87,9 +87,9 @@ export async function runContractReviewBackfills(): Promise<ActionResult<{ faile
   // typed after these cached rows were read is never overwritten.
   // shortcut: a newly added tag's date appears after the next hourly scheduler run, not at once;
   // fill it in addContractMailDoc too if that lag bothers anyone.
-  const mailDocsIdx = data.headers.indexOf(MAIL_DOCS_COLUMN);
+  const mailDocsIdx = headers.indexOf(MAIL_DOCS_COLUMN);
   const tagDays = (header: string, tag: MailDocCategory) => {
-    const idx = data.headers.indexOf(header);
+    const idx = headers.indexOf(header);
     if (!isEnabled(header)) return [];
     return ids.flatMap((id, i) => {
       const day = mailTagDay(rows[i][idx], rows[i][mailDocsIdx], tag);
@@ -137,6 +137,5 @@ export async function runContractReviewBackfills(): Promise<ActionResult<{ faile
   } else {
     console.info(`${summary}: ok`);
   }
-  invalidateContractReviewCache();
   return { success: true, data: { failed: failed.length + softFailed.length } };
 }

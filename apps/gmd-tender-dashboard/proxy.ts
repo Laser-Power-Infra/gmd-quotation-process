@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 
 const protectedRoutes = ["/admin"]
 const syncApiPaths = ["/api/sync", "/api/refresh-all"]
-const publicApiPaths = ["/api/external", "/api/test", "/api/notifications", "/api/sync-dockets", "/api/sync-costing-smartsheet", "/api/sync-bom", "/api/health", "/api/sync-to-merged", "/api/admin/reset-password", "/api/webhook/agent-report", "/api/webhook/ai-relevance"]
+const publicApiPaths = ["/api/external", "/api/notifications", "/api/sync-dockets", "/api/sync-costing-smartsheet", "/api/sync-bom", "/api/health", "/api/sync-to-merged", "/api/admin/reset-password", "/api/webhook/agent-report", "/api/webhook/ai-relevance"]
 const ADMIN_ROLES = ["admin", "developer"]
 
 export default async function proxy(req: NextRequest) {
@@ -22,16 +22,15 @@ export default async function proxy(req: NextRequest) {
     if (publicApiPaths.some(p => path.startsWith(p))) {
       return NextResponse.next()
     }
-    if (["POST", "PATCH", "PUT", "DELETE"].includes(req.method)) {
-      const session = await auth()
-      if (!session?.user) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-      }
-      // Sync API routes require admin or developer role
-      if (syncApiPaths.some(p => path.startsWith(p))) {
-        if (!ADMIN_ROLES.includes(session.user.role)) {
-          return NextResponse.json({ error: "Forbidden" }, { status: 403 })
-        }
+    // Every method needs a session: open GETs leaked portal passwords (/api/credentials)
+    const session = await auth()
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+    // Sync API routes require admin or developer role
+    if (syncApiPaths.some(p => path.startsWith(p))) {
+      if (!ADMIN_ROLES.includes(session.user.role)) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 })
       }
     }
     return NextResponse.next()
@@ -61,5 +60,6 @@ export default async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg)$).*)"],
+  // Second entry: the image-extension skip above must not let "/api/x/5.png" bypass the API check
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|webp|svg)$).*)", "/api/:path*"],
 }
