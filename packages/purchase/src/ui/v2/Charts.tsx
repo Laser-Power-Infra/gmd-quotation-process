@@ -11,28 +11,48 @@ import type { ChartBar, PurchaseMeta } from "../../poColumns";
 const count = new Intl.NumberFormat("en-IN");
 const panel = "rounded-xl border border-border bg-card";
 
-function Kpi({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div className={cn(panel, "min-w-0 px-3.5 py-2.5")}>
+function Kpi({ label, value, sub, active, onPick }: { label: string; value: string; sub: string; active?: boolean; onPick?: () => void }) {
+  const body = (
+    <>
       <p className="truncate text-xs text-muted-foreground">{label}</p>
       <p className="mt-0.5 truncate text-xl font-semibold tracking-tight tabular-nums">{value}</p>
       <p className="truncate text-[11px] text-muted-foreground">{sub}</p>
-    </div>
+    </>
+  );
+  if (!onPick) return <div className={cn(panel, "min-w-0 px-3.5 py-2.5")}>{body}</div>;
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      title={`Filter the table: ${label}`}
+      onClick={onPick}
+      className={cn(
+        panel,
+        "min-w-0 px-3.5 py-2.5 text-left outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50",
+        active && "border-primary ring-1 ring-primary",
+      )}
+    >
+      {body}
+    </button>
   );
 }
 
-export function KpiCards({ kpi }: { kpi: PurchaseMeta["kpi"] | undefined }) {
+/** Cards that filter the table; each maps to the same rule as its SQL figure. */
+export type KpiKey = "openPo" | "inTransit" | "overdue" | "due30" | "suppliers" | "untagged";
+
+export function KpiCards({ kpi, onPick, isActive }: { kpi: PurchaseMeta["kpi"] | undefined; onPick?: (key: KpiKey) => void; isActive?: (key: KpiKey) => boolean }) {
   const k = kpi;
   const money = (n: number | undefined) => (k ? formatLakh(n ?? 0) : "–");
   const n = (v: number | undefined) => (k ? count.format(v ?? 0) : "–");
+  const pick = (key: KpiKey) => ({ active: isActive?.(key), onPick: onPick && (() => onPick(key)) });
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-      <Kpi label="Open PO value" value={money(k?.openPoValue)} sub={`Ordered value of ${n(k?.openLines)} open lines`} />
-      <Kpi label="In-transit value" value={money(k?.inTransitValue)} sub="Balance qty × rate, still to arrive" />
-      <Kpi label="Overdue lines" value={n(k?.overdueLines)} sub={`${money(k?.overdueValue)} past delivery date`} />
-      <Kpi label="Due in next 30 days" value={money(k?.due30Value)} sub={`${n(k?.due30Lines)} lines`} />
-      <Kpi label="Suppliers with open POs" value={n(k?.suppliers)} sub="Distinct suppliers" />
-      <Kpi label="Untagged lines" value={n(k?.untaggedLines)} sub={`${money(k?.untaggedValue)} with no sales contract`} />
+      <Kpi label="Open PO value" value={money(k?.openPoValue)} sub={`Ordered value of ${n(k?.openLines)} open lines`} {...pick("openPo")} />
+      <Kpi label="In-transit value" value={money(k?.inTransitValue)} sub="Balance qty × rate, still to arrive" {...pick("inTransit")} />
+      <Kpi label="Overdue lines" value={n(k?.overdueLines)} sub={`${money(k?.overdueValue)} past delivery date`} {...pick("overdue")} />
+      <Kpi label="Due in next 30 days" value={money(k?.due30Value)} sub={`${n(k?.due30Lines)} lines`} {...pick("due30")} />
+      <Kpi label="Suppliers with open POs" value={n(k?.suppliers)} sub="Distinct suppliers" {...pick("suppliers")} />
+      <Kpi label="Untagged lines" value={n(k?.untaggedLines)} sub={`${money(k?.untaggedValue)} with no sales contract`} {...pick("untagged")} />
     </div>
   );
 }
