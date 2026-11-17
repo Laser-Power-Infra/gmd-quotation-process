@@ -131,7 +131,11 @@ const GROUPED_MERGE_COLUMNS = [
 ];
 
 // Hidden YES/blank flags behind the quick filters and row tints.
-const GROUPED_FLAG_HEADERS = [MULTI_OPEN_BOM_HEADER, BOM_MISMATCH_HEADER];
+const GROUPED_FLAG_HEADERS = [MULTI_OPEN_BOM_HEADER, BOM_MISMATCH_HEADER, "C BATCH"];
+
+// cBatch is per BOM line, so the chip sits on the line's own (unmerged) cell;
+// on the merged ITEM CODE cell it would show for any closed line of the item.
+const RM_CODE_BADGES = cBatchBadges("RM ITEM CODE");
 
 const GROUPED_HEADER_ORDER = [
   ...GROUPED_PARENT_HEADERS,
@@ -1077,6 +1081,7 @@ function VerifyBomView() {
             mergeColumns={GROUPED_MERGE_COLUMNS}
             rowGroups={rowGroups}
             hiddenColumns={GROUPED_FLAG_HEADERS}
+            cellBadges={RM_CODE_BADGES}
             batchFilterHeader="ITEM CODE"
             batchPresenceFilters={GROUPED_BATCH_FILTERS}
             dangerRowIds={mismatchIds}
