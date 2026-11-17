@@ -1,0 +1,36 @@
+{
+  "name": "@gmd/debtors",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    "./ui": "./src/ui/DebtorsPage.tsx",
+    "./server": "./src/server/query.ts",
+    "./columns": "./src/columns.ts",
+    "./types": "./src/types.ts",
+    "./state": "./src/state/tableSlice.ts"
+  },
+  "dependencies": {
+    "@gmd/db-quotation": "workspace:*",
+    "@gmd/ui": "workspace:*",
+    "@reduxjs/toolkit": "^2.12.0",
+    "lucide-react": "^1.23.0",
+    "react-redux": "^9.3.0",
+    "server-only": "^0.0.1",
+    "sonner": "^2.0.7",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5",
+    "tsx": "^4.19.0"
+  },
+  "peerDependencies": {
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --conditions=react-server --test test/*.test.ts"
+  }
+}

@@ -41,6 +41,9 @@ importers:
       '@gmd/db-tender':
         specifier: workspace:*
         version: link:../../packages/db-tender
+      '@gmd/debtors':
+        specifier: workspace:*
+        version: link:../../packages/debtors
       '@gmd/execution-registers':
         specifier: workspace:*
         version: link:../../packages/execution-registers
@@ -649,6 +652,52 @@ importers:
       prisma:
         specifier: ^7.8.0
         version: 7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
+
+  packages/debtors:
+    dependencies:
+      '@gmd/db-quotation':
+        specifier: workspace:*
+        version: link:../db-quotation
+      '@gmd/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      lucide-react:
+        specifier: ^1.23.0
+        version: 1.52.0(@types/react@19.3.0)(react@19.2.4)
+      react:
+        specifier: ^19
+        version: 19.2.4
+      react-dom:
+        specifier: ^19
+        version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.8(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      xlsx:
+        specifier: ^0.18.5
+        version: 0.18.5
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.15
+      typescript:
+        specifier: ^5
+        version: 5.9.3
 
   packages/execution-registers:
     dependencies:

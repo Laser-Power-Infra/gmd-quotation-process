@@ -138,6 +138,7 @@
     "@gmd/db-tender": "workspace:*",
     "@gmd/execution-registers": "workspace:*",
     "@gmd/physical-stock": "workspace:*",
+    "@gmd/debtors": "workspace:*",
     "@gmd/purchase": "workspace:*",
     "@gmd/stock-allocation": "workspace:*",
     "@gmd/ui": "workspace:*",
