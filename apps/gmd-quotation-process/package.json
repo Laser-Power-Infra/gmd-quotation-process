@@ -102,6 +102,8 @@
     "physical:cost:apply": "tsx scripts/backfill-physical-stock-cost-bom.ts --apply",
     "physical:copy-stock-db": "tsx scripts/copy-physical-stock-to-stock-db.ts",
     "physical:copy-stock-db:apply": "tsx scripts/copy-physical-stock-to-stock-db.ts --apply",
+    "physical:erp-stock": "tsx scripts/sync-physical-stock-erp-stock.ts",
+    "physical:erp-stock:apply": "tsx scripts/sync-physical-stock-erp-stock.ts --apply",
     "physical:erp-code": "tsx scripts/backfill-physical-stock-erp-code.ts",
     "physical:erp-code:apply": "tsx scripts/backfill-physical-stock-erp-code.ts --apply",
     "physical:dedupe": "tsx scripts/dedupe-physical-stock.ts",

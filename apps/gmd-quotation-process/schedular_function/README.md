@@ -23,7 +23,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 |---|---|---|---|
 | Raw Material sync | `POST /api/scheduler/raw-material` | `raw-material-sync` | `GMD UPDATION`, `stock-phys` |
 | BOM MAST ERP sync | `POST /api/scheduler/bom-mast` | `bom-mast-sync` | `BOM MAST ERP` |
-| Physical Stock cost / BOM ID | `POST /api/scheduler/physical-stock-cost-bom` | `physical-stock-cost-bom-sync` | local `FullItem` / `Bom` / `BomItem` → stock DB `PhysicalStock` |
+| Physical Stock cost / BOM ID | `POST /api/scheduler/physical-stock-cost-bom` | `physical-stock-cost-bom-sync` | local `FullItem` / `Bom` / `BomItem` → stock DB `PhysicalStock`; `ITEM MASTER ERP` `STOCK` → `stock_as_per_erp` |
 | Supply History MASTER sync | `POST /api/scheduler/supply-history` | `supply-history-sync` | `MASTER`, GMD Clientwise ORDER LIST, `SALE_BILL` (rate gap-fill) |
 | Pending docket creation + duplicate cleanup | `POST /api/scheduler/docket-creation` | `docket-creation-sync` | `docket_quotation_threads`, `enquiries` |
 | Contract Review sync | `POST /api/scheduler/contract-review` | `contract-review-sync` | `CONTRACTS`, `DUMP`, `stock-phys`, `INSPECTION OFFER DUMP` |

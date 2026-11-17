@@ -27,6 +27,9 @@
  * DB (`RmCodeOption` / `BomCodeOption`, schedular_function/physical-stock-code-sync.ts) for the
  * New Item ERP-code picker; the stock app cannot read the quotation DB.
  *
+ * Last, it copies ITEM MASTER ERP `STOCK` into `stock_as_per_erp` by item code
+ * (schedular_function/physical-stock-erp-stock.ts).
+ *
  * A single-step job still owns an in-flight latch: ofelia's `no-overlap = true`
  * cannot see a manual `POST /api/scheduler/physical-stock-cost-bom` (or a second
  * app instance) overlapping the same run.
@@ -36,6 +39,7 @@ import { applyPhysicalStockDerivations } from "@/lib/gmd_lib/physical-stock-deri
 import { JobAlreadyRunningError } from "./run-gmd-update";
 import { recordJobRun } from "./job-heartbeat";
 import { syncPhysicalStockCodeOptions, type CodeOptionsSyncResult } from "./physical-stock-code-sync";
+import { syncPhysicalStockErpStock, type ErpStockSyncResult } from "./physical-stock-erp-stock";
 
 export type JobName = "physical-stock-cost-bom";
 
@@ -57,6 +61,8 @@ export type ScheduledPhysicalStockCostBomResult = {
     derive?: PhysicalStockDeriveResult;
     /** Quotation RM / CREATE BOM codes copied to the stock DB for the New Item picker. */
     codeOptions?: CodeOptionsSyncResult;
+    /** ITEM MASTER ERP STOCK -> stock_as_per_erp; `error` when the sheet read or write failed. */
+    erpStock?: ErpStockSyncResult | { error: string };
   };
 };
 
@@ -86,6 +92,15 @@ export async function runScheduledPhysicalStockCostBom(): Promise<ScheduledPhysi
       console.error(`[scheduler] ${job} code-options sync failed`, err);
     }
 
+    // Third step: a sheet failure fails the job (success=false) but keeps the derive result above.
+    try {
+      steps.erpStock = await syncPhysicalStockErpStock();
+      console.log(`[scheduler] ${job} erp-stock ${JSON.stringify(steps.erpStock)}`);
+    } catch (err) {
+      console.error(`[scheduler] ${job} erp-stock sync failed`, err);
+      steps.erpStock = { error: err instanceof Error ? err.message : String(err) };
+    }
+
     const elapsedMs = Date.now() - startedAtMs;
 
     console.log(
@@ -96,7 +111,7 @@ export async function runScheduledPhysicalStockCostBom(): Promise<ScheduledPhysi
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
     await recordJobRun(job, steps.derive.scanned);
 
-    return { success: true, job, startedAt, elapsedMs, steps };
+    return { success: !("error" in steps.erpStock), job, startedAt, elapsedMs, steps };
   } finally {
     // Always release, so a throw cannot wedge the next hourly run.
     inFlight.delete(job);

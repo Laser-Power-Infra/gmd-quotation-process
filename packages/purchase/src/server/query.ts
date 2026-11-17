@@ -56,8 +56,10 @@ const LINES = sql`b AS (
   FROM b
 )`;
 
-/** Filter key -> line column. */
-const FIELDS: Record<string, string> = { poNo: "po_no", supplier: "supplier", origin: "origin", poYear: "po_year", status: "status", contract: "contract" };
+/** Filter key -> line column. `supplierCode` has no column of its own: the host filters on it for the payable columns. */
+const FIELDS: Record<string, string> = { poNo: "po_no", supplier: "supplier", supplierCode: "supplier_code", origin: "origin", poYear: "po_year", status: "status", contract: "contract" };
+/** Filter keys that are per-PO figures (CTE `pa`), matched as the text the facet lists. `balance` is text, the rest numbers. */
+const PO_FIELDS = ["daysOverdue", "lines", "balance", "receivedPct", "orderedValue", "openValue"];
 const DATES: Record<string, string> = { poDate: "po_date", due: "due" };
 const SEARCHED = ["po_no", "item_code", "item_name", "supplier", "contract", "party_ref"];
 
@@ -65,18 +67,29 @@ const lcol = (name: string) => Prisma.raw(`l."${name}"`);
 const escapeLike = (v: string) => v.replace(/([\\%_])/g, "\\$1");
 const squish = (v: string) => v.replace(/\s+/g, "");
 
-/** WHERE over `l`; `skip` drops one key's own filter so its facet keeps every option. */
-export function buildWhere(query: PurchaseQuery, skip?: string): Prisma.Sql {
+/** Dropdown picks and "contains" text for the keys `colOf` knows. */
+function pickParts(query: PurchaseQuery, skip: string | undefined, colOf: (key: string) => Prisma.Sql | null): Prisma.Sql[] {
   const parts: Prisma.Sql[] = [];
   for (const [key, values] of Object.entries(query.filters)) {
-    if (key === skip || !values?.length || !FIELDS[key]) continue;
-    const c = lcol(FIELDS[key]);
-    parts.push(sql`(${Prisma.join(values.map((v) => (v === BLANK ? sql`${c} = ''` : sql`${c} = ${v}`)), " OR ")})`);
+    const c = key === skip || !values?.length ? null : colOf(key);
+    if (c) parts.push(sql`(${Prisma.join(values.map((v) => (v === BLANK ? sql`${c} = ''` : sql`${c} = ${v}`)), " OR ")})`);
   }
   for (const [key, value] of Object.entries(query.columnSearch ?? {})) {
-    if (key === skip || !value.trim() || !FIELDS[key]) continue;
-    parts.push(sql`regexp_replace(${lcol(FIELDS[key])}, '[[:space:]]', '', 'g') ILIKE ${`%${escapeLike(squish(value))}%`}`);
+    const c = key === skip || !value.trim() ? null : colOf(key);
+    if (c) parts.push(sql`regexp_replace(${c}, '[[:space:]]', '', 'g') ILIKE ${`%${escapeLike(squish(value))}%`}`);
   }
+  return parts;
+}
+
+/** WHERE over `pa` for the per-PO figure filters; null when none is set. */
+export function buildPoWhere(query: PurchaseQuery, skip?: string): Prisma.Sql | null {
+  const parts = pickParts(query, skip, (key) => (PO_FIELDS.includes(key) ? Prisma.raw(`pa."${key}"`) : null));
+  return parts.length ? Prisma.join(parts, " AND ") : null;
+}
+
+/** WHERE over `l`; `skip` drops one key's own filter so its facet keeps every option. */
+export function buildWhere(query: PurchaseQuery, skip?: string): Prisma.Sql {
+  const parts = pickParts(query, skip, (key) => (FIELDS[key] ? lcol(FIELDS[key]) : null));
   for (const [key, range] of Object.entries(query.dateRanges ?? {})) {
     if (key === skip || !DATES[key]) continue;
     if (range.from) parts.push(sql`${lcol(DATES[key])} >= ${range.from}::date`);
@@ -91,8 +104,29 @@ export function buildWhere(query: PurchaseQuery, skip?: string): Prisma.Sql {
   return parts.length ? Prisma.join(parts, " AND ") : sql`TRUE`;
 }
 
-/** `f`: the lines the current query keeps. */
-const filtered = (query: PurchaseQuery) => sql`WITH ${LINES}, f AS (SELECT * FROM l WHERE ${buildWhere(query)})`;
+const PCT = sql`least(100, 100 * sum(coalesce(received, 0) * coalesce(rate, 1)) / nullif(sum(ordered * coalesce(rate, 1)), 0))`;
+
+/**
+ * `g`: the lines the line filters keep. `pa`: each PO's figures over those lines, as filter text.
+ * `f`: the lines the whole query keeps, i.e. `g` minus the POs a figure filter rejects.
+ */
+const filtered = (query: PurchaseQuery, skip?: string) => {
+  const po = buildPoWhere(query, skip);
+  return sql`WITH ${LINES}, g AS (SELECT * FROM l WHERE ${buildWhere(query, skip)}),
+    pa AS (
+      SELECT a.*, coalesce(bal.balance, '') AS balance FROM (
+        SELECT po_no, coalesce(max(days_overdue)::text, '') AS "daysOverdue", count(*)::text AS lines,
+          coalesce(round(${PCT})::text, '') AS "receivedPct",
+          trim_scale(round(coalesce(sum(ordered_value), 0), 2))::text AS "orderedValue",
+          trim_scale(round(sum(open_value), 2))::text AS "openValue"
+        FROM g GROUP BY po_no
+      ) a LEFT JOIN (
+        SELECT po_no, string_agg(trim_scale(round(q, 3))::text || ' ' || uom, ', ' ORDER BY uom) AS balance
+        FROM (SELECT po_no, uom, sum(open_qty) AS q FROM g WHERE open_qty > 0 GROUP BY 1, 2) u GROUP BY 1
+      ) bal USING (po_no)
+    ),
+    f AS (SELECT g.* FROM g${po ? sql` WHERE g.po_no IN (SELECT pa.po_no FROM pa WHERE ${po})` : sql``})`;
+};
 
 // Most overdue first, then the most money still open.
 const FALLBACK_ORDER = sql`"daysOverdue" DESC NULLS LAST, "openValue" DESC, "poNo" ASC`;
@@ -119,7 +153,7 @@ export function pageSql(query: PurchaseQuery) {
         SELECT po_no AS "poNo", min(po_date) AS "poDate", min(supplier_code) AS "supplierCode", min(supplier) AS supplier, min(origin) AS origin,
           count(*)::int AS lines, (count(*) FILTER (WHERE open_qty > 0))::int AS "openLines",
           coalesce(sum(ordered_value), 0)::float AS "orderedValue", sum(open_value)::float AS "openValue",
-          least(100, 100 * sum(coalesce(received, 0) * coalesce(rate, 1)) / nullif(sum(ordered * coalesce(rate, 1)), 0))::float AS "receivedPct",
+          (${PCT})::float AS "receivedPct",
           min(due) FILTER (WHERE open_qty > 0) AS due, max(days_overdue)::int AS "daysOverdue",
           (${STATUS_ARRAY})[min(array_position(${STATUS_ARRAY}, status))] AS status,
           string_agg(DISTINCT nullif(contract, ''), ', ') AS contract
@@ -170,11 +204,22 @@ export async function listPurchasePoPage(query: PurchaseQuery): Promise<Purchase
   return { rows, total, meta: { kpi, ageing, suppliers, monthly, syncedAt: syncedAt ? syncedAt.toISOString() : null } };
 }
 
+/** The statement behind one facet; null for a key that is not filterable here. */
+export function facetSql(key: string, query: PurchaseQuery, limit = FACET_LIMIT): Prisma.Sql | null {
+  const f = filtered(query, key);
+  if (FIELDS[key]) return sql`${f} SELECT DISTINCT ${Prisma.raw(`f."${FIELDS[key]}"`)} AS v FROM f ORDER BY 1 LIMIT ${limit}`;
+  if (!PO_FIELDS.includes(key)) return null;
+  const c = Prisma.raw(`pa."${key}"`);
+  // Numbers list smallest first, not as text ("9" before "10").
+  const order = key === "balance" ? c : sql`nullif(${c}, '')::numeric NULLS FIRST`;
+  return sql`${f} SELECT ${c} AS v FROM pa WHERE pa.po_no IN (SELECT po_no FROM f) GROUP BY 1 ORDER BY ${order} LIMIT ${limit}`;
+}
+
 /** Distinct values of a filter key under every other active filter; empty cells come first as BLANK. */
-export async function listPurchaseFacet(key: string, query: PurchaseQuery): Promise<string[]> {
-  if (!FIELDS[key]) return [];
-  const rows = await stockPrisma.$queryRaw<{ v: string }[]>`WITH ${LINES}
-    SELECT DISTINCT ${lcol(FIELDS[key])} AS v FROM l WHERE ${buildWhere(query, key)} ORDER BY 1 LIMIT ${FACET_LIMIT}`;
+export async function listPurchaseFacet(key: string, query: PurchaseQuery, limit?: number): Promise<string[]> {
+  const q = facetSql(key, query, limit);
+  if (!q) return [];
+  const rows = await stockPrisma.$queryRaw<{ v: string }[]>(q);
   const values = rows.map((r) => r.v);
   return values.includes("") ? [BLANK, ...values.filter(Boolean)] : values;
 }

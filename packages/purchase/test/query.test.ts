@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { BLANK } from "@gmd/ui/components/data-table/types";
-import { buildOrderBy, buildWhere, listPurchaseFacet, listPurchaseLines, listPurchasePoPage } from "../src/server/query";
+import { buildOrderBy, buildPoWhere, buildWhere, facetSql, listPurchaseFacet, listPurchaseLines, listPurchasePoPage, pageSql } from "../src/server/query";
 
 const base = { page: 1, pageSize: 50, sort: null, search: "", filters: {} };
 const flat = (q: ReturnType<typeof buildWhere>) => q.sql.replace(/\s+/g, " ");
@@ -29,6 +29,20 @@ test("buildOrderBy: sortable columns only, overdue-first fallback", () => {
   assert.equal(buildOrderBy({ key: "x\"; drop", dir: "asc" }).sql, buildOrderBy(null).sql);
 });
 
+test("per-PO figure filters: own WHERE over pa, applied to f, skipped for their own facet", () => {
+  const q = { ...base, filters: { lines: ["2", BLANK], supplier: ["ACME"] }, columnSearch: { balance: "5 pcs" } };
+  const w = buildPoWhere(q)!;
+  assert.match(flat(w), /\(pa\."lines" = \? OR pa\."lines" = ''\) AND regexp_replace\(pa\."balance"/);
+  assert.deepEqual(w.values, ["2", "%5pcs%"]);
+  assert.ok(!buildWhere(q).sql.includes("lines"));
+  assert.equal(buildPoWhere(base), null);
+  assert.equal(buildPoWhere({ ...base, filters: { lines: ["2"] } }, "lines"), null);
+  assert.match(flat(pageSql(q).kpi), /g\.po_no IN \(SELECT pa\.po_no FROM pa WHERE/);
+  assert.ok(!pageSql(base).kpi.sql.includes("g.po_no IN"));
+  assert.match(flat(facetSql("openValue", q)!), /ORDER BY nullif\(pa\."openValue", ''\)::numeric NULLS FIRST/);
+  assert.equal(facetSql("payableNet", q), null);
+});
+
 // Live DB smoke: PURCHASE_SMOKE=1 STOCK_DATABASE_URL=... pnpm test
 test("page, facet and line queries run against the stock DB", { skip: !process.env.PURCHASE_SMOKE }, async () => {
   const open = { ...base, pageSize: 5, extra: { openOnly: true } };
@@ -43,4 +57,18 @@ test("page, facet and line queries run against the stock DB", { skip: !process.e
   const filtered = await listPurchasePoPage({ ...open, filters: { supplier: [page.rows[0].supplier] }, sort: { key: "openValue", dir: "desc" } });
   assert.ok(filtered.rows.every((r) => r.supplier === page.rows[0].supplier));
   assert.ok(filtered.meta!.kpi.inTransitValue <= page.meta!.kpi.inTransitValue);
+});
+
+test("figure filters run against the stock DB and narrow to the picked value", { skip: !process.env.PURCHASE_SMOKE }, async () => {
+  const open = { ...base, pageSize: 5, extra: { openOnly: true } };
+  for (const key of ["daysOverdue", "lines", "balance", "receivedPct", "orderedValue", "openValue"] as const) {
+    const options = await listPurchaseFacet(key, open);
+    const pick = options[options.length - 1];
+    const page = await listPurchasePoPage({ ...open, filters: { [key]: [pick] } });
+    console.log(key, options.length, "options, picked", pick, "->", page.total, "POs");
+    assert.ok(page.total > 0);
+    const shown = (r: (typeof page.rows)[number]) => (key === "balance" ? r.balance : key === "receivedPct" ? Math.round(r.receivedPct!) : Math.round(Number(r[key]) * 100) / 100);
+    assert.ok(page.rows.every((r) => String(shown(r)) === pick), `${key}: ${JSON.stringify(page.rows.map(shown))} vs ${pick}`);
+  }
+  assert.ok((await listPurchaseFacet("supplierCode", open, 100000)).length > 0);
 });
