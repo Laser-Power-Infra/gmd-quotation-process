@@ -241,6 +241,11 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
           <header className="flex items-baseline gap-3">
             <h1 className="text-lg font-semibold tracking-tight">Physical Stock</h1>
             <span className="text-sm tabular-nums text-muted-foreground">{data ? `${count.format(total)} items` : ""}</span>
+            {meta?.lastUpdated && (
+              <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                Last updated {new Date(meta.lastUpdated).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+              </span>
+            )}
           </header>
         )}
         {showNew && (
