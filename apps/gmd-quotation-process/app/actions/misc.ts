@@ -1280,12 +1280,14 @@ export async function applyVaRulesAction(enquiryId: string) {
     const { vaRuleRate } = await import("@/lib/vaRules");
     const { recalculateItem } = await import("@/lib/costCalculator");
     const { logItemChanges } = await import("@/lib/itemChangeLog");
+    const { docketSeatSpecs } = await import("@/lib/seatType-server");
+    const seatSpec = (await docketSeatSpecs([enquiryId])).get(enquiryId);
     const fresh = await prisma.enquiryItem.findMany({ where: { enquiryId } });
     let changed = 0, locked = 0;
     for (const it of fresh) {
       if (it.validation === "Yes") { locked++; continue; }
       const rate = vaRuleRate(
-        { itemType: it.itemType, itemName: it.itemName, size: it.size, cost: it.cost ? Number(it.cost) : null, quotedRate: it.quotedRate, contractReviewRate: it.contractReviewRate },
+        { ...it, seatSpec, cost: it.cost ? Number(it.cost) : null, vaPercent: it.vaPercent ? Number(it.vaPercent) : null },
         it.erpItemCode ? prevByCode.get(it.erpItemCode) : null,
       );
       if (rate === null || Math.abs(rate - parseFloat(it.quotedRate ?? "0")) < 0.005) continue;

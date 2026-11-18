@@ -2,6 +2,7 @@ import { Prisma } from "@gmd/db-quotation";
 import { stockPrisma } from "@gmd/db-stock";
 import { prisma } from "@/lib/prisma";
 import { deriveMapKey, isActuated } from "@/lib/actuatorCost";
+import { loadActuatorMaster } from "@/lib/actuatorSheet";
 import { resolveStockCodes, stockSummary } from "@/lib/actuatorStock";
 
 /** Live Physical Stock available qty per ERP code (several lines per code are summed). Same field stock allocation uses. */
@@ -16,9 +17,19 @@ export async function livePhysicalQty(codes: string[]): Promise<Map<string, numb
   return live;
 }
 
+/** Free qty per ERP code: live Physical Stock available minus what the stock allocation ledger has booked against the code. */
+export async function freeQty(codes: string[]): Promise<Map<string, number>> {
+  const [free, booked] = await Promise.all([
+    livePhysicalQty(codes),
+    codes.length ? stockPrisma.stockAllocation.groupBy({ by: ["erpCode"], where: { erpCode: { in: codes } }, _sum: { qty: true } }) : [],
+  ]);
+  for (const b of booked) free.set(b.erpCode, (free.get(b.erpCode) ?? 0) - (b._sum.qty ?? 0));
+  return free;
+}
+
 /**
  * Part of "Sync Available Stock": for actuated items with an actuator / gearbox code, reads the free qty of their ERP codes
- * and stores it in actuatorBreakdown.stock (shown on the Actuator chip, flagged red when free < docket qty).
+ * (the pick's stock lines) and stores it in actuatorBreakdown.stock (shown on the Actuator chip, flagged red when free < docket qty).
  */
 export async function syncActuatorStock(itemIds?: string[]): Promise<{ updatedIds: string[]; short: number }> {
   const items = await prisma.enquiryItem.findMany({
@@ -26,13 +37,11 @@ export async function syncActuatorStock(itemIds?: string[]): Promise<{ updatedId
   });
   const actuated = items.filter(isActuated);
   if (!actuated.length) return { updatedIds: [], short: 0 };
-  const [mappings, actStock] = await Promise.all([
-    prisma.actuatorMapping.findMany({ select: { mapKey: true, gmdGbCode: true } }),
-    prisma.actuatorStock.findMany({ select: { erpCode: true, actCode: true } }),
-  ]);
-  const gmdGb = new Map(mappings.map((m) => [m.mapKey, m.gmdGbCode]));
+  const master = await loadActuatorMaster();
+  const gmdGb = new Map(master.mappings.map((m) => [m.mapKey, m.gmdGbCode as string | null]));
+  const actStock = master.actuatorStock as { erpCode: string; actCode: string | null }[];
   const plan = actuated.map((it) => ({ it, codes: resolveStockCodes(it, gmdGb.get(deriveMapKey(it) ?? ""), actStock) }));
-  const live = await livePhysicalQty([...new Set(plan.flatMap((p) => [...p.codes.act, p.codes.gb ?? ""]))].filter(Boolean));
+  const live = await freeQty([...new Set(plan.flatMap((p) => [...p.codes.act, p.codes.gb ?? ""]))].filter(Boolean));
 
   const updatedIds: string[] = [];
   let short = 0;

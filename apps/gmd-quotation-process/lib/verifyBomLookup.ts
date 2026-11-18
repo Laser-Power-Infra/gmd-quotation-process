@@ -1,5 +1,6 @@
 import type { Prisma } from "@gmd/db-quotation";
 import { prisma } from "@/lib/prisma";
+import { loadActuatorMaster } from "@/lib/actuatorSheet";
 import { C_BATCH_VALUE } from "@/lib/gmd_lib/verify-bom-columns";
 
 /**
@@ -87,16 +88,13 @@ export function pickBomComponentCode(
 }
 
 /**
- * ERP codes of actuators and gearboxes (cached 60 s: one load per call chain, not per item). Their BOM lines never carry
+ * ERP codes of actuators and gearboxes in the live actuator master (the sheet read is cached 60 s). Their BOM lines never carry
  * the item's cost (the actuator and gearbox are priced once, by lib/actuatorCost.ts) and never change a BOM's type,
  * use status or RM availability. Throws when the lookup fails: callers decide what is safe.
  */
-let codesCache: { at: number; codes: Set<string> } | null = null;
 export async function loadActuatorErpCodes(): Promise<Set<string>> {
-  if (codesCache && Date.now() - codesCache.at < 60_000) return codesCache.codes;
-  const [a, g] = await Promise.all([prisma.actuatorStock.findMany({ select: { erpCode: true } }), prisma.gmdGearboxStock.findMany({ select: { erpCode: true } })]);
-  codesCache = { at: Date.now(), codes: new Set([...a, ...g].map((r) => r.erpCode.trim())) };
-  return codesCache.codes;
+  const m = await loadActuatorMaster();
+  return new Set([...m.actuatorStock, ...m.gearboxStock, ...m.viralGearboxes].map((r) => String(r.erpCode ?? "").trim()).filter(Boolean));
 }
 
 /** Same lookup for BOM use-status / availability / type: on failure nothing is ignored (old behaviour). */

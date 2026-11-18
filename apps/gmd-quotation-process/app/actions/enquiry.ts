@@ -11,6 +11,7 @@ import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { ensureCfSetItem } from "@/lib/cfSetItem";
 import { roundUp } from "@/lib/rounding";
 import { getDefaultVaPercent } from "@/lib/vaValidation";
+import { rateFor, splitLoadedCost, vaFrom } from "@/lib/vaRules";
 import { buildDocketEmailHtml, buildDocketEmailSubject, buildItemsClause, DOCKET_EMAIL_SENDING_STALE_MS } from "@/lib/docketEmailTemplate";
 import { sendDocketEmailViaN8n, DOCKET_EMAIL_ALWAYS_CC } from "@/lib/services/n8nEmail";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
@@ -473,6 +474,8 @@ export async function updateEnquiryItemAction(formData: {
     let finalQuotedRate: string | null;
     let updatedItemWise: string | null = null;
     let updatedTotalVal: string | null = null;
+    // Actuated item: VA% is the valve VA%, the actuator portion gets a flat 5% (lib/vaRules.ts).
+    const split = splitLoadedCost(item, updatedCost ?? 0);
 
     if (formData.quotedRate !== undefined) {
       // Reverse: QR explicitly provided â€” calculate VA% from QR/Cost
@@ -481,15 +484,14 @@ export async function updateEnquiryItemAction(formData: {
       if (finalQuotedRate !== null && updatedCost !== null && updatedCost > 0) {
         const qrNum = parseFloat(finalQuotedRate);
         if (!isNaN(qrNum) && qrNum > 0) {
-          finalVa = parseFloat(((qrNum / updatedCost - 1) * 100).toFixed(2));
+          finalVa = vaFrom(qrNum, split);
           finalQuotedRate = roundUp(qrNum).toFixed(2);
         }
       }
     } else {
       // Forward: QR not provided â€” calculate from Cost+VA% if both exist
       if (updatedCost !== null && updatedCost > 0 && finalVa !== null) {
-        const qr = updatedCost * (1 + (finalVa / 100));
-        finalQuotedRate = roundUp(qr).toFixed(2);
+        finalQuotedRate = rateFor(split, finalVa).toFixed(2);
       } else {
         finalQuotedRate = item.quotedRate || null;
       }

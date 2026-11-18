@@ -1,7 +1,8 @@
-// Parses GMD_Actuator_Master.xlsx into rows for the actuator tables.
+// Parses GMD_Actuator_Master.xlsx (or the live sheet, see actuatorSheet.ts) into rows for the actuator tables.
 // Pure (no DB): the import script upserts the result; tests run it on a fixture.
 // Columns are found by header text (prefix, case-insensitive), so added or moved columns are fine.
 import * as XLSX from "xlsx";
+import { isErpCode } from "./actuatorStock";
 
 type Cell = string | number | boolean | Date | null | undefined;
 type Spec = Record<string, [header: string, type: "s" | "n"]>;
@@ -14,14 +15,19 @@ const num = (v: Cell) => {
   return Number.isNaN(n) ? null : n;
 };
 
-/** Rows of a sheet as arrays; the header row is the first whose first cell equals `firstHeader`. */
-function table(wb: XLSX.WorkBook, sheet: string, firstHeader: string) {
+/**
+ * Rows of a sheet as arrays; the header row is the first at or after `from` whose first cell equals `firstHeader`.
+ * The block ends where the next such header row starts (GB_MASTER has a second, Viral block below the AUMA one).
+ */
+function table(wb: XLSX.WorkBook, sheet: string, firstHeader: string, from = 0) {
   const ws = wb.Sheets[sheet];
   if (!ws) throw new Error(`Sheet "${sheet}" not found in the workbook.`);
   const rows = XLSX.utils.sheet_to_json<Cell[]>(ws, { header: 1, defval: null, raw: true });
-  const at = rows.findIndex((r) => String(r[0] ?? "").trim().toUpperCase() === firstHeader);
+  const isHeader = (r: Cell[], i: number) => i >= from && String(r[0] ?? "").trim().toUpperCase() === firstHeader;
+  const at = rows.findIndex(isHeader);
   if (at < 0) throw new Error(`Sheet "${sheet}": header row starting "${firstHeader}" not found.`);
-  return { header: rows[at].map((h) => String(h ?? "").trim().toLowerCase()), body: rows.slice(at + 1), rows, at };
+  const next = rows.findIndex((r, i) => i > at && isHeader(r, i));
+  return { header: rows[at].map((h) => String(h ?? "").trim().toLowerCase()), body: rows.slice(at + 1, next < 0 ? undefined : next), rows, at };
 }
 
 /** Maps each body row to {field: value} using the spec; rows rejected by `keep` are dropped. */
@@ -39,6 +45,8 @@ function extract(t: ReturnType<typeof table>, spec: Spec, keep: (r: Record<strin
 export interface Parsed {
   actuators: Record<string, string | number | null>[];
   gearboxes: Record<string, string | number | null>[];
+  /** GB_MASTER's Viral Industries block (GMD's regular gearbox supplier): the only gearboxes the auto-pick buys. */
+  viralGearboxes: Record<string, string | number | null>[];
   valveTorques: Record<string, string | number | null>[];
   params: { name: string; value: number; note: string | null }[];
   mappings: Record<string, string | number | null>[];
@@ -57,6 +65,10 @@ const GB: Spec = {
   gbCode: ["GB CODE", "s"], make: ["MAKE", "s"], model: ["MODEL", "s"], maxOutputTorque: ["MAX OUTPUT TORQUE", "n"],
   torqueFactor: ["TORQUE FACTOR", "n"], topFlange: ["GB TOP", "s"], baseFlange: ["GB BASE", "s"],
   dataStatus: ["DATA STATUS", "s"], price: ["PRICE", "n"], remarks: ["REMARKS", "s"],
+};
+const VGB: Spec = {
+  gbCode: ["GB CODE", "s"], make: ["MAKE", "s"], model: ["MODEL", "s"], maxOutputTorque: ["MAX OUTPUT TORQUE", "n"],
+  erpCode: ["GMD ERP CODE", "s"], type: ["TYPE", "s"], baseFlange: ["GB BASE", "s"], price: ["PRICE", "n"], remarks: ["REMARKS", "s"],
 };
 const VT: Spec = {
   key: ["KEY", "s"], valveType: ["VALVE TYPE", "s"], dn: ["DN", "n"], motion: ["MOTION", "s"],
@@ -98,11 +110,16 @@ function suitabilityColumn(label: string, actByModel: Map<string, string>) {
   return { kind: "ACT" as const, make: m[1], code };
 }
 
-export const SPECS = { ACT, GB, VT, MAP, GBS, STK }
+export const SPECS = { ACT, GB, VGB, VT, MAP, GBS, STK }
 
 export function parseActuatorWorkbook(wb: XLSX.WorkBook): Parsed {
   const actuators = extract(table(wb, "ACT_MASTER", "ACT CODE"), ACT, (r) => !!r.actCode && !!r.make);
-  const gearboxes = extract(table(wb, "GB_MASTER", "GB CODE"), GB, (r) => !!r.gbCode && !!r.make);
+  const gb = table(wb, "GB_MASTER", "GB CODE");
+  const gearboxes = extract(gb, GB, (r) => !!r.gbCode && !!r.make);
+  // Viral block: found by its header row (the one with a GMD ERP CODE column), so rows can be inserted above it.
+  const viralAt = gb.rows.findIndex((r) => r.some((c) => text(c)?.toUpperCase() === "GMD ERP CODE"));
+  const viralGearboxes = viralAt < 0 ? [] : extract(table(wb, "GB_MASTER", "GB CODE", viralAt), VGB, (r) => !!r.gbCode && !!r.make)
+    .map((r) => ({ ...r, erpCode: isErpCode(r.erpCode as string | null) ? r.erpCode : null })); // "—", "RSU010004?" = no code
 
   const vt = table(wb, "VALVE_TORQUE", "KEY");
   const valveTorques = extract(vt, VT, (r) => !!r.key?.toString().includes("|"));
@@ -137,7 +154,7 @@ export function parseActuatorWorkbook(wb: XLSX.WorkBook): Parsed {
       suitability.push({ mapKey, kind: c.kind, code: c.code, make: c.make, label: c.label, ratingNm: num(ratingRow[c.i]), mark: text(r[c.i]) ?? "" });
     }
   }
-  return { actuators, gearboxes, valveTorques, params, mappings, suitability, gearboxStock, actuatorStock };
+  return { actuators, gearboxes, viralGearboxes, valveTorques, params, mappings, suitability, gearboxStock, actuatorStock };
 }
 
 export const readActuatorWorkbook = (path: string) => parseActuatorWorkbook(XLSX.readFile(path));

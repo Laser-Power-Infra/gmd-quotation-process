@@ -21,7 +21,16 @@ function fixture() {
     { actCode: 'ACT-RT-K300', make: 'Rotork', series: 'K-series', model: 'K300', maxTorque: 457, price: 1000, leadTimeWeeks: 6 },
     {}, { actCode: 'footnote only' },
   ])])
-  add('GB_MASTER', tab(SPECS.GB, [{ gbCode: 'GB-AU-50.3', make: 'AUMA', model: 'GS 50.3', maxOutputTorque: 500 }]))
+  // AUMA block, then the Viral block with its own header row (as in the live sheet)
+  add('GB_MASTER', [
+    ...tab(SPECS.GB, [{ gbCode: 'GB-AU-50.3', make: 'AUMA', model: 'GS 50.3', maxOutputTorque: 500 }]),
+    [], ['Viral Industries (Ahmedabad) — GMD regular gearbox supplier'],
+    ...tab(SPECS.VGB, [
+      { gbCode: 'GB-VI-VWESGA80', make: 'Viral', model: 'VWESGA-80', maxOutputTorque: 8000, erpCode: 'RL1010012', type: 'Worm (part-turn)', price: 17625 },
+      { gbCode: 'GB-VI-VWE07', make: 'Viral', model: 'VWE-07', maxOutputTorque: 700, erpCode: '—', type: 'Worm (part-turn)', price: 4200 },
+      { gbCode: 'GB-VI-SGB8000', make: 'Viral', model: 'SGB-8000 + hand wheel', maxOutputTorque: 8000, erpCode: 'RSU010004?', type: 'Spur (multi-turn)', price: 76000 },
+    ]).slice(2),
+  ])
   add('VALVE_TORQUE', [['T'], [], ['PN16 multiplier', 1.25, 'note'], ['Safety factor', 1.3], [], ...tab(SPECS.VT, [{ key: 'BFV|100', valveType: 'BFV', dn: 100 }]).slice(2)])
   add('MAPPING', tab(SPECS.MAP, [
     { mapKey: 'BFV|100|PN10', valveType: 'BFV', dn: 100, pn: 'PN10', stockRotorkNm: 51, stockRotorkQty: 4 },
@@ -53,6 +62,16 @@ test('fixture: rows are filtered, "none" is null, params read from above the tab
   assert.equal(p.mappings[1].stockRotorkNm, null)
   assert.deepEqual(p.gearboxStock.map((g) => g.erpCode), ['RED070005'])
   assert.deepEqual(p.actuatorStock.map((a) => [a.erpCode, a.actCode]), [['RCB040003', 'ACT-RT-K300'], ['RZZ', null]])
+})
+
+test('fixture: GB_MASTER AUMA block stops at the Viral header; Viral ERP codes that are not real codes are blank', () => {
+  const p = parseActuatorWorkbook(fixture())
+  assert.deepEqual(p.gearboxes.map((g) => g.gbCode), ['GB-AU-50.3'])
+  assert.deepEqual(p.viralGearboxes.map((g) => [g.gbCode, g.model, g.maxOutputTorque, g.erpCode, g.type, g.price]), [
+    ['GB-VI-VWESGA80', 'VWESGA-80', 8000, 'RL1010012', 'Worm (part-turn)', 17625],
+    ['GB-VI-VWE07', 'VWE-07', 700, null, 'Worm (part-turn)', 4200],
+    ['GB-VI-SGB8000', 'SGB-8000 + hand wheel', 8000, null, 'Spur (multi-turn)', 76000],
+  ])
 })
 
 test('fixture: SUITABILITY becomes one row per (map key, code) with marks and ratings', () => {
