@@ -813,8 +813,8 @@ also call (dry-run default, `--apply`, `--dump-headers` unchanged).
 
 Daily at **02:10** (`0 10 2 * * *`), after `ledger`. Entry:
 `runScheduledServiceOrders()` -> `runServiceOrdersSync()` in
-`service-orders-sync.ts`; mapping and joins in `lib/serviceOrders.ts`. Feeds
-`/service_orders`.
+`service-orders-sync.ts`; code mapping in `lib/serviceOrders.ts`, joins in SQL in
+`@gmd/service-orders`. Feeds `/service_orders`.
 
 - `ServiceItem`: `ITEM MASTER ERP` (gid 253020709) codes whose `LEVEL_1_NAME` is
   `SERVICES` or `ITEM_NATURE` is `SR`. The only table this job writes.

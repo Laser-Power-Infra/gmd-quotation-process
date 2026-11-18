@@ -182,6 +182,9 @@ const FIXED_DROPDOWN_OPTIONS: Record<string, string[]> = {
 };
 
 const HIDDEN_COLUMNS = [
+  "QUOTED RATE",
+  "RATE DIFF %",
+  "VA % FROM COST", // shown inside the DOCKET NO cell instead
   "VA %",
   "CV",
   "C BATCH",
@@ -970,7 +973,14 @@ export function ContractReviewPage({
       // Back-link to the quotation: the Quotations page opens filtered to this docket.
       "DOCKET NO": (row) => {
         const docketNo = String(row[DOCKET_NO_IDX] ?? "").trim();
+        const va = String(row[VA_PCT_FROM_COST_IDX] ?? "").trim();
+        const vaTag = va && (
+          <span className="ml-2 text-xs text-muted-foreground" title="VA % from cost">
+            VA {va.endsWith("%") ? va : `${va}%`}
+          </span>
+        );
         return docketNo ? (
+          <>
           <a
             href={`/?docket=${encodeURIComponent(docketNo)}`}
             target="_blank"
@@ -980,8 +990,10 @@ export function ContractReviewPage({
           >
             {docketNo}
           </a>
+          {vaTag}
+          </>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">—{vaTag}</span>
         );
       },
     };

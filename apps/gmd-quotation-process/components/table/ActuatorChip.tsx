@@ -7,6 +7,7 @@ import { Button } from "@gmd/ui/components/button";
 import { useAppDispatch } from "@/lib/hooks";
 import { saveActuatorFields } from "@/lib/enquiriesSlice";
 import { actuatorOp, CONTROL_TYPES, SPECIAL_OEM } from "@/lib/actuatorCost";
+import { buildRfq, gmailComposeUrl, isOemRfq } from "@/lib/actuatorRfq";
 import { stockLabel, stockText, type ItemStock } from "@/lib/actuatorStock";
 import type { EnquiryItemData } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -23,7 +24,8 @@ export default function ActuatorChip({ item, frozen }: { item: EnquiryItemData; 
   // Stock read by Sync Available Stock; ignored once the codes were changed since.
   const st = (item.actuatorBreakdown as { stock?: ItemStock } | null)?.stock;
   const stock = st && st.actCode === (item.actCode ?? null) && st.gbCode === (item.gbCode ?? null) ? st : null;
-  const special = !!b?.pending?.includes(SPECIAL_OEM);
+  const special = isOemRfq(item);
+  const rfq = special ? buildRfq(item) : null;
   const show = () => {
     setF({ make: item.actuatorMake ?? "", control: item.controlType ?? "", act: item.actCode ?? "", gb: item.gbCode ?? "", adaptor: item.adaptorCost?.toString() ?? "", assembly: item.assemblyCost?.toString() ?? "" });
     setOpen(true);
@@ -54,6 +56,17 @@ export default function ActuatorChip({ item, frozen }: { item: EnquiryItemData; 
       >
         {special ? SPECIAL_OEM + " · OEM recheck" : pending || !b ? "Actuator · price pending" : "Actuator · priced"}
       </button>
+      {rfq && (
+        <span className="flex justify-end gap-2 px-1 text-[9px] font-bold text-sky-700 dark:text-sky-300">
+          <a href={gmailComposeUrl(rfq)} target="_blank" rel="noreferrer" className="hover:underline"
+            title={`Opens a Gmail draft to ${rfq.to} (cc ${rfq.cc}). Review it, then save or send it yourself.`}>Draft RFQ</a>
+          <button type="button" className="hover:underline cursor-pointer" title="Copy the RFQ subject and text"
+            onClick={async () => {
+              try { await navigator.clipboard.writeText(`${rfq.subject}\n\n${rfq.body}`); toast.success("RFQ copied."); }
+              catch { toast.error("Could not copy the RFQ: the browser blocked the clipboard."); }
+            }}>Copy RFQ</button>
+        </span>
+      )}
       {stock && (
         <span title={stockText(stock)} className={cn("block w-full text-[9px] text-right px-1 font-bold", stock.short.length ? "text-red-700 dark:text-red-300" : "text-muted-foreground")}>
           {stockLabel(stock)}

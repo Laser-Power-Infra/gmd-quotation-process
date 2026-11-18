@@ -582,6 +582,7 @@ const numericValue = (expr: Prisma.Sql) => {
  * Zero values add nothing; cost counts only when > 0 and multiplies by quantity (1 when quantity <= 0).
  */
 export function summaryTotalsSql(q: EnquiryQuery, scopedWhere: Prisma.Sql): Prisma.Sql {
+  // "Deleted as Current Reqt = No" (nBatch N) rows are still quoted lines, so they count.
   return sql`SELECT count(*)::int AS items,
       coalesce(sum(${numericValue(sql`i."totalValue"`)}), 0)::float8 AS gst,
       coalesce(sum(${numericValue(sql`i."itemWiseTotalValue"`)}), 0)::float8 AS excl,
@@ -591,8 +592,7 @@ export function summaryTotalsSql(q: EnquiryQuery, scopedWhere: Prisma.Sql): Pris
     JOIN "Enquiry" e ON e.id = i."enquiryId"
     WHERE ${scopedWhere} AND ${buildItemWhereSql(q)}
       AND coalesce(btrim(e."duplicate"), '') <> 'Yes'
-      AND coalesce(btrim(i."cBatch"), '') <> 'C'
-      AND coalesce(btrim(i."nBatch"), '') <> 'N'`;
+      AND coalesce(btrim(i."cBatch"), '') <> 'C'`;
 }
 
 /** Id of each given docket's first item that matches the item filters. */

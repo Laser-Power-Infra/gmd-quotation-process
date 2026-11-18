@@ -7,6 +7,7 @@ import { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { uploadFileToDrive } from "./gdrive";
 import { prisma } from "@/lib/prisma";
 import { getItemNameMerge } from "./costCalculator";
+import { offerActuatorLine } from "./offerActuatorLine";
 import { makeImageKey } from "./imageKey";
 import { oneClickAccess } from "./oneClickAccess";
 import { reverseAuctionPrefix } from "./docketEmailTemplate";
@@ -95,7 +96,8 @@ export async function buildOfferPdf(
             : `__no_key__${item.id}`;
         return {
           itemName: item.itemName,
-          partyItemName: mergedName,
+          // Actuator line on its own line; part of the name, so rows merge only when the actuator matches too.
+          partyItemName: [mergedName, offerActuatorLine(item)].filter(Boolean).join("\n"),
           isNotOurProduct,
           quantity: item.quantity ? Number(item.quantity) : 0,
           quotationRate: item.quotedRate ? parseFloat(item.quotedRate) : 0,

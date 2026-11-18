@@ -1,22 +1,18 @@
 /**
- * Short-lived cache for the Pending Dockets response.
+ * Short-lived cache of the Pending Dockets set (lib/pendingDocketsScope).
  *
  * Stored on `globalThis` so it survives Next.js dev HMR / per-request module
- * re-evaluation in the same process. The cache keeps auto-poll and refreshes
- * fast, and remembers which threads were eligible for AI so a cache hit can
- * still kick the background queue.
+ * re-evaluation in the same process. The cache keeps paging, facets and the
+ * auto-poll fast, and remembers which threads were eligible for AI so a cache
+ * hit can still kick the background queue.
  */
 
 import type { DocketAiThreadInput } from "@/lib/docketAiValidationRunner";
-
-export interface PendingDocketsResponse {
-  summary: Record<string, unknown>;
-  rows: Array<Record<string, unknown>>;
-}
+import type { PendingScope } from "@gmd/pending-dockets/columns";
 
 export interface PendingDocketsCacheEntry {
   at: number;
-  response: PendingDocketsResponse;
+  scope: PendingScope;
   candidates: DocketAiThreadInput[];
 }
 
@@ -43,11 +39,8 @@ export function getPendingDocketsCache(): PendingDocketsCacheEntry | null {
   return entry;
 }
 
-export function setPendingDocketsCache(
-  response: PendingDocketsResponse,
-  candidates: DocketAiThreadInput[],
-): void {
-  store().__gmdPendingDocketsCache = { at: Date.now(), response, candidates };
+export function setPendingDocketsCache(scope: PendingScope, candidates: DocketAiThreadInput[]): void {
+  store().__gmdPendingDocketsCache = { at: Date.now(), scope, candidates };
 }
 
 export function invalidatePendingDocketsCache(): void {

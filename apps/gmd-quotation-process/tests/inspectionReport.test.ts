@@ -1,8 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { HEADER_KEYS, REPORT_STATUSES as LIST_STATUSES, TEAM_KEYS } from '@gmd/inspection-reports/columns'
 import {
   HEADER_FIELDS,
   IC_DUMP_COLUMNS,
+  REPORT_STATUSES,
+  TEAM_FIELDS,
   buildDraftReport,
   checkReport,
   cleanTeam,
@@ -238,4 +241,10 @@ test('a huge digit search returns fast instead of backtracking the serial regex'
   assert.equal(reportMatches(data, '1'.repeat(16000) + 'A'), false)
   const ms = performance.now() - t0
   assert.ok(ms < 100, `took ${ms.toFixed(0)} ms`)
+})
+
+test('the list package checks the same header and team fields, and sorts the same statuses, as checkReport', () => {
+  assert.deepEqual([...HEADER_KEYS], HEADER_FIELDS.map(([k]) => k))
+  assert.deepEqual([...TEAM_KEYS], TEAM_FIELDS.map(([k]) => k))
+  assert.deepEqual([...LIST_STATUSES], [...REPORT_STATUSES])
 })

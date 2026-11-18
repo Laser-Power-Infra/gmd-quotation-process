@@ -32,7 +32,8 @@ test('summary totals are one aggregate with the numeric guard and the same exclu
   assert.match(s.sql, /i\."cost" > 0/)
   assert.match(s.sql, /i\."quantity" > 0 THEN i\."quantity" ELSE 1/)
   assert.match(s.sql, /"cBatch"/)
-  assert.match(s.sql, /"nBatch"/)
+  // "Deleted as Current Reqt = No" rows are still quoted lines: they count (Puja, 17 Nov, docket 365).
+  assert.doesNotMatch(s.sql, /"nBatch"/)
   assert.match(s.sql, /"duplicate"/)
   assert.ok(s.values.some((v) => JSON.stringify(v).includes('Gate Valve')))
 })

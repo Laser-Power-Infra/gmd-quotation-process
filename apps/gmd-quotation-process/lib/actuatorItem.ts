@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { recalculateItem, serializeItem } from "@/lib/costCalculator";
 import { isEnquiryFrozen } from "@/lib/oneClickAccess";
 import { bareValveOf, deriveMapKey, hasActuatorLink, isActuatorCandidate, planActuator, SPECIAL_OEM } from "@/lib/actuatorCost";
+import { buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
 
 /** DB side of the actuator link: fills codes from MAPPING, prices them from the masters, writes productCost. */
 
@@ -37,13 +38,15 @@ export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch &
   };
   // Prices are looked up for the codes the plan settles on, so plan twice: codes first, then priced.
   const codes = planActuator(base, patch, mapping, gearboxes, { act: null, gb: null });
-  const [act, gb] = await Promise.all([
+  const [act, gb, rmCost] = await Promise.all([
     codes.actCode ? prisma.actuatorMaster.findUnique({ where: { actCode: codes.actCode } }) : null,
     codes.gbCode ? prisma.gearboxMaster.findUnique({ where: { gbCode: codes.gbCode } }) : null,
+    // A code typed by hand may be a Raw Material ERP code (RCB040006, RED070005): its cost there is the price.
+    buildRawMaterialsCostMap([codes.actCode, codes.gbCode].filter((c): c is string => !!c)),
   ]);
   const plan = planActuator(base, patch, mapping, gearboxes, {
-    act: act ? { price: act.price, validTill: act.offerValidTill } : null,
-    gb: gb ? { price: gb.price } : null,
+    act: { price: act?.price ?? (codes.actCode ? rmCost.get(codes.actCode) ?? null : null), validTill: act?.offerValidTill },
+    gb: { price: gb?.price ?? (codes.gbCode ? rmCost.get(codes.gbCode) ?? null : null) },
   });
   const res = plan.cost;
 
