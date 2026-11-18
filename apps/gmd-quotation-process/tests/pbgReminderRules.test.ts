@@ -54,9 +54,14 @@ test('only an explicit CONTINUE allows mail', () => {
   assert.equal(isMailTriggerContinue(''), false)
 })
 
-test('pre-expiry is due exactly on day 30, and retries only after a failure', () => {
+test('pre-expiry is due once anywhere inside the 30-day window', () => {
   assert.equal(isPreExpiryDue({ days: 30, hasSent: false, hasFailed: false }), true)
-  assert.equal(isPreExpiryDue({ days: 29, hasSent: false, hasFailed: false }), false)
+  // Switched to CONTINUE late: still mailed on the next run.
+  assert.equal(isPreExpiryDue({ days: 29, hasSent: false, hasFailed: false }), true)
+  assert.equal(isPreExpiryDue({ days: 1, hasSent: false, hasFailed: false }), true)
+  assert.equal(isPreExpiryDue({ days: 31, hasSent: false, hasFailed: false }), false)
+  assert.equal(isPreExpiryDue({ days: 0, hasSent: false, hasFailed: false }), false)
+  assert.equal(isPreExpiryDue({ days: 10, hasSent: true, hasFailed: false }), false)
   assert.equal(isPreExpiryDue({ days: 29, hasSent: false, hasFailed: true }), true)
   assert.equal(isPreExpiryDue({ days: 0, hasSent: false, hasFailed: true }), false)
   assert.equal(isPreExpiryDue({ days: 30, hasSent: true, hasFailed: false }), false)
