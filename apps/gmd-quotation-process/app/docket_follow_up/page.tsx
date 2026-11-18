@@ -180,7 +180,7 @@ export default function DocketFollowUpPage() {
                   }`}
                 >
                   <Inbox className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Portal Dockets ({summary?.totalEnquiries ?? 0})</span>
+                  <span>Portal Dockets{summary ? ` (${summary.totalEnquiries})` : ""}</span>
                 </button>
 
                 <button

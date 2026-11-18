@@ -475,17 +475,28 @@ const ITEM_TEXT_SORT = new Set([
   "bomId",
   "costRefCode",
   "stockStatus",
-  "stockQuantity",
-  "availableStock",
   "stockAgainstContract",
   "itemNameMerge",
+  "validation",
+  "deliverySchedule",
+]);
+
+// String columns holding numbers (Indian-grouped like "1,01,970", or with a trailing %). They
+// sort by value, not collation, so 9 comes before 899.
+const ITEM_NUMERIC_TEXT_SORT = new Set([
+  "stockQuantity",
+  "availableStock",
   "totalValue",
   "itemWiseTotalValue",
   "quotedRate",
   "quotedRateGst",
-  "validation",
-  "deliverySchedule",
 ]);
+
+/** Text (or numeric) column as a number for ORDER BY: commas and % stripped, NULL when not numeric-looking. */
+function numericSortKey(expr: Prisma.Sql): Prisma.Sql {
+  const t = sql`btrim(replace(replace((${expr})::text, ',', ''), '%', ''))`;
+  return sql`(CASE WHEN ${t} ~ '^-?[0-9]+([.][0-9]+)?$' THEN ${t}::numeric END)`;
+}
 
 export interface OrderResult {
   orderBy: Prisma.Sql;
@@ -535,8 +546,17 @@ export function buildEnquiryOrderBySql(q: EnquiryQuery): OrderResult {
   }
 
   if (field === "pdcostValidation") {
+    // "9.45%" as text sorts above "848.83%"; order by the number inside it.
     return {
-      orderBy: sql`NULLIF(btrim(${pdCostValidationSql(sql`f`)}), '') ${dir} NULLS LAST, e.id ASC`,
+      orderBy: sql`${numericSortKey(pdCostValidationSql(sql`f`))} ${dir} NULLS LAST, e.id ASC`,
+      needsFirstItem: true,
+    };
+  }
+
+  if (ITEM_NUMERIC_TEXT_SORT.has(field)) {
+    const column = Prisma.raw(`f."${field}"`);
+    return {
+      orderBy: sql`${numericSortKey(column)} ${dir} NULLS LAST, e.id ASC`,
       needsFirstItem: true,
     };
   }
@@ -552,10 +572,8 @@ export function buildEnquiryOrderBySql(q: EnquiryQuery): OrderResult {
   // Remaining accessors are numeric item columns (Decimal or numeric strings).
   if (/^[A-Za-z][A-Za-z0-9]*$/.test(field)) {
     const column = Prisma.raw(`f."${field}"`);
-    const text = sql`btrim((${column})::text)`;
-    const numeric = sql`CASE WHEN ${text} ~ '^-?[0-9]+([.][0-9]+)?$' THEN ${text}::numeric END`;
     return {
-      orderBy: sql`${numeric} ${dir} NULLS LAST, e.id ASC`,
+      orderBy: sql`${numericSortKey(column)} ${dir} NULLS LAST, e.id ASC`,
       needsFirstItem: true,
     };
   }

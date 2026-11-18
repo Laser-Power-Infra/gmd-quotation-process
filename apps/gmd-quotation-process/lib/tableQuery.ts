@@ -201,7 +201,9 @@ export function buildTableOrderBy(
   }
 
   if (col.kind === "number") {
-    const text = cellText(col.raw ?? col.text);
+    // Sheet numbers arrive as text, often grouped ("99,981.00", "1,01,970"): strip the grouping
+    // and a trailing % or ₹ before the cast, or those rows sort as blank.
+    const text = sql`btrim(regexp_replace(${cellText(col.raw ?? col.text)}, '[,%₹\\s]', '', 'g'))`;
     const numeric = sql`CASE WHEN ${text} ~ '^-?[0-9]+([.][0-9]+)?$' THEN ${text}::numeric END`;
     return sql`${numeric} ${dir} NULLS LAST, ${primaryKey} ASC`;
   }

@@ -340,6 +340,7 @@ function VerifyBomView() {
     });
   }, []);
 
+  const [tableResetKey, setTableResetKey] = useState(0);
   const resetFilters = useCallback(() => {
     setSearch({
       itemCode: "",
@@ -354,6 +355,8 @@ function VerifyBomView() {
       bomItemNature: [],
       rmItemNature: [],
     });
+    // The table keeps its own column filters; remount it so Reset clears those too.
+    setTableResetKey((k) => k + 1);
   }, []);
 
   const fetchData = useCallback(async () => {
@@ -1083,6 +1086,7 @@ function VerifyBomView() {
             </Button>
           </div>
           <GMDUpdateTable
+            key={tableResetKey}
             headers={groupedData.headers}
             rows={groupedData.rows}
             ids={groupedData.ids}
