@@ -7,6 +7,7 @@ import { shallowEqual } from "react-redux";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
 import ActuatorChip from "./ActuatorChip";
+import SeatTypeChip from "./SeatTypeChip";
 import { pendingValveCost } from "@/lib/actuatorCost";
 import Pagination from "./Pagination";
 import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter";
@@ -811,15 +812,16 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }, [enquiries]);
 
-  // VA% rules: item IDs below the minimum VA% or above the CR rate
+  // VA% rules: item IDs below the minimum VA% or above the CR rate (the seat type can come from the docket spec)
   const invalidVaItemIds = useMemo(() => {
     const ids = new Set<string>();
+    const specs = new Map(enquiries.map((e) => [e.id, e.seatSpec]));
     for (const item of allItems) {
-      const violates = isVaRuleViolation(item);
+      const violates = isVaRuleViolation({ ...item, seatSpec: specs.get(item.enquiryId) });
       if (violates) ids.add(item.id);
     }
     return ids;
-  }, [allItems]);
+  }, [allItems, enquiries]);
 
 
 
@@ -3941,7 +3943,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
                     {/* First Item VA% */}
                     <td className={`py-1 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-muted" : ""}`}>
-                      {firstItem ? (
+                      {firstItem ? (<>
                         <div className="flex items-center gap-1">
                         <EditableText
                           value={firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : ""}
@@ -3959,6 +3961,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         />
                         {unlockButton(firstItem)}
                         </div>
+                        <SeatTypeChip item={firstItem} spec={enquiry.seatSpec} /></>
                       ) : "-"}
                     </td>
 
@@ -4417,6 +4420,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           />
                           {unlockButton(item)}
                           </div>
+                          <SeatTypeChip item={item} spec={enquiry.seatSpec} />
                       </td>
 
                       {/* Quoted Rate */}

@@ -31,6 +31,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { getFiscalPrefix, nextDocketSerials } from "@/lib/docketNumber";
+import { termsForParty } from "@/lib/commercialTerms";
 import {
   buildEmailPartyMap,
   resolvePartyForThread,
@@ -410,11 +411,21 @@ export async function runPendingDocketCreation(
         console.warn(`[docket-creation] snapshot failed for ${p.docketNumber}:`, e);
       }
 
+      // Same rule as the New Enquiry dialog: party's last terms, blanks fall back to defaults.
+      const lastTerms = p.partyName
+        ? await prisma.enquiry.findFirst({
+            where: { partyName: p.partyName.trim() },
+            orderBy: [{ enquiryDate: "desc" }, { createdAt: "desc" }],
+            select: { paymentTerms: true, inspection: true, pbg: true },
+          })
+        : null;
+
       await prisma.$transaction([
         prisma.enquiry.create({
           data: {
             docketNumber: p.docketNumber,
             partyName: p.partyName,
+            ...termsForParty(lastTerms),
             state: p.state,
             utility: p.utility,
             enquiryDate: p.date ?? new Date(),

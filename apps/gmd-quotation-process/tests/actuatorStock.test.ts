@@ -22,6 +22,12 @@ test('resolveStockCodes: K150 maps to its ERP codes, AUMA none, non-code gearbox
   assert.equal(resolveStockCodes({ gbCode: 'RED070005' }, 'RL2010003', stock).gb, 'RED070005')
 })
 
+test('resolveStockCodes: a pick names its own stock lines (a new purchase has none), whatever the codes say', () => {
+  const selection = { act: { erpCode: 'RCB040002' }, gb: { erpCode: 'RL1010012' } }
+  assert.deepEqual(resolveStockCodes({ actCode: 'ACT-RT-K150', actuatorBreakdown: { selection } }, 'RL2010003', stock), { act: ['RCB040002'], gb: 'RL1010012' })
+  assert.deepEqual(resolveStockCodes({ actCode: 'ACT-RT-K150', actuatorBreakdown: { selection: { act: { erpCode: null }, gb: null } } }, 'RL2010003', stock), { act: [], gb: null })
+})
+
 test('stockSummary: free qty summed per code, short when below docket qty, no code is not short', () => {
   const live = new Map([['RCB040002', 2], ['RCD020022', 1], ['RL2010003', 10]])
   const codes = resolveStockCodes({ actCode: 'ACT-RT-K150' }, 'RL2010003', stock)

@@ -597,14 +597,14 @@ const numericValue = (expr: Prisma.Sql) => {
 
 /**
  * The dashboard cards in one aggregate over the filtered, non-duplicate items.
- * Zero values add nothing; cost counts only when > 0 and multiplies by quantity (1 when quantity <= 0).
+ * Zero values add nothing; cost counts only when cost and quantity are both > 0 (a quantity-0 line adds no cost).
  */
 export function summaryTotalsSql(q: EnquiryQuery, scopedWhere: Prisma.Sql): Prisma.Sql {
   // "Deleted as Current Reqt = No" (nBatch N) rows are still quoted lines, so they count.
   return sql`SELECT count(*)::int AS items,
       coalesce(sum(${numericValue(sql`i."totalValue"`)}), 0)::float8 AS gst,
       coalesce(sum(${numericValue(sql`i."itemWiseTotalValue"`)}), 0)::float8 AS excl,
-      coalesce(sum(CASE WHEN i."cost" > 0 THEN i."cost" * (CASE WHEN i."quantity" > 0 THEN i."quantity" ELSE 1 END) END), 0)::float8 AS cost,
+      coalesce(sum(CASE WHEN i."cost" > 0 AND i."quantity" > 0 THEN i."cost" * i."quantity" END), 0)::float8 AS cost,
       coalesce(sum(CASE WHEN i."quantity" > 0 THEN i."quantity" END), 0)::float8 AS qty
     FROM "EnquiryItem" i
     JOIN "Enquiry" e ON e.id = i."enquiryId"

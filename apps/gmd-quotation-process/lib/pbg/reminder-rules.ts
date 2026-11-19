@@ -78,9 +78,11 @@ export function daysUntilExpiry(
 }
 
 /**
- * The pre-expiry mail goes out exactly once, on day 30. If that attempt failed,
- * it is retried on later days while the BG is still unexpired so a transient
- * SMTP error does not silently drop the reminder.
+ * The pre-expiry mail goes out once, on the first run where the BG is inside
+ * the 30-day window (normally day 30). A row switched to CONTINUE late, with
+ * fewer than 30 days left, is still mailed on the next run instead of being
+ * skipped because day 30 has passed. Failed attempts are retried the same way
+ * while the BG is still unexpired.
  */
 export function isPreExpiryDue(input: {
   days: number;
@@ -88,8 +90,7 @@ export function isPreExpiryDue(input: {
   hasFailed: boolean;
 }): boolean {
   if (input.hasSent) return false;
-  if (input.days === PRE_EXPIRY_DAYS) return true;
-  return input.hasFailed && input.days > 0 && input.days < PRE_EXPIRY_DAYS;
+  return input.days > 0 && input.days <= PRE_EXPIRY_DAYS;
 }
 
 /**

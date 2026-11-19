@@ -145,6 +145,7 @@ export async function updateItemFieldAction(
         enquiryId: true,
         itemName: true,
         itemType: true,
+        itemNameMerge: true,
         moc: true,
         size: true,
         pnRating: true,
@@ -157,6 +158,9 @@ export async function updateItemFieldAction(
         quotedRate: true,
         cost: true,
         contractReviewRate: true,
+        actCode: true, // actuated items: the red-row check splits valve / actuator (lib/vaRules.ts)
+        gbCode: true,
+        actuatorBreakdown: true,
         ...({ [field]: true } as {}),
       },
     });
@@ -193,7 +197,9 @@ export async function updateItemFieldAction(
     // Validation = Yes needs the VA% rules met (red row = not met): run "Apply VA% rules" on the docket first.
     if (field === "validation" && String(value ?? "").trim() === "Yes") {
       const { isVaRuleViolation } = await import("@/lib/vaRules");
-      if (isVaRuleViolation({ ...prevFull, cost: prevFull.cost ? Number(prevFull.cost) : null, vaPercent: prevFull.vaPercent ? Number(prevFull.vaPercent) : null })) {
+      const { docketSeatSpecs } = await import("@/lib/seatType-server");
+      const seatSpec = (await docketSeatSpecs([prevFull.enquiryId])).get(prevFull.enquiryId);
+      if (isVaRuleViolation({ ...prevFull, seatSpec, cost: prevFull.cost ? Number(prevFull.cost) : null, vaPercent: prevFull.vaPercent ? Number(prevFull.vaPercent) : null })) {
         return { success: false, error: "Cannot set Validation = Yes: VA% is below the minimum or the rate is above the CR rate. Use 'Apply VA% rules' on the docket first." };
       }
     }
