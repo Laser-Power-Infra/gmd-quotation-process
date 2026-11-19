@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   Download,
   Eye,
@@ -183,146 +183,10 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
 
-  // Extract Unique Dropdown Options
-  const uniqueParties = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => {
-      if (r.partyName) set.add(r.partyName.trim());
-    });
-    return Array.from(set).sort();
-  }, [rows]);
-
-  const uniqueStates = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => {
-      if (r.state) set.add(r.state.trim());
-    });
-    return Array.from(set).sort();
-  }, [rows]);
-
-  const uniqueTypes = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => {
-      if (r.enquiryType) set.add(r.enquiryType.trim());
-    });
-    return Array.from(set).sort();
-  }, [rows]);
-
-  const uniqueOrderStatuses = useMemo(() => {
-    const set = new Set<string>();
-    rows.forEach((r) => {
-      if (r.orderStatus) set.add(r.orderStatus.trim());
-    });
-    return Array.from(set).sort();
-  }, [rows]);
-
-  // Multi-Filter Options with Live Counts
-  const stateOptions: FilterOption[] = useMemo(() => {
-    return uniqueStates.map((s) => ({
-      value: s,
-      label: s,
-      count: rows.filter((r) => r.state === s).length,
-    }));
-  }, [uniqueStates, rows]);
-
-  const typeOptions: FilterOption[] = useMemo(() => {
-    return uniqueTypes.map((t) => ({
-      value: t,
-      label: t,
-      count: rows.filter((r) => r.enquiryType === t).length,
-    }));
-  }, [uniqueTypes, rows]);
-
-  const orderStatusOptions: FilterOption[] = useMemo(() => {
-    return uniqueOrderStatuses.map((os) => ({
-      value: os,
-      label: os,
-      count: rows.filter((r) => r.orderStatus === os).length,
-    }));
-  }, [uniqueOrderStatuses, rows]);
-
-  const partyOptions: FilterOption[] = useMemo(() => {
-    return uniqueParties.map((p) => ({
-      value: p,
-      label: p,
-      count: rows.filter((r) => r.partyName === p).length,
-    }));
-  }, [uniqueParties, rows]);
-
-  const actionStatusOptions: FilterOption[] = useMemo(
-    () => [
-      { value: "ACTIVE", label: "Email Found", count: rows.filter((r) => !r.actionPending).length },
-      { value: "PENDING", label: "Action Pending", count: rows.filter((r) => r.actionPending).length },
-    ],
-    [rows]
-  );
-
-  const quoteStatusOptions: FilterOption[] = useMemo(
-    () => [
-      {
-        value: "SENT",
-        label: "Sent (All)",
-        count: rows.filter((r) => r.quotationSent).length,
-      },
-      {
-        value: "SENT_ATTACH",
-        label: "Sent via Attachment",
-        count: rows.filter((r) => r.quotationSent && r.quotationMethod === "ATTACHMENT").length,
-      },
-      {
-        value: "SENT_OCR",
-        label: "Sent via OCR",
-        count: rows.filter((r) => r.quotationSent && r.quotationMethod === "OCR").length,
-      },
-      {
-        value: "NOT_SENT",
-        label: "Not Sent (Pending)",
-        count: rows.filter((r) => !r.quotationSent).length,
-      },
-    ],
-    [rows]
-  );
-
-  const partyReplyOptions: FilterOption[] = useMemo(
-    () => [
-      {
-        value: "ARRIVED",
-        label: "Reply Arrived",
-        count: rows.filter((r) => r.partyReplyStatus === "REPLY_ARRIVED").length,
-      },
-      {
-        value: "AWAITING",
-        label: "Awaiting Reply",
-        count: rows.filter((r) => r.partyReplyStatus === "AWAITING_REPLY").length,
-      },
-      {
-        value: "OVERDUE",
-        label: "Overdue (> 7 Days)",
-        count: rows.filter(
-          (r) => r.partyReplyStatus === "AWAITING_REPLY" && r.daysWithoutReply != null && r.daysWithoutReply > 7
-        ).length,
-      },
-      {
-        value: "NO_QUOTE",
-        label: "No Quote Sent",
-        count: rows.filter((r) => r.partyReplyStatus === "NO_QUOTE").length,
-      },
-    ],
-    [rows]
-  );
-
-  const fileOptions: FilterOption[] = useMemo(
-    () => [
-      { value: "QUOTE_SENT", label: "Quote Files Sent", count: rows.filter((r) => r.fileSent).length },
-      { value: "ENQUIRY_DOCS", label: "Enquiry Specs / Docs", count: rows.filter((r) => !r.fileSent && (r.hasEnquiryDocs || r.fileNames.length > 0)).length },
-      { value: "NO_FILES", label: "No Attachments", count: rows.filter((r) => !r.fileSent && !r.hasEnquiryDocs && r.fileNames.length === 0).length },
-    ],
-    [rows]
-  );
-
   // Filtering Logic with Multi-Filter support
-  const filteredRows = useMemo(() => {
-    return rows.filter((r) => {
+  // `skip` leaves one facet out, so each facet's options/counts reflect every OTHER active filter.
+  const rowMatches = useCallback((r: DocketFollowUpRow, skip?: string): boolean => {
+    {
       // 1. Date Filter
       if (filterDateFrom && r.enquiryDate) {
         if (new Date(r.enquiryDate) < new Date(filterDateFrom)) return false;
@@ -340,34 +204,34 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
       }
 
       // 3. Multi-Select Party Filter
-      if (selectedParties.length > 0) {
+      if (skip !== "party" && selectedParties.length > 0) {
         if (!selectedParties.includes(r.partyName)) return false;
       }
 
       // 4. Multi-Select State Filter
-      if (selectedStates.length > 0) {
+      if (skip !== "state" && selectedStates.length > 0) {
         if (!r.state || !selectedStates.includes(r.state)) return false;
       }
 
       // 5. Multi-Select Enquiry Type Filter
-      if (selectedTypes.length > 0) {
+      if (skip !== "type" && selectedTypes.length > 0) {
         if (!r.enquiryType || !selectedTypes.includes(r.enquiryType)) return false;
       }
 
       // 6. Multi-Select Order Status Filter
-      if (selectedOrderStatuses.length > 0) {
+      if (skip !== "orderStatus" && selectedOrderStatuses.length > 0) {
         if (!r.orderStatus || !selectedOrderStatuses.includes(r.orderStatus)) return false;
       }
 
       // 7. Multi-Select Action Status Filter
-      if (selectedActionStatuses.length > 0) {
+      if (skip !== "action" && selectedActionStatuses.length > 0) {
         const matchesActive = selectedActionStatuses.includes("ACTIVE") && !r.actionPending;
         const matchesPending = selectedActionStatuses.includes("PENDING") && r.actionPending;
         if (!matchesActive && !matchesPending) return false;
       }
 
       // 8. Multi-Select Quotation Sent Filter
-      if (selectedQuoteStatuses.length > 0) {
+      if (skip !== "quote" && selectedQuoteStatuses.length > 0) {
         const matches = selectedQuoteStatuses.some((status) => {
           if (status === "SENT") return r.quotationSent;
           if (status === "SENT_ATTACH") return r.quotationSent && r.quotationMethod === "ATTACHMENT";
@@ -379,7 +243,7 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
       }
 
       // 9. Multi-Select Party Reply Filter
-      if (selectedReplyStatuses.length > 0) {
+      if (skip !== "reply" && selectedReplyStatuses.length > 0) {
         const matches = selectedReplyStatuses.some((status) => {
           if (status === "ARRIVED") return r.partyReplyArrived;
           if (status === "AWAITING") return r.partyReplyStatus === "AWAITING_REPLY";
@@ -393,7 +257,7 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
       }
 
       // 10. Multi-Select File Filter
-      if (selectedFilesStatuses.length > 0) {
+      if (skip !== "files" && selectedFilesStatuses.length > 0) {
         const matchesQuoteSent = (selectedFilesStatuses.includes("QUOTE_SENT") || selectedFilesStatuses.includes("SENT")) && r.fileSent;
         const matchesEnquiryDocs = selectedFilesStatuses.includes("ENQUIRY_DOCS") && !r.fileSent && (r.hasEnquiryDocs || r.fileNames.length > 0);
         const matchesNoFiles = selectedFilesStatuses.includes("NO_FILES") && !r.fileSent && !r.hasEnquiryDocs && r.fileNames.length === 0;
@@ -429,9 +293,8 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
       }
 
       return true;
-    });
+    }
   }, [
-    rows,
     filterDateFrom,
     filterDateTo,
     filterDocketNo,
@@ -447,6 +310,155 @@ export default function DocketFollowUpTable({ rows }: DocketFollowUpTableProps) 
     filterDuration,
     filterSender,
   ]);
+
+  const filteredRows = useMemo(() => rows.filter((r) => rowMatches(r)), [rows, rowMatches]);
+
+  // Extract Unique Dropdown Options
+  // Facet source rows: everything except that facet's own selection.
+  const partyRows = useMemo(() => rows.filter((r) => rowMatches(r, "party")), [rows, rowMatches]);
+  const stateRows = useMemo(() => rows.filter((r) => rowMatches(r, "state")), [rows, rowMatches]);
+  const typeRows = useMemo(() => rows.filter((r) => rowMatches(r, "type")), [rows, rowMatches]);
+  const orderStatusRows = useMemo(() => rows.filter((r) => rowMatches(r, "orderStatus")), [rows, rowMatches]);
+  const actionRows = useMemo(() => rows.filter((r) => rowMatches(r, "action")), [rows, rowMatches]);
+  const quoteRows = useMemo(() => rows.filter((r) => rowMatches(r, "quote")), [rows, rowMatches]);
+  const replyRows = useMemo(() => rows.filter((r) => rowMatches(r, "reply")), [rows, rowMatches]);
+  const fileRows = useMemo(() => rows.filter((r) => rowMatches(r, "files")), [rows, rowMatches]);
+
+  const uniqueParties = useMemo(() => {
+    const set = new Set<string>(selectedParties);
+    partyRows.forEach((r) => {
+      if (r.partyName) set.add(r.partyName.trim());
+    });
+    return Array.from(set).sort();
+  }, [partyRows, selectedParties]);
+
+  const uniqueStates = useMemo(() => {
+    const set = new Set<string>(selectedStates);
+    stateRows.forEach((r) => {
+      if (r.state) set.add(r.state.trim());
+    });
+    return Array.from(set).sort();
+  }, [stateRows, selectedStates]);
+
+  const uniqueTypes = useMemo(() => {
+    const set = new Set<string>(selectedTypes);
+    typeRows.forEach((r) => {
+      if (r.enquiryType) set.add(r.enquiryType.trim());
+    });
+    return Array.from(set).sort();
+  }, [typeRows, selectedTypes]);
+
+  const uniqueOrderStatuses = useMemo(() => {
+    const set = new Set<string>(selectedOrderStatuses);
+    orderStatusRows.forEach((r) => {
+      if (r.orderStatus) set.add(r.orderStatus.trim());
+    });
+    return Array.from(set).sort();
+  }, [orderStatusRows, selectedOrderStatuses]);
+
+  // Multi-Filter Options with Live Counts
+  const stateOptions: FilterOption[] = useMemo(() => {
+    return uniqueStates.map((s) => ({
+      value: s,
+      label: s,
+      count: stateRows.filter((r) => r.state === s).length,
+    }));
+  }, [uniqueStates, stateRows]);
+
+  const typeOptions: FilterOption[] = useMemo(() => {
+    return uniqueTypes.map((t) => ({
+      value: t,
+      label: t,
+      count: typeRows.filter((r) => r.enquiryType === t).length,
+    }));
+  }, [uniqueTypes, typeRows]);
+
+  const orderStatusOptions: FilterOption[] = useMemo(() => {
+    return uniqueOrderStatuses.map((os) => ({
+      value: os,
+      label: os,
+      count: orderStatusRows.filter((r) => r.orderStatus === os).length,
+    }));
+  }, [uniqueOrderStatuses, orderStatusRows]);
+
+  const partyOptions: FilterOption[] = useMemo(() => {
+    return uniqueParties.map((p) => ({
+      value: p,
+      label: p,
+      count: partyRows.filter((r) => r.partyName === p).length,
+    }));
+  }, [uniqueParties, partyRows]);
+
+  const actionStatusOptions: FilterOption[] = useMemo(
+    () => [
+      { value: "ACTIVE", label: "Email Found", count: actionRows.filter((r) => !r.actionPending).length },
+      { value: "PENDING", label: "Action Pending", count: actionRows.filter((r) => r.actionPending).length },
+    ],
+    [actionRows]
+  );
+
+  const quoteStatusOptions: FilterOption[] = useMemo(
+    () => [
+      {
+        value: "SENT",
+        label: "Sent (All)",
+        count: quoteRows.filter((r) => r.quotationSent).length,
+      },
+      {
+        value: "SENT_ATTACH",
+        label: "Sent via Attachment",
+        count: quoteRows.filter((r) => r.quotationSent && r.quotationMethod === "ATTACHMENT").length,
+      },
+      {
+        value: "SENT_OCR",
+        label: "Sent via OCR",
+        count: quoteRows.filter((r) => r.quotationSent && r.quotationMethod === "OCR").length,
+      },
+      {
+        value: "NOT_SENT",
+        label: "Not Sent (Pending)",
+        count: quoteRows.filter((r) => !r.quotationSent).length,
+      },
+    ],
+    [quoteRows]
+  );
+
+  const partyReplyOptions: FilterOption[] = useMemo(
+    () => [
+      {
+        value: "ARRIVED",
+        label: "Reply Arrived",
+        count: replyRows.filter((r) => r.partyReplyStatus === "REPLY_ARRIVED").length,
+      },
+      {
+        value: "AWAITING",
+        label: "Awaiting Reply",
+        count: replyRows.filter((r) => r.partyReplyStatus === "AWAITING_REPLY").length,
+      },
+      {
+        value: "OVERDUE",
+        label: "Overdue (> 7 Days)",
+        count: replyRows.filter(
+          (r) => r.partyReplyStatus === "AWAITING_REPLY" && r.daysWithoutReply != null && r.daysWithoutReply > 7
+        ).length,
+      },
+      {
+        value: "NO_QUOTE",
+        label: "No Quote Sent",
+        count: replyRows.filter((r) => r.partyReplyStatus === "NO_QUOTE").length,
+      },
+    ],
+    [replyRows]
+  );
+
+  const fileOptions: FilterOption[] = useMemo(
+    () => [
+      { value: "QUOTE_SENT", label: "Quote Files Sent", count: fileRows.filter((r) => r.fileSent).length },
+      { value: "ENQUIRY_DOCS", label: "Enquiry Specs / Docs", count: fileRows.filter((r) => !r.fileSent && (r.hasEnquiryDocs || r.fileNames.length > 0)).length },
+      { value: "NO_FILES", label: "No Attachments", count: fileRows.filter((r) => !r.fileSent && !r.hasEnquiryDocs && r.fileNames.length === 0).length },
+    ],
+    [fileRows]
+  );
 
   // Sorting Logic
   const sortedRows = useMemo(() => {

@@ -93,8 +93,11 @@ export async function GET() {
 
     const bomIdOptions: Record<string, string[]> = {};
     for (const item of items) {
-      bomIdOptions[item.id] =
-        bomIdsByCode.get((item.erpItemCode ?? "").trim()) ?? [];
+      // Candidates come from the ERP item code. A row with a blank/unmatched code but a real
+      // BomItem link falls back to its linked BOM IDs; otherwise the cell reads "No BOM exists"
+      // while the BOM ID filter (which matches the linked value) still finds that row.
+      const candidates = bomIdsByCode.get((item.erpItemCode ?? "").trim()) ?? [];
+      bomIdOptions[item.id] = candidates.length > 0 ? candidates : (bomIdsByRmId.get(item.id) ?? []);
     }
 
     // Newest sync wins. rows are ordered by createdAt for display, so the first
