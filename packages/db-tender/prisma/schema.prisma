@@ -1317,6 +1317,52 @@ model InspectionOffer {
   updatedAt   DateTime @updatedAt
 }
 
+// Drawings & QAP register (@gmd/drawings): one row per drawing revision, against a contract
+// (contractNo = the ContractReview contract no trimmed and upper-cased). Never deleted: a new
+// revision marks the previous one "Superseded". status/statusAt/statusBy = the latest status change.
+model ContractDrawing {
+  id             String                 @id @default(cuid())
+  contractNo     String
+  drawingNo      String
+  rev            Int
+  docType        String
+  product        String?
+  pn             String?
+  standard       String?
+  flangeDrilling String?
+  preparedBy     String?
+  remarks        String?
+  // ContractReview item codes this drawing covers; empty = every line of the contract.
+  itemCodes      String[]               @default([])
+  status         String
+  statusAt       DateTime
+  statusBy       String
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  events         ContractDrawingEvent[]
+
+  @@unique([drawingNo, rev])
+  @@index([contractNo])
+}
+
+// Append-only history of a drawing: one row per status change, one per file or link.
+// The unique index keeps the same file bytes from being recorded twice on a drawing.
+model ContractDrawingEvent {
+  id        String          @id @default(cuid())
+  drawingId String
+  drawing   ContractDrawing @relation(fields: [drawingId], references: [id], onDelete: Restrict)
+  status    String?
+  comment   String?
+  fileName  String?
+  fileUrl   String?
+  sha256    String?
+  final     Boolean         @default(false)
+  by        String
+  at        DateTime        @default(now())
+
+  @@unique([drawingId, sha256])
+}
+
 // Auto-drafted inspection report, one per offer, created when a new offer VRNO
 // appears. Regenerated only while status = "Draft". header/items are system-filled;
 // inspectors add readings later. issues = validation findings that block "Ready".

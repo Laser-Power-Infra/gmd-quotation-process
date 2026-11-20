@@ -19,6 +19,7 @@ import pendingDocketsReducer from "@gmd/pending-dockets/state";
 import orderStatusReducer from "@gmd/order-status/state";
 import salesRegisterReducer from "@gmd/sales-register/state";
 import inspectionReportsTableReducer from "@gmd/inspection-reports/state";
+import drawingsTableReducer from "@gmd/drawings/state";
 
 export const makeStore = () => {
   return configureStore({
@@ -43,6 +44,7 @@ export const makeStore = () => {
       orderStatus: orderStatusReducer,
       salesRegister: salesRegisterReducer,
       inspectionReportsTable: inspectionReportsTableReducer,
+      drawingsTable: drawingsTableReducer,
     },
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({

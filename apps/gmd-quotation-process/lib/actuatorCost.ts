@@ -68,17 +68,18 @@ export function buildActuatorCost(pick: ActuatorPick, bare: number | null, actua
   const stock = (p: { source: string; erpCode: string | null }) => (p.source === "stock" && p.erpCode ? ` (stock ${p.erpCode})` : "");
   const parts: CostResult["parts"] = [
     ...(actuatorItem ? [] : [{ label: "Valve", amount: bare }]),
-    ...(s.act ? [{ label: `ACT ${s.act.make} ${s.act.model ?? ""}${stock(s.act)}`, amount: s.act.rate }] : []),
-    ...(s.gb ? [{ label: `GB ${s.gb.source === "viral" ? "Viral " : ""}${s.gb.model ?? ""}${stock(s.gb)}`, amount: s.gb.rate }] : []),
+    ...(s.act ? [{ label: `ACT ${s.act.make} ${s.act.model ?? ""}${s.act.rpm != null ? ` @${s.act.rpm} rpm` : ""}${stock(s.act)}`, amount: s.act.rate }] : []),
+    ...(s.gb ? [{ label: `GB ${s.gb.source === "viral" ? "Viral " : ""}${s.gb.model ?? ""}${s.gb.ratio ? ` (${s.gb.ratio})` : ""}${stock(s.gb)}`, amount: s.gb.rate }] : []),
     ...(s.adaptor ? [{ label: `Adaptor/coupling${est(s.adaptor)}`, amount: s.adaptor.amount }] : []),
     ...(s.assembly ? [{ label: `Assembly & testing${est(s.assembly)}`, amount: s.assembly.amount }] : []),
   ];
   const pending = [...(!actuatorItem && bare == null ? ["bare valve cost"] : []), ...pick.missing];
   const total = pending.length ? null : parts.reduce((t, p) => t + p.amount!, 0);
+  const time = s.time != null ? ` · operating time ${s.time.toFixed(2)} min` : "";
   const flags = s.flags.length ? ` [${s.flags.join("; ")}]` : "";
   const text = pending.length
-    ? `Price pending: ${pending.join(", ")}${flags}`
-    : `${parts.map((p) => `${p.label} ${inr(p.amount!)}`).join(" + ")} = ${inr(total!)}${flags}`;
+    ? `Price pending: ${pending.join(", ")}${time}${flags}`
+    : `${parts.map((p) => `${p.label} ${inr(p.amount!)}`).join(" + ")} = ${inr(total!)}${time}${flags}`;
   return { total, parts, pending, text };
 }
 
@@ -93,7 +94,7 @@ export function planActuator(it: PlanItem, pick: ActuatorPick, hand: { make?: st
   const oem = s.status === "OEM RFQ"; // refer OEM: no codes, no cost
   return {
     bare, cost: buildActuatorCost(pick, bare, actuatorItem),
-    make: hand.make ?? (s.aumaRequired ? "AUMA" : "Rotork"),
+    make: hand.make ?? s.act?.make ?? (s.aumaRequired ? "AUMA" : "Rotork"), // the make the pick chose (AUMA when cheaper)
     actCode: oem ? null : hand.actCode ?? s.act?.actCode ?? s.act?.model ?? null,
     gbCode: oem ? null : hand.gbCode ?? s.gb?.gbCode ?? null,
   };

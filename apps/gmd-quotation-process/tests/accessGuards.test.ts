@@ -35,6 +35,9 @@ test('every API route has an access guard', () => {
 // guarded() helper that calls requireAccess once, which the per-file count can't see. Drop once the count understands it.
 const COUNT_ALLOWLIST = new Set(['physical_stock/actions.ts', 'v2/purchase/actions.ts'])
 
+// The one file that may use requireDrawingsAccess (any signed-in user on the hosted site) in place of requireAccess.
+const DRAWINGS_GUARD_FILE = 'drawings/actions.ts'
+
 test('every server action calls requireAccess (or its own admin check)', () => {
   const missing = [...walk(APP), ...walk(LIB)]
     .filter((f) => /\.tsx?$/.test(f) && /^["']use server["']/.test(fs.readFileSync(f, 'utf8')))
@@ -42,7 +45,8 @@ test('every server action calls requireAccess (or its own admin check)', () => {
       const s = fs.readFileSync(f, 'utf8')
       if (/requireAdminOrDeveloper|auth\(\)/.test(s)) return false
       const actions = (s.match(/^export async function /gm) ?? []).length
-      const guards = (s.match(/await requireAccess\(\)/g) ?? []).length
+      const guard = rel(f) === DRAWINGS_GUARD_FILE ? /await requireDrawingsAccess\(\)/g : /await requireAccess\(\)/g
+      const guards = (s.match(guard) ?? []).length
       return guards < actions
     })
     .map(rel)
@@ -56,6 +60,10 @@ const DASHBOARD_EDITS: Record<string, string[]> = {
   'actions/enquiry.ts': ['createNewEnquiryAction', 'addItemsAction', 'updateEnquiryItemAction', 'addAttachmentsAction', 'deleteEnquiryItemAction', 'deleteEnquiryAction', 'updateEnquiryFieldAction', 'sendDocketEmailAction', 'syncEnquiryEmailAddressesAction'],
   'actions/misc.ts': ['fetchContractReviewRatesAction', 'populatePdCostValidationAction', 'clearQuotedRatesAction', 'bulkUpdateApmAction', 'bulkUpdateValidationAction'],
   '../lib/generate-offer-pdf.ts': ['generateOfferPdfAction'],
+  // Every change goes in the allocation log, which must know who made it.
+  'stock_allocation/actions.ts': ['addBookingAction', 'updateBookingAction', 'deleteBookingAction', 'setOfferSentAction'],
+  // Every drawing change is stamped with the signed-in user's email.
+  'drawings/actions.ts': ['createDrawingEntry', 'attachDrawingFiles', 'changeDrawingStatus', 'newDrawingRevision'],
 }
 
 test('every dashboard edit action checks loginRequired', () => {
@@ -88,4 +96,12 @@ test('open deployment lets everyone through; restricted one refuses an anonymous
     if (saved === undefined) delete process.env.VERCEL
     else process.env.VERCEL = saved
   }
+})
+
+test('only the drawings action file uses requireDrawingsAccess, and it never falls back to requireAccess', () => {
+  const users = [...walk(APP), ...walk(LIB), path.join(import.meta.dirname, '..', 'proxy.ts')]
+    .filter((f) => /\.tsx?$/.test(f) && f !== path.join(LIB, 'access.ts') && /requireDrawingsAccess\(/.test(fs.readFileSync(f, 'utf8')))
+    .map(rel)
+  assert.deepEqual(users, [DRAWINGS_GUARD_FILE])
+  assert.doesNotMatch(fs.readFileSync(path.join(APP, DRAWINGS_GUARD_FILE), 'utf8'), /requireAccess\(\)/)
 })

@@ -43,35 +43,36 @@ type It = { itemType: string; size: string; pnRating: string; operationType: str
 // Mirrors applyActuatorToItem: hand codes, the pick (qty 2, no RM rates), the plan.
 function plan(it: It, patch = {}, master: Master = MASTER) {
   const hand = handPicks(it, patch, master)
-  const pick = selectActuator({ mapKey: deriveMapKey(it), op: it.operationType, actuatorItem: it.itemType === 'ACTUATOR', qty: 2, text: it.itemName ?? '', ...hand }, master, FREE, new Map())
+  const pick = selectActuator({ mapKey: deriveMapKey(it), actuatorItem: it.itemType === 'ACTUATOR', qty: 2, text: it.itemName ?? '', ...hand }, master, FREE, new Map())
   return { ...planActuator(it, pick, hand), selection: pick.selection }
 }
-const P500 = 57912 + 17625 + 6000 + 3000 // stock K150 + stock VWESGA-80 + adaptor F25 + assembly DN500
+const P500 = 56500 + 17625 + 6000 + 3000 // AUMA SA 12 (cheaper than K150) + stock VWESGA-80 + adaptor F25 + assembly DN500
 
-test('ACT (no gearbox) on a BFV: actuator sized on the full required torque, so pending; ACT+GB adds the gearbox', () => {
+test('a BFV always gets its Viral worm gearbox, whatever the Op Type says (ACT or ACT+GB)', () => {
   const it: It = { itemType: 'BUTTERFLY VALVE', size: '500', pnRating: 'PN-16', operationType: 'ACT', productCost: 100, bareValveCost: null, lastTotal: null }
   const act = plan(it)
-  assert.equal(act.selection.gb, null)
-  assert.equal(act.cost.total, null)
+  assert.equal(act.selection.gb!.model, 'VWESGA-80')
+  assert.equal(act.cost.total, 100 + P500)
   assert.equal(plan({ ...it, operationType: 'ACT+GB' }).cost.total, 100 + P500)
 })
 
 test('ACTUATOR item with a non-ACT Op Type: actuator only, no valve, no adaptor / assembly', () => {
   const it: It = { itemType: 'ACTUATOR', itemName: 'Actuator for BFV', size: '700', pnRating: 'PN-16', operationType: 'STANDARD', productCost: 999, bareValveCost: null, lastTotal: null }
-  const p = plan(it) // no gearbox without ACT+GB: need 14,287 Nm, nothing that big
-  assert.equal(p.cost.total, null)
-  assert.equal(plan({ ...it, operationType: 'ACT+GB' }).cost.total, 74461 + 32000) // K300 + VWESGA-150
+  const p = plan(it) // 14,287 Nm: the BFV rule gives VWESGA-150 whatever the Op Type
+  assert.equal(p.cost.total, 56500 + 32000) // SA 12 + VWESGA-150
+  assert.equal(plan({ ...it, operationType: 'ACT+GB' }).cost.total, 56500 + 32000)
 })
 
 test('Update BOM Costs on a pending actuated item: the refilled valve cost never becomes the total', () => {
-  // recalculateItem hands every non-actuator productCost write to this plan as the valve cost; the SA 25.1 price is blank.
+  // recalculateItem hands every non-actuator productCost write to this plan as the valve cost; the SA 50 price is blank.
   const refilled: It = { itemType: 'SLUICE VALVE-METAL-RISING', size: '700', pnRating: 'PN-10', operationType: 'ACT', itemName: 'with AUMA actuator', productCost: 100000, bareValveCost: null, lastTotal: null }
-  const pending = plan(refilled)
+  const blank: Master = { ...MASTER, actuators: MASTER.actuators.map((a) => (a.actCode === 'ACT-AU-SA50' || a.actCode === 'ACT-AU-SA60' || a.actCode === 'ACT-AU-SA100' ? { ...a, price: null } : a)) }
+  const pending = plan(refilled, {}, blank)
   assert.equal(pending.cost.total, null)
   assert.equal(pending.bare, 100000) // kept for when the price arrives
   // price arrives in the sheet, next run: productCost was blanked, bare comes from the stored value
-  const priced: Master = { ...MASTER, actuators: MASTER.actuators.map((a) => (a.actCode === 'ACT-AU-SA25.1' ? { ...a, price: 150000 } : a)) }
-  const total = 100000 + 150000 + 6000 + 5000
+  const priced: Master = { ...MASTER, actuators: MASTER.actuators.map((a) => (a.actCode === 'ACT-AU-SA50' ? { ...a, price: 90000 } : a)) }
+  const total = 100000 + 90000 + 16500 + 6000 + 5000 // SA 50 + SGB-2000 + adaptor F25 + assembly DN700
   assert.equal(plan({ ...refilled, productCost: null, bareValveCost: 100000 }, {}, priced).cost.total, total)
   // a re-run on the priced item does not count the total as the valve cost
   assert.equal(plan({ ...refilled, productCost: total, bareValveCost: 100000, lastTotal: total }, {}, priced).cost.total, total)
@@ -110,7 +111,7 @@ test('legacy ACT row with no link keeps its cost on refill; a linked pending row
   assert.equal(isActuated(legacy), false) // recalculateItem does not reroute: the refilled cost stays as written
   assert.deepEqual(twoToOneUpdate(legacy, 50), { cost: 50 })
   assert.equal(run(legacy, legacy).productCost, 777) // a spec/dialog edit does not link or blank it either
-  const pending = run({ ...MAN, operationType: 'ACT' }, MAN) // ACT without gearbox on a DN500 BFV: no actuator big enough
+  const pending = run({ ...MAN, operationType: 'ACT', size: '2500' }, MAN) // no MAPPING row for DN2500
   assert.equal(pending.productCost, null)
   assert.equal(isActuated(pending), true)
   const refilled = run({ ...pending, productCost: 100 }, pending) // BOM fill writes the valve cost
@@ -122,7 +123,7 @@ test('manual -> ACT+GB: valve cost kept as bare, parts added once', () => {
   const act = run({ ...MAN, operationType: 'ACT+GB' }, MAN)
   assert.equal(act.productCost, 100 + P500)
   assert.equal(act.bareValveCost, 100)
-  assert.deepEqual([act.actuatorMake, act.actCode, act.gbCode], ['Rotork', 'ACT-RT-K150', 'GB-VI-VWESGA80'])
+  assert.deepEqual([act.actuatorMake, act.actCode, act.gbCode], ['AUMA', 'ACT-AU-SA12', 'GB-VI-VWESGA80'])
 })
 
 test('ACT -> manual restores the bare valve cost and clears the breakdown', () => {
@@ -137,11 +138,11 @@ test('DN change re-picks from the new MAP KEY (a hand code is dropped) and re-pr
   const act = run({ ...MAN, operationType: 'ACT+GB' }, MAN)
   const hand = { ...act, actCode: 'RCB040006' } // typed in the Actuator dialog
   const moved = run({ ...hand, size: '700' }, hand)
-  assert.deepEqual([moved.actCode, moved.gbCode], ['ACT-RT-K300', 'GB-VI-VWESGA150'])
-  assert.equal(moved.productCost, 100 + 74461 + 32000 + 6000 + 5000) // built from bareValveCost, not the old total
+  assert.deepEqual([moved.actCode, moved.gbCode], ['ACT-AU-SA12', 'GB-VI-VWESGA150'])
+  assert.equal(moved.productCost, 100 + 56500 + 32000 + 6000 + 5000) // built from bareValveCost, not the old total
   const kept = run({ ...hand, operationType: 'ACT' }, hand)
   assert.equal(kept.actCode, 'RCB040006')
-  assert.equal(kept.productCost, 100 + 53664 + 6000 + 3000) // K30 stock line at its sheet price, no gearbox with ACT
+  assert.equal(kept.productCost, 100 + 53664 + 45000 + 6000 + 3000) // K30 stock line at its sheet price + the worm box that gives it <= 34 Nm in (VWESGA-250)
 })
 
 test('ACT -> manual -> ACT never double counts', () => {

@@ -4,6 +4,7 @@ import { computeStockAllocation } from "@gmd/stock-allocation/server";
 import { prisma } from "@/lib/prisma";
 import { stockPrisma } from "@/lib/stockPrisma";
 import { seedTeamFromInspector, type OfferedStock, type ReportData } from "@/lib/inspectionReport";
+import { stockAllocationInputs } from "@/lib/stockAllocationInputs";
 import { ReportEditor } from "./report-editor";
 
 export const metadata: Metadata = {
@@ -19,8 +20,9 @@ async function offeredStock(contractNo: string): Promise<OfferedStock[] | null> 
   if (!key) return null;
   try {
     // shortcut: runs the whole allocation for one contract, as the stock allocation page does; cache it if this page gets slow.
-    const mine = (await computeStockAllocation()).allocations.filter(
-      (a) => a.contractNo.trim().toUpperCase() === key && a.stage !== "Dispatched",
+    // RM-route parts (spare) are not offered valves
+    const mine = (await computeStockAllocation(stockAllocationInputs)).allocations.filter(
+      (a) => a.contractNo.trim().toUpperCase() === key && a.stage !== "Dispatched" && !a.spare,
     );
     const rows = await stockPrisma.physicalStock.findMany({
       where: { id: { in: mine.map((a) => a.stockId) } },

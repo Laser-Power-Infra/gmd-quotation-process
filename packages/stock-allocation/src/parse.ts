@@ -5,17 +5,24 @@ export type Pn = { cls: boolean; n: number } | null;
 /** The part an actuated line needs besides its valve, and the type an ACTUATORS stock row supplies. */
 export const ACTUATOR = "ACTUATOR";
 export interface ParsedLine {
-  needs: string[]; metal: boolean; mat: "CS" | "FORGED" | "DI"; rising: boolean;
-  drill: "9523" | "1538" | null; pn: Pn; size: number; actuated: boolean; time: number;
+  needs: string[]; metal: boolean; mat: "CS" | "FORGED" | "DI"; rising: boolean; wafer: boolean;
+  drill: "9523" | "1538"; pn: Pn; size: number; actuated: boolean;
+  /** MC date and contract date (ms); undated = Infinity. */
+  mcTime: number; time: number;
   /** actKey of the Actuator field; null when blank. */
   act: string | null;
+  /** Model + RPM part of the Actuator field; null when blank or unclear. */
+  actModel: string | null;
 }
 export interface ParsedStock {
   /** null = the row does not say (check valves, DPCVs…): seat is not checked. */
-  vt: string; size: number; metal: boolean | null; mat: "CS" | "FORGED" | "DI"; rising: boolean;
-  drill: "9523" | null; pn: Pn; kind: "finished" | "assemble" | null;
+  vt: string; size: number; metal: boolean | null; mat: "CS" | "FORGED" | "DI"; rising: boolean; wafer: boolean;
+  drill: "9523" | "1538"; pn: Pn;
+  /** "finished" = a finished valve or an actuator; null = a part or anything else, never a valve on its own. */
+  kind: "finished" | null;
   /** actKey of an ACTUATORS row (L7 + L6); null for every other row. */
   act: string | null;
+  actModel: string | null;
 }
 
 const up = (s: string | null | undefined) => (s ?? "").toUpperCase();
@@ -24,6 +31,12 @@ const up = (s: string | null | undefined) => (s ?? "").toUpperCase();
 export function actKey(a: string | null | undefined, b: string | null | undefined): string | null {
   const parts = [a, b].map((p) => up(p).trim().replace(/\s+/g, " "));
   return parts.every(Boolean) ? parts.sort().join("@") : null;
+}
+
+/** Model + RPM of an actuator ("K30/RPM24"): the one part that says RPM, the other being the wiring; null when unclear. */
+function actModel(l7: string | null | undefined, l6: string | null | undefined): string | null {
+  const [a, b] = [l7, l6].map((p) => up(p).trim().replace(/\s+/g, " "));
+  return a && b && a.includes("RPM") !== b.includes("RPM") ? (a.includes("RPM") ? a : b) : null;
 }
 
 function parsePn(s: string | null): Pn {
@@ -59,20 +72,21 @@ export function parseLine(l: ContractLine): ParsedLine {
     metal: all.includes("METAL"),
     mat,
     rising: all.replace(/NON[- ]?RISING/g, "").includes("RISING"),
-    drill: all.includes("9523") ? "9523" : all.includes("1538") ? "1538" : null,
+    wafer: all.includes("WAFER"),
+    drill: all.includes("9523") ? "9523" : "1538", // a line that does not say 9523 is IS 1538 drilling
     pn: parsePn(l.pnRating),
     size: parseInt(l.size ?? "", 10),
     actuated,
-    time: parseGmdDate(l.dateOfContract)?.getTime() ?? Infinity, // undated = newest
+    mcTime: parseGmdDate(l.mcDate)?.getTime() ?? Infinity, // undated = newest
+    time: parseGmdDate(l.dateOfContract)?.getTime() ?? Infinity,
     act: actKey(a, b),
+    actModel: actModel(a, b),
   };
 }
 
 export function parseStock(s: StockItem): ParsedStock {
   const comp = up(s.component), std = up(s.std), mat = up(s.material), cat = up(s.category);
   const finished = cat === "FINISHED VALVES" || up(s.itemType) === "FINISHED / COMPLETE VALVE";
-  const assemble = comp === "LIGHT BBD" || up(s.erpCode).startsWith("RXA") ||
-    ((cat === "SPARES" || cat === "SS SPARES") && !!s.valveType && !!s.dimension);
   const vt = up(s.valveType), act = cat === "ACTUATORS" ? actKey(s.pn, s.std) : null;
   // Sluice valve stock without a seat word is resilient (metal rows say METAL TO METAL).
   const metal = comp === "METAL TO METAL" || std.includes("METAL") ? true
@@ -83,10 +97,11 @@ export function parseStock(s: StockItem): ParsedStock {
     metal,
     mat: /CARBON|CAST STEEL/.test(mat) ? "CS" : mat.includes("FORGED") ? "FORGED" : "DI",
     rising: std.replace(/NON[- ]?RISING/g, "").includes("RISING"),
-    drill: std.endsWith("-9523") ? "9523" : null,
+    wafer: `${comp} ${std}`.includes("WAFER"),
+    drill: std.includes("9523") ? "9523" : "1538",
     pn: parsePn(s.pn),
-    // a bought-out actuator is ready as it stands, so it serves offered and inspected lines too
-    kind: finished || act ? "finished" : assemble ? "assemble" : null,
+    kind: finished || act ? "finished" : null, // a bought-out actuator is ready as it stands
     act,
+    actModel: act ? actModel(s.pn, s.std) : null,
   };
 }

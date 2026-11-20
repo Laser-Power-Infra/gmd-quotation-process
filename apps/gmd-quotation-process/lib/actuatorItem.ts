@@ -3,9 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { recalculateItem, serializeItem } from "@/lib/costCalculator";
 import { isEnquiryFrozen } from "@/lib/oneClickAccess";
 import { bareValveOf, deriveMapKey, hasActuatorLink, isActuatorCandidate, planActuator } from "@/lib/actuatorCost";
-import { handPicks, selectActuator } from "@/lib/actuatorSelect";
+import { handPicks, rmLookupCodes, selectActuator } from "@/lib/actuatorSelect";
 import { loadActuatorMaster } from "@/lib/actuatorSheet";
-import { isErpCode, stockSummary } from "@/lib/actuatorStock";
+import { stockSummary } from "@/lib/actuatorStock";
 import { freeQty } from "@/lib/actuatorStockSync";
 import { buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
 import { ACT_VA } from "@/lib/vaRules";
@@ -38,12 +38,11 @@ export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch =
   const hand = handPicks(it, patch, master);
 
   // Every stock / Viral ERP code, plus a code typed by hand (a Raw Material code, e.g. RCB040006, is priced from the RM master).
-  const codes = [...new Set([...master.actuatorStock, ...master.gearboxStock, ...master.viralGearboxes].map((r) => String(r.erpCode ?? ""))
-    .concat([hand.actCode, hand.gbCode].map((c) => (c ?? "").trim().toUpperCase())).filter(isErpCode))];
+  const codes = rmLookupCodes(master, [hand.actCode, hand.gbCode]);
   const [free, rm] = await Promise.all([freeQty(codes), buildRawMaterialsCostMap(codes)]);
   const qty = Number(it.quantity);
   const pick = selectActuator({
-    mapKey: deriveMapKey(it), op: it.operationType, actuatorItem: (it.itemType ?? "").trim().toUpperCase() === "ACTUATOR",
+    mapKey: deriveMapKey(it), actuatorItem: (it.itemType ?? "").trim().toUpperCase() === "ACTUATOR",
     qty, text: it.itemName, ...hand, adaptor: adaptorCost, assembly: assemblyCost,
   }, master, free, rm);
   const plan = planActuator({

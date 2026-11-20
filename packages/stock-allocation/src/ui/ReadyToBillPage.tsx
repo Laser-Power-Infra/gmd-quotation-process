@@ -12,18 +12,19 @@ import { SearchField } from "@gmd/ui/components/data-table/SearchField";
 import { useServerTable } from "@gmd/ui/components/data-table/useServerTable";
 import { downloadCsv, toCsv } from "@gmd/ui/lib/csv";
 import { formatIndianNumber, formatLakh } from "@gmd/ui/lib/format";
-import { READY_COLUMNS, READY_STAGES, type ReadyToBillActions, type ReadyToBillPageData, type ReadyToBillRow } from "../readyToBill";
+import { CALL_STATUSES, READY_COLUMNS, READY_STAGES, SHARE_HEADER, type ReadyToBillActions, type ReadyToBillPageData } from "../readyToBill";
 import { clearFilters, queryOf, select, selectReadyToBill, setFilter, setPage, setPageSize, setSearch, setSort } from "../state/readyToBillSlice";
 
 const labelOf = (key: string) => READY_COLUMNS.find((c) => c.key === key)?.label ?? key;
 const money = (v: number, lines: number) => `${formatLakh(v)} · ${lines} lines`;
+const INTERNAL = "ready_to_bill.csv", SHARE = "inspection_call_list.csv";
 
 /** Order lines with stock held against them (valve and actuator), one server page at a time. */
 export default function ReadyToBillPage({ actions, syncedAt }: { actions: ReadyToBillActions; syncedAt: string | null }) {
   const dispatch = useDispatch();
   const state = useSelector(selectReadyToBill);
   const { loadPage, loadFacet } = actions;
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
 
   const query = useMemo(() => queryOf(state), [state]);
@@ -52,52 +53,50 @@ export default function ReadyToBillPage({ actions, syncedAt }: { actions: ReadyT
   });
   const total = table.data?.total ?? 0;
   const meta = table.data?.meta;
-  const picked = state.filters.stage ?? [];
 
   const chips = useMemo<FilterChip[]>(
     () => Object.entries(state.filters).flatMap(([key, values]) => values.map((value) => ({ key, label: labelOf(key), value }))),
     [state.filters],
   );
 
-  // Every page under the current filters and sort, in the table's column order.
-  const exportCsv = async () => {
-    setExporting(true);
+  // A tile picks one value of its column (stage or alloc status); clicking it again shows every line.
+  const tile = (key: string, value: string, t = { value: 0, lines: 0 }) => {
+    const active = state.filters[key]?.length === 1 && state.filters[key][0] === value;
+    return (
+      <Tile key={value} label={value} value={money(t.value, t.lines)} hint={active ? "Click to show every line" : "Click to show only these"} active={active}
+        onClick={() => dispatch(setFilter({ key, values: active ? [] : [value] }))} />
+    );
+  };
+
+  // Both downloads are built on the server from every line under the current filters, not just this page.
+  const download = async (file: string, header: string[], load: ReadyToBillActions["loadExport"]) => {
+    setExporting(file);
     setExportError(null);
     try {
-      const all: ReadyToBillRow[] = [];
-      for (let page = 1; ; page++) {
-        const res = await loadPage({ ...query, page, pageSize: 200 });
-        if (!res.success) throw new Error(res.error);
-        all.push(...res.data.rows);
-        if (all.length >= res.data.total || res.data.rows.length === 0) break;
-      }
-      downloadCsv("ready_to_bill.csv", toCsv(READY_COLUMNS.map((c) => c.label), all.map((r) => READY_COLUMNS.map((c) => r[c.key as keyof ReadyToBillRow]))));
+      const res = await load(query);
+      if (!res.success) throw new Error(res.error);
+      if (!res.data.length) throw new Error("No line to download under these filters.");
+      downloadCsv(file, toCsv(header, res.data));
     } catch (err) {
       setExportError(err instanceof Error ? err.message : "Export failed");
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
   return (
     <main className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <GMDUpdateHeader title="READY TO BILL" totalRows={total} syncedAt={syncedAt} warnIfStale />
       <div className="flex min-h-0 flex-1 flex-col gap-3 px-6 pt-3 pb-6">
-        <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
           <Tile label="Ready to bill" value={money(meta?.value ?? 0, total)} hint={`Rs ${formatIndianNumber(meta?.value ?? 0)}: stock held against the line, actuator included`} />
-          {READY_STAGES.map((s) => {
-            const t = meta?.stages[s] ?? { value: 0, lines: 0 };
-            const active = picked.length === 1 && picked[0] === s;
-            return (
-              <Tile key={s} label={s} value={money(t.value, t.lines)} hint={active ? "Click to show every stage" : "Click to show only these"} active={active}
-                onClick={() => dispatch(setFilter({ key: "stage", values: active ? [] : [s] }))} />
-            );
-          })}
+          {READY_STAGES.map((s) => tile("stage", s, meta?.stages[s]))}
+          {CALL_STATUSES.map((s) => tile("allocStatus", s, meta?.calls[s]))}
           <Tile label="Parties" value={String(meta?.parties ?? 0)} />
           <Tile label="Contracts" value={String(meta?.contracts ?? 0)} />
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <SearchField value={state.search} onCommit={(v) => dispatch(setSearch(v))} busy={table.refreshing} placeholder="Search contract, party, item, RM code" />
+          <SearchField value={state.search} onCommit={(v) => dispatch(setSearch(v))} busy={table.refreshing} placeholder="Search contract, party, MC no, item, RM code" />
           <FilterChips
             chips={chips}
             onRemove={(chip) => dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => !(chip.values ?? [chip.value]).includes(v)) }))}
@@ -105,9 +104,15 @@ export default function ReadyToBillPage({ actions, syncedAt }: { actions: ReadyT
           />
           {/* load errors show in the table (with Retry); only the export's own error goes here */}
           {exportError && <span role="alert" className="text-xs text-red-600">{exportError}</span>}
-          <div className="ml-auto">
-            <Button variant="outline" size="sm" onClick={() => void exportCsv()} disabled={exporting || !total}>
-              {exporting ? "Exporting…" : "Download Excel (CSV)"}
+          <div className="ml-auto flex gap-2">
+            <Button variant="outline" size="sm" title="Every column, RM codes and locations included: for internal use"
+              onClick={() => void download(INTERNAL, READY_COLUMNS.map((c) => c.label), actions.loadExport)} disabled={!!exporting || !total}>
+              {exporting === INTERNAL ? "Exporting…" : "Download Excel (CSV): internal"}
+            </Button>
+            <Button variant="outline" size="sm"
+              title="Lines ready for an inspection call under the current filters: party, contract no, MC no, item, make DALUI and qty ready. No RM codes, locations, supplier, incoming or ETA."
+              onClick={() => void download(SHARE, SHARE_HEADER, actions.loadShareList)} disabled={!!exporting || !meta?.calls["Ready for inspection call"].lines}>
+              {exporting === SHARE ? "Exporting…" : "Inspection call list (CSV): for sharing"}
             </Button>
           </div>
         </div>

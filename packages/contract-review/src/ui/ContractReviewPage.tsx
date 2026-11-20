@@ -25,6 +25,9 @@ import {
   incompleteBadges,
   incompleteFilter,
   MAIL_DOCS_COLUMN,
+  ALLOCATION_HEADERS,
+  ALLOC_NOTES_HEADER,
+  ALLOC_STATUS_HEADER,
 } from "../lib/columns";
 import { cBatchBadges, cBatchFilter } from "@gmd/dashboard/lib/verify-bom-columns";
 import type { ContractReviewImage } from "@gmd/dashboard/lib/types";
@@ -72,7 +75,9 @@ import {
 import { useDefaultLayout } from "react-resizable-panels";
 import { MailDocsCell } from "./MailDocsCell";
 import { ContractMailsDialog } from "./ContractMailsDialog";
+import { ContractDrawingsDialog } from "@gmd/drawings/ui";
 import { FillOnceCell } from "./FillOnceCell";
+import { AllocationStatusCell } from "./AllocationStatusCell";
 import { FlowDiagram } from "./graph_flow/FlowDiagram";
 import {
   enabledTrees,
@@ -96,6 +101,9 @@ const DOCKET_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("DOCKET NO");
 const PO_NO_IDX = CONTRACT_REVIEW_HEADERS.indexOf("PO NO");
 const UPLOAD_DIAGRAM_IDX =
   CONTRACT_REVIEW_HEADERS.indexOf(UPLOAD_DIAGRAM_COLUMN);
+// Stock allocation: the server appends these right after CONTRACT_REVIEW_HEADERS (quotation app only).
+// Display-only, so they get no column filter and no sort.
+const DISPLAY_ONLY_COLUMNS: string[] = [...ALLOCATION_HEADERS];
 
 const EMPTY_VIEW: ContractReviewView = {
   statusCounts: { all: 0 },
@@ -219,7 +227,13 @@ const HIDDEN_COLUMNS = [
   "INSPECTION NUMBER",
   "DI DATE",
   "STATUS",
+  ALLOC_NOTES_HEADER, // shown inside the ALLOC STATUS cell instead
 ];
+
+const DRAWINGS_HEADER_HINTS = {
+  ...CONTRACT_REVIEW_HEADER_HINTS,
+  "APPROVAL DATE": "Set by Drawings & QAP on lines a current drawing covers (read-only there). On covered lines, blank = not yet approved.",
+};
 
 export function ContractReviewPage({
   actions,
@@ -246,6 +260,7 @@ export function ContractReviewPage({
     clearContractReviewDiagramAction,
     addContractMailDocAction,
     loadContractMailsAction,
+    drawings,
     setContractReviewDiagramVerdictAction,
     backfillContractReviewOfferPendingDoneBatchAction,
     backfillContractReviewInspectionBatchAction,
@@ -307,6 +322,8 @@ export function ContractReviewPage({
   const [error, setError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [mailsContractNo, setMailsContractNo] = useState<string | null>(null);
+  const [drawingsContractNo, setDrawingsContractNo] = useState<string | null>(null);
+  const [coveredIds, setCoveredIds] = useState<ReadonlySet<string>>(new Set());
   const [balBillFilter, setBalBillFilter] = useState<BalBillFilter>("all");
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [tileItems, setTileItems] = useState<string[]>([]);
@@ -784,6 +801,7 @@ export function ContractReviewPage({
         ? { column: headers.indexOf(sort.header), direction: sort.direction }
         : null,
       onSortChange: (next) => {
+        if (next && DISPLAY_ONLY_COLUMNS.includes(headers[next.column])) return;
         setSort(
           next && headers[next.column]
             ? { header: headers[next.column], direction: next.direction }
@@ -1009,6 +1027,7 @@ export function ContractReviewPage({
                 : undefined
             }
             onShowMails={loadContractMailsAction && contractNo ? () => setMailsContractNo(contractNo) : undefined}
+            onShowDrawings={drawings && contractNo ? () => setDrawingsContractNo(contractNo) : undefined}
           />
         );
       };
@@ -1023,8 +1042,14 @@ export function ContractReviewPage({
         />
       );
     }
+    // Only rendered where the host sends the allocation columns.
+    const statusIdx = headers.indexOf(ALLOC_STATUS_HEADER);
+    const notesIdx = headers.indexOf(ALLOC_NOTES_HEADER);
+    cells[ALLOC_STATUS_HEADER] = (row) => (
+      <AllocationStatusCell status={String(row[statusIdx] ?? "")} notes={String(row[notesIdx] ?? "")} />
+    );
     return cells;
-  }, [isEnabled, isEditable, addContractMailDocAction, handleAddMailDoc, loadContractMailsAction, flags.blankOnlyColumns, handleCellUpdate]);
+  }, [isEnabled, isEditable, addContractMailDocAction, handleAddMailDoc, loadContractMailsAction, drawings, flags.blankOnlyColumns, handleCellUpdate, headers]);
 
   const handleUploadDiagram = useCallback(
     async (id: string, file: File) => {
@@ -1546,6 +1571,22 @@ export function ContractReviewPage({
       totalRows: idx.length,
     };
   }, [data, serverMode, legacyResult]);
+
+  // Lines a current drawing covers: their APPROVAL DATE is set by Drawings & QAP, so the cell is read-only.
+  // The server refuses the edit too; a failed lookup just leaves the cells editable.
+  const loadCovered = drawings?.loadCoveredLineIds;
+  useEffect(() => {
+    const rowIds = visibleData?.ids;
+    if (!loadCovered || !rowIds?.length) return;
+    let live = true;
+    void loadCovered(rowIds).then((res) => {
+      if (live && res.success) setCoveredIds(new Set(res.data));
+    });
+    return () => {
+      live = false;
+    };
+  }, [loadCovered, visibleData?.ids]);
+  const idByRow = useMemo(() => new Map(visibleData?.rows.map((r, i) => [r, visibleData.ids[i]])), [visibleData]);
 
   const handleGraphToggle = useCallback(
     (id: string) => {
@@ -2126,7 +2167,9 @@ export function ContractReviewPage({
                 editableColumns={tableEditableColumns}
                 blankOnlyEditableColumns={flags.blankOnlyColumns}
                 dropdownRowCondition={(header, row) =>
-                  header !== "Actuator" || isActuatorItemRow(row)
+                  header === "APPROVAL DATE"
+                    ? !coveredIds.has(idByRow.get(row) ?? "")
+                    : header !== "Actuator" || isActuatorItemRow(row)
                 }
                 extraFilterOptions={actuatorExtraFilterOptions}
                 categoryOptions={categoryOptions}
@@ -2139,7 +2182,7 @@ export function ContractReviewPage({
                 defaultColumnWidths={CONTRACT_REVIEW_COLUMN_WIDTHS}
                 cellBadges={tableCellBadges}
                 customCells={customCells}
-                headerHints={CONTRACT_REVIEW_HEADER_HINTS}
+                headerHints={drawings ? DRAWINGS_HEADER_HINTS : CONTRACT_REVIEW_HEADER_HINTS}
                 batchFilterHeader={batchPresenceFilters.length ? "ITEM_CODE" : undefined}
                 batchPresenceFilters={batchPresenceFilters.length ? batchPresenceFilters : undefined}
                 allowExport={flags.excelExport}
@@ -2206,11 +2249,25 @@ export function ContractReviewPage({
                   filterActions.onMultiFilter("PN RATING", []);
                 }}
                 hiddenColumns={tableHiddenColumns}
+                hiddenFilters={DISPLAY_ONLY_COLUMNS}
               />
             </ResizablePanel>
           </ResizablePanelGroup>
         </div>
       </div>
+      {drawings && (
+        <ContractDrawingsDialog
+          contractNo={drawingsContractNo ?? ""}
+          open={drawingsContractNo !== null}
+          // A drawing change can rewrite APPROVAL DATE: reload the rows (and, through them, the covered lines).
+          onClose={() => {
+            setDrawingsContractNo(null);
+            void fetchData();
+          }}
+          actions={drawings.actions}
+          rights={drawings.rights}
+        />
+      )}
       {loadContractMailsAction && (
         <ContractMailsDialog
           contractNo={mailsContractNo}

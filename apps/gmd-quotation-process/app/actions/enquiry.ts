@@ -25,6 +25,7 @@ import { ASSIGNEE_FIELDS } from "@/lib/stageAgeing";
 
 // People who can own a docket stage (Details / Cost / Validation / Send).
 export async function listAssignableUsersAction() {
+  await requireAccess(); // hosted: a signed-in non-admin can reach any action id through /drawings
   const denied = await loginRequired(); if (denied) return [];
   const users = await prisma.user.findMany({
     select: { id: true, name: true, email: true },

@@ -1201,17 +1201,17 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     kind: "derived",
     file: "lib/contractReviewBackfill.ts (mailTagDay in lib/contractReviewLinks.ts)",
     purpose:
-      "Fills MC DATE and APPROVAL DATE from the day (IST) of the first MC / Drawing approval mail tag.",
+      "Fills MC DATE and APPROVAL DATE from the day (IST) of the first MC / Drawing approval mail tag. APPROVAL DATE is skipped on lines a current Drawings & QAP drawing covers (the register owns it); at the end of the run the register's approval-date sync is re-run for every contract with a current drawing.",
     direction: "db-to-db",
     trigger: "api-only",
     triggerLabel: "POST /api/scheduler/contract-review (step 7, hourly)",
     dbModels: ["ContractReview"],
     columns: cols(
       ["MC DATE", "mcDate", "from the first MC tag in Mails / Documents"],
-      ["APPROVAL DATE", "approvalDate", "from the first Drawing approval tag"],
+      ["APPROVAL DATE", "approvalDate", "from the first Drawing approval tag, on lines no current drawing covers"],
     ),
     writePolicy:
-      "Writes only where the DB cell is still null, so a typed date is never overwritten. Both stay editable.",
+      "Writes only where the DB cell is still null, so a typed date is never overwritten. MC DATE stays editable; APPROVAL DATE is editable only on lines no current drawing covers. On covered lines Drawings & QAP sets it (approval day when every covering drawing is approved, else blank) after each status change or revision and in this job's last step.",
     cadence: "every-sync",
   },
   {
@@ -1272,11 +1272,11 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
     headerRow: 2,
     columns: [
       ...STOCK_PHYS_COLUMNS,
-      { sheetHeader: "(derived)", dbField: "rmPhysicalStock", note: "resolved from costCodeRef" },
+      { sheetHeader: "(derived)", dbField: "rmPhysicalStock", note: "PhysicalStock table (stock DB) total for the row's own itemCode, summed over locations; the stock-phys figure of the same code only when the table has none" },
     ],
     dbModels: ["GMDUpdateItem", "Bom", "BomItem", "ContractReview"],
     writePolicy:
-      "Gap-fills GMDUpdateItem.availableStock only where it is blank, then writes ContractReview.noUse and rmPhysicalStock.",
+      "Gap-fills GMDUpdateItem.availableStock only where it is blank, then writes ContractReview.noUse and rmPhysicalStock (PHYSICAL STOCK: PhysicalStock table first, stock-phys as fallback, blank when neither has the item code).",
     cadence: "on-demand",
   },
   {
@@ -1311,7 +1311,7 @@ const CONTRACT_REVIEW_SYNC: SyncOperation[] = [
       ["PAYMENT TERMS", "paymentTerms"],
       ["Remarks", "remarks"],
       ["MC DATE", "mcDate", "a typed date is never overwritten by the mail-tag fill"],
-      ["APPROVAL DATE", "approvalDate", "a typed date is never overwritten by the mail-tag fill"],
+      ["APPROVAL DATE", "approvalDate", "a typed date is never overwritten by the mail-tag fill; refused on lines a current Drawings & QAP drawing covers"],
     ),
     writePolicy:
       "Mapped through CONTRACT_REVIEW_HEADER_TO_DB_FIELD. Only the columns in the page's editableColumns list can be written.",

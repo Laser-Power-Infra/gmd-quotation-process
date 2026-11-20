@@ -126,3 +126,12 @@ export const purchaseOpenOnlyByDefault = flag<boolean>({
   options: [{ value: true, label: "On" }, { value: false, label: "Off" }],
   decide: () => true,
 });
+
+// Drawings: login emails (any case) that may set "Verified by Washim" / "Correction required".
+// Add Washim's only after he has registered: sign-up is open, so an unregistered email here could be claimed by anyone.
+export const drawingVerifiers = flag<string[]>({
+  key: "drawing-verifiers",
+  description: "Login emails that may verify drawings or send them back for correction",
+  defaultValue: [],
+  decide: () => [],
+});

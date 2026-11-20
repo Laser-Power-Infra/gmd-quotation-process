@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { prisma as tenderPrisma } from "@gmd/db-tender";
 import { requireAdminOrDeveloper } from "@/lib/auth-helpers";
+import { requireAccess } from "@/lib/access";
 import { matchExistingBoms, NEW_BOM_PREFIX, ruleSchema, type BomRuleInput } from "@/lib/autoBom";
 import { createBoms, runRule } from "@/lib/autoBomRun";
 
@@ -34,6 +35,7 @@ const fail = (error: unknown) => ({
 });
 
 export async function getBomRules(): Promise<BomRuleData[]> {
+  await requireAccess();
   const rows = await prisma.bomRule.findMany({ orderBy: { createdAt: "asc" } });
   return rows.map((r) => ({ ...ruleSchema.parse(r), id: r.id, isActive: r.isActive }));
 }

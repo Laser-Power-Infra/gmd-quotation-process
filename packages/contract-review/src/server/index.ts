@@ -1,4 +1,5 @@
 import "server-only";
+import { coveredLineIds } from "@gmd/drawings/server";
 import { prisma as tenderPrisma, type ContractReview, type Prisma } from "@gmd/db-tender";
 import {
   CONTRACT_REVIEW_HEADERS,
@@ -150,11 +151,23 @@ export async function updateContractReviewField(
   value: string | null,
   allowed: ReadonlySet<string> = CONTRACT_REVIEW_EDITABLE_FIELDS,
   blankOnly: ReadonlySet<string> = new Set(),
+  covered: (ids: string[]) => Promise<Set<string>> = coveredLineIds,
 ): Promise<ActionResult> {
   try {
     if (!id) return { success: false, error: "Missing contract review id." };
     if (!allowed.has(field)) {
       return { success: false, error: `Field "${field}" cannot be edited.` };
+    }
+    // The register owns APPROVAL DATE on a line a current drawing covers; fail closed if it cannot be checked.
+    if (field === "approvalDate") {
+      let isCovered: boolean;
+      try {
+        isCovered = (await covered([id])).has(id);
+      } catch (error) {
+        console.error("Drawings & QAP coverage check failed", error);
+        return { success: false, error: "Could not check Drawings & QAP for this line; the date was not saved. Try again." };
+      }
+      if (isCovered) return { success: false, error: "APPROVAL DATE is set by Drawings & QAP for this line; change it there." };
     }
     if (field === "dateOfContract" && (!value || String(value).trim() === "")) {
       return { success: false, error: "DATE OF CONTRACT cannot be empty." };

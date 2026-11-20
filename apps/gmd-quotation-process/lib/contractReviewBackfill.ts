@@ -13,7 +13,8 @@ import {
 import { applyColumnFlags, loadContractReviewItems, toContractReviewData } from "@gmd/contract-review/server";
 import { getBatchDistinctBomIds } from "@/lib/verifyBomLookup";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
-import { mailTagDay } from "@/lib/contractReviewLinks";
+import { contractsWithCurrentDrawings, coveredLineIds, syncContractApprovalDates } from "@gmd/drawings/server";
+import { coveredOrNull, mailTagFills, resyncAll } from "@/lib/contractReviewLinks";
 import { autoAssignContractReviewBomIdFromActuator, backfillContractReviewCostFromQuotationAction, backfillContractReviewNoUseBatchAction, selectContractReviewBomIdAction, syncContractReviewEnquiryFieldsBatchAction } from "@/app/actions/contractReview";
 import {
   backfillContractReviewClearanceMcPendingBatchAction,
@@ -88,19 +89,16 @@ export async function runContractReviewBackfills(): Promise<ActionResult<{ faile
   // shortcut: a newly added tag's date appears after the next hourly scheduler run, not at once;
   // fill it in addContractMailDoc too if that lag bothers anyone.
   const mailDocsIdx = headers.indexOf(MAIL_DOCS_COLUMN);
-  const tagDays = (header: string, tag: MailDocCategory) => {
-    const idx = headers.indexOf(header);
-    if (!isEnabled(header)) return [];
-    return ids.flatMap((id, i) => {
-      const day = mailTagDay(rows[i][idx], rows[i][mailDocsIdx], tag);
-      return day ? [{ id, day }] : [];
-    });
-  };
+  // APPROVAL DATE of a line a current drawing covers belongs to Drawings & QAP: no mail-tag fill there.
+  // If the lookup fails (drawings tables not deployed yet), the APPROVAL DATE fill is skipped this run; every other fill still runs.
+  const covered = isEnabled("APPROVAL DATE") ? await coveredOrNull(ids, coveredLineIds) : new Set<string>();
+  const tagDays = (header: string, tag: MailDocCategory, skip?: ReadonlySet<string>) =>
+    isEnabled(header) ? mailTagFills({ ids, rows, idx: headers.indexOf(header), mailDocsIdx, tag, skip }) : [];
   tasks.push(
     inChunks(tagDays("MC DATE", "MC"), 10, ({ id, day }) =>
       tenderPrisma.contractReview.updateMany({ where: { id, mcDate: null }, data: { mcDate: day } }),
     ),
-    inChunks(tagDays("APPROVAL DATE", "Drawing approval"), 10, ({ id, day }) =>
+    inChunks(covered ? tagDays("APPROVAL DATE", "Drawing approval", covered) : [], 10, ({ id, day }) =>
       tenderPrisma.contractReview.updateMany({ where: { id, approvalDate: null }, data: { approvalDate: day } }),
     ),
   );
@@ -124,18 +122,22 @@ export async function runContractReviewBackfills(): Promise<ActionResult<{ faile
     tasks.push(backfillContractReviewClearanceMcPendingBatchAction(needsClearanceMc));
 
   const settled = await Promise.allSettled(tasks);
+  // Last step: re-run the register's locked approval-date sync per contract, so lines added after their
+  // drawings were approved get the right date and the gap since coveredLineIds is healed.
+  // shortcut: one transaction per contract, in turn; move to the planned RabbitMQ job if the list grows large.
+  const resync = await resyncAll(contractsWithCurrentDrawings, syncContractApprovalDates);
   const failed = settled.filter((s) => s.status === "rejected");
   for (const f of failed) console.error("contract review backfill failed", (f as PromiseRejectedResult).reason);
   // Most batch actions catch their own errors and return { success: false }, so count those too.
   const softFailed = settled.filter(
     (s) => s.status === "fulfilled" && (s.value as ActionResult | undefined)?.success === false,
   );
-  const summary = `${new Date().toISOString()} [contract-review backfill] ${rows.length} rows, ${tasks.length} tasks in ${Date.now() - startedAt} ms`;
-  if (failed.length || softFailed.length) {
+  const summary = `${new Date().toISOString()} [contract-review backfill] ${rows.length} rows, ${tasks.length} tasks, ${resync.done + resync.failed} drawing contracts re-synced, in ${Date.now() - startedAt} ms`;
+  if (failed.length || softFailed.length || resync.failed) {
     const reasons = softFailed.map((s) => (s as PromiseFulfilledResult<ActionResult>).value.error).join(" | ");
-    console.error(`${summary}: ${failed.length} threw, ${softFailed.length} returned errors${reasons ? ` (${reasons})` : ""}`);
+    console.error(`${summary}: ${failed.length} threw, ${softFailed.length} returned errors, ${resync.failed} drawing re-syncs failed${reasons ? ` (${reasons})` : ""}`);
   } else {
     console.info(`${summary}: ok`);
   }
-  return { success: true, data: { failed: failed.length + softFailed.length } };
+  return { success: true, data: { failed: failed.length + softFailed.length + resync.failed } };
 }

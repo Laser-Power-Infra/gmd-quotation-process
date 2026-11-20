@@ -251,6 +251,19 @@ export type BomRmAvail = {
   stock: number;
 };
 
+/**
+ * Each unit needs every live part, so the scarcest one caps the stock. Lines BOM MAST ERP closed
+ * (NO USE) are not part of the BOM, as in the cost engine; a part with no stock figure is skipped.
+ */
+export function scarcestPartStock(rows: Pick<BomRow, "availableStock" | "noUse">[]): number {
+  const stocks = rows
+    .filter((r) => (r.noUse ?? "").trim().toUpperCase() !== "NO USE")
+    .map((r) => parseFloat(String(r.availableStock ?? "").replace(/,/g, "")))
+    .filter((s) => !isNaN(s));
+  // shortcut: ignores parts per unit (BomItem.erpQty ?? quantity; loadBomRows loads neither), as the old sum did; divide by it if RM AVAIL needs exact units.
+  return stocks.length ? Math.min(...stocks) : 0;
+}
+
 export async function getBomRmAvailBatch(
   bomIds: string[],
 ): Promise<Map<string, BomRmAvail>> {
@@ -275,14 +288,9 @@ export async function getBomRmAvailBatch(
       out.set(id, { qualifies: false, stock: 0 });
       continue;
     }
-    let stock = 0;
-    for (const r of dropActuatorRows(group, skip)) {
-      const s = parseFloat(String(r.availableStock ?? "").replace(/,/g, ""));
-      if (!isNaN(s)) stock += s;
-    }
     out.set(id, {
       qualifies: true,
-      stock,
+      stock: scarcestPartStock(dropActuatorRows(group, skip)),
     });
   }
   return out;

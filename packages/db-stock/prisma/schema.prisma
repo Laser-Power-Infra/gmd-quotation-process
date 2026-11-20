@@ -272,3 +272,22 @@ model StockAllocation {
   @@index([erpCode])
   @@index([contractNo, itemCode])
 }
+
+// Append-only log of StockAllocation writes: who, when, old and new qty. Written in the same
+// transaction as the write. No relation, so removing a booking keeps its history.
+model StockAllocationLog {
+  id         String   @id @default(cuid())
+  at         DateTime @default(now())
+  by         String // signed-in user's email (name if none); "unknown" when the host passes none
+  action     String // "book" | "change" | "remove" | "lock" | "unlock"
+  contractNo String
+  itemCode   String // contract line item code
+  erpCode    String
+  location   String?
+  oldQty     Float? // null on book / lock
+  newQty     Float? // null on remove / unlock
+  note       String? // the booking's remarks
+
+  @@index([at])
+  @@index([contractNo, itemCode])
+}

@@ -216,13 +216,16 @@ Step 3's `noUse` transaction is chunked at 200 with a 20 s timeout. The manual
 version wraps every differing row in one unbounded `$transaction`
 (`app/actions/*.ts:5260`) — a `P2028` waiting to happen.
 
-### Cost of RM AVAIL's physical-stock sub-step
+### RM AVAIL's physical-stock sub-step
 
-`rmPhysicalStock` needs `ContractReview.costCodeRef`, which step 1 **cannot**
-populate: it is absent from `CONTRACTS_SHEET_COLUMNS`, so
-`mapContractReviewRow` never emits it. It is published separately from the
-Indent Listing by `recomputeIndentListingVersionsAction`. Until that has run,
-that sub-step resolves nothing and writes `null`.
+`rmPhysicalStock` (PHYSICAL STOCK) is the row's own `itemCode` (its FG code)
+total in the stock DB `PhysicalStock` table (the Physical Stock page;
+`available_qty` summed over locations), read in one query. Only when the table
+has no usable row for that code does the `stock-phys` figure of the same code
+apply; otherwise it is blank. An unreachable stock DB fails this step. The log
+line and result report `fromTable` / `fromSheet` counts. It never reads `costCodeRef`: that is one RM code shared
+by a whole item family / size / PN, so every line of the family showed one
+RM's stock (the "653" bug, 18 Nov 2026).
 
 ### Step 4 — IC dump (offer / inspection / DI)
 
@@ -1254,7 +1257,7 @@ Stock-step edge cases:
 | `RawMaterial.availableStock` | step 3 | overwritten when the sheet differs; blank skipped; `"0"` written |
 | `VerifyBom.*` | step 3 | only where a value actually differs |
 | `ContractReview.noUse` | step 3 | overwritten |
-| `ContractReview.rmPhysicalStock` | step 3 | overwritten, including to `null` when `costCodeRef` resolves to nothing |
+| `ContractReview.rmPhysicalStock` | step 3 | overwritten, including to `null` when `itemCode` has no PhysicalStock-table or stock-phys figure |
 | `offerNumber` / `inspectionNumber` / `diDate` | step 4 | **union, never shrink** — values are appended, never removed or overwritten. A blank sheet cell adds nothing, so it can never clear a value |
 | `prodEntryDate` | step 6 | the latest `PROD ENTRY DUMP` `VRDATE` (`dd-MMM-yyyy`), overwritten when it differs; a blank or unreadable date never clears it |
 | deletions | — | none, in any step |
@@ -1305,6 +1308,8 @@ Stock-step edge cases:
 
 - Header: `x-api-key`
 - Env var: `GMD_SYNC_API_KEY` (configured in the infra container; never committed)
+- `/api/drawings` uses the same function with its own key, `GMD_DRAWINGS_API_KEY`, and refuses the sync key
+  (`documentation/drawings-api.md`).
 - Comparison: `sha256` both sides, then `crypto.timingSafeEqual` — constant
   length, no timing or length leak.
 - **Fails closed.** Unset env var → `503`. Missing or wrong key → `401`.

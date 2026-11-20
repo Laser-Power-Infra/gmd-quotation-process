@@ -1,5 +1,7 @@
 // Picks the actuator and gearbox of one docket item from the live master. Pure: no DB, no fetch (actuatorItem.ts reads).
-// Stock first (a line with enough free qty), else new; the smallest rating that is big enough wins.
+// Puja's 20-Nov logic (SELECTION_LOGIC tab): every Viral gearbox that takes the torque (or none) with every Rotork K / AUMA SA
+// model at its slowest standard speed that still gives the torque and turns the valve in time. Time first, then stock first,
+// then the lowest total; Rotork on a tie. When nothing is in time: the fastest.
 import type { Parsed } from "./actuatorMaster";
 import { SPECIAL_OEM } from "./actuatorCost";
 import { isErpCode } from "./actuatorStock";
@@ -7,30 +9,48 @@ import { isErpCode } from "./actuatorStock";
 export const RATE_FLAG = "rate increase – negotiate";
 export const HAND_ACT = "actuator set by hand";
 export const HAND_GB = "gearbox set by hand";
+export const HAND_MAKE = "make set by hand";
+export const RM_NEW = "RM code to be created";
+export const TYPED_WEAK = "typed actuator below required torque – check";
+export const SINGLE_PHASE = "single phase – select manually (AUMA, 60 s limit)";
+
+/** The assumptions of the 20-Nov logic, in one place. PN factor and safety factor stay in the sheet (MAPPING's required torque). */
+export const ACT_RULES = {
+  dnPerTurn: 6.35, // multi-turn valve turns = DN ÷ 6.35 (4 TPI), rounded as the sheet does, until GA stroke / pitch data exists
+  timeLimit: 2, // minutes per stroke when the BOQ text gives none (target band 1.5–2.0)
+  directMaxDn: 300, // sluice / RS / KGV: direct actuator up to DN300, Viral spur gearbox above
+  // shortcut: Rotork K speeds typed here (sheet: "4.5–192"), torque drops from AUMA_ROTORK_ALT's notes; read the speed table of
+  // GMD Technical Master Data › ACUATOR-MODEL NO (the app's Engineering Data › Actuator) once its rows are checked against these.
+  rotorkRpm: [4.5, 6, 9, 12, 18, 24, 36, 48, 72, 96, 144, 192],
+};
 
 type Row = Record<string, string | number | null>;
-export type Master = Pick<Parsed, "mappings" | "actuators" | "gearboxes" | "viralGearboxes" | "actuatorStock" | "gearboxStock">;
+export type Master = Pick<Parsed, "mappings" | "actuators" | "gearboxes" | "viralGearboxes" | "actuatorStock" | "gearboxStock"
+  | "stockAutoPick" | "aumaSpeeds" | "rotorkDerates" | "rmCodes">;
 
 interface Rate { rate: number | null; rateSource: "RM" | "SHEET" | null; rateFlag: string | null }
-export interface ActPick extends Rate { source: "stock" | "rotork" | "auma"; make: string; model: string | null; erpCode: string | null; actCode: string | null; torque: number | null }
-export interface GbPick extends Rate { source: "stock" | "viral"; model: string | null; erpCode: string | null; gbCode: string | null; torque: number | null }
+export interface ActPick extends Rate {
+  source: "stock" | "rotork" | "auma"; make: string; model: string | null; erpCode: string | null; actCode: string | null;
+  torque: number | null; rpm: number | null; rmCode: string | null; // torque at that rpm; rmCode = the code the rate is looked up by
+}
+export interface GbPick extends Rate { source: "stock" | "viral"; model: string | null; erpCode: string | null; gbCode: string | null; torque: number | null; ratio: string | null }
 type Extra = { amount: number; estimated: boolean } | null;
 
-/** Stored as actuatorBreakdown.selection; the offer line and the OEM RFQ read it. */
+/** Stored as actuatorBreakdown.selection; the offer line and the OEM RFQ read it. Ones stored before 20 Nov have no rpm / ratio / time. */
 export interface Selection {
   status: "OK" | "PENDING" | "OEM RFQ";
   mapKey: string | null; valveType: string | null; dn: number | null; pn: string | null; qty: number;
   requiredTorque: number | null; actNeed: number | null; topFlange: string | null;
   act: ActPick | null; gb: GbPick | null; adaptor: Extra; assembly: Extra;
+  time: number | null; timeLimit: number; // operating time per stroke and the limit it was picked against, minutes
   aumaRequired: boolean; flags: string[];
 }
 
 export interface SelectInput {
   mapKey: string | null;
-  op: string | null; // Op Type: the gearbox comes with ACT+GB only (or a GB CODE typed by hand)
   actuatorItem: boolean; // Item type ACTUATOR: actuator + gearbox only, no adaptor / assembly
   qty: number; // docket qty: a stock line needs this much free
-  text: string; // item text (BOQ line): decides AUMA or Rotork
+  text: string; // item text (BOQ line): the make it names, single phase, an operating time
   make?: string | null; actCode?: string | null; gbCode?: string | null; // typed by hand, see handPicks
   adaptor?: number | null; assembly?: number | null; // typed by hand: win over the estimates
 }
@@ -38,6 +58,13 @@ export interface SelectInput {
 const num = (v: unknown) => (typeof v === "number" ? v : null);
 const str = (v: unknown) => (v == null || String(v).trim() === "" ? null : String(v).trim());
 const same = (v: unknown, s: string) => str(v)?.toUpperCase() === s.toUpperCase();
+const key = (v: unknown) => String(v ?? "").replace(/\s+/g, "").toUpperCase(); // "SA 12" = "SA12", "K 150" = "K150"
+const EPS = 1e-9; // 286 Nm ÷ MA 2.6 is still the 110 Nm an SA 12 gives
+// The last number found: a two-ratio spur box ("10:1 / 8:1", MA "8.8 / 7") runs on its second pair, as VALVE_ACT_SELECTION does.
+const last = (v: unknown, re: RegExp) => {
+  const xs = [...String(v ?? "").matchAll(re)];
+  return xs.length ? Number(xs[xs.length - 1][1]) : null;
+};
 
 /** Adaptor plate + coupling per set, by the valve top flange (largest F size in the cell: "F07/F10" is F10). */
 export function adaptorEstimate(flange: string | null): number | null {
@@ -49,6 +76,16 @@ export function adaptorEstimate(flange: string | null): number | null {
 export const assemblyEstimate = (dn: number | null): number | null =>
   dn && dn > 0 ? (dn <= 300 ? 1500 : dn <= 600 ? 3000 : dn <= 1000 ? 5000 : 8000) : null;
 
+/** Operating time the BOQ text asks for ("operating time 60 sec", "closing time 1.5 min", "90 to 120 s"), in minutes; null if none. */
+export function specTime(text: string): number | null {
+  const m = /\b(?:operating|opening|closing|stroke)\s+time\D{0,15}?(\d+(?:\.\d+)?)(?:\s*(?:-|–|to)\s*(\d+(?:\.\d+)?))?\s*(sec|s\b|min)/i.exec(text);
+  return m ? Number(m[2] ?? m[1]) / (/^s/i.test(m[3]) ? 60 : 1) : null;
+}
+
+interface GbOpt { pick: GbPick | null; ratio: number | null; ma: number | null } // pick null = direct drive
+interface ActOpt { pick: ActPick; curve: { rpm: number; torque: number }[] } // max torque per standard speed
+interface Combo { gb: GbOpt; act: ActOpt; rpm: number; torque: number; tIn: number; time: number; ok: boolean; total: number; stock: number }
+
 /**
  * `missing` lists what keeps the actuator side from a price (empty = status OK). `free` = free qty per ERP code
  * (live stock minus allocations), `rm` = Raw Material master rate per ERP code.
@@ -56,13 +93,16 @@ export const assemblyEstimate = (dn: number | null): number | null =>
 export function selectActuator(i: SelectInput, m: Master, free: Map<string, number>, rm: Map<string, number>): { selection: Selection; missing: string[] } {
   const [valveType = null, dn = null, pn = null] = i.mapKey?.split("|") ?? [];
   const row = m.mappings.find((r) => r.mapKey === i.mapKey);
-  // No approved-make list is recorded: a "Rotork" in the same text counts as Rotork being allowed.
-  const aumaRequired = /\bAUMA\b/i.test(i.text) && !/\bROTORK\b/i.test(i.text);
-  const make = same(i.make, "AUMA") ? "AUMA" : same(i.make, "Rotork") ? "Rotork" : aumaRequired ? "AUMA" : "Rotork";
+  // No approved-make list is recorded: a BOQ text naming one make only gets that make; naming both or neither, the cheaper.
+  const named = ["Rotork", "AUMA"].filter((mk) => new RegExp(`\\b${mk}\\b`, "i").test(i.text));
+  const handMake = ["Rotork", "AUMA"].find((mk) => same(i.make, mk));
+  const makes = handMake ? [handMake] : named.length === 1 ? named : ["Rotork", "AUMA"];
   const requiredTorque = num(row?.requiredTorque);
+  const timeLimit = specTime(i.text) ?? ACT_RULES.timeLimit;
   const sel: Selection = {
     status: "PENDING", mapKey: i.mapKey, valveType, dn: dn ? Number(dn) : null, pn, qty: i.qty, requiredTorque, actNeed: null,
-    topFlange: str(row?.valveFlange), act: null, gb: null, adaptor: null, assembly: null, aumaRequired, flags: [],
+    topFlange: str(row?.valveFlange), act: null, gb: null, adaptor: null, assembly: null, time: null, timeLimit,
+    aumaRequired: named.length === 1 && named[0] === "AUMA", flags: handMake ? [HAND_MAKE] : [],
   };
   if (/special/i.test(str(row?.gearbox) ?? "")) return { selection: { ...sel, status: "OEM RFQ", flags: [SPECIAL_OEM] }, missing: [] };
 
@@ -76,74 +116,116 @@ export function selectActuator(i: SelectInput, m: Master, free: Map<string, numb
     if (r != null) return { rate: r, rateSource: "RM", rateFlag: sheet != null && sheet > r ? RATE_FLAG : null };
     return { rate: sheet, rateSource: sheet == null ? null : "SHEET", rateFlag: null };
   };
-  // Smallest rating that is big enough; on a tie the line with more free stock, then sheet order.
-  const smallest = (rows: Row[], torque: (r: Row) => number | null, need: number) =>
-    rows.filter((r) => (torque(r) ?? -1) >= need).sort((a, b) => torque(a)! - torque(b)! || freeOf(b.erpCode) - freeOf(a.erpCode))[0] ?? null;
-  // A code typed by hand that is in neither master: a Raw Material ERP code is priced from the RM master, else pending.
-  const typed = (code: string) => {
-    const erp = isErpCode(code) ? code.trim().toUpperCase() : null;
-    return { source: "stock" as const, model: code, erpCode: erp, torque: null, ...rate(erp, null) };
-  };
+  const erpOf = (code: string) => (isErpCode(code) ? code.trim().toUpperCase() : null);
 
-  // Gearbox: Viral only (never AUMA GS). Worm for a BFV, the non-worm multi-turn types for other valves.
-  const gbWanted = same(i.op, "ACT+GB") || !!i.gbCode;
+  // Gearbox: BFV always a Viral worm box; sluice / RS / KGV direct up to DN300, a Viral spur box above. A typed GB CODE wins.
   const worm = valveType === "BFV";
+  const needGb = worm || Number(dn) > ACT_RULES.directMaxDn;
   const typeOk = (t: unknown) => (worm ? /worm/i.test(str(t) ?? "") : !!str(t) && !/worm/i.test(str(t)!));
-  const stockGb = (g: Row): GbPick => {
-    const v = m.viralGearboxes.find((x) => x.erpCode === g.erpCode);
-    return {
-      source: "stock", model: str(v?.model) ?? `${str(g.gbType)} ${num(g.ratedTorque)} Nm`, erpCode: str(g.erpCode), gbCode: str(v?.gbCode),
-      torque: num(g.ratedTorque), ...rate(str(g.erpCode), num(v?.price)),
-    };
+  const viral = (v: Row): GbOpt => {
+    const erp = str(v.erpCode), ratio = last(v.ratio, /(\d+(?:\.\d+)?)\s*:\s*1/g), ma = last(v.ma, /(\d+(?:\.\d+)?)/g);
+    return { ratio, ma, pick: {
+      source: enough(erp) ? "stock" : "viral", model: str(v.model), erpCode: erp, gbCode: str(v.gbCode), torque: num(v.maxOutputTorque),
+      ratio: ratio ? `${ratio}:1` : null, ...rate(erp, num(v.price)),
+    } };
   };
-  const viralGb = (v: Row): GbPick => ({
-    source: "viral", model: str(v.model), erpCode: str(v.erpCode), gbCode: str(v.gbCode), torque: num(v.maxOutputTorque), ...rate(str(v.erpCode), num(v.price)),
-  });
-  if (gbWanted) {
-    if (i.gbCode) {
-      const g = m.gearboxStock.find((x) => same(x.erpCode, i.gbCode!));
-      const v = m.viralGearboxes.find((x) => same(x.gbCode, i.gbCode!) || same(x.erpCode, i.gbCode!));
-      sel.gb = g ? stockGb(g) : v ? viralGb(v) : { ...typed(i.gbCode), gbCode: i.gbCode };
-      sel.flags.push(HAND_GB);
-    } else if (requiredTorque == null) missing.push(row ? `required torque blank in MAPPING for ${i.mapKey}` : noRow);
-    else {
-      const g = smallest(m.gearboxStock.filter((x) => isErpCode(str(x.erpCode)) && typeOk(x.gbType) && enough(x.erpCode)), (x) => num(x.ratedTorque), requiredTorque);
-      const v = g ? null : smallest(m.viralGearboxes.filter((x) => typeOk(x.type)), (x) => num(x.maxOutputTorque), requiredTorque);
-      sel.gb = g ? stockGb(g) : v && viralGb(v);
-      if (!sel.gb) missing.push(`no ${worm ? "worm" : "multi-turn"} gearbox ≥ ${requiredTorque} Nm`);
-    }
-    if (sel.gb && sel.gb.rate == null) missing.push(`gearbox price (${sel.gb.model})`);
+  let gbs: GbOpt[] = [];
+  if (i.gbCode) {
+    const v = m.viralGearboxes.find((x) => same(x.gbCode, i.gbCode!) || same(x.erpCode, i.gbCode!));
+    const g = m.gearboxStock.find((x) => same(x.erpCode, i.gbCode!));
+    const erp = str(g?.erpCode) ?? erpOf(i.gbCode);
+    // A box with no MA / ratio (old stock line, a Raw Material code) is priced, but the actuator then has to be typed too.
+    gbs = [v ? viral(v) : { ratio: null, ma: null, pick: {
+      source: "stock", model: g ? `${str(g.gbType)} ${num(g.ratedTorque)} Nm` : i.gbCode, erpCode: erp, gbCode: g ? null : i.gbCode,
+      torque: num(g?.ratedTorque), ratio: null, ...rate(erp, null),
+    } }];
+    sel.flags.push(HAND_GB);
+  } else if (requiredTorque != null) {
+    gbs = needGb ? m.viralGearboxes.filter((v) => typeOk(v.type) && (num(v.maxOutputTorque) ?? -1) >= requiredTorque).map(viral) : [{ pick: null, ratio: 1, ma: 1 }];
   }
 
-  // Actuator: sized on the gearbox input torque with a gearbox, on the required torque without.
-  const actNeed = gbWanted ? num(row?.actInputTorque) : requiredTorque;
-  sel.actNeed = actNeed;
-  const stockAct = (l: Row): ActPick => {
-    const a = m.actuators.find((x) => x.actCode != null && x.actCode === l.actCode); // K-series line -> its model ("K150/RPM24" -> K150)
-    return {
-      source: "stock", make: str(l.make) ?? make, model: str(a?.model) ?? str(l.ratingCode)?.split("/")[0] ?? null, erpCode: str(l.erpCode),
-      actCode: str(l.actCode), torque: num(l.torque), ...rate(str(l.erpCode), num(a?.price)),
-    };
+  // Actuators: Rotork K and AUMA SA (3-phase table) at the master price, plus stock lines marked auto-pick ON.
+  const curve = (a: Row) => same(a.make, "AUMA")
+    ? m.aumaSpeeds.filter((s) => /3-ph/i.test(s.phase) && key(s.model) === key(a.model)).map(({ rpm, torque }) => ({ rpm, torque }))
+    : /^K-series/i.test(str(a.series) ?? "")
+      ? ACT_RULES.rotorkRpm.map((rpm) => ({ rpm, torque: Math.min(num(a.maxTorque) ?? 0, ...m.rotorkDerates.filter((d) => key(d.model) === key(a.model) && d.rpm === rpm).map((d) => d.torque)) }))
+      : [];
+  const masterAct = (a: Row): ActOpt => {
+    const code = m.rmCodes.find((c) => same(a.make, c.make) && key(c.model) === key(a.model))?.code ?? null; // generic model code
+    return { curve: curve(a), pick: {
+      source: same(a.make, "AUMA") ? "auma" : "rotork", make: str(a.make)!, model: str(a.model), erpCode: null, actCode: str(a.actCode),
+      torque: num(a.maxTorque), rpm: null, rmCode: code, ...rate(code, num(a.price)),
+    } };
   };
-  const newAct = (a: Row): ActPick => ({
-    source: same(a.make, "AUMA") ? "auma" : "rotork", make: str(a.make)!, model: str(a.model), erpCode: null, actCode: str(a.actCode),
-    torque: num(a.maxTorque), ...rate(null, num(a.price)),
-  });
+  const stockAct = (l: Row): ActOpt => {
+    const a = m.actuators.find((x) => x.actCode != null && x.actCode === l.actCode); // K-series line -> its model ("K150/RPM24" -> K150)
+    const erp = str(l.erpCode), rpm = num(l.outputRpm), torque = num(l.torque);
+    return { curve: rpm != null && torque != null ? [{ rpm, torque }] : [], pick: {
+      source: "stock", make: str(l.make) ?? makes[0], model: str(a?.model) ?? str(l.ratingCode)?.split("/")[0] ?? null, erpCode: erp,
+      actCode: str(l.actCode), torque, rpm, rmCode: erp, ...rate(erp, num(a?.price)),
+    } };
+  };
+  const ofMake = (r: Row) => makes.some((mk) => same(r.make, mk));
+  const autos = [
+    ...m.actuatorStock.filter((l) => ofMake(l) && m.stockAutoPick.includes(str(l.erpCode) ?? "") && enough(l.erpCode)).map(stockAct),
+    ...m.actuators.filter(ofMake).map(masterAct),
+  ];
+  let hand: ActOpt | null = null;
   if (i.actCode) {
     const l = m.actuatorStock.find((x) => same(x.erpCode, i.actCode!));
     const a = m.actuators.find((x) => same(x.actCode, i.actCode!));
-    sel.act = l ? stockAct(l) : a ? newAct(a) : { ...typed(i.actCode), make, actCode: i.actCode };
+    const erp = erpOf(i.actCode);
+    hand = l ? stockAct(l) : a ? masterAct(a) : { curve: [], pick: {
+      source: "stock", make: handMake ?? makes[0], model: i.actCode, erpCode: erp, actCode: i.actCode, torque: null, rpm: null, rmCode: erp, ...rate(erp, null),
+    } };
     sel.flags.push(HAND_ACT);
-  } else if (actNeed == null) missing.push(row ? `actuator torque blank in MAPPING for ${i.mapKey}` : noRow);
-  else {
-    // A stock line with a blank torque (AUMA SA nameplate not filled) is never proposed.
-    const series = make === "AUMA" ? /^SA$/i : /^K-series/i;
-    const l = smallest(m.actuatorStock.filter((x) => same(x.make, make) && enough(x.erpCode)), (x) => num(x.torque), actNeed);
-    const a = l ? null : smallest(m.actuators.filter((x) => same(x.make, make) && series.test(str(x.series) ?? "")), (x) => num(x.maxTorque), actNeed);
-    sel.act = l ? stockAct(l) : a && newAct(a);
-    if (!sel.act) missing.push(`no ${make} ${make === "AUMA" ? "SA" : "K-series"} actuator ≥ ${actNeed} Nm`);
   }
+
+  const combos = (acts: ActOpt[]): Combo[] => requiredTorque == null ? [] : gbs.flatMap((g) => {
+    if (!g.ratio || !g.ma) return [];
+    const tIn = requiredTorque / g.ma, turns = (worm ? 0.25 : Math.round(Number(dn) / ACT_RULES.dnPerTurn)) * g.ratio;
+    const inTime = (rpm: number) => rpm * timeLimit >= turns - EPS;
+    return acts.flatMap((a) => {
+      const fit = a.curve.filter((p) => p.torque >= tIn - EPS).sort((x, y) => x.rpm - y.rpm);
+      const p = fit.find((x) => inTime(x.rpm)) ?? fit[fit.length - 1]; // the slowest speed in time, else the fastest
+      return p ? [{
+        gb: g, act: a, rpm: p.rpm, torque: p.torque, tIn, time: turns / p.rpm, ok: inTime(p.rpm),
+        total: (a.pick.rate ?? Infinity) + (g.pick ? g.pick.rate ?? Infinity : 0), stock: +(a.pick.source === "stock") + +(g.pick?.source === "stock"),
+      }] : [];
+    });
+  });
+  const rotorkFirst = (c: Combo) => +(c.act.pick.make !== "Rotork");
+  // In time: stock first, the lowest total, Rotork on a tie, then the slower (nearer the limit). None in time: the fastest.
+  const best = (cs: Combo[]) => {
+    const ok = cs.filter((c) => c.ok);
+    return ok.length
+      ? ok.sort((a, b) => b.stock - a.stock || a.total - b.total || rotorkFirst(a) - rotorkFirst(b) || b.time - a.time)[0]
+      : cs.sort((a, b) => a.time - b.time || a.total - b.total || rotorkFirst(a) - rotorkFirst(b))[0];
+  };
+  // Single phase (AUMA only, 60 s per stroke) is not in these tables: nothing is auto-picked.
+  const singlePhase = /\b(?:single|1)[\s-]*ph(?:ase)?\b/i.test(i.text) && !/\b(?:three|3)[\s-]*ph(?:ase)?\b/i.test(i.text);
+  // A typed actuator gets the gearbox that suits it; one with no speed data, the gearbox the auto pick takes.
+  const c = singlePhase ? undefined : best(combos(hand ? [hand] : autos)) ?? (hand ? best(combos(autos)) : undefined);
+  const own = !!c && (!hand || c.act === hand);
+  // A typed actuator with a torque curve that no gearbox / speed lets take the torque stays as typed, but is not priced silently.
+  if (hand?.curve.length && requiredTorque != null && !singlePhase && !own) sel.flags.push(TYPED_WEAK);
+  sel.gb = i.gbCode ? gbs[0].pick : c?.gb.pick ?? null;
+  sel.act = c && own ? { ...c.act.pick, rpm: c.rpm, torque: c.torque } : hand?.pick ?? null;
+  if (c && own) {
+    sel.actNeed = Math.round(c.tIn);
+    sel.time = Math.round(c.time * 100) / 100;
+    if (!c.ok) sel.flags.push(`Over ${timeLimit} min`);
+  }
+
+  if (requiredTorque == null) missing.push(row ? `required torque blank in MAPPING for ${i.mapKey}` : noRow);
+  else if (singlePhase && (!sel.act || (needGb && !sel.gb))) missing.push(SINGLE_PHASE);
+  else if (needGb && !sel.gb) missing.push(gbs.length ? `no ${makes.join(" / ")} actuator for ${requiredTorque} Nm` : `no ${worm ? "worm" : "spur"} gearbox ≥ ${requiredTorque} Nm`);
+  else if (!sel.act) missing.push(sel.gb && !gbs[0].ratio ? `actuator: gearbox ${sel.gb.model} has no MA / ratio in GB_MASTER, set it by hand` : `no ${makes.join(" / ")} actuator for ${requiredTorque} Nm`);
+  if (sel.gb && sel.gb.rate == null) missing.push(`gearbox price (${sel.gb.model})`);
   if (sel.act && sel.act.rate == null) missing.push(`actuator price (${sel.act.model})`);
+  // The sheet's price stands until the code exists (20-Nov mail: SA 50 / 60 / 100, K 1000, VWE-07, VWESGA-40, SGB-3000 / 5000).
+  if (sel.act && sel.act.source !== "stock" && sel.act.rateSource !== "RM") sel.flags.push(`${RM_NEW}: ${sel.act.make} ${sel.act.model}`);
+  if (sel.gb?.source === "viral" && sel.gb.rateSource !== "RM") sel.flags.push(`${RM_NEW}: Viral ${sel.gb.model}`);
 
   if (!i.actuatorItem) {
     const extra = (hand: number | null | undefined, estimate: number | null): Extra =>
@@ -157,6 +239,13 @@ export function selectActuator(i: SelectInput, m: Master, free: Map<string, numb
   const why = [...new Set(missing)];
   sel.status = why.length ? "PENDING" : "OK";
   return { selection: sel, missing: why };
+}
+
+/** Every code to look up in the RM master and the stock: stock / Viral ERP codes, the generic model codes, codes typed by hand. */
+export function rmLookupCodes(m: Master, typed: (string | null | undefined)[]): string[] {
+  const codes = [...m.actuatorStock, ...m.gearboxStock, ...m.viralGearboxes].map((r) => String(r.erpCode ?? ""))
+    .concat(m.rmCodes.map((c) => c.code ?? ""), typed.map((c) => (c ?? "").trim().toUpperCase()));
+  return [...new Set(codes.filter(isErpCode))];
 }
 
 /**
@@ -174,7 +263,8 @@ export function handPicks(
   const keep = (typed: string | null | undefined, stored: string | null | undefined, auto: (c: string) => boolean) =>
     typed !== undefined && typed !== (stored ?? null) ? typed?.trim() || null : !stored || auto(stored) ? null : stored;
   return {
-    make: keep(patch.actuatorMake, it.actuatorMake, (c) => !last || c === (last.aumaRequired ? "AUMA" : "Rotork")),
+    // The pick writes the make it chose, marking a typed one; a selection stored before 20 Nov (no time) wrote the old default.
+    make: keep(patch.actuatorMake, it.actuatorMake, (c) => !last || (last.time !== undefined ? !last.flags.includes(HAND_MAKE) : c === (last.aumaRequired ? "AUMA" : "Rotork"))),
     actCode: keep(patch.actCode, it.actCode, (c) => makeChanged || (last
       ? !last.flags.includes(HAND_ACT) && c === (last.act?.actCode ?? last.act?.model)
       : m.actuators.some((a) => a.actCode === c))),

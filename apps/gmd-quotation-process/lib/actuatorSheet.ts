@@ -5,8 +5,8 @@ import { sheets as googleSheets } from "@googleapis/sheets";
 import { parseActuatorWorkbook, type Parsed } from "./actuatorMaster";
 
 const SHEET_ID = "1kmC3Th8AGbfPG1qYedw7HBiiZsavbVY2pZM2nb10TuA";
-// SUITABILITY is read too: the parser needs it.
-const TABS = ["ACT_MASTER", "GB_MASTER", "MAPPING", "VALVE_TORQUE", "GMD_GB_STOCK", "STOCK_ACT", "SUITABILITY"];
+// SUITABILITY is read too: the parser needs it. AUMA_RANGE / AUMA_ROTORK_ALT: speeds, Rotork torque drops, generic RM codes.
+const TABS = ["ACT_MASTER", "GB_MASTER", "MAPPING", "VALVE_TORQUE", "GMD_GB_STOCK", "STOCK_ACT", "SUITABILITY", "AUMA_RANGE", "AUMA_ROTORK_ALT"];
 const TTL_MS = 60_000; // a sheet edit shows within a minute
 
 let cache: { at: number; master: Promise<Parsed> } | null = null;

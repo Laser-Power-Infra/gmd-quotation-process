@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@/auth";
+import { requireAccess } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { mirrorLookup } from "@/lib/lookupMirror";
@@ -23,6 +24,7 @@ export type LookupOptionData = {
 };
 
 export async function getLookupOptions(): Promise<LookupOptionData[]> {
+  await requireAccess();
   const rows = await prisma.lookupOption.findMany({
     orderBy: [{ type: "asc" }, { sortOrder: "asc" }],
   });

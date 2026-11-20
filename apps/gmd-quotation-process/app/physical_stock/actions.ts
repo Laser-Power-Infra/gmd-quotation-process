@@ -17,6 +17,7 @@ import type { ActionResult, PhysicalStockPageData, PhysicalStockRow } from "@gmd
 import type { TableQuery } from "@gmd/ui/components/data-table/types";
 import { stockPrisma } from "@/lib/stockPrisma";
 import { computeStockAllocation } from "@gmd/stock-allocation/server";
+import { stockAllocationInputs } from "@/lib/stockAllocationInputs";
 import { getPhysicalStockFlags } from "@/lib/physical-stock-flags";
 import {
   costForPhysicalStockBom,
@@ -51,7 +52,7 @@ export async function loadPage(query: TableQuery): Promise<ActionResult<Physical
     let allocByStock: Map<string, PhysicalStockRow["allocations"]> | null = null;
     try {
       allocByStock = new Map();
-      for (const a of (await computeStockAllocation()).allocations) allocByStock.set(a.stockId, [...(allocByStock.get(a.stockId) ?? []), a]);
+      for (const a of (await computeStockAllocation(stockAllocationInputs)).allocations) allocByStock.set(a.stockId, [...(allocByStock.get(a.stockId) ?? []), a]);
     } catch (err) {
       console.error("[physical-stock] allocation lookup failed", err);
       allocByStock = null;

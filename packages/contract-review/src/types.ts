@@ -1,3 +1,4 @@
+import type { ContractDrawingsActions, DrawingRights } from "@gmd/drawings/ui";
 import type { MailThread } from "@gmd/dashboard/components/MailThreadCard";
 import type { ContractReviewImage } from "@gmd/dashboard/lib/types";
 import type { ContractReviewView, SortSpec, ViewQuery } from "./lib/view";
@@ -59,6 +60,25 @@ export interface ContractReviewViewResult {
   diagramVerdicts: Record<string, string>;
 }
 
+/**
+ * One order line's stock allocation, as a host's allocation lookup returns it. The quotation app
+ * passes the engine's LineAllocation (@gmd/stock-allocation); this package reads only these fields.
+ */
+export interface StockAllocationLine {
+  balanceToOffer: number;
+  fgQty: number;
+  rmRouteQty: number;
+  incomingQty: number;
+  eta: string | null;
+  shortfall: number;
+  status: string;
+  /** null = no actuator / gearbox on the line. */
+  actuatorFree: number | null;
+  gbFree: number | null;
+  flags: string[];
+  suggestions: { erpCode: string; qty: number; note: string }[];
+}
+
 export interface DiagramFileMeta {
   name: string;
   type: string;
@@ -90,6 +110,13 @@ export interface ContractReviewActions {
   addContractMailDocAction?: (contractNo: string, category: string, url: string) => Promise<ActionResult<{ contractNo: string; mailDocs: string }>>;
   /** The contract's docket follow-up mails, newest first. Omit to hide the "Docket mails" button. */
   loadContractMailsAction?: (contractNo: string) => Promise<ActionResult<ContractMail[]>>;
+  /** Drawings & QAP window per contract. Omit (the tender app does) to hide the button; APPROVAL DATE then stays editable everywhere. */
+  drawings?: {
+    actions: ContractDrawingsActions;
+    rights: DrawingRights;
+    /** Which of these Contract Review ids a current drawing covers (their APPROVAL DATE is read-only). */
+    loadCoveredLineIds: (ids: string[]) => Promise<ActionResult<string[]>>;
+  };
   setContractReviewDiagramVerdictAction: (
     id: string,
     verdict: string | null,

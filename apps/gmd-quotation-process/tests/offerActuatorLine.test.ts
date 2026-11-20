@@ -19,6 +19,16 @@ test('selection: actuator make + model, gearbox and top flange as given in the m
   )
 })
 
+test('new selection: rpm, gearbox ratio and operating time; old ones without them still print', () => {
+  const selection = {
+    status: 'OK', topFlange: 'F16', time: 1.76,
+    act: { source: 'auma', make: 'AUMA', model: 'SA 25', rpm: 125 }, gb: { source: 'viral', model: 'SGB-600', ratio: '4:1' },
+  }
+  assert.equal(offerActuatorLine(withSelection(selection)), 'Actuator: AUMA SA 25 @125 rpm | Gearbox: Viral SGB-600 (4:1) | Top flange: F16 | Operating time: 1.76 min')
+  assert.equal(offerActuatorLine(withSelection({ ...selection, time: 2, act: { ...selection.act, rpm: null }, gb: { ...selection.gb, ratio: null } })),
+    'Actuator: AUMA SA 25 | Gearbox: Viral SGB-600 | Top flange: F16 | Operating time: 2.00 min')
+})
+
 test('no selection yet: make + model from the codes, no flange', () => {
   const item = { ...VALVE, actuatorMake: 'Rotork', actCode: 'ACT-RT-K150', gbCode: 'GB-VI-VWESGA80', actuatorBreakdown: { total: 1, pending: [] } }
   assert.equal(offerActuatorLine(item), 'Actuator: Rotork K150 | Gearbox: VWESGA80')

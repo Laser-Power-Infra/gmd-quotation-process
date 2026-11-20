@@ -11,7 +11,7 @@
  * Three steps, in order:
  *   1. Refresh `RawMaterial.availableStock` from the stock-phys tab.
  *   2. Recompute `ContractReview.noUse` (the RM AVAIL column) from BOM availability.
- *   3. Push `ContractReview.rmPhysicalStock` (PHYSICAL STOCK) from stock-phys.
+ *   3. Push `ContractReview.rmPhysicalStock` (PHYSICAL STOCK) from the PhysicalStock table, stock-phys as fallback.
  *
  * Two deliberate changes from the button:
  *
@@ -41,7 +41,8 @@ import {
   getBomRmAvailBatch,
   computeContractReviewRmAvail,
 } from "@/lib/verifyBomLookup";
-import { planContractPhysicalStock } from "@/lib/contractPhysicalStock";
+import { resolveContractPhysicalStock } from "@/lib/contractPhysicalStock";
+import { fetchTablePhysicalStock } from "@/lib/contractPhysicalStockTable";
 
 /** Rows per transaction, the Prisma transaction timeout, and write concurrency. */
 const WRITE_CHUNK = 200;
@@ -63,8 +64,11 @@ export type ContractReviewRmAvailResult = {
   rmAvailUpdated: number;
   /** ContractReview rows whose PHYSICAL STOCK changed. */
   physicalStockUpdated: number;
-  /** Rows whose costCodeRef resolved to nothing, so PHYSICAL STOCK was cleared. */
+  /** Rows whose item code has no figure in the PhysicalStock table or stock-phys, so PHYSICAL STOCK was cleared. */
   physicalStockCleared: number;
+  /** Rows whose PHYSICAL STOCK figure came from the PhysicalStock table / from the stock-phys fallback. */
+  physicalFromTable: number;
+  physicalFromSheet: number;
   failedWrites: number;
   elapsedMs: number;
 };
@@ -203,10 +207,19 @@ export async function runContractReviewRmAvailSync(
   /* ---------------------------------------------------------------- *
    * Step 3 — PHYSICAL STOCK (ContractReview.rmPhysicalStock)
    * ---------------------------------------------------------------- */
+  // Keyed on the row's own item code (FG code), never the RM code shared via costCodeRef.
   const physicalRows = await tenderPrisma.contractReview.findMany({
-    select: { id: true, costCodeRef: true, rmPhysicalStock: true },
+    select: { id: true, itemCode: true, rmPhysicalStock: true },
   });
-  const physicalMap = planContractPhysicalStock(physicalRows, stockPhysMap);
+  // PhysicalStock table first, sheet as fallback; a stock DB failure throws, like an unreachable sheet.
+  const resolved = resolveContractPhysicalStock(
+    physicalRows,
+    stockPhysMap,
+    await fetchTablePhysicalStock(),
+  );
+  const physicalMap = new Map([...resolved].map(([id, r]) => [id, r.value]));
+  const physicalFromTable = [...resolved.values()].filter((r) => r.source === "table").length;
+  const physicalFromSheet = [...resolved.values()].filter((r) => r.source === "sheet").length;
   const physicalUpdates = physicalRows
     .filter((row) => (physicalMap.get(row.id) ?? null) !== row.rmPhysicalStock)
     .map((row) => ({
@@ -214,7 +227,7 @@ export async function runContractReviewRmAvailSync(
       value: physicalMap.get(row.id) ?? null,
     }));
 
-  // A row whose costCodeRef resolves to nothing gets written null — i.e. a
+  // A row whose item code has no stock-phys figure gets written null — i.e. a
   // previously-good value is cleared. Carried over from the original; counted
   // so it is visible rather than silent.
   const physicalStockCleared = physicalUpdates.filter(
@@ -251,7 +264,7 @@ export async function runContractReviewRmAvailSync(
   console.log(`[scheduler] rawMaterial stock   : updated=${stockToWrite.length} unchanged=${stockUnchanged} blankSkipped=${stockSkippedBlank} notInSheet=${stockNotInSheet}`);
   console.log(`[scheduler] RM AVAIL updated    : ${rmAvailUpdates.length}`);
   console.log(
-    `[scheduler] PHYSICAL STOCK      : updated=${physicalUpdates.length} cleared=${physicalStockCleared}`,
+    `[scheduler] PHYSICAL STOCK      : updated=${physicalUpdates.length} cleared=${physicalStockCleared} fromTable=${physicalFromTable} fromSheet=${physicalFromSheet}`,
   );
   console.log(`[scheduler] failed writes       : ${failedWrites}`);
   console.log(`[scheduler] elapsed              : ${elapsedMs}ms`);
@@ -266,6 +279,8 @@ export async function runContractReviewRmAvailSync(
     rmAvailUpdated: rmAvailUpdates.length,
     physicalStockUpdated: physicalUpdates.length,
     physicalStockCleared,
+    physicalFromTable,
+    physicalFromSheet,
     failedWrites,
     elapsedMs,
   };

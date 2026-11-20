@@ -11,6 +11,7 @@ export const NAV: NavEntry[] = [
     label: "Contracts",
     items: [
       { label: "Contract Review", href: "/contract_review" },
+      { label: "Drawings", href: "/drawings" },
       { label: "Stock Allocation", href: "/stock_allocation" },
       { label: "Indent Checking", href: "/indent_listing" },
       { label: "BIS Status", href: "/bis-status" },

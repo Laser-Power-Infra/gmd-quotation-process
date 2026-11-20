@@ -9,8 +9,8 @@ export const hooks = { duringUpload: null };
 // fetchDriveFile serves whatever a test puts here: fileId -> { buffer, mimeType, name }.
 export const driveFiles = new Map();
 
-export async function uploadFileToDrive(fileName, mimeType, base64Data) {
-  uploads.push({ fileName, mimeType, base64Data });
+export async function uploadFileToDrive(fileName, mimeType, base64Data, folderId) {
+  uploads.push({ fileName, mimeType, base64Data, folderId });
   await hooks.duringUpload?.();
   const fileId = `drive-${uploads.length}`;
   return { success: true, fileId, url: `https://drive.google.com/file/d/${fileId}/view` };

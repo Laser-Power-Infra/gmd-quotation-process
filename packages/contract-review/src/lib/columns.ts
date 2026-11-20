@@ -86,6 +86,25 @@ export const CONTRACT_REVIEW_HEADERS = [
   "DATA INCOMPLETE",
 ] as const;
 
+/**
+ * Stock allocation columns (Puja, 18 Nov 2026): display-only, not ContractReview fields. The
+ * server appends them after CONTRACT_REVIEW_HEADERS only when the host supplies the allocation
+ * lookup (the quotation app), so they never reach SQL filters, sorts or facets.
+ */
+export const ALLOC_STATUS_HEADER = "ALLOC STATUS";
+/** Hidden data carrier: the line's flags and machining suggestions, shown under ALLOC STATUS. */
+export const ALLOC_NOTES_HEADER = "ALLOC NOTES";
+export const ALLOCATION_HEADERS = [
+  "BAL TO OFFER",
+  "ALLOC PHYSICAL",
+  "CAN ASSEMBLE",
+  "ALLOC INCOMING",
+  "SHORTFALL",
+  "ACT / GB FREE",
+  ALLOC_STATUS_HEADER,
+  ALLOC_NOTES_HEADER,
+] as const;
+
 export const N_BATCH_HEADER = "N BATCH";
 export const N_BATCH_VALUE = "N";
 export const MAIL_DOCS_COLUMN = "Mails / Documents";
@@ -148,6 +167,13 @@ const QUOTED_RATE_HINT =
 export const CONTRACT_REVIEW_HEADER_HINTS: Record<string, string> = {
   "QUOTED RATE": QUOTED_RATE_HINT,
   "RATE DIFF %": QUOTED_RATE_HINT,
+  "BAL TO OFFER": "Stock allocation: MC qty minus the qty already offered (MC pending: the balance qty).",
+  "ALLOC PHYSICAL": "Stock allocation: finished valves held for this line from physical stock.",
+  "CAN ASSEMBLE": "Stock allocation: valves that can be assembled from RM stock (major BOM parts), after finished stock.",
+  "ALLOC INCOMING": "Stock allocation: qty covered by China shipments, with the ETA of the last one used. Not physical stock.",
+  SHORTFALL: "Stock allocation: balance to offer not covered by physical, assembled or incoming stock.",
+  "ACT / GB FREE": "Stock allocation: free qty of the approved actuator (ACT) and of the RM CODE FOR GB gearbox (GB).",
+  [ALLOC_STATUS_HEADER]: "Stock allocation status. Hover a cell for its flags and machining suggestions.",
 };
 
 /** A sheet number ("1,200", "115.00"); NaN when blank or not a number. */
@@ -256,7 +282,7 @@ export function nBatchFilter() {
  * header union so a typo is a compile error rather than a silent fallback.
  */
 export const CONTRACT_REVIEW_COLUMN_WIDTHS: Partial<
-  Record<(typeof CONTRACT_REVIEW_HEADERS)[number], number>
+  Record<(typeof CONTRACT_REVIEW_HEADERS)[number] | (typeof ALLOCATION_HEADERS)[number], number>
 > = {
   // Dates.
   "DATE OF CONTRACT": 150,
@@ -332,6 +358,15 @@ export const CONTRACT_REVIEW_COLUMN_WIDTHS: Partial<
   "PARTY NAME": 240,
   "ERP PARTY NAME FROM GMD SUPPLY HISTORY": 280,
   "bom formula trial": 300,
+
+  // Stock allocation (quotation app only).
+  "BAL TO OFFER": 100,
+  "ALLOC PHYSICAL": 110,
+  "CAN ASSEMBLE": 110,
+  "ALLOC INCOMING": 150,
+  SHORTFALL: 100,
+  "ACT / GB FREE": 120,
+  "ALLOC STATUS": 220,
 };
 
 /**

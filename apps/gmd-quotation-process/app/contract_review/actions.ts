@@ -18,7 +18,9 @@ import {
 } from "@gmd/contract-review/server";
 import type { ActionResult, ContractMail, ContractReviewData, DiagramFileMeta } from "@gmd/contract-review/types";
 import { columnAccess } from "@gmd/contract-review/flags";
+import { invalidateContractReviewAllocation } from "@/lib/contractReviewView";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
+import { coveredLineIds } from "@gmd/drawings/server";
 import { findContractMails } from "@/lib/contractMails";
 import { GET } from "@/app/api/contract-review/route";
 import { POST } from "@/app/api/contract-review/sync/route";
@@ -76,7 +78,19 @@ export async function updateContractReviewFieldAction(
   await requireAccess();
   const flags = await getContractReviewFlags();
   const res = await updateContractReviewField(id, field, value, editableFieldsFor(flags), blankOnlyFieldsFor(flags));
+  invalidateContractReviewAllocation(); // MC state / qty edits change which lines are live
   return res;
+}
+
+/** Which of these lines a current drawing covers: the page makes their APPROVAL DATE read-only. */
+export async function loadCoveredLineIdsAction(ids: string[]): Promise<ActionResult<string[]>> {
+  await requireAccess();
+  try {
+    return { success: true, data: [...(await coveredLineIds(ids))] };
+  } catch (error) {
+    console.error("coveredLineIds failed:", error);
+    return { success: false, error: "Could not check which lines Drawings & QAP covers." };
+  }
 }
 
 export async function createDiagramUploadAction(id: string, file: DiagramFileMeta) {
@@ -109,20 +123,26 @@ export async function setContractReviewDiagramVerdictAction(id: string, verdict:
 export async function backfillContractReviewOfferPendingDoneBatchAction(ids: string[]) {
   await requireAccess();
   if (!(await access()).isEnabled("OFFER PENDING/DONE")) return NOT_ALLOWED;
-  return backfillOfferPendingDone(ids);
+  const res = await backfillOfferPendingDone(ids);
+  invalidateContractReviewAllocation();
+  return res;
 }
 
 export async function backfillContractReviewInspectionBatchAction(ids: string[]) {
   await requireAccess();
   if (!(await access()).isEnabled("Inspection")) return NOT_ALLOWED;
-  return backfillInspection(ids);
+  const res = await backfillInspection(ids);
+  invalidateContractReviewAllocation();
+  return res;
 }
 
 export async function backfillContractReviewClearanceMcPendingBatchAction(ids: string[]) {
   await requireAccess();
   const a = await access();
   if (!a.isEnabled("CLEARANCE STATUS") || !a.isEnabled("MC Received/Pending")) return NOT_ALLOWED;
-  return backfillClearanceMcPending(ids);
+  const res = await backfillClearanceMcPending(ids);
+  invalidateContractReviewAllocation();
+  return res;
 }
 
 export async function backfillContractReviewPnRatingBatchAction(ids: string[]) {

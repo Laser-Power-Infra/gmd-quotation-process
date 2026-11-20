@@ -9,16 +9,20 @@ import { TD, TH, Tile } from "@gmd/ui/components/plain-table";
 import { Button } from "@gmd/ui/components/button";
 import { Segmented } from "@gmd/ui/components/segmented";
 import { DataTable } from "@gmd/ui/components/data-table/DataTable";
-import type { DataColumn, TableSort } from "@gmd/ui/components/data-table/types";
+import { Pagination } from "@gmd/ui/components/data-table/Pagination";
+import { useServerTable } from "@gmd/ui/components/data-table/useServerTable";
+import type { DataColumn, TableQuery, TableSort } from "@gmd/ui/components/data-table/types";
 import { applyTable, facetValues } from "./localTable";
+import { LOG_COLUMNS, type AllocationLogActions, type AllocationLogPage } from "../allocationLog";
 import { basisText, rmText as rm } from "../readyToBill";
 import type { AllocationResult, OfferLine, StockAllocationActions } from "../types";
 
-type View = "offer" | "ledger" | "short";
+type View = "offer" | "ledger" | "short" | "log";
 const VIEWS = [
   { value: "offer", label: "Offer Now" },
   { value: "ledger", label: "Stock Allocation Ledger" },
   { value: "short", label: "Not in Stock" },
+  { value: "log", label: "Log" },
 ] as const;
 const key = (o: OfferLine) => `${o.line.contractNo}|${o.line.itemCode}`;
 const input = "rounded border border-border bg-background px-2 py-1 text-xs";
@@ -89,8 +93,39 @@ function useLocalTable<Row extends { id: string }>(rows: Row[], columns: DataCol
   };
 }
 
-export default function StockAllocationTable({ initial, actions, hideRates }: { initial: AllocationResult; actions: StockAllocationActions; hideRates?: boolean }) {
-  const { addBookingAction, deleteBookingAction, reloadAction, setOfferSentAction, updateBookingAction } = actions;
+const noop = () => undefined;
+
+/** Every ledger write, newest first, one server page at a time. Remounted per `search` (the toolbar's), so it starts on page 1. */
+function AllocationLog({ load, search, onClearSearch }: { load: AllocationLogActions["loadLogPageAction"]; search: string; onClearSearch: () => void }) {
+  // shortcut: page state is React state like the rest of this component (not a slice, as AGENTS.md wants); move it to a slice when its views move to the server kit.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const query: TableQuery = { page, pageSize, sort: null, search, filters: {} };
+  const table = useServerTable<AllocationLogPage>({
+    queryKey: JSON.stringify(query),
+    filterKey: search,
+    fetchPage: async () => {
+      const res = await load(query);
+      if (!res.success) throw new Error(res.error);
+      return res.data;
+    },
+    fetchFacet: async () => [],
+  });
+  return (
+    <>
+      <DataTable
+        columns={LOG_COLUMNS} rows={table.data?.rows ?? []} rowId={(r) => r.id} sort={null} onSortChange={noop}
+        filters={{}} onFilterChange={noop} facetOptions={() => null} onFacetOpen={noop} selectedId={null} onSelect={noop}
+        loading={table.loading} refreshing={table.refreshing} error={table.error} onRetry={() => void table.refresh()}
+        hasFilters={!!search} onClearFilters={onClearSearch}
+      />
+      <Pagination page={page} pageSize={pageSize} total={table.data?.total ?? 0} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1); }} />
+    </>
+  );
+}
+
+export default function StockAllocationTable({ initial, actions, hideRates }: { initial: AllocationResult; actions: StockAllocationActions & AllocationLogActions; hideRates?: boolean }) {
+  const { addBookingAction, deleteBookingAction, loadLogPageAction, reloadAction, setOfferSentAction, updateBookingAction } = actions;
   const [data, setData] = useState(initial);
   const [view, setView] = useState<View>("offer");
   const [search, setSearch] = useState("");
@@ -217,9 +252,9 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
 
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <Segmented options={VIEWS} value={view} onChange={setView} label="Stock allocation view" />
-        <Button variant="outline" size="sm" onClick={exportCsv}>Download Excel (CSV)</Button>
+        {view !== "log" && <Button variant="outline" size="sm" onClick={exportCsv}>Download Excel (CSV)</Button>}
         {error && <span role="alert" className="text-xs text-red-600">{error}</span>}
-        <div className="ml-auto w-72"><DebouncedSearchInput value={search} onCommit={setSearch} placeholder="Search contract, party, item or ERP code" /></div>
+        <div className="ml-auto w-72"><DebouncedSearchInput value={search} onCommit={setSearch} placeholder={view === "log" ? "Search contract, item, ERP code, who or note" : "Search contract, party, item or ERP code"} /></div>
       </div>
 
       {view === "offer" && (
@@ -272,6 +307,8 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
       )}
 
       {view === "short" && <DataTable {...shortTable.props} />}
+
+      {view === "log" && <AllocationLog key={search} load={loadLogPageAction} search={search} onClearSearch={clearSearch} />}
     </div>
   );
 }

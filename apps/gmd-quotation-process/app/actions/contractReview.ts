@@ -1739,11 +1739,9 @@ export async function syncContractReviewRmAvailAction() {
     );
 
     // 0. Refresh the Indent Listing V1..V4 split, the RM codes and the Contract
-    //    Review COST CODE REF before the PHYSICAL STOCK step below reads that
-    //    ref. Without this an NRV / SLV code published since the last Indent
-    //    Listing recompute would be missed. The call is idempotent: the
-    //    destructive collapse is skipped once the rows are already collapsed,
-    //    but the RM code and cost code ref passes always run.
+    //    Review COST CODE REF (this button's toast reports them). The call is
+    //    idempotent: the destructive collapse is skipped once the rows are
+    //    already collapsed, but the RM code and cost code ref passes always run.
     const indentRecompute = await recomputeIndentListingVersionsAction();
 
     // 1. Blank-fill GMDUpdateItem.availableStock from the stock-phys sheet
@@ -1813,12 +1811,20 @@ export async function syncContractReviewRmAvailAction() {
       await tenderPrisma.$transaction(rmAvailUpdates, { timeout: 30_000 });
     }
 
-    // 3. Push the PHYSICAL STOCK column: match each row's RM code (costCodeRef)
-    //    against the stock-phys sheet, summing every code in a comma-joined ref.
+    // 3. Push the PHYSICAL STOCK column: each row's own item code (its FG code),
+    //    never the RM code shared via costCodeRef.
     const physicalRows = await tenderPrisma.contractReview.findMany({
-      select: { id: true, costCodeRef: true, rmPhysicalStock: true },
+      select: { id: true, itemCode: true, rmPhysicalStock: true },
     });
-    const physicalMap = planContractPhysicalStock(physicalRows, stockPhysMap);
+    // Table first (Physical Stock page), sheet as fallback; a stock DB failure fails the button.
+    const { fetchTablePhysicalStock } = await import(
+      "@/lib/contractPhysicalStockTable"
+    );
+    const physicalMap = planContractPhysicalStock(
+      physicalRows,
+      stockPhysMap,
+      await fetchTablePhysicalStock(),
+    );
     const physicalUpdates = physicalRows.filter(
       (row) => (physicalMap.get(row.id) ?? null) !== row.rmPhysicalStock,
     );

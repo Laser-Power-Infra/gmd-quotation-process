@@ -143,6 +143,7 @@
     "@gmd/db-quotation": "workspace:*",
     "@gmd/db-stock": "workspace:*",
     "@gmd/db-tender": "workspace:*",
+    "@gmd/drawings": "workspace:*",
     "@gmd/execution-registers": "workspace:*",
     "@gmd/inspection-reports": "workspace:*",
     "@gmd/order-status": "workspace:*",

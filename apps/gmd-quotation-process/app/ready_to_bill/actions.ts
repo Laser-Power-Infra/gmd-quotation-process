@@ -1,7 +1,8 @@
 "use server";
 import { requireAccess } from "@/lib/access";
-import { listReadyToBillFacet, listReadyToBillPage } from "@gmd/stock-allocation/server";
+import { listInspectionCallList, listReadyToBillExport, listReadyToBillFacet, listReadyToBillPage } from "@gmd/stock-allocation/server";
 import type { TableQuery } from "@gmd/ui/components/data-table/types";
+import { stockAllocationInputs } from "@/lib/stockAllocationInputs";
 
 // Ready to Bill is read-only. Access is checked here: the package has no notion of this app's sessions.
 
@@ -16,9 +17,17 @@ async function run<T>(fn: () => Promise<T>): Promise<Res<T>> {
 }
 
 export async function loadPage(query: TableQuery) {
-  return run(async () => { await requireAccess(); return listReadyToBillPage(query); });
+  return run(async () => { await requireAccess(); return listReadyToBillPage(query, stockAllocationInputs); });
 }
 
 export async function loadFacet(key: string, query: TableQuery) {
-  return run(async () => { await requireAccess(); return listReadyToBillFacet(key, query); });
+  return run(async () => { await requireAccess(); return listReadyToBillFacet(key, query, stockAllocationInputs); });
+}
+
+export async function loadExport(query: TableQuery) {
+  return run(async () => { await requireAccess(); return listReadyToBillExport(query, stockAllocationInputs); });
+}
+
+export async function loadShareList(query: TableQuery) {
+  return run(async () => { await requireAccess(); return listInspectionCallList(query, stockAllocationInputs); });
 }

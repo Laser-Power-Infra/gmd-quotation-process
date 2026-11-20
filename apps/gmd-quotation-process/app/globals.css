@@ -14,6 +14,7 @@
 @import "@gmd/order-status/styles.css";
 @import "@gmd/sales-register/styles.css";
 @import "@gmd/inspection-reports/styles.css";
+@import "@gmd/drawings/styles.css";
 
 @custom-variant dark (&:is(.dark *));
 

@@ -17,10 +17,7 @@
  *     (`lib/verifyBomLookup.ts:236`), so 1b runs before 3 to make the ITEM
  *     MASTER name available. `ContractReview.itemName` is in the sheet sync's
  *     SKIP_FIELDS, so only 1b writes it.
- *   - 3 step 4 needs `ContractReview.costCodeRef`, which job 1 cannot populate
- *     (it is absent from CONTRACTS_SHEET_COLUMNS) and which is published
- *     separately from the Indent Listing by `recomputeIndentListingVersionsAction`.
- *     If that has never run, step 4 resolves nothing and writes null.
+ *   - 3's PHYSICAL STOCK step keys on `itemCode`, which 1 writes.
  *   - 4 joins on `mcNo` + `itemCode`, both of which step 1 is what populates.
  *   - 5 fills new draft reports from ContractReview, so it runs last.
  *
