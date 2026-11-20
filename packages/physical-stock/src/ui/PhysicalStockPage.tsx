@@ -241,6 +241,11 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
           <header className="flex items-baseline gap-3">
             <h1 className="text-lg font-semibold tracking-tight">Physical Stock</h1>
             <span className="text-sm tabular-nums text-muted-foreground">{data ? `${count.format(total)} items` : ""}</span>
+            {meta?.lastUpdated && (
+              <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                Last updated {new Date(meta.lastUpdated).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+              </span>
+            )}
           </header>
         )}
         {showNew && (
@@ -277,7 +282,7 @@ export function PhysicalStockPage({ flags, actions, showHeader = true }: Physica
                     ? dispatch(setDateRange({ key: chip.key, range: undefined }))
                     : chip.search
                       ? dispatch(setColumnSearch({ key: chip.key, value: "" }))
-                      : dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => v !== chip.value) }))
+                      : dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => !(chip.values ?? [chip.value]).includes(v)) }))
                 }
                 onClear={() => dispatch(clearFilters())}
               />

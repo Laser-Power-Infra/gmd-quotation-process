@@ -1,5 +1,6 @@
 // Pure rules linking actuator / gearbox ERP codes to stock and BOM lines (no DB).
 // An ACT CODE maps to stock via ERP code: Rotork K-series lines carry an ACT CODE, AUMA SA lines have none (never guessed).
+import type { Selection } from "./actuatorSelect";
 
 /** A real ERP item code (RCB040002, RL2010003). MAPPING's gearbox column also holds text like "Bevel/spur – see GMD_GB_STOCK". */
 export const isErpCode = (s: string | null | undefined) => /^[A-Z]{2,3}\d{6,7}$/i.test((s ?? "").trim());
@@ -8,10 +9,13 @@ export interface StockCodes { act: string[]; gb: string | null }
 
 /** ERP codes that carry the stock of an item's actuator and gearbox. Anything that is not a real code means "no stock code". */
 export function resolveStockCodes(
-  it: { actCode?: string | null; gbCode?: string | null },
+  it: { actCode?: string | null; gbCode?: string | null; actuatorBreakdown?: unknown },
   mappingGmdGb: string | null | undefined,
   actStock: { erpCode: string; actCode: string | null }[],
 ): StockCodes {
+  // The pick names its own lines (a new purchase has none). Items linked before the pick existed keep the old lookup.
+  const sel = (it.actuatorBreakdown as { selection?: Selection } | null | undefined)?.selection;
+  if (sel) return { act: sel.act?.erpCode ? [sel.act.erpCode] : [], gb: sel.gb?.erpCode ?? null };
   const act = it.actCode ? actStock.filter((a) => a.actCode === it.actCode).map((a) => a.erpCode) : [];
   // A hand-typed real ERP code in GB CODE wins; otherwise the GMD stock gearbox of the MAPPING row.
   const gb = [it.gbCode, mappingGmdGb].map((c) => c?.trim()).find((c) => isErpCode(c)) ?? null;
@@ -26,7 +30,7 @@ export interface ItemStock {
   short: string[]; // "actuator" / "gearbox" when free qty < docket qty
 }
 
-/** Free qty = live Physical Stock available qty summed per ERP code. Short when it is below the docket qty. */
+/** Free qty per ERP code (live Physical Stock minus allocations, see freeQty), summed. Short when it is below the docket qty. */
 export function stockSummary(
   it: { actCode?: string | null; gbCode?: string | null }, codes: StockCodes, live: Map<string, number>, need: number | null,
 ): ItemStock {

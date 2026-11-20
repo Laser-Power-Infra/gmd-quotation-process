@@ -26,6 +26,9 @@ importers:
       '@base-ui/react':
         specifier: ^1.6.0
         version: 1.8.0(@date-fns/tz@1.5.0)(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@gmd/actuator-mapping':
+        specifier: workspace:*
+        version: link:../../packages/actuator-mapping
       '@gmd/contract-review':
         specifier: workspace:*
         version: link:../../packages/contract-review
@@ -41,15 +44,33 @@ importers:
       '@gmd/db-tender':
         specifier: workspace:*
         version: link:../../packages/db-tender
+      '@gmd/debtors':
+        specifier: workspace:*
+        version: link:../../packages/debtors
       '@gmd/execution-registers':
         specifier: workspace:*
         version: link:../../packages/execution-registers
+      '@gmd/inspection-reports':
+        specifier: workspace:*
+        version: link:../../packages/inspection-reports
+      '@gmd/order-status':
+        specifier: workspace:*
+        version: link:../../packages/order-status
+      '@gmd/pending-dockets':
+        specifier: workspace:*
+        version: link:../../packages/pending-dockets
       '@gmd/physical-stock':
         specifier: workspace:*
         version: link:../../packages/physical-stock
       '@gmd/purchase':
         specifier: workspace:*
         version: link:../../packages/purchase
+      '@gmd/sales-register':
+        specifier: workspace:*
+        version: link:../../packages/sales-register
+      '@gmd/service-orders':
+        specifier: workspace:*
+        version: link:../../packages/service-orders
       '@gmd/stock-allocation':
         specifier: workspace:*
         version: link:../../packages/stock-allocation
@@ -504,6 +525,49 @@ importers:
         specifier: ^5
         version: 5.9.3
 
+  packages/actuator-mapping:
+    dependencies:
+      '@gmd/db-quotation':
+        specifier: workspace:*
+        version: link:../db-quotation
+      '@gmd/db-stock':
+        specifier: workspace:*
+        version: link:../db-stock
+      '@gmd/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      react:
+        specifier: ^19
+        version: 19.2.4
+      react-dom:
+        specifier: ^19
+        version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.8(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.15
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
   packages/contract-review:
     dependencies:
       '@aws-sdk/client-s3':
@@ -650,6 +714,52 @@ importers:
         specifier: ^7.8.0
         version: 7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
 
+  packages/debtors:
+    dependencies:
+      '@gmd/db-quotation':
+        specifier: workspace:*
+        version: link:../db-quotation
+      '@gmd/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      lucide-react:
+        specifier: ^1.23.0
+        version: 1.52.0(@types/react@19.3.0)(react@19.2.4)
+      react:
+        specifier: ^19
+        version: 19.2.4
+      react-dom:
+        specifier: ^19
+        version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.8(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      xlsx:
+        specifier: ^0.18.5
+        version: 0.18.5
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.15
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
   packages/execution-registers:
     dependencies:
       '@gmd/dashboard':
@@ -664,6 +774,135 @@ importers:
       '@reduxjs/toolkit':
         specifier: ^2.12.0
         version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      react:
+        specifier: ^19
+        version: 19.2.4
+      react-dom:
+        specifier: ^19
+        version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.8(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.15
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
+  packages/inspection-reports:
+    dependencies:
+      '@gmd/db-quotation':
+        specifier: workspace:*
+        version: link:../db-quotation
+      '@gmd/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      react:
+        specifier: ^19
+        version: 19.2.4
+      react-dom:
+        specifier: ^19
+        version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.8(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.15
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
+  packages/order-status:
+    dependencies:
+      '@gmd/dashboard':
+        specifier: workspace:*
+        version: link:../dashboard
+      '@gmd/db-quotation':
+        specifier: workspace:*
+        version: link:../db-quotation
+      '@gmd/db-tender':
+        specifier: workspace:*
+        version: link:../db-tender
+      '@gmd/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      react:
+        specifier: ^19
+        version: 19.2.4
+      react-dom:
+        specifier: ^19
+        version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.8(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.15
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
+  packages/pending-dockets:
+    dependencies:
+      '@gmd/db-quotation':
+        specifier: workspace:*
+        version: link:../db-quotation
+      '@gmd/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      lucide-react:
+        specifier: ^1.23.0
+        version: 1.52.0(@types/react@19.3.0)(react@19.2.4)
       react:
         specifier: ^19
         version: 19.2.4
@@ -744,6 +983,95 @@ importers:
       '@gmd/dashboard':
         specifier: workspace:*
         version: link:../dashboard
+      '@gmd/db-stock':
+        specifier: workspace:*
+        version: link:../db-stock
+      '@gmd/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      lucide-react:
+        specifier: ^1.23.0
+        version: 1.52.0(@types/react@19.3.0)(react@19.2.4)
+      react:
+        specifier: ^19
+        version: 19.2.4
+      react-dom:
+        specifier: ^19
+        version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.8(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.15
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
+  packages/sales-register:
+    dependencies:
+      '@gmd/dashboard':
+        specifier: workspace:*
+        version: link:../dashboard
+      '@gmd/db-quotation':
+        specifier: workspace:*
+        version: link:../db-quotation
+      '@gmd/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@reduxjs/toolkit':
+        specifier: ^2.12.0
+        version: 2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1))(react@19.2.4)
+      react:
+        specifier: ^19
+        version: 19.2.4
+      react-dom:
+        specifier: ^19
+        version: 19.2.4(react@19.2.4)
+      react-redux:
+        specifier: ^9.3.0
+        version: 9.3.0(@types/react@19.3.0)(react@19.2.4)(redux@5.0.1)
+      server-only:
+        specifier: ^0.0.1
+        version: 0.0.1
+      sonner:
+        specifier: ^2.0.7
+        version: 2.0.8(@types/react@19.3.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+    devDependencies:
+      '@types/react':
+        specifier: ^19
+        version: 19.3.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.3.0(@types/react@19.3.0)
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.15
+      typescript:
+        specifier: ^5
+        version: 5.9.3
+
+  packages/service-orders:
+    dependencies:
+      '@gmd/db-quotation':
+        specifier: workspace:*
+        version: link:../db-quotation
       '@gmd/db-stock':
         specifier: workspace:*
         version: link:../db-stock

@@ -280,7 +280,7 @@ export function ValveSerialPage({ actions }: { actions: ValveSerialActions }) {
                 ? dispatch(setDateRange({ key: chip.key, range: undefined }))
                 : chip.search
                   ? dispatch(setColumnSearch({ key: chip.key, value: "" }))
-                  : dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => v !== chip.value) }))
+                  : dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => !(chip.values ?? [chip.value]).includes(v)) }))
             }
             onClear={() => dispatch(clearFilters())}
           />

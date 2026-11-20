@@ -449,7 +449,7 @@ const QUOTATION_CALC_COLUMNS = cols(
   ["(enquiry) state", "cost multiplier", "TransportationCost; full load at productCost >= 50,00,000"],
   ["(derived)", "cost", "productCost x 1.08 + flats + productCost x 1.08 x pctSum"],
   ["(derived)", "vaPercent", "the anchor: ((quotedRate / cost) - 1) x 100 only when Validation = Yes, or when no VA% is set"],
-  ["(derived)", "quotedRate", "roundUp(cost x (1 + vaPercent / 100))"],
+  ["(derived)", "quotedRate", "roundUp(cost x (1 + vaPercent / 100)); actuated item: valve portion x (1 + vaPercent / 100) + actuator portion x 1.05 (item type ACTUATOR: whole cost, minimum VA% 5, blank = cost x 1.05)"],
   ["(derived)", "quotedRateGst", "quotedRate x 1.18"],
   ["(derived)", "itemWiseTotalValue", "quantity x quotedRate"],
   ["(derived)", "totalValue", "itemWiseTotalValue x 1.18"],

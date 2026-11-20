@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "sonner";
+import { Button } from "@gmd/ui/components/button";
 import { DataTable } from "@gmd/ui/components/data-table/DataTable";
 import { FilterChips, type FilterChip } from "@gmd/ui/components/data-table/FilterChips";
 import { Pagination } from "@gmd/ui/components/data-table/Pagination";
 import { SearchField } from "@gmd/ui/components/data-table/SearchField";
 import { useServerTable } from "@gmd/ui/components/data-table/useServerTable";
 import { formatCell } from "@gmd/ui/components/data-table/format";
-import type { DataColumn } from "@gmd/ui/components/data-table/types";
+import { BLANK, type DataColumn } from "@gmd/ui/components/data-table/types";
 import MultiSelectFilter from "@gmd/ui/components/multi-select-filter";
 import { Segmented } from "@gmd/ui/components/segmented";
 import { formatLakh } from "@gmd/ui/lib/format";
@@ -17,6 +18,7 @@ import { PAYABLE_COLUMNS, PO_COLUMNS, SLICERS, type ChartBar, type PoRow, type P
 import {
   clearFilters,
   queryOf,
+  resetAll,
   select,
   selectPurchaseTable,
   setColumnSearch,
@@ -28,7 +30,7 @@ import {
   setSearch,
   setSort,
 } from "../../state/tableSlice";
-import { BarList, KpiCards, MonthColumns, ageingBars } from "./Charts";
+import { BarList, KpiCards, MonthColumns, ageingBars, type KpiKey } from "./Charts";
 import { PoLines } from "./PoLines";
 
 export interface PurchasePageProps {
@@ -131,6 +133,22 @@ export function PurchasePage({ actions, title = "Purchases & Pending Receipts", 
   }, [state.filters, state.dateRanges, state.columnSearch]);
   const hasFilters = chips.length > 0 || Boolean(state.search);
 
+  // KPI card -> the filter behind its SQL figure. Status/untagged cards toggle; the open-line cards switch to Open.
+  const KPI_FILTER: Partial<Record<KpiKey, { key: string; value: string }>> = {
+    overdue: { key: "status", value: "Overdue" },
+    due30: { key: "status", value: "Due in 30 days" },
+    untagged: { key: "contract", value: BLANK },
+  };
+  const kpiActive = (k: KpiKey) => {
+    const f = KPI_FILTER[k];
+    return f ? state.filters[f.key]?.length === 1 && state.filters[f.key][0] === f.value : false;
+  };
+  const pickKpi = (k: KpiKey) => {
+    const f = KPI_FILTER[k];
+    if (k !== "overdue" && k !== "due30") dispatch(setOpenOnly(true));
+    if (f) dispatch(setFilter({ key: f.key, values: kpiActive(k) ? [] : [f.value] }));
+  };
+
   const supplierSelected = state.filters.supplier ?? [];
   const toggleSupplier = (b: ChartBar) =>
     dispatch(setFilter({ key: "supplier", values: supplierSelected.includes(b.label) ? supplierSelected.filter((v) => v !== b.label) : [...supplierSelected, b.label] }));
@@ -149,8 +167,10 @@ export function PurchasePage({ actions, title = "Purchases & Pending Receipts", 
             {syncedAt.toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
           </span>
         )}
+        <Button variant="outline" size="sm" className="ml-auto" onClick={() => dispatch(resetAll())}>
+          Reset filters
+        </Button>
         <Segmented
-          className="ml-auto"
           label="Lines shown"
           options={[
             { value: "open", label: "Open" },
@@ -161,7 +181,7 @@ export function PurchasePage({ actions, title = "Purchases & Pending Receipts", 
         />
       </header>
 
-      <KpiCards kpi={meta?.kpi} />
+      <KpiCards kpi={meta?.kpi} onPick={pickKpi} isActive={kpiActive} />
 
       <div className="flex min-h-0 flex-1 gap-4">
         <aside aria-label="Slicers" className="flex w-52 shrink-0 flex-col gap-3">
@@ -209,7 +229,7 @@ export function PurchasePage({ actions, title = "Purchases & Pending Receipts", 
                   ? dispatch(setDateRange({ key: chip.key, range: undefined }))
                   : chip.search
                     ? dispatch(setColumnSearch({ key: chip.key, value: "" }))
-                    : dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => v !== chip.value) }))
+                    : dispatch(setFilter({ key: chip.key, values: (state.filters[chip.key] ?? []).filter((v) => !(chip.values ?? [chip.value]).includes(v)) }))
               }
               onClear={() => dispatch(clearFilters())}
             />

@@ -32,6 +32,7 @@ import {
 } from "@/lib/verifyBomLookup";
 import { ageBucket, STAGE_ASSIGNEE_FIELD } from "@/lib/stageAgeing";
 import { costWarningsSql } from "@/lib/costSanity";
+import { docketSeatSpecs } from "@/lib/seatType-server";
 
 // Owner column of the docket's current stage, from STAGE_ASSIGNEE_FIELD.
 const STAGE_ASSIGNEE_SQL = Prisma.sql`(CASE t.stage ${Prisma.join(
@@ -149,12 +150,16 @@ export async function fetchEnquiryPage(
   let enquiries: EnquiryPageResult["enquiries"] = [];
   if (ids.length > 0) {
     // Only each docket's first matching item travels with the page; the rest load on expand.
-    const [rows, firstRows, countRows2] = await Promise.all([
+    const [rows, firstRows, countRows2, seatSpecs] = await Promise.all([
       prisma.enquiry.findMany({ where: { id: { in: ids } }, include: { attachments: true } }),
       prisma.$queryRaw<{ id: string }[]>(firstItemIdsSql(query, ids)),
       prisma.$queryRaw<{ enquiryId: string; itemCount: number; incompleteItemCount: number }[]>(
         itemCountsSql(query, ids),
       ),
+      docketSeatSpecs(ids).catch((error) => {
+        console.warn("[enquiryQuery] docket seat spec failed:", error);
+        return new Map<string, string>();
+      }),
     ]);
     const order = new Map(ids.map((id, index) => [id, index]));
     rows.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
@@ -162,6 +167,7 @@ export async function fetchEnquiryPage(
     const counts = new Map(countRows2.map((r) => [r.enquiryId, r]));
     enquiries = rows.map((enquiry) => ({
       ...enquiry,
+      seatSpec: seatSpecs.get(enquiry.id) ?? null,
       items: first.filter((i) => i.enquiryId === enquiry.id),
       itemsLoaded: false,
       itemCount: counts.get(enquiry.id)?.itemCount ?? 0,

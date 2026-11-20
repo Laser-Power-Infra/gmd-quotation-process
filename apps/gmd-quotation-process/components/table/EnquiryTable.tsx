@@ -7,12 +7,14 @@ import { shallowEqual } from "react-redux";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
 import ActuatorChip from "./ActuatorChip";
+import SeatTypeChip from "./SeatTypeChip";
+import { pendingValveCost } from "@/lib/actuatorCost";
 import Pagination from "./Pagination";
 import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter";
 import CellSelect, { optionsWithCurrent } from "./CellSelect";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, fetchActuator, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, loadEnquiryItems, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, fetchActuator, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, loadEnquiryItems, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryContactMissingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
 import { enquiryFilterKey } from "@/lib/enquiryQuery";
 import { fetchDocketNumbers, fetchFilteredEnquiryExport, fetchGeneratedImageMap } from "@/app/actions/enquiryQuery";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
@@ -31,6 +33,7 @@ import { applyVaRulesAction } from "@/app/actions/misc";
 import { markEnquiryPageStale } from "@/lib/enquiriesSlice";
 import { parseAndValidateContractNumbers } from "@/lib/contractValidation";
 import { makeImageKey } from "@/lib/imageKey";
+import { isDocketEmailSending } from "@/lib/docketEmailTemplate";
 import { RM_TYPE_OPTIONS } from "@/lib/gmd_lib/sheet-columns";
 import { C_BATCH_VALUE } from "@/lib/gmd_lib/verify-bom-columns";
 import { N_BATCH_VALUE } from "@/lib/gmd_lib/contract-review-columns";
@@ -69,6 +72,15 @@ interface EnquiryTableProps {
 // Red warning icon beside Product Cost; the reasons come from lib/costSanity.ts.
 /** Shared empty list, so a docket with no items keeps a stable prop identity. */
 const EMPTY_ITEMS: EnquiryItemData[] = [];
+
+const FROZEN_TITLE = "Frozen after one-time PDF — revert APM to edit";
+/** Product Cost cell text: the saved valve cost stands in, dimmed, while an actuated item's price is pending. */
+function productCostCell(item: EnquiryItemData, isFrozen: boolean) {
+  const valve = pendingValveCost(item);
+  if (valve === null) return { value: item.productCost, title: isFrozen ? FROZEN_TITLE : undefined, dim: false };
+  const why = (item.actuatorBreakdown as { text?: string } | null)?.text ?? "Actuator price pending";
+  return { value: valve, title: `Valve cost only. Product cost and Cost stay blank until the actuator is priced. ${why}`, dim: true };
+}
 
 function CostWarningIcon({ warnings }: { warnings?: string[] | null }) {
   if (!warnings?.length) return null;
@@ -580,6 +592,9 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       ),
     );
   };
+  // Filter bar toggle: dockets with a blank Contact person, Email, Phone or Utility.
+  const contactMissingOnly = pageState.contactMissingOnly;
+  const setContactMissingOnly = (value: boolean) => dispatch(setEnquiryContactMissingOnly(value));
   // BOM ID header filter: show only items whose selected BOM is closed (VerifyBom.cBatch = "C").
   const closedBomOnly = pageState.closedBomOnly;
   const setClosedBomOnly = (value: boolean) => dispatch(setEnquiryClosedBomOnly(value));
@@ -797,15 +812,16 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }, [enquiries]);
 
-  // VA% rules: item IDs below the minimum VA% or above the CR rate
+  // VA% rules: item IDs below the minimum VA% or above the CR rate (the seat type can come from the docket spec)
   const invalidVaItemIds = useMemo(() => {
     const ids = new Set<string>();
+    const specs = new Map(enquiries.map((e) => [e.id, e.seatSpec]));
     for (const item of allItems) {
-      const violates = isVaRuleViolation(item);
+      const violates = isVaRuleViolation({ ...item, seatSpec: specs.get(item.enquiryId) });
       if (violates) ids.add(item.id);
     }
     return ids;
-  }, [allItems]);
+  }, [allItems, enquiries]);
 
 
 
@@ -840,6 +856,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const handleResetAllFilters = () => {
     dispatch(resetFilters());
     setPendingOnly(false);
+    setContactMissingOnly(false);
     setClosedBomOnly(false);
     setIncompleteOnly(false);
     setCostWarningOnly(false);
@@ -1279,7 +1296,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
     try {
       const result = await dispatch(updateItemField({ itemId, field, value: dbVal })).unwrap();
-      toast.success(`Saved successfully.`, { id: toastId });
+      // An actuated item keeps a typed product cost as its valve cost; say why the cell stays blank.
+      const valve = field === "productCost" ? pendingValveCost(result) : null;
+      if (valve !== null) {
+        const why = (result.actuatorBreakdown as { text?: string } | null)?.text ?? "Actuator price pending";
+        toast.warning(`Saved as valve cost ${formatIndianNumber(valve)}. Product cost and Cost stay blank until the actuator is priced. ${why}`, { id: toastId, duration: 8000 });
+      } else {
+        toast.success(`Saved successfully.`, { id: toastId });
+      }
 
       // Toast when QR is rounded up after manual entry
       const newQr = result?.quotedRate ? parseFloat(String(result.quotedRate)) : null;
@@ -1581,6 +1605,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             "Enquiry Date": new Date(enquiry.enquiryDate).toLocaleDateString("en-GB"),
             "Docket No": enquiry.docketNumber,
             "Party Name": enquiry.partyName,
+            "Contact Person": enquiry.contactPerson || "",
             "Enquiry Type": enquiry.enquiryType || "",
             "State": enquiry.state || "",
             "Payment Terms": enquiry.paymentTerms || "",
@@ -1632,6 +1657,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               "Enquiry Date": new Date(enquiry.enquiryDate).toLocaleDateString("en-GB"),
               "Docket No": enquiry.docketNumber,
               "Party Name": enquiry.partyName,
+              "Contact Person": enquiry.contactPerson || "",
               "Enquiry Type": enquiry.enquiryType || "",
               "State": enquiry.state || "",
               "Payment Terms": enquiry.paymentTerms || "",
@@ -2353,6 +2379,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
         contractOptions={allSelectedContractOptions}
         pendingOnly={pendingOnly}
         onTogglePending={() => setPendingOnly((v) => !v)}
+        contactMissingOnly={contactMissingOnly}
+        onToggleContactMissing={() => setContactMissingOnly(!contactMissingOnly)}
         hasActiveFilters={hasActiveFilters}
         onClearAll={handleResetAllFilters}
         visibleColumns={visibleColumns}
@@ -3781,16 +3809,16 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         <div className="flex items-center gap-1">
                         <CostWarningIcon warnings={firstItem.costWarnings} />
                         <EditableText
-                          value={formatIndianNumber(firstItem.productCost)}
+                          value={formatIndianNumber(productCostCell(firstItem, isFrozen).value)}
                           disabled={isFrozen}
-                          title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+                          title={productCostCell(firstItem, isFrozen).title}
                           onCommit={(v) => {
                             const next = cleanNumberInput(v);
-                            if (hasNumberChanged(next, firstItem.productCost)) {
+                            if (hasNumberChanged(next, productCostCell(firstItem, isFrozen).value)) {
                               handleItemFieldChange(firstItem.id, "productCost", next);
                             }
                           }}
-                          className="w-full bg-transparent border-none text-[11px] text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                          className={`w-full bg-transparent border-none text-[11px] ${productCostCell(firstItem, isFrozen).dim ? "text-amber-700 italic dark:text-amber-300" : "text-foreground"} outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed`}
                         />
                         </div>
                       ) : "-"}
@@ -3915,7 +3943,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
                     {/* First Item VA% */}
                     <td className={`py-1 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-muted" : ""}`}>
-                      {firstItem ? (
+                      {firstItem ? (<>
                         <div className="flex items-center gap-1">
                         <EditableText
                           value={firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : ""}
@@ -3933,6 +3961,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         />
                         {unlockButton(firstItem)}
                         </div>
+                        <SeatTypeChip item={firstItem} spec={enquiry.seatSpec} /></>
                       ) : "-"}
                     </td>
 
@@ -4113,6 +4142,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                     <td style={{ right: 0 }} className="sticky z-20 bg-background [tr:hover>&]:bg-muted shadow-[inset_1px_0_0_var(--border),inset_0_-1px_0_var(--border)] py-1.5 px-4 text-right border-b border-border">
                       {firstItem && (
                         <ActionsDropdown
+                          key={firstItem.id}
                           item={firstItem}
                           enquiry={enquiry}
                           dropdownOptions={dropdownOptions}
@@ -4252,16 +4282,16 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           <div className="flex items-center gap-1">
                           <CostWarningIcon warnings={item.costWarnings} />
                           <EditableText
-                            value={formatIndianNumber(item.productCost)}
+                            value={formatIndianNumber(productCostCell(item, isFrozen).value)}
                             disabled={isFrozen}
-                            title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+                            title={productCostCell(item, isFrozen).title}
                             onCommit={(v) => {
                             const next = cleanNumberInput(v);
-                            if (hasNumberChanged(next, item.productCost)) {
+                            if (hasNumberChanged(next, productCostCell(item, isFrozen).value)) {
                               handleItemFieldChange(item.id, "productCost", next);
                             }
                             }}
-                            className="w-full bg-transparent border-none text-[11px] text-foreground outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed"
+                            className={`w-full bg-transparent border-none text-[11px] ${productCostCell(item, isFrozen).dim ? "text-amber-700 italic dark:text-amber-300" : "text-foreground"} outline-none p-1 focus:bg-accent focus:ring-1 focus:ring-blue-500 rounded hover:bg-muted/80 transition-colors font-medium text-right disabled:opacity-50 disabled:cursor-not-allowed`}
                           />
                           </div>
                       </td>
@@ -4390,6 +4420,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           />
                           {unlockButton(item)}
                           </div>
+                          <SeatTypeChip item={item} spec={enquiry.seatSpec} />
                       </td>
 
                       {/* Quoted Rate */}
@@ -4834,9 +4865,12 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
   const approved = !!enquiry.emailApproved;
   const sentBy = enquiry.emailSentBy ?? null;
   const sent = !!sentBy;
+  // Persisted in the DB, so it survives a refresh while the first send is still running server-side.
+  const sendingElsewhere = isDocketEmailSending(enquiry.emailSendingAt);
+  const busySending = sending || sendingElsewhere;
   const to = (enquiry.senderEmail || "").trim();
   const cc = (enquiry.emailAddress || "").trim();
-  const canSend = approved && !sent && to !== "" && !sending;
+  const canSend = approved && !sent && to !== "" && !busySending;
 
   const handleApprove = async () => {
     setBusy(true);
@@ -4988,7 +5022,9 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
         onClick={handleSend}
         disabled={!canSend}
         title={
-          !approved
+          sendingElsewhere && !sending
+            ? "This email is already being sent — refresh in a moment to see Sent"
+            : !approved
             ? "Frozen — approve (tick) first"
             : !to
               ? "No recipient (sender email) on this docket"
@@ -5000,8 +5036,8 @@ function SendEmailCell({ enquiry }: { enquiry: EnquiryData }) {
             : "text-muted-foreground border-border bg-muted cursor-not-allowed"
         }`}
       >
-        {sending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
-        {sending ? "Sending" : "Send"}
+        {busySending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
+        {busySending ? "Sending" : "Send"}
       </button>
 
       <Dialog

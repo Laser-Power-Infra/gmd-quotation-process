@@ -31,7 +31,8 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 ENV QUOTATION_DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 ENV TENDER_DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
 ENV STOCK_DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
-RUN pnpm turbo run build --filter=${APP}
+# One task at a time: under an outer `pnpm`, pnpm 10 makes each `pnpm run` rewrite its workspace-state file, and parallel tasks race on it.
+RUN pnpm turbo run build --filter=${APP} --concurrency=1
 
 # stage 3: runtime
 FROM node:${NODE_VERSION} AS runner

@@ -605,10 +605,10 @@ export function graphPathColumns(trees: ViewContext["trees"]): Set<string> {
   return cols;
 }
 
-const byNumericLocale = (a: string, b: string) =>
+export const byNumericLocale = (a: string, b: string) =>
   a.localeCompare(b, undefined, { numeric: true });
 
-function withBlankLast(
+export function withBlankLast(
   counts: Record<string, number>,
   selected: string[],
 ): string[] {
@@ -1018,7 +1018,7 @@ export function buildCategoryOptions(
   return result;
 }
 
-const SIDEBAR_EXCLUDE_BY_HEADER: Record<string, SidebarExclude> = {
+export const SIDEBAR_EXCLUDE_BY_HEADER: Record<string, SidebarExclude> = {
   STATUS: "status",
   "CLEARANCE STATUS": "clearance",
   Item: "item",

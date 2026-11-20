@@ -73,7 +73,7 @@ export function buildWhere(query: StockTableQuery, skip?: string): Prisma.Sql {
   }
   for (const [field, value] of Object.entries(query.columnSearch ?? {})) {
     if (field === skip || !value.trim() || !inDb(field)) continue;
-    parts.push(sql`regexp_replace(${text(exprOf(field).text)}, '\s', '', 'g') ILIKE ${`%${escapeLike(squish(value))}%`}`);
+    parts.push(sql`regexp_replace(${text(exprOf(field).text)}, '\\s', '', 'g') ILIKE ${`%${escapeLike(squish(value))}%`}`);
   }
   for (const [field, range] of Object.entries(query.dateRanges ?? {})) {
     const column = STOCK_COLUMNS.find((c) => c.field === field);
@@ -113,6 +113,8 @@ export function buildOrderBy(sort: TableSort | null): Prisma.Sql {
 export interface StockPageMeta {
   totals: { availableQty: number; availableValue: number };
   majorMinorCounts: Record<MajorMinorKind, number>;
+  /** Newest updated_at in the whole table (ISO), whatever the filters. */
+  lastUpdated: string | null;
 }
 
 type RawRow = Omit<PhysicalStockRow, "form_date" | "in_transit"> & {
@@ -140,7 +142,8 @@ export function pageSql(query: StockTableQuery, opts: { duplicates?: boolean } =
       FROM "PhysicalStock" p WHERE ${where} ORDER BY ${buildOrderBy(query.sort)} LIMIT ${pageSize} OFFSET ${offset}`,
     agg: sql`SELECT count(*)::int AS total,
       coalesce(sum(${num(col("available_qty"))}), 0)::float AS qty,
-      coalesce(sum(coalesce(${num(col("cost"))}, 0) * coalesce(${num(col("available_qty"))}, 0)), 0)::float AS value
+      coalesce(sum(coalesce(${num(col("cost"))}, 0) * coalesce(${num(col("available_qty"))}, 0)), 0)::float AS value,
+      (SELECT max(updated_at) FROM "PhysicalStock") AS last_updated
       FROM "PhysicalStock" p WHERE ${where}`,
     counts: sql`SELECT p.majorminor_marking AS m, count(*)::int AS n
       FROM "PhysicalStock" p WHERE ${buildWhere(query, "majorMinor")} GROUP BY 1`,
@@ -154,7 +157,7 @@ export async function listPhysicalStockPage(
   const q = pageSql(query, opts);
   const [rows, [agg], counts] = await Promise.all([
     stockPrisma.$queryRaw<RawRow[]>(q.rows),
-    stockPrisma.$queryRaw<{ total: number; qty: number; value: number }[]>(q.agg),
+    stockPrisma.$queryRaw<{ total: number; qty: number; value: number; last_updated: Date | null }[]>(q.agg),
     stockPrisma.$queryRaw<{ m: boolean | null; n: number }[]>(q.counts),
   ]);
   const majorMinorCounts: Record<MajorMinorKind, number> = { yes: 0, no: 0, blank: 0 };
@@ -168,7 +171,11 @@ export async function listPhysicalStockPage(
       allocations: null,
     })),
     total: agg.total,
-    meta: { totals: { availableQty: agg.qty, availableValue: agg.value }, majorMinorCounts },
+    meta: {
+      totals: { availableQty: agg.qty, availableValue: agg.value },
+      majorMinorCounts,
+      lastUpdated: agg.last_updated?.toISOString() ?? null,
+    },
   };
 }
 

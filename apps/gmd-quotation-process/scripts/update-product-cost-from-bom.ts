@@ -49,7 +49,7 @@ async function main() {
       const isBlank = item.productCost === null;
 
       if (isBlank && cost !== undefined && cost !== null) {
-        await recalculateItem(item.id, { productCost: cost });
+        await recalculateItem(item.id, { productCost: cost }, { allowFrozen: true });
         filled++;
       } else if (isBlank) {
         bomOnly++;

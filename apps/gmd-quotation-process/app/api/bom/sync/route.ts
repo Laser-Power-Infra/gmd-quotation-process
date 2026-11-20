@@ -2,6 +2,7 @@ import { denyIfNoAccess } from "@/lib/access";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { proposeMissingBoms } from "@/lib/bomChange";
+import { busyMessage, runningJobs } from "@/schedular_function/job-latch";
 import { sheets as googleSheets } from "@googleapis/sheets";
 import { getOAuthClient } from "@/lib/googleAuth";
 import {
@@ -37,6 +38,12 @@ function clean(v: string | null): string | null {
 export async function POST() {
   const denied = await denyIfNoAccess();
   if (denied) return denied;
+  // Writes the same BomItem links and BOM proposals as the BOM MAST sync, so it
+  // holds the same latch: an overlapping run would create the same links twice.
+  if (runningJobs.has("bom-mast")) {
+    return NextResponse.json({ success: false, busy: true, error: busyMessage("BOM") }, { status: 409 });
+  }
+  runningJobs.add("bom-mast");
   try {
     if (!SPREADSHEET_ID) {
       throw new Error(
@@ -187,5 +194,7 @@ export async function POST() {
     const message =
       error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    runningJobs.delete("bom-mast");
   }
 }

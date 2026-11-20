@@ -108,16 +108,21 @@ interface ActionsDropdownProps {
   dropdownOptions: DropdownOptions;
 }
 
-// `item` and `enquiry` arrive as separate store references so React.memo can compare them.
-// The merged shape the rest of this file reads is rebuilt here instead of at the call site.
-function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDropdownProps) {
+// Holds the edit fields; mounted per open and keyed by item id, so they always start from the row's current values.
+function EditForm({
+  item,
+  isFrozen,
+  dropdownOptions,
+  isSubmitting,
+  setIsSubmitting,
+}: {
+  item: ActionsDropdownProps["item"] & { enquiry: ActionsDropdownEnquiry };
+  isFrozen: boolean;
+  dropdownOptions: DropdownOptions;
+  isSubmitting: boolean;
+  setIsSubmitting: (v: boolean) => void;
+}) {
   const dispatch = useAppDispatch();
-  const item = useMemo(() => ({ ...itemProp, enquiry }), [itemProp, enquiry]);
-  const isFrozen = isEnquiryFrozen((enquiry as any).apm, (enquiry as any).offerPdfGeneratedAt);
-  const isViewOpen = useAppSelector((s) => s.dialogs.viewItemId === itemProp.id);
-  const isEditOpen = useAppSelector((s) => s.dialogs.editItemId === itemProp.id);
-  const isDeleteOpen = useAppSelector((s) => s.dialogs.deleteItemId === itemProp.id);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   // Edit form state
   const [docketNumber, setDocketNumber] = useState(item.enquiry.docketNumber);
@@ -173,8 +178,6 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
     }))
   );
   const [selectedEditFiles, setSelectedEditFiles] = useState<File[]>([]);
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -371,6 +374,515 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
     setIsSubmitting(false);
   };
 
+  const selectClass = "w-full h-9 rounded border border-input bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer";
+  const itemSelectClass = "w-full h-8 rounded border border-input bg-background px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer";
+
+  return (
+    <form onSubmit={handleUpdate} className="space-y-4 py-2">
+      {/* Section: Docket Details */}
+      <div className="bg-muted/50 p-3 rounded-lg border border-border space-y-3">
+        <span className="text-xs font-bold text-foreground">Enquiry Main Information</span>
+        <div className="grid grid-cols-2 gap-3">
+          {/* Docket Number */}
+          <div className="space-y-1">
+            <Label htmlFor="edit-docket" className="text-[10px] font-semibold text-muted-foreground">
+              Docket Number <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              id="edit-docket"
+              value={docketNumber}
+              onChange={(e) => setDocketNumber(e.target.value)}
+              className="text-xs h-9"
+            />
+          </div>
+
+          {/* Enquiry Date */}
+          <div className="space-y-1">
+            <Label htmlFor="edit-date" className="text-[10px] font-semibold text-muted-foreground">
+              Enquiry Date <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              id="edit-date"
+              type="date"
+              value={enquiryDate}
+              onChange={(e) => setEnquiryDate(e.target.value)}
+              className="text-xs h-9"
+            />
+          </div>
+
+          {/* Party Name Selector */}
+          <div className="col-span-2 space-y-1">
+            <Label htmlFor="edit-party" className="text-[10px] font-semibold text-muted-foreground">
+              Party Name <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              id="edit-party"
+              value={partyName}
+              onChange={(e) => setPartyName(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Select party...</option>
+              {dropdownOptions.partyNames.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Section: Enquiry Metadata Dropdowns */}
+      <div className="bg-muted/50 p-3 rounded-lg border border-border space-y-3">
+        <span className="text-xs font-bold text-foreground">Enquiry Metadata Specifications</span>
+        <div className="grid grid-cols-2 gap-3">
+          {/* Enquiry Type */}
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Enquiry Type <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={enquiryType}
+              onChange={(e) => setEnquiryType(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Select type...</option>
+              {dropdownOptions.enquiryTypes.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* State */}
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              State <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={state}
+              onChange={(e) => setState(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Select state...</option>
+              {dropdownOptions.states.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Payment Terms */}
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Payment Terms <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={paymentTerms}
+              onChange={(e) => setPaymentTerms(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Select payment terms...</option>
+              {dropdownOptions.paymentTerms.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Inspection */}
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Inspection <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={inspection}
+              onChange={(e) => setInspection(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Select inspection...</option>
+              {dropdownOptions.inspections.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* PBG */}
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              PBG <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={pbg}
+              onChange={(e) => setPbg(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Select PBG...</option>
+              {dropdownOptions.pbgs.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Utility */}
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Utility <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={utility}
+              onChange={(e) => handleUtilityChange(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Select utility...</option>
+              {dropdownOptions.utilities.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+
+
+          {/* Order Status */}
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Order Status <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={orderStatus}
+              onChange={(e) => setOrderStatus(e.target.value)}
+              className={selectClass}
+            >
+              <option value="">Select status...</option>
+              {dropdownOptions.orderStatuses.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* File attachments */}
+      <div className="space-y-1">
+        <Label htmlFor="edit-files" className="text-xs font-semibold text-foreground">
+          Update Files (Replaces existing) <span className="text-red-500 dark:text-red-300">*</span>
+        </Label>
+        <Input
+          id="edit-files"
+          type="file"
+          multiple
+          onChange={handleFileChange}
+          className="cursor-pointer text-xs"
+        />
+        <div className="mt-1 text-[10px] text-muted-foreground max-h-16 overflow-y-auto">
+          {editFiles.length > 0 ? (
+            <span>Selected: {editFiles.map((f) => f.name).join(", ")}</span>
+          ) : (
+            <span className="text-red-500 dark:text-red-300 font-semibold">* At least one attachment file is required.</span>
+          )}
+        </div>
+      </div>
+
+      {/* Item Details Fields card grid */}
+      <div className="p-3 border border-border rounded-lg bg-muted/50 space-y-3">
+        <span className="text-xs font-bold text-foreground">Item Specifications</span>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="col-span-2 space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Item Name as per Party <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="text"
+              value={itemName}
+              onChange={(e) => setItemName(e.target.value)}
+              className="h-8 text-xs"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Quantity <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="number"
+              step="any"
+              value={quantity}
+              disabled={isFrozen}
+              title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+              onChange={(e) => setQuantity(e.target.value)}
+              className="h-8 text-xs disabled:opacity-50"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Item Type <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={itemType}
+              onChange={(e) => setItemType(e.target.value)}
+              className={itemSelectClass}
+            >
+              <option value="">Select type...</option>
+              {dropdownOptions.itemTypes.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              MOC <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={moc}
+              onChange={(e) => setMoc(e.target.value)}
+              className={itemSelectClass}
+            >
+              <option value="">Select MOC...</option>
+              {dropdownOptions.mocs.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Size <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={size}
+              onChange={(e) => setSize(e.target.value)}
+              className={itemSelectClass}
+            >
+              <option value="">Select size...</option>
+              {dropdownOptions.sizes.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              PN Rating <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={pnRating}
+              onChange={(e) => setPnRating(e.target.value)}
+              className={itemSelectClass}
+            >
+              <option value="">Select rating...</option>
+              {dropdownOptions.pnRatings.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Operation Type <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={operationType}
+              onChange={(e) => setOperationType(e.target.value)}
+              className={itemSelectClass}
+            >
+              <option value="">Select operation...</option>
+              {dropdownOptions.operationTypes.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Extension <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={extension}
+              onChange={(e) => setExtension(e.target.value)}
+              className={itemSelectClass}
+            >
+              <option value="">Select extension...</option>
+              {dropdownOptions.extensions.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Bypass <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <select
+              value={bypass}
+              onChange={(e) => setBypass(e.target.value)}
+              className={itemSelectClass}
+            >
+              <option value="">Select bypass...</option>
+              {dropdownOptions.bypasses.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Product Cost <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="number"
+              value={productCost}
+              disabled={isFrozen}
+              title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+              onChange={(e) => setProductCost(e.target.value)}
+              className="h-8 text-xs disabled:opacity-50"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Cost Ref Code <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="text"
+              value={costRefCode}
+              disabled={isFrozen}
+              title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+              onChange={(e) => setCostRefCode(e.target.value)}
+              className="h-8 text-xs disabled:opacity-50"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Cost <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="number"
+              value={cost}
+              disabled={isFrozen}
+              title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+              onChange={(e) => setCost(e.target.value)}
+              className="h-8 text-xs disabled:opacity-50"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Quotation Rate
+            </Label>
+            <Input
+              type="text"
+              value={quotedRate}
+              disabled={isFrozen}
+              title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+              onChange={(e) => setQuotedRate(e.target.value)}
+              className="h-8 text-xs disabled:opacity-50"
+              placeholder="Auto-calculated"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Stock Status <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="text"
+              value={stockStatus}
+              onChange={(e) => setStockStatus(e.target.value)}
+              className="h-8 text-xs"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Stock Quantity <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="text"
+              value={stockQuantity}
+              onChange={(e) => setStockQuantity(e.target.value)}
+              className="h-8 text-xs"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Available Stock <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="text"
+              value={availableStock}
+              onChange={(e) => setAvailableStock(e.target.value)}
+              className="h-8 text-xs"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Stock Against Contract <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="text"
+              value={stockAgainstContract}
+              onChange={(e) => setStockAgainstContract(e.target.value)}
+              className="h-8 text-xs"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              Discount (%) <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="number"
+              value={discount}
+              disabled={isFrozen}
+              title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+              onChange={(e) => setDiscount(e.target.value)}
+              className="h-8 text-xs disabled:opacity-50"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold text-muted-foreground">
+              VA% <span className="text-red-500 dark:text-red-300">*</span>
+            </Label>
+            <Input
+              type="text"
+              value={vaPercent}
+              disabled={isFrozen}
+              title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
+              onChange={(e) => setVaPercent(e.target.value)}
+              className="h-8 text-xs disabled:opacity-50"
+            />
+          </div>
+        </div>
+      </div>
+
+      <DialogFooter className="pt-4 border-t border-border">
+        <DialogClose render={<Button type="button" variant="outline" size="sm" />}>
+          Cancel
+        </DialogClose>
+        <Button type="submit" size="sm" disabled={isSubmitting}>
+          {isSubmitting ? "Saving..." : "Save Changes"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+// `item` and `enquiry` arrive as separate store references so React.memo can compare them.
+// The merged shape the rest of this file reads is rebuilt here instead of at the call site.
+function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDropdownProps) {
+  const dispatch = useAppDispatch();
+  const item = useMemo(() => ({ ...itemProp, enquiry }), [itemProp, enquiry]);
+  const isFrozen = isEnquiryFrozen((enquiry as any).apm, (enquiry as any).offerPdfGeneratedAt);
+  const isViewOpen = useAppSelector((s) => s.dialogs.viewItemId === itemProp.id);
+  const isEditOpen = useAppSelector((s) => s.dialogs.editItemId === itemProp.id);
+  const isDeleteOpen = useAppSelector((s) => s.dialogs.deleteItemId === itemProp.id);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  // Outlives EditForm: while a save is still uploading, Save and Delete stay disabled.
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleDelete = async () => {
     setIsSubmitting(true);
     dispatch(closeDeleteDialog());
@@ -387,9 +899,6 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
     );
     setIsSubmitting(false);
   };
-
-  const selectClass = "w-full h-9 rounded border border-input bg-background px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer";
-  const itemSelectClass = "w-full h-8 rounded border border-input bg-background px-3 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer";
 
   return (
     <>
@@ -734,495 +1243,17 @@ function ActionsDropdown({ item: itemProp, enquiry, dropdownOptions }: ActionsDr
             </DialogTitle>
           </DialogHeader>
 
-          <form onSubmit={handleUpdate} className="space-y-4 py-2">
-            {/* Section: Docket Details */}
-            <div className="bg-muted/50 p-3 rounded-lg border border-border space-y-3">
-              <span className="text-xs font-bold text-foreground">Enquiry Main Information</span>
-              <div className="grid grid-cols-2 gap-3">
-                {/* Docket Number */}
-                <div className="space-y-1">
-                  <Label htmlFor="edit-docket" className="text-[10px] font-semibold text-muted-foreground">
-                    Docket Number <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    id="edit-docket"
-                    value={docketNumber}
-                    onChange={(e) => setDocketNumber(e.target.value)}
-                    className="text-xs h-9"
-                  />
-                </div>
-
-                {/* Enquiry Date */}
-                <div className="space-y-1">
-                  <Label htmlFor="edit-date" className="text-[10px] font-semibold text-muted-foreground">
-                    Enquiry Date <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    id="edit-date"
-                    type="date"
-                    value={enquiryDate}
-                    onChange={(e) => setEnquiryDate(e.target.value)}
-                    className="text-xs h-9"
-                  />
-                </div>
-
-                {/* Party Name Selector */}
-                <div className="col-span-2 space-y-1">
-                  <Label htmlFor="edit-party" className="text-[10px] font-semibold text-muted-foreground">
-                    Party Name <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    id="edit-party"
-                    value={partyName}
-                    onChange={(e) => setPartyName(e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">Select party...</option>
-                    {dropdownOptions.partyNames.map((name) => (
-                      <option key={name} value={name}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Section: Enquiry Metadata Dropdowns */}
-            <div className="bg-muted/50 p-3 rounded-lg border border-border space-y-3">
-              <span className="text-xs font-bold text-foreground">Enquiry Metadata Specifications</span>
-              <div className="grid grid-cols-2 gap-3">
-                {/* Enquiry Type */}
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Enquiry Type <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={enquiryType}
-                    onChange={(e) => setEnquiryType(e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">Select type...</option>
-                    {dropdownOptions.enquiryTypes.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* State */}
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    State <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={state}
-                    onChange={(e) => setState(e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">Select state...</option>
-                    {dropdownOptions.states.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Payment Terms */}
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Payment Terms <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={paymentTerms}
-                    onChange={(e) => setPaymentTerms(e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">Select payment terms...</option>
-                    {dropdownOptions.paymentTerms.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Inspection */}
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Inspection <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={inspection}
-                    onChange={(e) => setInspection(e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">Select inspection...</option>
-                    {dropdownOptions.inspections.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* PBG */}
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    PBG <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={pbg}
-                    onChange={(e) => setPbg(e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">Select PBG...</option>
-                    {dropdownOptions.pbgs.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Utility */}
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Utility <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={utility}
-                    onChange={(e) => handleUtilityChange(e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">Select utility...</option>
-                    {dropdownOptions.utilities.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-
-
-                {/* Order Status */}
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Order Status <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={orderStatus}
-                    onChange={(e) => setOrderStatus(e.target.value)}
-                    className={selectClass}
-                  >
-                    <option value="">Select status...</option>
-                    {dropdownOptions.orderStatuses.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* File attachments */}
-            <div className="space-y-1">
-              <Label htmlFor="edit-files" className="text-xs font-semibold text-foreground">
-                Update Files (Replaces existing) <span className="text-red-500 dark:text-red-300">*</span>
-              </Label>
-              <Input
-                id="edit-files"
-                type="file"
-                multiple
-                onChange={handleFileChange}
-                className="cursor-pointer text-xs"
-              />
-              <div className="mt-1 text-[10px] text-muted-foreground max-h-16 overflow-y-auto">
-                {editFiles.length > 0 ? (
-                  <span>Selected: {editFiles.map((f) => f.name).join(", ")}</span>
-                ) : (
-                  <span className="text-red-500 dark:text-red-300 font-semibold">* At least one attachment file is required.</span>
-                )}
-              </div>
-            </div>
-
-            {/* Item Details Fields card grid */}
-            <div className="p-3 border border-border rounded-lg bg-muted/50 space-y-3">
-              <span className="text-xs font-bold text-foreground">Item Specifications</span>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="col-span-2 space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Item Name as per Party <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="text"
-                    value={itemName}
-                    onChange={(e) => setItemName(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Quantity <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="number"
-                    step="any"
-                    value={quantity}
-                    disabled={isFrozen}
-                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                    onChange={(e) => setQuantity(e.target.value)}
-                    className="h-8 text-xs disabled:opacity-50"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Item Type <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={itemType}
-                    onChange={(e) => setItemType(e.target.value)}
-                    className={itemSelectClass}
-                  >
-                    <option value="">Select type...</option>
-                    {dropdownOptions.itemTypes.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    MOC <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={moc}
-                    onChange={(e) => setMoc(e.target.value)}
-                    className={itemSelectClass}
-                  >
-                    <option value="">Select MOC...</option>
-                    {dropdownOptions.mocs.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Size <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={size}
-                    onChange={(e) => setSize(e.target.value)}
-                    className={itemSelectClass}
-                  >
-                    <option value="">Select size...</option>
-                    {dropdownOptions.sizes.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    PN Rating <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={pnRating}
-                    onChange={(e) => setPnRating(e.target.value)}
-                    className={itemSelectClass}
-                  >
-                    <option value="">Select rating...</option>
-                    {dropdownOptions.pnRatings.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Operation Type <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={operationType}
-                    onChange={(e) => setOperationType(e.target.value)}
-                    className={itemSelectClass}
-                  >
-                    <option value="">Select operation...</option>
-                    {dropdownOptions.operationTypes.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Extension <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={extension}
-                    onChange={(e) => setExtension(e.target.value)}
-                    className={itemSelectClass}
-                  >
-                    <option value="">Select extension...</option>
-                    {dropdownOptions.extensions.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Bypass <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <select
-                    value={bypass}
-                    onChange={(e) => setBypass(e.target.value)}
-                    className={itemSelectClass}
-                  >
-                    <option value="">Select bypass...</option>
-                    {dropdownOptions.bypasses.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Product Cost <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="number"
-                    value={productCost}
-                    disabled={isFrozen}
-                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                    onChange={(e) => setProductCost(e.target.value)}
-                    className="h-8 text-xs disabled:opacity-50"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Cost Ref Code <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="text"
-                    value={costRefCode}
-                    disabled={isFrozen}
-                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                    onChange={(e) => setCostRefCode(e.target.value)}
-                    className="h-8 text-xs disabled:opacity-50"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Cost <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="number"
-                    value={cost}
-                    disabled={isFrozen}
-                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                    onChange={(e) => setCost(e.target.value)}
-                    className="h-8 text-xs disabled:opacity-50"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Quotation Rate
-                  </Label>
-                  <Input
-                    type="text"
-                    value={quotedRate}
-                    disabled={isFrozen}
-                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                    onChange={(e) => setQuotedRate(e.target.value)}
-                    className="h-8 text-xs disabled:opacity-50"
-                    placeholder="Auto-calculated"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Stock Status <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="text"
-                    value={stockStatus}
-                    onChange={(e) => setStockStatus(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Stock Quantity <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="text"
-                    value={stockQuantity}
-                    onChange={(e) => setStockQuantity(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Available Stock <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="text"
-                    value={availableStock}
-                    onChange={(e) => setAvailableStock(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Stock Against Contract <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="text"
-                    value={stockAgainstContract}
-                    onChange={(e) => setStockAgainstContract(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    Discount (%) <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="number"
-                    value={discount}
-                    disabled={isFrozen}
-                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                    onChange={(e) => setDiscount(e.target.value)}
-                    className="h-8 text-xs disabled:opacity-50"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-semibold text-muted-foreground">
-                    VA% <span className="text-red-500 dark:text-red-300">*</span>
-                  </Label>
-                  <Input
-                    type="text"
-                    value={vaPercent}
-                    disabled={isFrozen}
-                    title={isFrozen ? "Frozen after one-time PDF — revert APM to edit" : undefined}
-                    onChange={(e) => setVaPercent(e.target.value)}
-                    className="h-8 text-xs disabled:opacity-50"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <DialogFooter className="pt-4 border-t border-border">
-              <DialogClose render={<Button type="button" variant="outline" size="sm" />}>
-                Cancel
-              </DialogClose>
-              <Button type="submit" size="sm" disabled={isSubmitting}>
-                {isSubmitting ? "Saving..." : "Save Changes"}
-              </Button>
-            </DialogFooter>
-          </form>
+          {/* isSubmitting in the key: a form reopened mid-save remounts from the store once that save settles. */}
+          {isEditOpen && (
+            <EditForm
+              key={`${item.id}-${isSubmitting}`}
+              item={item}
+              isFrozen={isFrozen}
+              dropdownOptions={dropdownOptions}
+              isSubmitting={isSubmitting}
+              setIsSubmitting={setIsSubmitting}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

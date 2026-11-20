@@ -12,6 +12,13 @@ import purchaseTableReducer from "@gmd/purchase/state";
 import readyToBillReducer from "@gmd/stock-allocation/state";
 import valveSerialTableReducer from "@gmd/valve-serial/state";
 import executionRegistersReducer from "@gmd/execution-registers/state";
+import debtorsTableReducer from "@gmd/debtors/state";
+import serviceOrdersReducer from "@gmd/service-orders/state";
+import actuatorMappingReducer from "@gmd/actuator-mapping/state";
+import pendingDocketsReducer from "@gmd/pending-dockets/state";
+import orderStatusReducer from "@gmd/order-status/state";
+import salesRegisterReducer from "@gmd/sales-register/state";
+import inspectionReportsTableReducer from "@gmd/inspection-reports/state";
 
 export const makeStore = () => {
   return configureStore({
@@ -29,6 +36,13 @@ export const makeStore = () => {
       readyToBill: readyToBillReducer,
       valveSerialTable: valveSerialTableReducer,
       executionRegisters: executionRegistersReducer,
+      debtorsTable: debtorsTableReducer,
+      serviceOrders: serviceOrdersReducer,
+      actuatorMapping: actuatorMappingReducer,
+      pendingDockets: pendingDocketsReducer,
+      orderStatus: orderStatusReducer,
+      salesRegister: salesRegisterReducer,
+      inspectionReportsTable: inspectionReportsTableReducer,
     },
     middleware: (getDefaultMiddleware) =>
       getDefaultMiddleware({

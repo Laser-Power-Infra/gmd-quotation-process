@@ -8,6 +8,12 @@
 @import "@gmd/stock-allocation/styles.css";
 @import "@gmd/valve-serial/styles.css";
 @import "@gmd/execution-registers/styles.css";
+@import "@gmd/service-orders/styles.css";
+@import "@gmd/actuator-mapping/styles.css";
+@import "@gmd/pending-dockets/styles.css";
+@import "@gmd/order-status/styles.css";
+@import "@gmd/sales-register/styles.css";
+@import "@gmd/inspection-reports/styles.css";
 
 @custom-variant dark (&:is(.dark *));
 

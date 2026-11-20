@@ -1077,6 +1077,8 @@ export interface ServerTableMode {
   requestFacet: (header: string) => void;
   /** Every row matching the current filters, for the Excel export. */
   getAllRows: () => Promise<unknown[][]>;
+  /** Quiet time (ms) before a typed search / text filter is sent; default SEARCH_DEBOUNCE_MS. */
+  searchDelay?: number;
   /**
    * The "Drawing present" / "Image present" checkboxes are table-local, so in
    * server mode they are reported here for the server query to apply.
@@ -1629,32 +1631,48 @@ castingRateInputs,
     const sortHeader =
       activeSortColumn !== null ? (headers[activeSortColumn] ?? "") : "";
     const isDateSort = activeSortColumn !== null && isDateHeader(sortHeader);
+    const compareSortCol = (av: unknown, bv: unknown) =>
+      isDateSort ? compareDates(av, bv, dir) : cellCompare(av, bv, dir, sortByType);
+    // Sorting the grouping column itself reorders the groups in the chosen direction.
+    const sortsGroupCol = isGrouped && activeSortColumn === groupByIdx;
     decorated.sort((a, b) => {
       if (rowGroupIdx >= 0) {
         const g = cellCompare(a.row[rowGroupIdx], b.row[rowGroupIdx], 1);
         if (g !== 0) return g;
       }
       if (isGrouped) {
-        const g = cellCompare(a.row[groupByIdx], b.row[groupByIdx], 1);
+        const g = cellCompare(a.row[groupByIdx], b.row[groupByIdx], sortsGroupCol ? dir : 1);
         if (g !== 0) return g;
       }
       if (activeSortColumn !== null) {
-        const c = isDateSort
-          ? compareDates(
-              a.row[activeSortColumn],
-              b.row[activeSortColumn],
-              dir,
-            )
-          : cellCompare(
-              a.row[activeSortColumn],
-              b.row[activeSortColumn],
-              dir,
-              sortByType,
-            );
+        const c = compareSortCol(a.row[activeSortColumn], b.row[activeSortColumn]);
         if (c !== 0) return c;
       }
       return a.i - b.i;
     });
+    // Sorting another column of a grouped table: rows stay together under their group (the
+    // merged group cell needs consecutive rows), the column orders the rows inside each group,
+    // and the groups themselves are ordered by their first (extreme) row so the sort is visible.
+    if (isGrouped && activeSortColumn !== null && !sortsGroupCol) {
+      const buckets = new Map<string, typeof decorated>();
+      for (const d of decorated) {
+        const key = `${rowGroupIdx >= 0 ? String(d.row[rowGroupIdx] ?? "") : ""}\u0000${String(d.row[groupByIdx] ?? "")}`;
+        const bucket = buckets.get(key);
+        if (bucket) bucket.push(d);
+        else buckets.set(key, [d]);
+      }
+      const ordered = [...buckets.values()].sort((x, y) => {
+        if (rowGroupIdx >= 0) {
+          const g = cellCompare(x[0].row[rowGroupIdx], y[0].row[rowGroupIdx], 1);
+          if (g !== 0) return g;
+        }
+        const c = compareSortCol(x[0].row[activeSortColumn], y[0].row[activeSortColumn]);
+        if (c !== 0) return c;
+        const g = cellCompare(x[0].row[groupByIdx], y[0].row[groupByIdx], 1);
+        return g !== 0 ? g : x[0].i - y[0].i;
+      });
+      return ordered.flat();
+    }
     return decorated;
   }, [
     rows,
@@ -2557,7 +2575,13 @@ castingRateInputs,
           )}
         </div>
       );
-    } else if (display && isUrl(display)) {
+    } else if (
+      display &&
+      isUrl(display) &&
+      // "url1, url2" also parses as ONE URL (the list lands in its path), so
+      // lists fall through to the per-link branch below.
+      display.split(",").filter((p) => isUrl(p.trim())).length < 2
+    ) {
       // Single URL case (non-ORDER LIST columns)
       cellContent = (
         <a
@@ -2892,6 +2916,7 @@ castingRateInputs,
               className="absolute left-2.5 top-1/2 -translate-y-1/2 text-foreground/40"
             />
             <DebouncedSearchInput
+              delay={serverMode?.searchDelay}
               value={globalSearch}
               onCommit={(val) => {
                 if (isControlled) filterActions!.onGlobalSearch(val);
@@ -3110,6 +3135,7 @@ castingRateInputs,
                               )}
                               <div className="flex items-center gap-1">
                                 <DebouncedSearchInput
+                                  delay={serverMode?.searchDelay}
                                   value={columnFilters[ch] ?? ""}
                                   onCommit={(val) => handleColumnFilter(ch, val)}
                                   placeholder={`Search ${ch}...`}
@@ -3279,6 +3305,7 @@ castingRateInputs,
                           )}
                           <div className="flex items-center gap-1">
                             <DebouncedSearchInput
+                              delay={serverMode?.searchDelay}
                               value={columnFilters[header] ?? ""}
                               onCommit={(val) =>
                                 handleColumnFilter(header, val)
@@ -3367,6 +3394,7 @@ castingRateInputs,
                           />
                           <div className="flex items-center gap-1">
                             <DebouncedSearchInput
+                              delay={serverMode?.searchDelay}
                               value={columnFilters[header] ?? ""}
                               onCommit={(val) =>
                                 handleColumnFilter(header, val)

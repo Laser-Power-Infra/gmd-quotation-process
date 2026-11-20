@@ -7,11 +7,14 @@
  *   2. `runStockPhysSync()`         stock-phys   -> RawMaterial.availableStock
  *   3. `runRawMaterialItemNameSync()` ITEM MASTER ERP -> RawMaterial.itemNameAuto
  *   4. `runActiveBomRules()`        active Auto BOM rules -> Bom / BomItem
+ *   5. `syncRmDrawings()`           RM drawing map sheet -> RawMaterial.drawingUrl
  *
  * Step 2 only makes sense once step 1 has landed, so the steps are strictly
  * sequential: a fatal failure in step 1 aborts before step 2 runs rather than
  * refreshing stock against a half-synced table. Step 3 fills `itemNameAuto`,
  * which step 1 no longer owns (it is excluded from NON_EDITABLE_FIELDS).
+ * Step 5 is display-only, so its failure lands in `warnings` instead of failing
+ * the job (raw-material-sync.sh does not check `warnings`).
  *
  * All logic lives in this folder. `app/api/scheduler/**` contains nothing but
  * thin HTTP shims, because Next.js only routes `route.ts` files that sit under
@@ -29,7 +32,12 @@ import {
 } from "./gmd-update-stock-phys";
 import { runRawMaterialItemNameSync, type ItemNameSyncResult } from "./item-name-sync";
 import { recordJobRun } from "./job-heartbeat";
+import { JobAlreadyRunningError } from "./job-latch";
 import { runActiveBomRules } from "@/lib/autoBomRun";
+import { syncRmDrawings, type RmDrawingSyncResult } from "@/lib/gmd_lib/rmDrawings";
+
+// Lives in job-latch.ts now; re-exported so every `from "./run-gmd-update"` import keeps working.
+export { JobAlreadyRunningError };
 
 export type JobName = "gmd-update";
 
@@ -43,7 +51,10 @@ export type ScheduledJobResult = {
     stock?: StockPhysSyncResult;
     itemNames?: ItemNameSyncResult;
     autoBom?: { created: number; failed: number };
+    drawings?: RmDrawingSyncResult;
   };
+  /** Steps that failed without failing the job (step 5). */
+  warnings: string[];
 };
 
 export type ScheduledJobError = {
@@ -55,18 +66,6 @@ export type ScheduledJobError = {
   /** Whatever completed before the failure. */
   steps: ScheduledJobResult["steps"];
 };
-
-/**
- * Thrown when a job is asked to run while an earlier run of the same job is
- * still in flight. Shared by every scheduled job in this folder, so the
- * constructor takes any job name rather than one job's union.
- */
-export class JobAlreadyRunningError extends Error {
-  constructor(job: string) {
-    super(`Job "${job}" is already running.`);
-    this.name = "JobAlreadyRunningError";
-  }
-}
 
 /**
  * In-process latch. Ofelia's `no-overlap = true` only stops ofelia jobs from
@@ -102,6 +101,7 @@ export async function runScheduledGmdUpdate(
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
   const steps: ScheduledJobResult["steps"] = {};
+  const warnings: string[] = [];
 
   try {
     console.log(
@@ -127,6 +127,16 @@ export async function runScheduledGmdUpdate(
     // Never throws; a failing rule is logged and counted.
     steps.autoBom = await runActiveBomRules(job);
 
+    // Step 5 — drawing links from Puja's RM drawing map. Isolated: a sheet or
+    // write error is reported, never fails the job or voids steps 1-4.
+    try {
+      steps.drawings = await syncRmDrawings();
+    } catch (err) {
+      const message = `drawings: ${err instanceof Error ? err.message : "Unknown error"}`;
+      console.error(`[scheduler] ${job} step 5 failed: ${message}`);
+      warnings.push(message);
+    }
+
     const elapsedMs = Date.now() - startedAtMs;
 
     console.log(
@@ -134,7 +144,10 @@ export async function runScheduledGmdUpdate(
         `catalogue(created=${steps.catalogue.created}, updated=${steps.catalogue.updated}, unchanged=${steps.catalogue.unchanged}) ` +
         `stock(updated=${steps.stock.updatedRows}, changed=${steps.stock.changed}) ` +
         `itemNames(updated=${steps.itemNames.updated}, unmatched=${steps.itemNames.unmatched}) ` +
-        `autoBom(created=${steps.autoBom.created}, failed=${steps.autoBom.failed})`,
+        `autoBom(created=${steps.autoBom.created}, failed=${steps.autoBom.failed}) ` +
+        (steps.drawings
+          ? `drawings(updated=${steps.drawings.updated}, notInRm=${steps.drawings.notInRm.length})`
+          : "drawings(FAILED, see warnings)"),
     );
     console.log(`########## [SCHEDULER] ${job} done ##########\n`);
     // Scheduled (conf + route) as raw-material; gmd-update is only its internal name.
@@ -146,6 +159,7 @@ export async function runScheduledGmdUpdate(
       startedAt,
       elapsedMs,
       steps,
+      warnings,
     };
   } finally {
     // Always release, so a throw does not wedge the next hourly run.

@@ -54,7 +54,7 @@ import {
 } from "./inspection-offer-sync";
 import { runProdEntrySync, type ProdEntrySyncResult } from "./contract-review-prod-entry";
 import { runContractReviewBackfills } from "@/lib/contractReviewBackfill";
-import { JobAlreadyRunningError } from "./run-gmd-update";
+import { JobAlreadyRunningError, runningJobs as inFlight } from "./job-latch";
 import { recordJobRun } from "./job-heartbeat";
 
 export type JobName = "contract-review";
@@ -78,12 +78,12 @@ export type ScheduledContractReviewResult = {
   warnings: string[];
 };
 
-/**
- * Separate latch from the Raw Material job's, so the two heavy jobs can be
- * scheduled without one blocking the other — but this job still refuses to
- * overlap itself (ofelia's `no-overlap` cannot see a manual button click).
+/*
+ * The "contract-review" latch (`job-latch.ts`) is keyed by job, so this job never
+ * blocks the Raw Material one. The manual SYNC route
+ * (`app/api/contract-review/sync/route.ts`) takes the same key, so a click
+ * during this run is refused instead of inserting the same contract lines twice.
  */
-const inFlight = new Set<JobName>();
 
 export type RunContractReviewOptions = {
   /** Compute and report without writing. Applies to steps 2 to 6. */

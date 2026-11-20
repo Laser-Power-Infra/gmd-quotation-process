@@ -182,6 +182,9 @@ const FIXED_DROPDOWN_OPTIONS: Record<string, string[]> = {
 };
 
 const HIDDEN_COLUMNS = [
+  "QUOTED RATE",
+  "RATE DIFF %",
+  "VA % FROM COST", // shown inside the DOCKET NO cell instead
   "VA %",
   "CV",
   "C BATCH",
@@ -262,6 +265,7 @@ export function ContractReviewPage({
   const {
     load,
     sync,
+    syncRunning,
     createDiagramUploadAction,
     confirmDiagramUploadAction,
     loadView,
@@ -293,6 +297,11 @@ export function ContractReviewPage({
   const [data, setData] = useState<ContractReviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  // Another sync (the hourly job or another user) holds the latch; checked on load, no polling.
+  const [syncBusy, setSyncBusy] = useState(false);
+  useEffect(() => {
+    syncRunning?.().then(setSyncBusy, () => {});
+  }, [syncRunning]);
   const [enquirySyncing, setEnquirySyncing] = useState(false);
   const [rmAvailSyncing, setRmAvailSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -596,7 +605,10 @@ export function ContractReviewPage({
     const toastId = toast.loading("Syncing Contract Review from CONTRACTS + DUMP...");
     try {
       const res = await sync();
-      if (!res.success) throw new Error(res.error ?? "Sync failed");
+      if (!res.success) {
+        if (res.busy) setSyncBusy(true);
+        throw new Error(res.error ?? "Sync failed");
+      }
       const summary = res.data ?? {};
       const syncSummary = `Synced: ${summary.created ?? 0} created, ${summary.updated ?? 0} updated, ${summary.unchanged ?? 0} unchanged`;
 
@@ -693,9 +705,21 @@ export function ContractReviewPage({
     if (!serverMode) legacyFetchData();
   }, [serverMode, legacyFetchData]);
 
+  // Filter changes wait 300 ms so ticking several boxes sends one request
+  // (same rule as useServerTable); first load, paging and sorting load at once.
+  const viewKey = useMemo(() => JSON.stringify(viewQuery), [viewQuery]);
+  const loadedViewKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (serverMode) void loadServerView(false);
-  }, [serverMode, serverQueryKey, loadServerView]);
+    if (!serverMode) return;
+    const immediate = loadedViewKeyRef.current === null || loadedViewKeyRef.current === viewKey;
+    const run = () => {
+      loadedViewKeyRef.current = viewKey;
+      void loadServerView(false);
+    };
+    if (immediate) return run();
+    const timer = setTimeout(run, 300);
+    return () => clearTimeout(timer);
+  }, [serverMode, serverQueryKey, viewKey, loadServerView]);
 
   useEffect(() => {
     getActuatorOptionsAction?.().then((res) => {
@@ -773,6 +797,8 @@ export function ContractReviewPage({
       requestFacet,
       getAllRows,
       onPresenceFiltersChange: handlePresenceChange,
+      // Each commit is a server round-trip: wait for a full second of silence.
+      searchDelay: 1000,
     };
   }, [
     serverMode,
@@ -947,7 +973,14 @@ export function ContractReviewPage({
       // Back-link to the quotation: the Quotations page opens filtered to this docket.
       "DOCKET NO": (row) => {
         const docketNo = String(row[DOCKET_NO_IDX] ?? "").trim();
+        const va = String(row[VA_PCT_FROM_COST_IDX] ?? "").trim();
+        const vaTag = va && (
+          <span className="ml-2 text-xs text-muted-foreground" title="VA % from cost">
+            VA {va.endsWith("%") ? va : `${va}%`}
+          </span>
+        );
         return docketNo ? (
+          <>
           <a
             href={`/?docket=${encodeURIComponent(docketNo)}`}
             target="_blank"
@@ -957,8 +990,10 @@ export function ContractReviewPage({
           >
             {docketNo}
           </a>
+          {vaTag}
+          </>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">—{vaTag}</span>
         );
       },
     };
@@ -1635,7 +1670,7 @@ export function ContractReviewPage({
           <button
             type="button"
             onClick={handleSync}
-            disabled={syncing}
+            disabled={syncing || syncBusy}
             className="flex items-center justify-center gap-1.5 bg-[#38ef7d]/10 dark:bg-emerald-500/10 hover:bg-[#38ef7d]/20 dark:hover:bg-emerald-500/20 border border-[#38ef7d]/40 dark:border-emerald-500/30 rounded px-3 py-2 text-[11px] font-semibold text-[#38ef7d] dark:text-emerald-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             title="Sync CONTRACTS + DUMP from the sheet into Contract Review"
           >
@@ -1644,7 +1679,7 @@ export function ContractReviewPage({
             ) : (
               <RefreshCw size={12} />
             )}
-            {syncing ? "Syncing..." : "Sync Contract Review"}
+            {syncing ? "Syncing..." : syncBusy ? "Sync running..." : "Sync Contract Review"}
           </button>
           )}
           {syncContractReviewRmAvailAction && (

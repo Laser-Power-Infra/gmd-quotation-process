@@ -1,4 +1,4 @@
-import { roundUp } from "./rounding";
+import { rateFor, vaFrom, type CostSplit } from "./vaRules";
 
 /**
  * Decides which of VA% / quotedRate anchors the price when cost changes.
@@ -6,29 +6,32 @@ import { roundUp } from "./rounding";
  * - Default (validation !== "Yes"): VA% is held constant, quotedRate is derived.
  *   If VA% is blank, fall back to deriving VA% from the existing quotedRate.
  * - validation === "Yes": the validated quotedRate is frozen, VA% absorbs the change.
+ * - Actuated item: `split` (lib/vaRules.ts splitLoadedCost); VA% is the valve VA%, the actuator portion gets 5%.
  */
 export function resolveCostChangeAnchor(input: {
   cost: number;
   quotedRate: number | null;
   vaPercent: number | null;
   validation?: string | null;
+  split?: CostSplit;
 }): { quotedRate: number | null; vaPercent: number | null } {
   let quotedRate = input.quotedRate;
   let vaPercent = input.vaPercent;
+  const split = input.split ?? { valveCost: input.cost, actCost: 0 };
 
   if (input.cost <= 0) return { quotedRate, vaPercent };
 
   if (input.validation === "Yes") {
     if (quotedRate !== null && quotedRate > 0) {
-      vaPercent = parseFloat((((quotedRate / input.cost) - 1) * 100).toFixed(2));
+      vaPercent = vaFrom(quotedRate, split);
     }
     return { quotedRate, vaPercent };
   }
 
   if (vaPercent !== null) {
-    quotedRate = roundUp(input.cost * (1 + vaPercent / 100));
+    quotedRate = rateFor(split, vaPercent);
   } else if (quotedRate !== null && quotedRate > 0) {
-    vaPercent = parseFloat((((quotedRate / input.cost) - 1) * 100).toFixed(2));
+    vaPercent = vaFrom(quotedRate, split);
   }
   return { quotedRate, vaPercent };
 }

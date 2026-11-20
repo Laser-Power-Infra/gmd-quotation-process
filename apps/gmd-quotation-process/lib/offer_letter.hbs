@@ -156,6 +156,10 @@
   table.price-table td.item-name {
     text-align: left;
   }
+  /* OUR ITEM NAME: the actuator line follows the name after a newline */
+  table.price-table td.our-item {
+    white-space: pre-line;
+  }
   table.price-table td.item-img {
     text-align: center;
     vertical-align: middle;
@@ -272,7 +276,7 @@
       <tr>
         <td>{{this.slNo}}</td>
         <td class="item-name">{{this.itemName}}</td>
-        {{#if this.nameRowspan}}<td class="item-name" rowspan="{{this.nameRowspan}}">{{this.partyItemName}}</td>{{/if}}
+        {{#if this.nameRowspan}}<td class="item-name our-item" rowspan="{{this.nameRowspan}}">{{this.partyItemName}}</td>{{/if}}
         {{#if this.imageRowspan}}<td class="item-img" rowspan="{{this.imageRowspan}}">{{#if this.imageDataUrl}}<img src="{{this.imageDataUrl}}" alt="Item image" />{{/if}}</td>{{/if}}
         <td>{{this.quotationRate}}</td>
         <td>{{this.quantity}}</td>

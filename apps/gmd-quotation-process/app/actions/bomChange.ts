@@ -4,6 +4,12 @@ import { getCurrentUser, requireAdminOrDeveloper } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { applyBomChange, parseLines, proposeMissingBoms } from "@/lib/bomChange";
 import { BOM_CHANGE_KINDS, type BomChangeKind, type BomChangeLine } from "@/lib/bomColumns";
+import {
+  busyMessage,
+  JobAlreadyRunningError,
+  runningJobs,
+  withJobLatch,
+} from "@/schedular_function/job-latch";
 
 export interface BomChangeView {
   id: string;
@@ -168,7 +174,26 @@ export async function markCorrectBomAction(itemCode: string, keepBomId: string) 
   }
 }
 
-export async function proposeMissingBomsAction() {
+export async function proposeMissingBomsAction(): Promise<{
+  proposed: number;
+  failed: number;
+  busy?: true;
+  error?: string;
+}> {
   await requireAccess();
-  return proposeMissingBoms("bom page");
+  try {
+    // The hourly BOM MAST job proposes too, under this latch; overlapping runs would draft the same BOM twice.
+    return await withJobLatch("bom-mast", () => proposeMissingBoms("bom page"));
+  } catch (error) {
+    if (error instanceof JobAlreadyRunningError) {
+      return { proposed: 0, failed: 0, busy: true, error: busyMessage("BOM") };
+    }
+    throw error;
+  }
+}
+
+/** True while a BOM sync (the hourly BOM MAST job or a BOM Sync click) is running. */
+export async function bomSyncRunningAction(): Promise<boolean> {
+  await requireAccess();
+  return runningJobs.has("bom-mast");
 }

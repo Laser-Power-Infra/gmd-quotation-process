@@ -7,7 +7,8 @@
  *
  * To add the next job:
  *   1. Create `schedular_function/<job>.ts` exporting a `runScheduled<Job>()`.
- *   2. Give it its own in-flight latch (see `run-contract-review.ts`).
+ *   2. Hold its latch from `job-latch.ts` (see `run-contract-review.ts`), and
+ *      take the same key in any manual path that writes the same rows.
  *   3. Add `app/api/scheduler/<job>/route.ts` as a thin shim.
  *   4. Add `infra/<job>.sh` + a `[job-local]` block to the infra repo.
  *   5. Document it in `schedular_function/README.md`.

@@ -94,7 +94,7 @@ async function main() {
     const expected = costMap.get(bom.rmItemCode)!;
     process.stdout.write(`\r[${i + 1}/${toUpdate.length}] ${it.itemName.substring(0, 40).padEnd(40)} ${it.erpItemCode} -> ${expected}   `);
     try {
-      await recalculateItem(it.id, { productCost: expected });
+      await recalculateItem(it.id, { productCost: expected }, { allowFrozen: true });
       // Persist bom linkage (recalculateItem does not write bom fields)
       await prisma.enquiryItem.update({
         where: { id: it.id },

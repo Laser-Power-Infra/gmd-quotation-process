@@ -14,6 +14,7 @@ import DocketAttachmentsCell from "@/components/attachment/DocketAttachmentsCell
 import StageAssignPopover from "./StageAssignPopover";
 import { istDaysSince } from "@/lib/stageAgeing";
 import { isInternalEmail } from "@/lib/enquiryEmailParty";
+import { missingContactFields } from "@/lib/enquiryQuery";
 import { cn } from "@/lib/utils";
 import type { EnquiryData } from "@/lib/types";
 
@@ -71,6 +72,7 @@ function DocketRowImpl({
   const hasMultiple = itemCount > 1;
   const contracts = enquiry.selectedContractNo ?? [];
   const closure = enquiry.closureStatus?.trim().toLowerCase() === "not sent" ? "" : enquiry.closureStatus;
+  const missingContact = missingContactFields(enquiry);
   // A click on the text opens the drawer; buttons, links and inputs keep their own behaviour.
   // Clicks from portals (popovers, dialogs) bubble through React but are not inside the cell: ignore them.
   const open = (e: React.MouseEvent) => {
@@ -88,7 +90,8 @@ function DocketRowImpl({
       >
         <div className="flex items-center gap-1.5">
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1 min-w-0 whitespace-nowrap">
+            {/* overflow-hidden: on a narrow column the date/type clip here instead of running under the action icons. */}
+            <div className="flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap">
               {hasMultiple && (
                 <button
                   type="button"
@@ -126,8 +129,18 @@ function DocketRowImpl({
                 </span>
               )}
             </div>
-            <div className="mt-0.5 font-bold text-foreground truncate" title={enquiry.partyName}>
-              {enquiry.partyName}
+            <div className="mt-0.5 flex items-center gap-1 min-w-0">
+              <span className="font-bold text-foreground truncate" title={enquiry.partyName}>
+                {enquiry.partyName}
+              </span>
+              {missingContact.length > 0 && (
+                <span
+                  className="shrink-0 px-1 text-[9px] font-semibold bg-amber-50 text-amber-700 rounded-full border border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/25"
+                  title={`Missing: ${missingContact.join(", ")} - complete before the offer is sent`}
+                >
+                  Contact missing
+                </span>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 flex-nowrap items-center gap-1">
@@ -194,6 +207,11 @@ function DocketRowImpl({
       </td>
 
       <td onClick={open} className={`${TD} cursor-pointer`}>
+        {enquiry.contactPerson && (
+          <div className="truncate font-medium" title={enquiry.contactPerson}>
+            {enquiry.contactPerson}
+          </div>
+        )}
         {enquiry.senderEmail && isInternalEmail(enquiry.senderEmail) && (
           <span
             className="mr-1 px-1 text-[9px] font-semibold bg-slate-100 text-slate-600 rounded-full border border-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/25"

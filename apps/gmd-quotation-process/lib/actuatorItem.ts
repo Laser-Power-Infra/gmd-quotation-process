@@ -2,9 +2,15 @@ import { Prisma } from "@gmd/db-quotation";
 import { prisma } from "@/lib/prisma";
 import { recalculateItem, serializeItem } from "@/lib/costCalculator";
 import { isEnquiryFrozen } from "@/lib/oneClickAccess";
-import { bareValveOf, deriveMapKey, hasActuatorLink, isActuatorCandidate, planActuator, SPECIAL_OEM } from "@/lib/actuatorCost";
+import { bareValveOf, deriveMapKey, hasActuatorLink, isActuatorCandidate, planActuator } from "@/lib/actuatorCost";
+import { handPicks, selectActuator } from "@/lib/actuatorSelect";
+import { loadActuatorMaster } from "@/lib/actuatorSheet";
+import { isErpCode, stockSummary } from "@/lib/actuatorStock";
+import { freeQty } from "@/lib/actuatorStockSync";
+import { buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
+import { ACT_VA } from "@/lib/vaRules";
 
-/** DB side of the actuator link: fills codes from MAPPING, prices them from the masters, writes productCost. */
+/** DB side of the actuator link: picks actuator + gearbox from the live master sheet and stock, prices them, writes productCost. */
 
 export interface ActuatorPatch {
   actuatorMake?: string | null;
@@ -18,53 +24,55 @@ export interface ActuatorPatch {
 const num = (d: Prisma.Decimal | null | undefined) => (d == null ? null : Number(d));
 
 /** Returns the refreshed item, or a reason it was skipped. */
-export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch & { rederive?: boolean } = {}) {
+export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch = {}) {
   const it = await prisma.enquiryItem.findUnique({ where: { id: itemId }, include: { enquiry: { select: { apm: true, offerPdfGeneratedAt: true } } } });
   if (!it) return { skipped: "Item not found." };
   if (isEnquiryFrozen(it.enquiry.apm, it.enquiry.offerPdfGeneratedAt)) return { skipped: "Frozen after one-time PDF." };
   if (!isActuatorCandidate(it)) return { skipped: "Op Type is not ACT / ACT+GB / ELECTRIC." };
 
-  const key = deriveMapKey(it);
-  const mapping = key ? await prisma.actuatorMapping.findUnique({ where: { mapKey: key } }) : null;
-  const gearboxes = mapping ? await prisma.gearboxMaster.findMany() : [];
+  const master = await loadActuatorMaster();
+  // Typed by hand: these win (adaptor / assembly over the estimates, codes over the pick).
   const adaptorCost = patch.adaptorCost !== undefined ? patch.adaptorCost : num(it.adaptorCost);
   const assemblyCost = patch.assemblyCost !== undefined ? patch.assemblyCost : num(it.assemblyCost);
   const controlType = patch.controlType !== undefined ? patch.controlType : it.controlType;
+  const hand = handPicks(it, patch, master);
 
-  const base = {
-    ...it, productCost: num(it.productCost), bareValveCost: num(it.bareValveCost),
-    lastTotal: (it.actuatorBreakdown as { total?: number | null } | null)?.total ?? null, adaptorCost, assemblyCost,
-  };
-  // Prices are looked up for the codes the plan settles on, so plan twice: codes first, then priced.
-  const codes = planActuator(base, patch, mapping, gearboxes, { act: null, gb: null });
-  const [act, gb] = await Promise.all([
-    codes.actCode ? prisma.actuatorMaster.findUnique({ where: { actCode: codes.actCode } }) : null,
-    codes.gbCode ? prisma.gearboxMaster.findUnique({ where: { gbCode: codes.gbCode } }) : null,
-  ]);
-  const plan = planActuator(base, patch, mapping, gearboxes, {
-    act: act ? { price: act.price, validTill: act.offerValidTill } : null,
-    gb: gb ? { price: gb.price } : null,
-  });
+  // Every stock / Viral ERP code, plus a code typed by hand (a Raw Material code, e.g. RCB040006, is priced from the RM master).
+  const codes = [...new Set([...master.actuatorStock, ...master.gearboxStock, ...master.viralGearboxes].map((r) => String(r.erpCode ?? ""))
+    .concat([hand.actCode, hand.gbCode].map((c) => (c ?? "").trim().toUpperCase())).filter(isErpCode))];
+  const [free, rm] = await Promise.all([freeQty(codes), buildRawMaterialsCostMap(codes)]);
+  const qty = Number(it.quantity);
+  const pick = selectActuator({
+    mapKey: deriveMapKey(it), op: it.operationType, actuatorItem: (it.itemType ?? "").trim().toUpperCase() === "ACTUATOR",
+    qty, text: it.itemName, ...hand, adaptor: adaptorCost, assembly: assemblyCost,
+  }, master, free, rm);
+  const plan = planActuator({
+    itemType: it.itemType, productCost: num(it.productCost), bareValveCost: num(it.bareValveCost),
+    lastTotal: (it.actuatorBreakdown as { total?: number | null } | null)?.total ?? null,
+  }, pick, hand);
   const res = plan.cost;
+  const s = pick.selection;
+  const stock = stockSummary(plan, { act: s.act?.erpCode ? [s.act.erpCode] : [], gb: s.gb?.erpCode ?? null }, free, qty);
 
   await prisma.enquiryItem.update({
     where: { id: itemId },
     data: {
       actuatorMake: plan.make, actCode: plan.actCode, gbCode: plan.gbCode, controlType,
       adaptorCost, assemblyCost, bareValveCost: plan.bare,
-      // Keep the last stock read (Sync Available Stock); the chip ignores it once the codes differ.
-      actuatorBreakdown: { ...res, stock: (it.actuatorBreakdown as { stock?: unknown } | null)?.stock } as unknown as Prisma.InputJsonObject,
-      // Pending / Special: no total, so no lower number is ever shown as the cost.
+      actuatorBreakdown: { ...res, selection: s, stock } as unknown as Prisma.InputJsonObject,
+      // Pending / OEM RFQ: no total, so no lower number is ever shown as the cost.
       ...(res.total == null ? { productCost: null, cost: null } : {}),
     },
   });
-  if (res.total != null) await recalculateItem(itemId, { productCost: res.total }, { actuatorTotal: true });
+  // Item type ACTUATOR is priced at cost x 1.05 (Puja, 18 Nov): Fetch resets an old VA% unless the rate is validated.
+  const actuatorVa = (it.itemType ?? "").trim().toUpperCase() === "ACTUATOR" && it.validation !== "Yes" ? { vaPercent: ACT_VA } : {};
+  if (res.total != null) await recalculateItem(itemId, { productCost: res.total, ...actuatorVa }, { actuatorTotal: true });
   const fresh = await prisma.enquiryItem.findUnique({ where: { id: itemId } });
-  return { item: serializeItem(fresh), pending: res.pending.length > 0, special: res.pending.includes(SPECIAL_OEM), reason: plan.reason };
+  return { item: serializeItem(fresh), pending: res.pending.length > 0, special: s.status === "OEM RFQ", reason: pick.missing.join("; ") || null };
 }
 
 /**
- * Re-price every linked actuated item after the masters changed (new prices, new mapping), so nobody has to press
+ * Re-price every linked actuated item (e.g. after the master sheet or stock changed), so nobody has to press
  * Fetch Actuator. Only linked items: a legacy ACT row with no link keeps its cost. Frozen dockets are skipped.
  */
 export async function repriceLinkedActuatorItems() {
@@ -89,7 +97,7 @@ type Specs = { operationType?: string | null; itemType?: string | null; size?: s
 
 /**
  * After Op Type / Item type / DN / PN change (or a dialog save): link a new candidate (auto-fill), re-price a linked one
- * (codes re-derived when the MAP KEY changed, hand codes kept otherwise), or de-actuate one that stopped being a candidate
+ * (hand codes dropped when the MAP KEY changed, kept otherwise), or de-actuate one that stopped being a candidate
  * (bare valve cost restored, breakdown and codes cleared). Always built from bareValveCost, never from a total.
  */
 export async function syncActuatorOnChange(itemId: string, before: Specs) {
@@ -99,7 +107,7 @@ export async function syncActuatorOnChange(itemId: string, before: Specs) {
   if (isActuatorCandidate(it)) {
     // A legacy candidate with no link keeps its cost until Fetch Actuator; only a newly-becoming candidate is auto-linked.
     if (!linked && isActuatorCandidate(before)) return null;
-    return applyActuatorToItem(itemId, linked && deriveMapKey(before) !== deriveMapKey(it) ? { rederive: true } : {});
+    return applyActuatorToItem(itemId, linked && deriveMapKey(before) !== deriveMapKey(it) ? { actCode: null, gbCode: null } : {});
   }
   if (!linked) return null;
   const restored = bareValveOf({ productCost: num(it.productCost), bareValveCost: num(it.bareValveCost), lastTotal: (it.actuatorBreakdown as { total?: number | null } | null)?.total ?? null });

@@ -32,8 +32,8 @@ const rowCache = new WeakMap<GMDUpdateRow, unknown[]>();
 
 /**
  * The table row for an item: the sheet columns with the derived name inserted,
- * then the C-batch flag, both Major Heads and the cost basis appended (same
- * order as the /raw_material route's headers).
+ * then the C-batch flag, both Major Heads, the cost basis and the drawing link
+ * appended (same order as the /raw_material route's headers).
  */
 export function itemToRow(item: GMDUpdateRow): unknown[] {
   let row = rowCache.get(item);
@@ -51,17 +51,22 @@ export function itemToRow(item: GMDUpdateRow): unknown[] {
         item.pcsWgt,
         item.cost,
       ),
+      item.drawingUrl ?? null,
     ];
     rowCache.set(item, row);
   }
   return row;
 }
 
-/** Headers appended after the C-batch column, in row order. */
+/** RawMaterial.drawingUrl, owned by the RM drawing map sheet (rm:drawings sync); never edited on the page. */
+export const DRAWING_HEADER = "Drawing";
+
+/** Headers appended after the C-batch column, in row order. All read-only. */
 export const DERIVED_TAIL_HEADERS = [
   MAJOR_HEAD_ITEM_TYPE_HEADER,
   MAJOR_HEAD_VALVE_TYPE_HEADER,
   COST_BASIS_HEADER,
+  DRAWING_HEADER,
 ];
 
 // ---------------------------------------------------------------------------

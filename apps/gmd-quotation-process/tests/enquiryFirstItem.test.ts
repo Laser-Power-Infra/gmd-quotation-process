@@ -30,9 +30,12 @@ test('summary totals are one aggregate with the numeric guard and the same exclu
   assert.equal((s.sql.match(/sum\(/g) ?? []).length, 4)
   assert.match(s.sql, /\^-\?\[0-9\]\+\(\[\.\]\[0-9\]\+\)\?\$/)
   assert.match(s.sql, /i\."cost" > 0/)
-  assert.match(s.sql, /i\."quantity" > 0 THEN i\."quantity" ELSE 1/)
+  // Quantity 0 adds no cost to the card (18 Nov): cost x quantity only when both are > 0.
+  assert.match(s.sql, /i\."cost" > 0 AND i\."quantity" > 0 THEN i\."cost" \* i\."quantity"/)
+  assert.doesNotMatch(s.sql, /ELSE 1/)
   assert.match(s.sql, /"cBatch"/)
-  assert.match(s.sql, /"nBatch"/)
+  // "Deleted as Current Reqt = No" rows are still quoted lines: they count (Puja, 17 Nov, docket 365).
+  assert.doesNotMatch(s.sql, /"nBatch"/)
   assert.match(s.sql, /"duplicate"/)
   assert.ok(s.values.some((v) => JSON.stringify(v).includes('Gate Valve')))
 })

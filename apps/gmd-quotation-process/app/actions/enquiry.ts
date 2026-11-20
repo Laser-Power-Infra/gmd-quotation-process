@@ -11,7 +11,8 @@ import { resolveItemCategory } from "@/lib/itemCategoryResolver";
 import { ensureCfSetItem } from "@/lib/cfSetItem";
 import { roundUp } from "@/lib/rounding";
 import { getDefaultVaPercent } from "@/lib/vaValidation";
-import { buildDocketEmailHtml, buildDocketEmailSubject, buildItemsClause } from "@/lib/docketEmailTemplate";
+import { rateFor, splitLoadedCost, vaFrom } from "@/lib/vaRules";
+import { buildDocketEmailHtml, buildDocketEmailSubject, buildItemsClause, DOCKET_EMAIL_SENDING_STALE_MS } from "@/lib/docketEmailTemplate";
 import { sendDocketEmailViaN8n, DOCKET_EMAIL_ALWAYS_CC } from "@/lib/services/n8nEmail";
 import type { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { computeDeliverySchedule, DEFAULT_DELIVERY_SCHEDULE } from "@/lib/deliverySchedule";
@@ -252,6 +253,16 @@ export async function addItemsAction(formData: {
   await requireAccess();
   const denied = await loginRequired(); if (denied) return denied;
   try {
+    {
+      const { isEnquiryFrozen } = await import("@/lib/oneClickAccess");
+      const parent = await prisma.enquiry.findUnique({
+        where: { id: formData.enquiryId },
+        select: { apm: true, offerPdfGeneratedAt: true },
+      });
+      if (parent && isEnquiryFrozen(parent.apm, parent.offerPdfGeneratedAt)) {
+        return { success: false, error: "Cannot add items: rate & cost columns are frozen after one-time PDF generation — revert APM to edit." };
+      }
+    }
     console.log(`[Server] addItems enquiry=${formData.enquiryId} items=${formData.items.length}`);
     for (const it of formData.items) {
       console.log(`  item: "${it.itemName}" qty=${it.quantity} type=${it.itemType || "?"} moc=${it.moc || "?"} size=${it.size || "?"}`);
@@ -328,16 +339,16 @@ export async function addItemsAction(formData: {
       }),
     });
 
-    // Run recalculation on all items of this enquiry to set correct costs
+    // Price only the new lines: re-running the existing ones would wipe their typed or pasted costs.
     const items = await prisma.enquiryItem.findMany({
-      where: { enquiryId: formData.enquiryId },
+      where: { enquiryId: formData.enquiryId, position: { gte: startPos } },
     });
     for (const item of items) {
       await recalculateItem(item.id);
     }
     // New Op Type ACT / ACT+GB / ELECTRIC items get auto-filled (linked); their created cost is the valve cost.
     for (const item of items) {
-      if (item.position < startPos || !isActuatorCandidate(item)) continue;
+      if (!isActuatorCandidate(item)) continue;
       try {
         const { applyActuatorToItem } = await import("@/lib/actuatorItem");
         await applyActuatorToItem(item.id);
@@ -463,6 +474,8 @@ export async function updateEnquiryItemAction(formData: {
     let finalQuotedRate: string | null;
     let updatedItemWise: string | null = null;
     let updatedTotalVal: string | null = null;
+    // Actuated item: VA% is the valve VA%, the actuator portion gets a flat 5% (lib/vaRules.ts).
+    const split = splitLoadedCost(item, updatedCost ?? 0);
 
     if (formData.quotedRate !== undefined) {
       // Reverse: QR explicitly provided â€” calculate VA% from QR/Cost
@@ -471,15 +484,14 @@ export async function updateEnquiryItemAction(formData: {
       if (finalQuotedRate !== null && updatedCost !== null && updatedCost > 0) {
         const qrNum = parseFloat(finalQuotedRate);
         if (!isNaN(qrNum) && qrNum > 0) {
-          finalVa = parseFloat(((qrNum / updatedCost - 1) * 100).toFixed(2));
+          finalVa = vaFrom(qrNum, split);
           finalQuotedRate = roundUp(qrNum).toFixed(2);
         }
       }
     } else {
       // Forward: QR not provided â€” calculate from Cost+VA% if both exist
       if (updatedCost !== null && updatedCost > 0 && finalVa !== null) {
-        const qr = updatedCost * (1 + (finalVa / 100));
-        finalQuotedRate = roundUp(qr).toFixed(2);
+        finalQuotedRate = rateFor(split, finalVa).toFixed(2);
       } else {
         finalQuotedRate = item.quotedRate || null;
       }
@@ -575,7 +587,8 @@ export async function updateEnquiryItemAction(formData: {
         operationType: finalOperationType,
         extension: formData.extension || null,
         bypass: formData.bypass || null,
-        others: (()=>{ const v=(formData as any).others ?? (formData as any).other ?? null; if(Array.isArray(v)) return v; if(typeof v==="string" && v.trim()!=="") return [v.trim()]; if(v==null) return []; return []; })(),
+        // Not sent at all (the Edit Enquiry dialog has no Other control) = keep the stored ticks; an explicit [] still clears.
+        others: formData.others === undefined && (formData as any).other === undefined ? undefined : (()=>{ const v=(formData as any).others ?? (formData as any).other ?? null; if(Array.isArray(v)) return v; if(typeof v==="string" && v.trim()!=="") return [v.trim()]; if(v==null) return []; return []; })(),
         productCost: formData.productCost || null,
         costRefCode: formData.costRefCode || null,
         cost: formData.cost || null,
@@ -1127,6 +1140,24 @@ export async function sendDocketEmailAction(
       };
     }
 
+    // Claim the send in one conditional write so two clicks (or a refresh mid-send) cannot both pass the
+    // "not sent" check above. A claim older than the stale window is treated as abandoned (crash/restart).
+    const claimedAt = new Date();
+    const claim = await prisma.enquiry.updateMany({
+      where: {
+        id: enquiryId,
+        emailSentBy: null,
+        OR: [
+          { emailSendingAt: null },
+          { emailSendingAt: { lt: new Date(claimedAt.getTime() - DOCKET_EMAIL_SENDING_STALE_MS) } },
+        ],
+      },
+      data: { emailSendingAt: claimedAt },
+    });
+    if (claim.count === 0) {
+      return { success: false, error: "This docket email is already being sent (or was just sent). Refresh to see its status." };
+    }
+    try {
     // Always Cc the fixed address, merged with the docket's other emails and
     // de-duplicated case-insensitively. Blocked addresses are dropped and the
     // party's mandatory Cc is (re)added.
@@ -1144,8 +1175,8 @@ export async function sendDocketEmailAction(
 
     const raRound = reverseAuction ? enquiry.reverseAuctionCount + 1 : 0;
     // Reuse the Offer PDF pipeline for the attachment.
-    const { generateOfferPdfAction } = await import("@/lib/generate-offer-pdf");
-    const pdfRes = await generateOfferPdfAction(
+    const { buildOfferPdf } = await import("@/lib/offerPdf");
+    const pdfRes = await buildOfferPdf(
       { docketNo: enquiry.docketNumber } as unknown as OfferLetterTemplateData,
       enquiryId,
       { bypassFreeze: true, raRound },
@@ -1204,6 +1235,7 @@ export async function sendDocketEmailAction(
         where: { id: enquiryId },
         data: {
           emailSentBy: userId,
+          emailSendingAt: null,
           offerRevised: false,
           ...(raRound ? { reverseAuctionCount: raRound, reverseAuctionStatus: "Yes" } : {}),
         },
@@ -1214,6 +1246,12 @@ export async function sendDocketEmailAction(
         : []),
     ]);
     return { success: true, data: serializeEnquiry(updated) };
+    } finally {
+      // Success already cleared the flag with the sent marker; this only releases a failed or thrown send.
+      await prisma.enquiry
+        .updateMany({ where: { id: enquiryId, emailSendingAt: claimedAt }, data: { emailSendingAt: null } })
+        .catch((e: unknown) => console.error("[send-docket-email] failed to release sending flag", e));
+    }
   } catch (error: any) {
     console.error("Error sending docket email:", error);
     return { success: false, error: error.message || "Failed to send the docket email." };

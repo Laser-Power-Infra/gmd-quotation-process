@@ -20,9 +20,9 @@ import type { ActionResult, ContractMail, ContractReviewData, DiagramFileMeta } 
 import { columnAccess } from "@gmd/contract-review/flags";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
 import { findContractMails } from "@/lib/contractMails";
-import { invalidateContractReviewCache } from "@/lib/contractReviewView";
 import { GET } from "@/app/api/contract-review/route";
 import { POST } from "@/app/api/contract-review/sync/route";
+import { runningJobs } from "@/schedular_function/job-latch";
 
 // Contract review in this app is public (no auth), as before the move to
 // @gmd/contract-review. Add an auth() check here to restrict it.
@@ -41,7 +41,7 @@ async function fromRoute(res: Response): Promise<ActionResult> {
   const body = await res.json().catch(() => ({}));
   return res.ok
     ? { success: true, data: body }
-    : { success: false, error: body.error ?? `Request failed (${res.status})` };
+    : { success: false, error: body.error ?? `Request failed (${res.status})`, busy: body.busy };
 }
 
 /** Rows plus quotation-DB extras (RM AVAIL, BOM ID options, item images). */
@@ -59,8 +59,13 @@ export async function load() {
 export async function sync() {
   await requireAccess();
   const res = await fromRoute(await POST());
-  invalidateContractReviewCache();
   return res;
+}
+
+/** True while a CONTRACTS + DUMP sync (the hourly job or a SYNC click) is running. */
+export async function syncRunning() {
+  await requireAccess();
+  return runningJobs.has("contract-review");
 }
 
 export async function updateContractReviewFieldAction(
@@ -71,7 +76,6 @@ export async function updateContractReviewFieldAction(
   await requireAccess();
   const flags = await getContractReviewFlags();
   const res = await updateContractReviewField(id, field, value, editableFieldsFor(flags), blankOnlyFieldsFor(flags));
-  invalidateContractReviewCache();
   return res;
 }
 
@@ -85,7 +89,6 @@ export async function confirmDiagramUploadAction(id: string, key: string) {
   await requireAccess();
   if (!(await access()).isEditable(DRAWING)) return NOT_ALLOWED;
   const res = await confirmDiagramUpload(id, key);
-  invalidateContractReviewCache();
   return res;
 }
 
@@ -93,7 +96,6 @@ export async function clearContractReviewDiagramAction(id: string) {
   await requireAccess();
   if (!(await access()).isEditable(DRAWING)) return NOT_ALLOWED;
   const res = await clearDiagram(id);
-  invalidateContractReviewCache();
   return res;
 }
 
@@ -101,7 +103,6 @@ export async function setContractReviewDiagramVerdictAction(id: string, verdict:
   await requireAccess();
   if (!(await access()).isEditable(DRAWING)) return NOT_ALLOWED;
   const res = await setDiagramVerdict(id, verdict);
-  invalidateContractReviewCache();
   return res;
 }
 
@@ -134,7 +135,6 @@ export async function addContractMailDocAction(contractNo: string, category: str
   await requireAccess();
   if (!(await access()).isEditable(MAIL_DOCS)) return NOT_ALLOWED;
   const res = await addContractMailDoc(contractNo, category, url);
-  invalidateContractReviewCache();
   return res;
 }
 

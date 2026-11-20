@@ -39,7 +39,7 @@ async function main() {
   for (const item of items) {
     // Run recalculateItem which will automatically align cost, quotedRate, and vaPercent
     try {
-      await recalculateItem(item.id);
+      await recalculateItem(item.id, undefined, { allowFrozen: true });
       updatedCount++;
     } catch (e) {
       console.error(`Error recalculating item ${item.id}:`, e);

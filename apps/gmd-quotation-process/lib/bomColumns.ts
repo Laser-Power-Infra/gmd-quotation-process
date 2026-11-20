@@ -14,6 +14,8 @@ export const BOM_EXTRA_HEADERS = [
   MULTI_OPEN_BOM_HEADER,
   BOM_MISMATCH_HEADER,
 ] as const;
+/** Last column: the RM line's RawMaterial.drawingUrl (blank for FG lines and parent-only rows). */
+export const DRAWING_HEADER = "DRAWING";
 
 export const BOM_CHANGE_KINDS = ["EDIT", "CLOSE", "REOPEN", "CREATE"] as const;
 export type BomChangeKind = (typeof BOM_CHANGE_KINDS)[number];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
 import GMDUpdateTable, {
   type ServerTableMode,
@@ -9,6 +9,7 @@ import ErrorState from "@gmd/dashboard/components/ErrorState";
 import GMDUpdateSkeleton from "@gmd/dashboard/components/skeletons/GMDUpdateSkeleton";
 import { toast } from "sonner";
 import { updateSupplyHistoryFieldAction, updateSupplyHistorySelectedBomAction, updateSupplyHistoryBomCostAction } from "@/app/actions/misc";
+import { bomSyncRunningAction } from "@/app/actions/bomChange";
 import {
   fetchAllSupplyRows,
   fetchSupplyFacet,
@@ -47,6 +48,12 @@ export default function SupplyHistoryPage() {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [sort, setSort] = useState<TableSort | null>(null);
   const [syncing, setSyncing] = useState(false);
+  // Sync runs the BOM MAST sync first; while that latch is held (hourly job or
+  // another user) the button shows as running. Checked on load, no polling.
+  const [bomBusy, setBomBusy] = useState(false);
+  useEffect(() => {
+    bomSyncRunningAction().then(setBomBusy, () => {});
+  }, []);
 
   const headers = useMemo<string[]>(() => [...SUPPLY_DISPLAY_HEADERS], []);
 
@@ -222,6 +229,7 @@ export default function SupplyHistoryPage() {
       const res = await fetch("/api/supply-history/sync", { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
+        if (body.busy) setBomBusy(true);
         throw new Error(body.error ?? `Sync failed (${res.status})`);
       }
       const body = await res.json().catch(() => ({}));
@@ -312,7 +320,7 @@ export default function SupplyHistoryPage() {
           syncedAt={syncedAt}
           warnIfStale
           onSync={handleSync}
-          syncing={syncing}
+          syncing={syncing || bomBusy}
         />
         {error && rows.length > 0 && (
           <div className="mt-2 text-sm text-red-600 dark:text-red-300 shrink-0">

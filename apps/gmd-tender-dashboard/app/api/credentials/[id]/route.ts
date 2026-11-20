@@ -51,6 +51,8 @@ const deleteCredentialWithLog = withLog(deleteCredential, (result, id: string) =
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const session = await auth();
+    if (!session?.user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
     const { id } = await params;
     const row = await prisma.credential.findUnique({ where: { id } });
     if (!row) throw Object.assign(new Error("Credential not found"), { status: 404 });

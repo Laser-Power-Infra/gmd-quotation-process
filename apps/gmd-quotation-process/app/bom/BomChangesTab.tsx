@@ -9,6 +9,7 @@ import type { TableSort } from "@gmd/ui/components/data-table/types";
 import { sortRows } from "@gmd/dashboard/lib/tableSort";
 import {
   approveBomChangeAction,
+  bomSyncRunningAction,
   deleteBomChangeAction,
   listBomChangesAction,
   proposeMissingBomsAction,
@@ -49,6 +50,11 @@ export default function BomChangesTab() {
   const [sort, setSort] = useState<TableSort | null>(null);
   const [editing, setEditing] = useState<BomChangeDraft | null>(null);
   const [proposing, setProposing] = useState(false);
+  // A BOM sync (the hourly job or another user) holds the latch; checked on load, no polling.
+  const [bomBusy, setBomBusy] = useState(false);
+  useEffect(() => {
+    bomSyncRunningAction().then(setBomBusy, () => {});
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -118,11 +124,16 @@ export default function BomChangesTab() {
           size="sm"
           variant="outline"
           className="ml-auto"
-          disabled={proposing}
+          disabled={proposing || bomBusy}
           onClick={async () => {
             setProposing(true);
             const res = await proposeMissingBomsAction();
             setProposing(false);
+            if (res.busy) {
+              setBomBusy(true);
+              toast.error(res.error);
+              return;
+            }
             toast[res.failed ? "error" : "success"](`${res.proposed} BOM(s) proposed from sent dockets + live contracts`);
             void load();
           }}

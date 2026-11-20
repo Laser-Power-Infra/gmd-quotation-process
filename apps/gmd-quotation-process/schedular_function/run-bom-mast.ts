@@ -1,9 +1,12 @@
 /**
  * Scheduled job — BOM MAST ERP sync.
  *
- * A single-step job, so this orchestrator is thin. It still owns an in-flight
- * latch: ofelia's `no-overlap = true` cannot see a manual `POST
- * /api/sync/bom_from_erp` (or a second app instance) overlapping the same run.
+ * A single-step job, so this orchestrator is thin. It holds the shared
+ * "bom-mast" latch (`job-latch.ts`) for the whole run. Every manual path that
+ * writes BomItem links or BOM proposals takes the same latch, so a click during
+ * this run is refused rather than doubled: `POST /api/sync/bom_from_erp`, the
+ * Supply History Sync, the Verify BOM Sync, "ItemName (C)" and "Propose missing
+ * BOMs". The latch is per app instance: a second instance is not covered.
  *
  * Scheduled at :05 — after `raw-material` (:00), whose RawMaterial rows the BOM
  * components resolve against, and before `supply-history` (:15), whose link
@@ -14,7 +17,7 @@
  */
 
 import { runBomMastErpSync, type BomMastSyncResult } from "./bom-mast-sync";
-import { JobAlreadyRunningError } from "./run-gmd-update";
+import { JobAlreadyRunningError, runningJobs as inFlight } from "./job-latch";
 import { recordJobRun } from "./job-heartbeat";
 import { proposeMissingBoms } from "@/lib/bomChange";
 
@@ -31,8 +34,6 @@ export type ScheduledBomMastResult = {
     bomPropose?: { proposed: number; failed: number };
   };
 };
-
-const inFlight = new Set<JobName>();
 
 export async function runScheduledBomMast(): Promise<ScheduledBomMastResult> {
   const job: JobName = "bom-mast";

@@ -14,18 +14,21 @@ export default function DebouncedSearchInput({
   placeholder,
   className,
   type = "text",
+  delay = SEARCH_DEBOUNCE_MS,
 }: {
   value: string;
   onCommit: (val: string) => void;
   placeholder?: string;
   className?: string;
   type?: string;
+  /** Quiet time (ms) before the typed value is committed. */
+  delay?: number;
 }) {
   const [local, setLocal] = useState(value);
   const [prevValue, setPrevValue] = useState(value);
   // Each commit is a server round-trip, so wait until the user has really stopped typing
   // rather than firing one off mid-word.
-  const debounced = useDebounce(local, SEARCH_DEBOUNCE_MS);
+  const debounced = useDebounce(local, delay);
   const isTypingRef = useRef(false);
 
   // Adjust during render rather than in an effect, so an external reset (e.g. "Reset all

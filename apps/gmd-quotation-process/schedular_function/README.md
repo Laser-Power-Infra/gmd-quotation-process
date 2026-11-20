@@ -23,7 +23,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 |---|---|---|---|
 | Raw Material sync | `POST /api/scheduler/raw-material` | `raw-material-sync` | `GMD UPDATION`, `stock-phys` |
 | BOM MAST ERP sync | `POST /api/scheduler/bom-mast` | `bom-mast-sync` | `BOM MAST ERP` |
-| Physical Stock cost / BOM ID | `POST /api/scheduler/physical-stock-cost-bom` | `physical-stock-cost-bom-sync` | local `FullItem` / `Bom` / `BomItem` → stock DB `PhysicalStock` |
+| Physical Stock cost / BOM ID | `POST /api/scheduler/physical-stock-cost-bom` | `physical-stock-cost-bom-sync` | local `FullItem` / `Bom` / `BomItem` → stock DB `PhysicalStock`; `ITEM MASTER ERP` `STOCK` → `stock_as_per_erp` |
 | Supply History MASTER sync | `POST /api/scheduler/supply-history` | `supply-history-sync` | `MASTER`, GMD Clientwise ORDER LIST, `SALE_BILL` (rate gap-fill) |
 | Pending docket creation + duplicate cleanup | `POST /api/scheduler/docket-creation` | `docket-creation-sync` | `docket_quotation_threads`, `enquiries` |
 | Contract Review sync | `POST /api/scheduler/contract-review` | `contract-review-sync` | `CONTRACTS`, `DUMP`, `stock-phys`, `INSPECTION OFFER DUMP` |
@@ -96,7 +96,7 @@ cached Server Action result.
 
 ## `raw-material`
 
-Four sequential steps in `run-gmd-update.ts`:
+Five sequential steps in `run-gmd-update.ts`:
 
 1. **`runGmdCatalogueSync()`** (`gmd-update-catalogue.ts`) — `GMD UPDATION`
    tab → `RawMaterial`. Creates rows for ERP codes not yet in the DB; on
@@ -116,6 +116,12 @@ Four sequential steps in `run-gmd-update.ts`:
    Auto BOM rule (`/bom/auto`) and creates `NEW-BOM-…` BOMs for full items
    that have no BOM. Inactive rules are skipped. Never throws: a failing rule
    is logged and counted in `steps.autoBom.failed`.
+5. **`syncRmDrawings()`** (`lib/gmd_lib/rmDrawings.ts`) — Puja's `RM drawing
+   map (Asmita)` tab (gid 588349458) `DRAWING LINK` → `RawMaterial.drawingUrl`,
+   matched on `erpItemCode`; a code's distinct links are joined `", "`. Set-only:
+   codes absent from the sheet or listed without a link keep their value. A
+   failure lands in the result's `warnings` and does not fail the job. Manual
+   run: `pnpm rm:drawings` (dry run) / `pnpm rm:drawings:apply`.
 
 Steps are strictly sequential: a fatal failure in step 1 aborts before step 2,
 because refreshing stock against a half-synced table is not useful.
@@ -811,7 +817,9 @@ also call (dry-run default, `--apply`, `--dump-headers` unchanged).
   (`report.<ledger>.error`), leaves its table as it was, and does not stop the
   others. The route then returns `success:false` (HTTP 200) and the Ofelia script
   exits 1.
-- Skipped rows (blank ACC_CODE, bad number/date) are counted, not fatal.
+- Skipped rows (blank ACC_CODE, bad number/date) are counted, not fatal, unless
+  nothing maps or more rows are skipped than mapped (an emptied tab, a changed
+  date format): that ledger then fails as above and keeps its table.
 - Report: `{ debtors, creditors, advances }`, each `{ read, mapped, skipped,
   skippedRows, written, inDb, error? }`.
 - The latch is in-process only; see the `shortcut:` comment in `ledger-sync.ts`.
@@ -820,8 +828,8 @@ also call (dry-run default, `--apply`, `--dump-headers` unchanged).
 
 Daily at **02:10** (`0 10 2 * * *`), after `ledger`. Entry:
 `runScheduledServiceOrders()` -> `runServiceOrdersSync()` in
-`service-orders-sync.ts`; mapping and joins in `lib/serviceOrders.ts`. Feeds
-`/service_orders`.
+`service-orders-sync.ts`; code mapping in `lib/serviceOrders.ts`, joins in SQL in
+`@gmd/service-orders`. Feeds `/service_orders`.
 
 - `ServiceItem`: `ITEM MASTER ERP` (gid 253020709) codes whose `LEVEL_1_NAME` is
   `SERVICES` or `ITEM_NATURE` is `SR`. The only table this job writes.
@@ -1429,10 +1437,14 @@ this as a pre-flight probe.
 
 - **`no-overlap = true`** in each ofelia config stops that job overlapping
   itself. It cannot stop a manual button click from overlapping an hourly run,
-  so each orchestrator holds its own in-process latch and answers `409` to a
-  second concurrent caller. The latch is released in a `finally`, so a throw
-  cannot wedge the next run. The two jobs have separate latches, so
-  `contract-review` never blocks `raw-material`.
+  so each orchestrator holds an in-process latch and answers `409` to a second
+  concurrent caller. `contract-review`, `bom-mast` and `pbg` keep theirs in
+  `job-latch.ts`, and the manual paths that write the same rows take the same
+  key, so a click during a run is refused, not doubled: the Contract Review
+  SYNC route; `/api/sync/bom_from_erp`, Supply History Sync, Verify BOM Sync,
+  ItemName (C) and Propose missing BOMs; the PBG Sync button. The latch is
+  released in a `finally`, so a throw cannot wedge the next run. Keys are per
+  job, so `contract-review` never blocks `raw-material`.
 - Prisma writes are bounded with `p-limit` at **10 in flight**, in chunks of
   200. The manual syncs fan out 200 concurrent calls per chunk; that is fine for
   an occasional button press but not for a job running every hour against the
@@ -1452,7 +1464,7 @@ still work:
 | `app/actions/*.ts` `updateDerivedItemName` | untouched |
 | `scripts/sync-available-stock-from-stock-phys.ts` | untouched — `npm run stock:sync` |
 | `scripts/populate-derived-item-name.ts` | untouched |
-| `app/api/contract-review/sync/route.ts` | untouched — Contract Review SYNC button |
+| `app/api/contract-review/sync/route.ts` | Contract Review SYNC button; holds the `contract-review` latch |
 | `app/actions/*.ts` `syncContractReviewEnquiryFieldsAllAction` | untouched — Sync Enquiry Fields button |
 | `app/actions/*.ts` `syncContractReviewRmAvailAction` | untouched — Sync RM AVAIL button |
 | `scripts/sync-ic-dump.ts` | untouched — `npm run ic:sync` (see *Step 4 — IC dump* for the duplication this implies) |
@@ -1477,7 +1489,8 @@ The CLI script still has them.
 ## Adding the next job
 
 1. Create `schedular_function/<job>.ts` exporting a `runScheduled<Job>()`.
-2. Give it its own in-flight latch — see `run-contract-review.ts`.
+2. Hold its latch from `job-latch.ts` — see `run-contract-review.ts` — and take
+   the same key in any manual path that writes the same rows.
 3. Add `app/api/scheduler/<job>/route.ts` as a thin shim — auth, status codes,
    response. No business logic.
 4. Add `infra/<job>.sh` (copy `contract-review-sync.sh`, which has the

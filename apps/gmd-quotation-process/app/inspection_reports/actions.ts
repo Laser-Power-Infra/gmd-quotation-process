@@ -2,6 +2,9 @@
 import { requireAccess, loginRequired } from "@/lib/access";
 
 import { revalidatePath } from "next/cache";
+import { listInspectionFacet, listInspectionPage } from "@gmd/inspection-reports/server";
+import type { InspectionPageData } from "@gmd/inspection-reports/columns";
+import type { TableQuery } from "@gmd/ui/components/data-table/types";
 import { prisma } from "@/lib/prisma";
 import {
   GATED_STATUSES,
@@ -45,4 +48,29 @@ export async function saveInspectionReportAction(
   }
   revalidatePath("/inspection_reports");
   return { success: true };
+}
+
+type Result<T> = { success: true; data: T } | { success: false; error: string };
+
+// The list is read-only; the package rejects any column key it does not list.
+async function guarded<T>(fn: () => Promise<T>): Promise<Result<T>> {
+  try {
+    return { success: true, data: await fn() };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function loadPage(query: TableQuery): Promise<Result<InspectionPageData>> {
+  return guarded(async () => {
+    await requireAccess();
+    return listInspectionPage(query);
+  });
+}
+
+export async function loadFacet(key: string, query: TableQuery): Promise<Result<string[]>> {
+  return guarded(async () => {
+    await requireAccess();
+    return listInspectionFacet(key, query);
+  });
 }

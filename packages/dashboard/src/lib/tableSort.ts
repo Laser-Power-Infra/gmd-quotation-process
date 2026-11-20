@@ -59,13 +59,15 @@ export function cellCompare(
   dir: number,
   numericStrings = false,
 ): number {
-  if (numericStrings) {
-    const aNumeric = parseSortNumber(aVal);
-    const bNumeric = parseSortNumber(bVal);
-    if (aNumeric !== null && bNumeric !== null) {
-      if (aNumeric === bNumeric) return 0;
-      return (aNumeric < bNumeric ? -1 : 1) * dir;
-    }
+  // Two pure numbers compare as numbers. Without this a decimal column falls through to the
+  // natural-text compare below, which reads "0.8" and "0.011" as 0 . 8 / 0 . 11 and puts 0.8 first.
+  // Text and mixed columns are unaffected: parseSortNumber is null for anything that is not a number.
+  const aNumeric = parseSortNumber(aVal);
+  const bNumeric = parseSortNumber(bVal);
+  if (aNumeric !== null && bNumeric !== null) {
+    if (aNumeric !== bNumeric) return (aNumeric < bNumeric ? -1 : 1) * dir;
+    // Equal numbers: strict mode keeps them tied; otherwise let the text form break the tie ("007" vs "7").
+    if (numericStrings) return 0;
   }
   const aNum = typeof aVal === "number" ? aVal : NaN;
   const bNum = typeof bVal === "number" ? bVal : NaN;
