@@ -32,6 +32,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | PBG sheet sync *(every 1.2h)* | `POST /api/scheduler/pbg` | `pbg-sync` | PBG sheet tab → `PbgData` |
 | PBG reminder emails *(daily, 09:00 IST)* | `POST /api/scheduler/pbg-reminders` | `pbg-reminders` | `PbgData`, `PbgReminderLog` -> direct SMTP |
 | C Batch marks | `POST /api/scheduler/c-batch` | `c-batch-sync` | `ITEM MASTER ERP` |
+| Website price push *(hourly, :55)* | `POST /api/scheduler/website-prices` | `website-prices-sync` | `RawMaterial.erpItemCode` + `cost` -> website `POST /api/purchase-prices/sync` (read-only here) |
 | ERP Contract No sync | `POST /api/scheduler/erp-contract-no` | `erp-contract-no-sync` | `SALE_BILL`, `MC` |
 | Closure Status sync *(every 10m)* | `POST /api/scheduler/closure-status` | `closure-status-sync` | `docket_quotation_threads`, `enquiries` |
 | Docket auto-link *(daily, 01:40)* | `POST /api/scheduler/docket-auto-link` | `docket-auto-link-sync` | `ContractReview`, `enquiries` -> `Enquiry.selectedContractNo` (link only) |
@@ -385,6 +386,20 @@ change metric, because `touched` is every unchanged row. Use `changed`
 `GMD_CLIENTWISE_SPREADSHEET_ID` was unset and silently falling back to a
 hard-coded id inside `lib/gmd_lib/contract-order-links.ts`. It is now set
 explicitly in `.env`.
+
+## `website-prices`
+
+Single step: `runScheduledWebsitePrices()` in `website-prices.ts`. Reads every
+`RawMaterial` row with an `erpItemCode` and sends a **full snapshot**
+`{ costs: [{ erpItemCode, cost }] }` (cost in rupees, null when empty) to the GM Dalui
+website, which prices its `/purchase` ready-stock catalogue by matching its item
+codes. Null/0 costs and codes missing from the snapshot become "Price on request"
+there. Nothing is written in this database, so a bad run cannot damage data here;
+an empty snapshot is refused on both sides.
+
+The website is on Neon and cannot reach this office-network database, which is why
+this job pushes. Env on this app: `WEBSITE_PRICE_SYNC_URL` (the website endpoint) and
+`WEBSITE_PRICE_SYNC_API_KEY` (must equal `PRICE_SYNC_API_KEY` on the website).
 
 ## `c-batch`
 
