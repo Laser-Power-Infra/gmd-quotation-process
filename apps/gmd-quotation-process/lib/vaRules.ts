@@ -5,7 +5,7 @@
 // gearbox + adaptor + assembly, with the same loadings) gets a flat 5%: no minimum, no CR matching.
 // Item type ACTUATOR (linked): VA% on the whole cost like any line, minimum 5, no CR matching.
 import { parseSize } from "./vaValidation";
-import { itemSeatType, type SeatItem } from "./seatType";
+import { categorySeat, type SeatItem } from "./seatType";
 import { isActuated } from "./actuatorCost";
 import { BASE_COST_FACTOR } from "./costLoading";
 import { roundUp } from "./rounding";
@@ -25,9 +25,9 @@ export function minVaPercent(it: VaItem): number {
   const type = (it.itemType ?? "").toUpperCase().trim();
   const dn = parseSize(it.size);
   if (isActuatorOnly(it)) return ACT_VA;
-  // Seat per lib/seatType.ts; a sluice's own type (METAL / RESILIENT) answers when the BOQ text names no seat.
-  if (type.startsWith("SLUICE VALVE-")) return itemSeatType(it).seat === "Resilient" ? 15 : 30;
-  if (type === "CHECK VALVE") return itemSeatType(it).seat === "Metal seated" ? 30 : 0;
+  // Seat from the item's own category only (BOQ / spec never move the minimum; seatMismatch warns instead).
+  if (type.startsWith("SLUICE VALVE-")) return categorySeat(it) === "Resilient" ? 15 : 30;
+  if (type === "CHECK VALVE") return categorySeat(it) === "Metal seated" ? 30 : 0;
   if (type === "BUTTERFLY VALVE") return dn !== null && dn > 450 ? 35 : 20;
   if (type === "TPAV" || type === "TPV") return 35;
   if (type === "EXPANSION BELOWS") return dn !== null && dn > 1000 ? 45 : 0;

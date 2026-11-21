@@ -25,7 +25,7 @@ async function costOf(lines: SaleCostInput[]) {
   return lines.map((l, i) => ({
     unitCost: costs[i].unitCost,
     quotedUnitCost: costs[i].quotedUnitCost,
-    minVa: minVaPercent({ itemType: l.valveType, size: l.size, itemName: l.itemName }),
+    minVa: minVaPercent({ itemType: l.valveType, size: l.size }),
   }));
 }
 

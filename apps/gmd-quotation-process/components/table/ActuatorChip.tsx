@@ -20,7 +20,7 @@ export default function ActuatorChip({ item, frozen }: { item: EnquiryItemData; 
   const [f, setF] = useState({ make: "", control: "", act: "", gb: "", adaptor: "", assembly: "" });
   const actuated = actuatorOp(item.operationType).act || (item.itemType ?? "").toUpperCase() === "ACTUATOR";
   if (!actuated) return null;
-  const b = item.actuatorBreakdown as { pending?: string[]; text?: string; selection?: { time?: number | null; flags?: string[] } } | null | undefined;
+  const b = item.actuatorBreakdown as { pending?: string[]; text?: string; manualTotal?: number; selection?: { time?: number | null; flags?: string[] } } | null | undefined;
   const time = b?.selection?.time; // blank on selections stored before 20 Nov
   const over = b?.selection?.flags?.find((x) => x.startsWith("Over "));
   const pending = !!b?.pending?.length;
@@ -28,6 +28,7 @@ export default function ActuatorChip({ item, frozen }: { item: EnquiryItemData; 
   // Stock read by Sync Available Stock; ignored once the codes were changed since.
   const st = (item.actuatorBreakdown as { stock?: ItemStock } | null)?.stock;
   const stock = st && st.actCode === (item.actCode ?? null) && st.gbCode === (item.gbCode ?? null) ? st : null;
+  const byHand = b?.manualTotal != null;
   const special = isOemRfq(item);
   const rfq = special ? buildRfq(item) : null;
   const show = () => {
@@ -56,9 +57,9 @@ export default function ActuatorChip({ item, frozen }: { item: EnquiryItemData; 
         onClick={show}
         title={b?.text ?? "Click to set the actuator. Use Fetch Actuator to fill codes and price."}
         className={cn("block w-full text-[9px] text-right px-1 font-bold hover:underline cursor-pointer",
-          special ? "text-red-700 dark:text-red-300" : pending || !b ? "text-amber-700 dark:text-amber-300" : "text-sky-700 dark:text-sky-300")}
+          special && !byHand ? "text-red-700 dark:text-red-300" : pending || !b ? "text-amber-700 dark:text-amber-300" : "text-sky-700 dark:text-sky-300")}
       >
-        {special ? SPECIAL_OEM + " · OEM recheck" : pending || !b ? "Actuator · price pending" : `Actuator · priced${time != null ? ` · ${time.toFixed(2)} min` : ""}${over ? ` · ${over}` : ""}`}
+        {byHand ? `${special ? SPECIAL_OEM + " · " : "Actuator · "}price typed by hand` : special ? SPECIAL_OEM + " · OEM recheck" : pending || !b ? "Actuator · price pending" : `Actuator · priced${time != null ? ` · ${time.toFixed(2)} min` : ""}${over ? ` · ${over}` : ""}`}
       </button>
       {split && (
         <span title="Rate = valve x (1 + VA%) + actuator portion x 1.05 (cost loadings included)" className="block w-full text-[9px] text-right px-1 text-muted-foreground">

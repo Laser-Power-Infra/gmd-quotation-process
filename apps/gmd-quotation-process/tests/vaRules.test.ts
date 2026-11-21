@@ -9,7 +9,7 @@ const it = (itemType: string, size = '100', extra = {}) => ({ itemType, size, it
 test('minimum VA% per item type and size', () => {
   assert.equal(minVaPercent(it('SLUICE VALVE-RESILIENT-RISING')), 15)
   assert.equal(minVaPercent(it('SLUICE VALVE-METAL-NON-RISING')), 30)
-  assert.equal(minVaPercent(it('CHECK VALVE', '100', { itemName: 'Metal seated check valve' })), 30)
+  assert.equal(minVaPercent(it('CHECK VALVE', '100', { itemNameMerge: 'Metal seated' })), 30)
   assert.equal(minVaPercent(it('CHECK VALVE')), 0)
   assert.equal(minVaPercent(it('BUTTERFLY VALVE', '450')), 20)
   assert.equal(minVaPercent(it('BUTTERFLY VALVE', 'DN500')), 35)
@@ -21,12 +21,11 @@ test('minimum VA% per item type and size', () => {
   assert.equal(minVaPercent(it('PLUG VALVE')), 100)
 })
 
-test('sluice and check valve minimum follows the seat type: BOQ text, then item type, then docket spec', () => {
-  assert.equal(minVaPercent(it('CHECK VALVE', '100', { itemName: 'MS check valve' })), 30)
-  assert.equal(minVaPercent(it('CHECK VALVE', '100', { itemName: 'Check valve with bronze seat' })), 30)
-  assert.equal(minVaPercent(it('CHECK VALVE', '100', { seatSpec: 'metal seated' })), 30)
-  assert.equal(minVaPercent(it('CHECK VALVE', '100', { itemName: 'Resilient check valve', seatSpec: 'MS' })), 0)
-  assert.equal(minVaPercent(it('SLUICE VALVE-RESILIENT-NON-RISING', '100', { itemName: 'Metal seated sluice valve' })), 30)
+test("sluice and check valve minimum follows the item's own category, never the BOQ text or docket spec", () => {
+  assert.equal(minVaPercent(it('SLUICE VALVE-RESILIENT-NON-RISING', '100', { itemName: 'MS sluice valve' })), 15)
+  assert.equal(minVaPercent(it('SLUICE VALVE-METAL-NON-RISING', '100', { itemName: 'Resilient sluice valve' })), 30)
+  assert.equal(minVaPercent(it('CHECK VALVE', '100', { itemName: 'MS check valve', seatSpec: 'metal seated' })), 0)
+  assert.equal(minVaPercent(it('CHECK VALVE', '100', { itemNameMerge: 'CHECK VALVE-DI-100-PN10-METAL SEATED' })), 30)
   assert.equal(minVaPercent(it('SLUICE VALVE-METAL-NON-RISING', '100', { itemName: 'Sluice valve 100 mm' })), 30)
   assert.equal(minVaPercent(it('SLUICE VALVE-RESILIENT-RISING', '100', { itemName: 'Sluice valve 100 mm' })), 15)
 })

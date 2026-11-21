@@ -236,17 +236,20 @@ function ItemDetailFields({
   dropdownOptions,
   onChange,
   isFrozen,
+  seatSpec,
 }: {
   item: EnquiryItemData;
   dropdownOptions: DropdownOptions;
   onChange: (itemId: string, field: string, value: string) => void;
   isFrozen: boolean;
+  seatSpec?: string | null;
 }) {
   const others = Array.isArray(item.others) ? item.others : [];
   const nameSize = sizeFromName(item.itemName);
   return (
     <div className="flex flex-wrap gap-x-1 gap-y-0.5">
       <CellSelect variant="chip" chipLabel="type" placeholder="-" value={item.itemType || ""} options={dropdownOptions.itemTypes} onChange={(v) => onChange(item.id, "itemType", v)} />
+      <SeatTypeChip item={{ ...item, seatSpec }} />
       <CellSelect variant="chip" chipLabel="moc" placeholder="-" value={item.moc || ""} options={dropdownOptions.mocs} onChange={(v) => onChange(item.id, "moc", v)} />
       <CellSelect variant="chip" chipLabel="size" placeholder="-" value={item.size || ""} options={dropdownOptions.sizes} onChange={(v) => onChange(item.id, "size", v)} />
       {nameSize && item.size && nameSize !== item.size.trim() && (
@@ -812,16 +815,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   }, [enquiries]);
 
-  // VA% rules: item IDs below the minimum VA% or above the CR rate (the seat type can come from the docket spec)
+  // VA% rules: item IDs below the minimum VA% or above the CR rate
   const invalidVaItemIds = useMemo(() => {
     const ids = new Set<string>();
-    const specs = new Map(enquiries.map((e) => [e.id, e.seatSpec]));
     for (const item of allItems) {
-      const violates = isVaRuleViolation({ ...item, seatSpec: specs.get(item.enquiryId) });
-      if (violates) ids.add(item.id);
+      if (isVaRuleViolation(item)) ids.add(item.id);
     }
     return ids;
-  }, [allItems, enquiries]);
+  }, [allItems]);
 
 
 
@@ -3737,6 +3738,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           dropdownOptions={dropdownOptions}
                           onChange={handleItemFieldChange}
                           isFrozen={isFrozen}
+                          seatSpec={enquiry.seatSpec}
                         />
                       ) : "-"}
                     </td>
@@ -3961,7 +3963,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         />
                         {unlockButton(firstItem)}
                         </div>
-                        <SeatTypeChip item={firstItem} spec={enquiry.seatSpec} /></>
+                        </>
                       ) : "-"}
                     </td>
 
@@ -4216,6 +4218,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             dropdownOptions={dropdownOptions}
                             onChange={handleItemFieldChange}
                             isFrozen={isFrozen}
+                            seatSpec={enquiry.seatSpec}
                           />
                         </td>
 
@@ -4420,7 +4423,6 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           />
                           {unlockButton(item)}
                           </div>
-                          <SeatTypeChip item={item} spec={enquiry.seatSpec} />
                       </td>
 
                       {/* Quoted Rate */}

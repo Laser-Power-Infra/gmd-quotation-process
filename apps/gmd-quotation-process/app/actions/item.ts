@@ -197,9 +197,7 @@ export async function updateItemFieldAction(
     // Validation = Yes needs the VA% rules met (red row = not met): run "Apply VA% rules" on the docket first.
     if (field === "validation" && String(value ?? "").trim() === "Yes") {
       const { isVaRuleViolation } = await import("@/lib/vaRules");
-      const { docketSeatSpecs } = await import("@/lib/seatType-server");
-      const seatSpec = (await docketSeatSpecs([prevFull.enquiryId])).get(prevFull.enquiryId);
-      if (isVaRuleViolation({ ...prevFull, seatSpec, cost: prevFull.cost ? Number(prevFull.cost) : null, vaPercent: prevFull.vaPercent ? Number(prevFull.vaPercent) : null })) {
+      if (isVaRuleViolation({ ...prevFull, cost: prevFull.cost ? Number(prevFull.cost) : null, vaPercent: prevFull.vaPercent ? Number(prevFull.vaPercent) : null })) {
         return { success: false, error: "Cannot set Validation = Yes: VA% is below the minimum or the rate is above the CR rate. Use 'Apply VA% rules' on the docket first." };
       }
     }
@@ -244,7 +242,8 @@ export async function updateItemFieldAction(
     if (clearActuatedValve) {
       const { applyActuatorToItem } = await import("@/lib/actuatorItem");
       await prisma.enquiryItem.update({ where: { id: itemId }, data: { bareValveCost: null, productCost: null } });
-      const r = await applyActuatorToItem(itemId);
+      // null also drops a typed whole price (ACTUATOR / refer-OEM line): back to the automatic price, or pending.
+      const r = await applyActuatorToItem(itemId, {}, null);
       if (!r.item) return { success: false, error: r.skipped ?? "Not saved" };
       updatedItem = r.item;
     } else if (["productCost", "extension", "bypass", "quantity", "vaPercent", "quotedRate", "cost"].includes(field)) {
@@ -256,7 +255,7 @@ export async function updateItemFieldAction(
       } else {
         updates[field] = parsedVal;
       }
-      updatedItem = await recalculateItem(itemId, updates);
+      updatedItem = await recalculateItem(itemId, updates, field === "productCost" ? { manualProductCost: true } : undefined);
     } else {
       const updateData: any = { [field]: parsedVal };
       if (field === "deliverySchedule") {

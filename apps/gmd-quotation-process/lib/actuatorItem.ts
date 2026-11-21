@@ -24,7 +24,9 @@ export interface ActuatorPatch {
 const num = (d: Prisma.Decimal | null | undefined) => (d == null ? null : Number(d));
 
 /** Returns the refreshed item, or a reason it was skipped. */
-export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch = {}) {
+// manualTotal (only the two hand-edit paths pass it; not part of the client-facing patch): a number sets the typed whole price,
+// null removes it, undefined keeps what the breakdown holds. It only takes effect on an ACTUATOR line or a refer-OEM line.
+export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch = {}, manualTotal?: number | null) {
   const it = await prisma.enquiryItem.findUnique({ where: { id: itemId }, include: { enquiry: { select: { apm: true, offerPdfGeneratedAt: true } } } });
   if (!it) return { skipped: "Item not found." };
   if (isEnquiryFrozen(it.enquiry.apm, it.enquiry.offerPdfGeneratedAt)) return { skipped: "Frozen after one-time PDF." };
@@ -48,7 +50,7 @@ export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch =
   const plan = planActuator({
     itemType: it.itemType, productCost: num(it.productCost), bareValveCost: num(it.bareValveCost),
     lastTotal: (it.actuatorBreakdown as { total?: number | null } | null)?.total ?? null,
-  }, pick, hand);
+  }, pick, hand, manualTotal !== undefined ? manualTotal : (it.actuatorBreakdown as { manualTotal?: number } | null)?.manualTotal);
   const res = plan.cost;
   const s = pick.selection;
   const stock = stockSummary(plan, { act: s.act?.erpCode ? [s.act.erpCode] : [], gb: s.gb?.erpCode ?? null }, free, qty);
@@ -99,14 +101,14 @@ type Specs = { operationType?: string | null; itemType?: string | null; size?: s
  * (hand codes dropped when the MAP KEY changed, kept otherwise), or de-actuate one that stopped being a candidate
  * (bare valve cost restored, breakdown and codes cleared). Always built from bareValveCost, never from a total.
  */
-export async function syncActuatorOnChange(itemId: string, before: Specs) {
+export async function syncActuatorOnChange(itemId: string, before: Specs, manualTotal?: number | null) {
   const it = await prisma.enquiryItem.findUnique({ where: { id: itemId }, include: { enquiry: { select: { apm: true, offerPdfGeneratedAt: true } } } });
   if (!it || isEnquiryFrozen(it.enquiry.apm, it.enquiry.offerPdfGeneratedAt)) return null;
   const linked = hasActuatorLink(it);
   if (isActuatorCandidate(it)) {
     // A legacy candidate with no link keeps its cost until Fetch Actuator; only a newly-becoming candidate is auto-linked.
     if (!linked && isActuatorCandidate(before)) return null;
-    return applyActuatorToItem(itemId, linked && deriveMapKey(before) !== deriveMapKey(it) ? { actCode: null, gbCode: null } : {});
+    return applyActuatorToItem(itemId, linked && deriveMapKey(before) !== deriveMapKey(it) ? { actCode: null, gbCode: null } : {}, manualTotal);
   }
   if (!linked) return null;
   const restored = bareValveOf({ productCost: num(it.productCost), bareValveCost: num(it.bareValveCost), lastTotal: (it.actuatorBreakdown as { total?: number | null } | null)?.total ?? null });

@@ -1,5 +1,5 @@
-// Seat type of a valve line (Puja, 18 Nov 2026): it sets the minimum VA% (lib/vaRules.ts) and the
-// offer states it. Sources in priority order: BOQ text, item text, docket spec. No DB here.
+// Seat type of a valve line (Puja, 18 Nov 2026). Only the item's own category sets the minimum VA% (lib/vaRules.ts, 20 Nov);
+// BOQ text and docket spec only raise a warning when they disagree with it. No DB here.
 
 export type Seat = "Metal seated" | "Resilient";
 export type SeatSource = "BOQ" | "ITEM" | "SPEC";
@@ -49,8 +49,15 @@ export function detectSeatType(src: { boq?: string | null; itemText?: string | n
 /** A docket line: BOQ = the party's item name, item text = item type + merged details, spec = the docket's spec keyword. */
 export interface SeatItem { itemName?: string | null; itemType?: string | null; itemNameMerge?: string | null; seatSpec?: string | null }
 
-export const itemSeatType = (it: SeatItem) =>
-  detectSeatType({ boq: it.itemName, itemText: [it.itemType, it.itemNameMerge].filter(Boolean).join(" "), spec: it.seatSpec });
+/** The item's own category (item type + merged details); it alone sets the minimum VA% (lib/vaRules.ts). */
+export const categorySeat = (it: SeatItem) =>
+  detectSeatType({ itemText: [it.itemType, it.itemNameMerge].filter(Boolean).join(" ") }).seat;
 
-/** Only valve and actuator lines need a seat type. */
-export const needsSeatType = (itemType: string | null | undefined) => /valve|actuator|\b(dpcv|tpa?v)\b/i.test(itemType ?? "");
+/** Warning text when the BOQ (else the docket spec) names a seat the category does not; sluice and check valves only. */
+export function seatMismatch(it: SeatItem): string | null {
+  const type = (it.itemType ?? "").toUpperCase().trim();
+  if (!type.startsWith("SLUICE VALVE-") && type !== "CHECK VALVE") return null;
+  const other = detectSeatType({ boq: it.itemName, spec: it.seatSpec });
+  if (!other.seat || other.seat === categorySeat(it)) return null;
+  return `${other.source === "BOQ" ? "BOQ" : "Spec"} says ${other.seat.toLowerCase()}`;
+}

@@ -89,7 +89,9 @@ export async function recalculateItem(
   // Contract-match: store the quoted rate as given (no round-up) and skip the offer-revised flag.
   // actuatorTotal: the write comes from lib/actuatorItem.ts and already includes the actuator parts.
   // allowFrozen: re-price even a frozen docket (contract-match, maintenance scripts).
-  opts?: { exactQuotedRate?: boolean; actuatorTotal?: boolean; allowFrozen?: boolean }
+  // manualProductCost: a person typed the Product Cost (cell edit / Edit Item dialog). On an ACTUATOR line or a refer-OEM line it
+  // is kept as the whole price; every other writer (BOM fill, 2:1 fill) leaves it off and so never creates a manual price.
+  opts?: { exactQuotedRate?: boolean; actuatorTotal?: boolean; allowFrozen?: boolean; manualProductCost?: boolean }
 ) {
   // Fetch item and its parent enquiry
   const item = await prisma.enquiryItem.findUnique({
@@ -109,7 +111,7 @@ export async function recalculateItem(
     await prisma.enquiryItem.update({ where: { id: itemId }, data: { productCost: updates.productCost } });
     let r: Awaited<ReturnType<typeof applyActuatorToItem>>;
     try {
-      r = await applyActuatorToItem(itemId);
+      r = await applyActuatorToItem(itemId, {}, opts?.manualProductCost ? updates.productCost : undefined);
     } catch (e) {
       // Never leave the valve-only number behind as the cost.
       await prisma.enquiryItem.update({ where: { id: itemId }, data: restore });

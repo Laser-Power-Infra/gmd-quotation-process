@@ -55,15 +55,23 @@ export function latestOffer(existing: Date | null, incoming: Date | null): boole
   return !existing || incoming.getTime() >= existing.getTime();
 }
 
-export interface CostResult { total: number | null; parts: { label: string; amount: number | null }[]; pending: string[]; text: string }
+export const HAND_PRICE = "Price typed by hand";
+export interface CostResult { total: number | null; parts: { label: string; amount: number | null }[]; pending: string[]; text: string; manualTotal?: number }
+
+/** A typed Product Cost is the whole price only on an ACTUATOR-only line or a refer-OEM line; elsewhere it is the valve's own cost. */
+export const manualPriceApplies = (actuatorItem: boolean, oem: boolean, manual: number | null | undefined): manual is number =>
+  manual != null && manual > 0 && (actuatorItem || oem);
 export interface ActuatorPick { selection: Selection; missing: string[] }
 
 const inr = (n: number) => Math.round(n).toLocaleString("en-IN");
 
 /** Valve + actuator + gearbox + adaptor + assembly, each part shown (ACTUATOR item: no valve). Anything missing = price pending, no total. */
-export function buildActuatorCost(pick: ActuatorPick, bare: number | null, actuatorItem: boolean): CostResult {
+export function buildActuatorCost(pick: ActuatorPick, bare: number | null, actuatorItem: boolean, manual?: number | null): CostResult {
   const s = pick.selection;
-  if (s.status === "OEM RFQ") return { total: null, parts: [], pending: [SPECIAL_OEM], text: `Price pending: ${SPECIAL_OEM}` };
+  const oem = s.status === "OEM RFQ";
+  const typed = manualPriceApplies(actuatorItem, oem, manual);
+  if (typed && oem) return { total: manual, parts: [{ label: HAND_PRICE, amount: manual }], pending: [], text: `${HAND_PRICE} ${inr(manual)} (${SPECIAL_OEM})`, manualTotal: manual };
+  if (oem) return { total: null, parts: [], pending: [SPECIAL_OEM], text: `Price pending: ${SPECIAL_OEM}` };
   const est = (x: { estimated: boolean }) => (x.estimated ? " (est.)" : "");
   const stock = (p: { source: string; erpCode: string | null }) => (p.source === "stock" && p.erpCode ? ` (stock ${p.erpCode})` : "");
   const parts: CostResult["parts"] = [
@@ -73,10 +81,12 @@ export function buildActuatorCost(pick: ActuatorPick, bare: number | null, actua
     ...(s.adaptor ? [{ label: `Adaptor/coupling${est(s.adaptor)}`, amount: s.adaptor.amount }] : []),
     ...(s.assembly ? [{ label: `Assembly & testing${est(s.assembly)}`, amount: s.assembly.amount }] : []),
   ];
-  const pending = [...(!actuatorItem && bare == null ? ["bare valve cost"] : []), ...pick.missing];
-  const total = pending.length ? null : parts.reduce((t, p) => t + p.amount!, 0);
   const time = s.time != null ? ` · operating time ${s.time.toFixed(2)} min` : "";
   const flags = s.flags.length ? ` [${s.flags.join("; ")}]` : "";
+  // The pick still shows (make / model / time / flags) but the typed price replaces the sum, even when a part is unpriced.
+  if (typed) return { total: manual, parts, pending: [], text: `${HAND_PRICE} ${inr(manual)} (picked: ${parts.map((p) => p.label).join(" + ") || "none"})${time}${flags}`, manualTotal: manual };
+  const pending = [...(!actuatorItem && bare == null ? ["bare valve cost"] : []), ...pick.missing];
+  const total = pending.length ? null : parts.reduce((t, p) => t + p.amount!, 0);
   const text = pending.length
     ? `Price pending: ${pending.join(", ")}${time}${flags}`
     : `${parts.map((p) => `${p.label} ${inr(p.amount!)}`).join(" + ")} = ${inr(total!)}${time}${flags}`;
@@ -86,14 +96,15 @@ export function buildActuatorCost(pick: ActuatorPick, bare: number | null, actua
 export interface PlanItem { itemType?: string | null; productCost: number | null; bareValveCost: number | null; lastTotal: number | null }
 
 /** Everything applyActuatorToItem writes, decided without a DB: bare valve, cost build-up, the item's make and codes. */
-export function planActuator(it: PlanItem, pick: ActuatorPick, hand: { make?: string | null; actCode?: string | null; gbCode?: string | null } = {}) {
+export function planActuator(it: PlanItem, pick: ActuatorPick, hand: { make?: string | null; actCode?: string | null; gbCode?: string | null } = {}, manual?: number | null) {
   const actuatorItem = (it.itemType ?? "").trim().toUpperCase() === "ACTUATOR";
-  // The valve's own cost: a productCost that is not our last total was set by someone else (BOM fill, hand edit).
-  const bare = actuatorItem ? null : bareValveOf(it);
   const s = pick.selection;
   const oem = s.status === "OEM RFQ"; // refer OEM: no codes, no cost
+  // The valve's own cost: a productCost that is not our last total was set by someone else (BOM fill, hand edit).
+  // A typed whole price has no separate valve part, so clearing it leaves the line pending instead of priced at the old number.
+  const bare = actuatorItem || manualPriceApplies(actuatorItem, oem, manual) ? null : bareValveOf(it);
   return {
-    bare, cost: buildActuatorCost(pick, bare, actuatorItem),
+    bare, cost: buildActuatorCost(pick, bare, actuatorItem, manual),
     make: hand.make ?? s.act?.make ?? (s.aumaRequired ? "AUMA" : "Rotork"), // the make the pick chose (AUMA when cheaper)
     actCode: oem ? null : hand.actCode ?? s.act?.actCode ?? s.act?.model ?? null,
     gbCode: oem ? null : hand.gbCode ?? s.gb?.gbCode ?? null,

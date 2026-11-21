@@ -615,7 +615,10 @@ export async function updateEnquiryItemAction(formData: {
     // Typed Product Cost on a linked actuated item is the valve cost: add the parts (or leave pending). Also covers Op Type / DN / PN edits.
     try {
       const { syncActuatorOnChange } = await import("@/lib/actuatorItem");
-      await syncActuatorOnChange(formData.itemId, item);
+      // The dialog resends the shown product cost on every save: only a changed value is a typed price (blank = remove it).
+      const typedCost = formData.productCost || null;
+      const wasCost = item.productCost ? Number(item.productCost) : null;
+      await syncActuatorOnChange(formData.itemId, item, typedCost !== wasCost ? typedCost : undefined);
     } catch (e) {
       console.warn("[updateEnquiryItemAction] actuator re-price failed:", e);
     }
