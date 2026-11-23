@@ -33,7 +33,8 @@ function table(wb: XLSX.WorkBook, sheet: string, firstHeader: string, from = 0) 
 // Read for display only, never used in a price or a pick: when the sheet renames or drops one it reads as blank
 // instead of stopping every actuator price. 20 Nov 2026: MAPPING "GB FACTOR" became "AUMA GB FACTOR (ref)" and
 // STOCK_ACT lost "DISPATCHED 26-27".
-const REFERENCE_ONLY = new Set(["gbFactor", "dispatched2627"]);
+// 23 Nov 2026: STOCK_ACT lost "STATUS" ("WIRING DIAGRAM STATUS" is another column, read separately for auto-pick).
+const REFERENCE_ONLY = new Set(["gbFactor", "dispatched2627", "status", "moving3m", "stockValue"]);
 
 /** Maps each body row to {field: value} using the spec; rows rejected by `keep` are dropped. */
 function extract(t: ReturnType<typeof table>, spec: Spec, keep: (r: Record<string, string | number | null>) => boolean) {

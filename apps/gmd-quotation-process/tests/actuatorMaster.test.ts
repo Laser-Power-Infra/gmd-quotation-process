@@ -265,3 +265,15 @@ test('a required column that is missing still fails loudly', () => {
   wb.Sheets.MAPPING = sheet(rows)
   assert.throws(() => parseActuatorWorkbook(wb), /REQUIRED TORQUE/)
 })
+
+test('STOCK_ACT still parses after the sheet dropped its "STATUS" column (23 Nov 2026)', () => {
+  const wb = fixture()
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets.STOCK_ACT, { header: 1, defval: null })
+  const at = rows.findIndex((r) => r[0] === 'ERP CODE')
+  // The live header keeps "WIRING DIAGRAM STATUS (20-Nov-26)", which must not be read as STATUS.
+  rows[at] = rows[at].map((h) => (h === 'STATUS' ? 'KWSS ALLOCATION' : h === 'MOVING' || h === 'STOCK VALUE' ? null : h))
+  wb.Sheets.STOCK_ACT = sheet(rows)
+  const p = parseActuatorWorkbook(wb)
+  assert.ok(p.actuatorStock.length > 0)
+  assert.equal(p.actuatorStock[0].status, null)
+})
