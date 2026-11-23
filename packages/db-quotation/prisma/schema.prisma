@@ -180,6 +180,7 @@ model EnquiryItem {
   actCode              String?
   gbCode               String?
   controlType          String? // On-off | Modulating | Integral intelligent
+  valveOrigin          String? // IMPORTED = TFW valve data; blank = Indian (VALVE_TORQUE / MAPPING)
   bareValveCost        Decimal? // valve cost before actuator/gearbox; productCost = this + the parts
   adaptorCost          Decimal? // blank = not applicable (0)
   assemblyCost         Decimal? // assembly & testing, blank = not applicable (0)
@@ -1653,6 +1654,17 @@ model ActuatorMapping {
   gmdGbRating    Float?
   gmdGbAvailable Float?
   note           String?
+  // The app's own pick for this key (lib/actuatorTablesSync), shown on the Mapping page. origin: INDIAN | IMPORTED (TFW rows).
+  origin         String?
+  valveTurns     Float?
+  selGearbox     String?
+  selGbRatio     String?
+  selActuator    String?
+  selActRpm      Float?
+  selTotal       Float?
+  selTime        Float?
+  selTimeCheck   String?
+  selFlags       String?
   updatedAt      DateTime @updatedAt
 
   @@index([valveType, dn])

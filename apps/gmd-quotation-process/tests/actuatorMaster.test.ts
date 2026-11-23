@@ -5,7 +5,7 @@ import path from 'node:path'
 import * as XLSX from 'xlsx'
 import { parseActuatorWorkbook, readActuatorWorkbook, SPECS, updateData } from '../lib/actuatorMaster.js'
 import { selectActuator } from '../lib/actuatorSelect.js'
-import { ALT_ROWS, MASTER, ROTORK_DERATES, RM_CODES } from './actuatorFixture.js'
+import { ALT_ROWS, MASTER, ROTORK_DERATES, RM_CODES, TFW_ROWS } from './actuatorFixture.js'
 
 const sheet = (rows: unknown[][]) => XLSX.utils.aoa_to_sheet(rows)
 
@@ -266,6 +266,65 @@ test('a required column that is missing still fails loudly', () => {
   assert.throws(() => parseActuatorWorkbook(wb), /REQUIRED TORQUE/)
 })
 
+// Imported (TFW) valves, 23 Nov 2026
+const tfw = (rows: unknown[][] = TFW_ROWS) => {
+  const wb = fixture()
+  XLSX.utils.book_append_sheet(wb, sheet(rows), 'IMPORTED_VALVE_DATA (TFW)')
+  return parseActuatorWorkbook(wb).imported
+}
+const imp = (rows: ReturnType<typeof tfw>, key: string) => rows.find((r) => r.mapKey === key)
+
+test('IMPORTED_VALVE_DATA (TFW): sluice rows take torque with SF and turns, "PN16 (also used for PN10)" gives both PNs', () => {
+  const rows = tfw()
+  assert.deepEqual(imp(rows, 'SLUICE-IMP|350|PN16'), { mapKey: 'SLUICE-IMP|350|PN16', valveType: 'SLUICE-IMP', dn: 350, pn: 'PN16', requiredTorque: 325, turns: 30, valveFlange: null })
+  assert.deepEqual(imp(rows, 'SLUICE-IMP|350|PN10'), { mapKey: 'SLUICE-IMP|350|PN10', valveType: 'SLUICE-IMP', dn: 350, pn: 'PN10', requiredTorque: 325, turns: 30, valveFlange: null })
+  const pick = (k: string) => [imp(rows, k)?.requiredTorque, imp(rows, k)?.turns]
+  assert.deepEqual(pick('SLUICE-IMP|350|PN25'), [490, 60]) // typed as text in the sheet
+  assert.deepEqual(pick('SLUICE-IMP|1000|PN16'), [1867, 75]) // the late row under the PN25 rows
+  assert.deepEqual(pick('SLUICE-IMP|150|PN16'), [150, 37.5])
+  assert.equal(imp(rows, 'SLUICE-IMP|1000|PN10'), undefined) // its PN cell says PN16 only
+  assert.equal(new Set(rows.map((r) => r.mapKey)).size, rows.length)
+  assert.equal(rows.filter((r) => r.valveType === 'SLUICE-IMP').length, 17 * 2 + 10 + 1)
+})
+
+test('TFW block B only gives the top flange of the DN600+ sluice rows; its torque is never read', () => {
+  const rows = tfw()
+  assert.deepEqual(['600|PN16', '700|PN16', '700|PN10', '900|PN16', '500|PN16', '500|PN25', '1000|PN16', '1200|PN16'].map((k) => imp(rows, `SLUICE-IMP|${k}`)?.valveFlange),
+    ['F16', 'F25', 'F25', 'F25', null, null, null, null])
+  assert.equal(imp(rows, 'SLUICE-IMP|600|PN25'), undefined) // no DN600 PN25 torque row: block B alone makes no row
+  assert.equal(imp(rows, 'SLUICE-IMP|700|PN16')?.requiredTorque, 930)
+})
+
+test('TFW: a title line ends the block above it, so a renamed header in block B never feeds its rows to block A', () => {
+  const b = TFW_ROWS.findIndex((r) => r[2] === 'SHAFT DIA (mm)')
+  const renamed = TFW_ROWS.map((r, i) =>
+    i === b ? ['DN (mm)', ...r.slice(1)] : i > b && i <= b + 7 ? [r[0], r[1], 45, 60, ...r.slice(4)] : r) // shaft dia 45, shaft length 60, as the live sheet has
+  const rows = tfw(renamed), base = tfw()
+  for (const dn of [600, 700, 800]) assert.equal(imp(rows, `SLUICE-IMP|${dn}|PN25`), undefined) // not 60 Nm / 45 turns from the shaft cells
+  const noFlange = (x: typeof rows) => x.map((r) => ({ ...r, valveFlange: null }))
+  assert.deepEqual(noFlange(rows), noFlange(base)) // block A and C unchanged; only block B's bracket flanges are lost
+  assert.deepEqual(imp(rows, 'SLUICE-IMP|700|PN16'), { ...imp(base, 'SLUICE-IMP|700|PN16')!, valveFlange: null })
+  assert.equal(imp(rows, 'BFV-IMP|300|PN16')?.valveFlange, 'F10')
+})
+
+test('TFW block C: butterfly rows take torque with SF and the ISO 5211 flange, quarter turn; double flanged wins over wafer', () => {
+  const rows = tfw()
+  assert.deepEqual(imp(rows, 'BFV-IMP|300|PN16'), { mapKey: 'BFV-IMP|300|PN16', valveType: 'BFV-IMP', dn: 300, pn: 'PN16', requiredTorque: 958.8, turns: null, valveFlange: 'F10' })
+  assert.equal(imp(rows, 'BFV-IMP|600|PN16')?.requiredTorque, 4453.2)
+  assert.equal(rows.filter((r) => r.valveType === 'BFV-IMP').length, 14)
+  assert.equal(imp(rows, 'BFV-IMP|300|PN10'), undefined) // TFW gives PN16 only
+})
+
+test('TFW tab missing, empty or unreadable: imported is empty and the Indian data still parses', () => {
+  const p = parseActuatorWorkbook(fixture())
+  assert.deepEqual(p.imported, [])
+  assert.equal(p.mappings.length, 2)
+  assert.deepEqual(tfw([]), [])
+  assert.deepEqual(tfw([['IMPORTED VALVE DATA'], [], ['SIZE', 'RATING'], [350, 'PN16', 30, 325]]), []) // headers renamed: no rows, no error
+  // a sluice row with a torque but no turns is not usable (never DN ÷ 6.35 on an imported valve); "—" is no value
+  assert.deepEqual(tfw([TFW_ROWS[3], [350, 'PN16', '—', 325], [400, 'PN16', 34, '—'], [450, 'PN16', 38, 425]]).map((r) => r.mapKey), ['SLUICE-IMP|450|PN16'])
+})
+
 test('STOCK_ACT still parses after the sheet dropped its "STATUS" column (23 Nov 2026)', () => {
   const wb = fixture()
   const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets.STOCK_ACT, { header: 1, defval: null })
@@ -276,4 +335,5 @@ test('STOCK_ACT still parses after the sheet dropped its "STATUS" column (23 Nov
   const p = parseActuatorWorkbook(wb)
   assert.ok(p.actuatorStock.length > 0)
   assert.equal(p.actuatorStock[0].status, null)
+  assert.ok(p.actuatorStock.every((r: any) => r.stockValue === null)) // blank, never 0: the stock value tile then shows "–"
 })

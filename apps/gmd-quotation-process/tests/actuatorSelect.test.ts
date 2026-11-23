@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  ACT_RULES, adaptorEstimate, assemblyEstimate, handPicks, HAND_ACT, HAND_GB, HAND_MAKE, RATE_FLAG, RM_NEW, selectActuator, SINGLE_PHASE,
+  ACT_RULES, adaptorEstimate, assemblyEstimate, handPicks, HAND_ACT, HAND_GB, HAND_MAKE, OLD_WD, RATE_FLAG, RM_NEW, selectActuator, SINGLE_PHASE,
   rmLookupCodes, specTime, TYPED_WEAK, type Master, type SelectInput,
 } from '../lib/actuatorSelect.js'
 import { planActuator, SPECIAL_OEM } from '../lib/actuatorCost.js'
@@ -167,12 +167,23 @@ test('adaptor by valve top flange, assembly by DN', () => {
   assert.deepEqual([80, 300, 350, 600, 700, 1000, 1100, 1900, null].map(assemblyEstimate), [1500, 1500, 3000, 3000, 5000, 5000, 8000, 8000, null])
 })
 
-test('a typed amount wins over the estimates; ACTUATOR item = actuator + gearbox only', () => {
+test('a typed amount wins over the estimates; ACTUATOR item = actuator + gearbox + adaptor + assembly, like a valve line', () => {
   const typed = sel({ mapKey: 'BFV|500|PN16', adaptor: 0, assembly: 2500 }).selection
   assert.deepEqual([typed.adaptor, typed.assembly], [{ amount: 0, estimated: false }, { amount: 2500, estimated: false }])
-  const actuatorOnly = sel({ mapKey: 'BFV|500|PN16', actuatorItem: true })
-  assert.deepEqual([actuatorOnly.selection.adaptor, actuatorOnly.selection.assembly], [null, null])
-  assert.equal(planActuator({ itemType: 'ACTUATOR', productCost: 999, bareValveCost: null, lastTotal: null }, actuatorOnly).cost.total, 56500 + 17625)
+  // Puja 23 Nov: ACTUATOR line for a DN500 valve, top flange F25 -> adaptor 6,000 + assembly 3,000 on top of actuator + gearbox
+  const line = { itemType: 'ACTUATOR', productCost: 999, bareValveCost: null, lastTotal: null }
+  const actuatorItem = sel({ mapKey: 'BFV|500|PN16', actuatorItem: true })
+  assert.deepEqual([actuatorItem.selection.adaptor, actuatorItem.selection.assembly], [{ amount: 6000, estimated: true }, { amount: 3000, estimated: true }])
+  const cost = planActuator(line, actuatorItem).cost
+  assert.deepEqual(cost.parts.slice(-2), [{ label: 'Adaptor/coupling (est.)', amount: 6000 }, { label: 'Assembly & testing (est.)', amount: 3000 }])
+  assert.ok(!cost.parts.some((p) => p.label === 'Valve'))
+  assert.equal(cost.total, 56500 + 17625 + 9000)
+  const typedAdaptor = sel({ mapKey: 'BFV|500|PN16', actuatorItem: true, adaptor: 4000 })
+  assert.deepEqual(typedAdaptor.selection.adaptor, { amount: 4000, estimated: false })
+  assert.equal(planActuator(line, typedAdaptor).cost.total, 56500 + 17625 + 4000 + 3000)
+  const noKey = sel({ mapKey: null, actuatorItem: true })
+  assert.deepEqual([noKey.selection.status, noKey.missing], ['PENDING', ['MAP KEY not derivable (needs a valve type, size and PN)']])
+  assert.equal(planActuator(line, actuatorItem, {}, 90000).cost.total, 90000) // a typed whole price is still the price
   assert.deepEqual(planActuator(valve(null), sel({ mapKey: 'BFV|500|PN16' })).cost.pending, ['bare valve cost'])
 })
 
@@ -181,11 +192,11 @@ test('codes typed by hand: RM rate first, sheet price as fallback; the other par
   const rm = sel({ mapKey: 'BFV|500|PN16', actCode: 'RCB099999', gbCode: 'red070005' }, FREE, new Map([['RCB099999', 40000], ['RED070005', 5350]])).selection
   assert.deepEqual([rm.act!.source, rm.act!.erpCode, rm.act!.rate, rm.act!.rateSource, rm.act!.rpm, rm.time], ['stock', 'RCB099999', 40000, 'RM', null, null])
   assert.deepEqual([rm.gb!.model, rm.gb!.erpCode, rm.gb!.rate, rm.gb!.rateSource, rm.gb!.rateFlag], ['VWE-10', 'RED070005', 5350, 'RM', null])
-  assert.deepEqual(rm.flags, [HAND_GB, HAND_ACT])
+  assert.deepEqual(rm.flags, [HAND_GB, HAND_ACT, OLD_WD]) // looks like a stock code, not in STOCK_ACT: approval too
   // a stock line typed as its ERP code (manual approval of an old-wiring actuator): its own speed, the gearbox that suits it
   const k150 = sel({ mapKey: 'BFV|500|PN16', actCode: 'RCB040002' }, FREE).selection
   assert.deepEqual([k150.act!.model, k150.act!.erpCode, k150.act!.rpm, k150.act!.rate, k150.act!.rateSource], ['K150', 'RCB040002', 24, 57912, 'SHEET'])
-  assert.deepEqual([k150.gb!.model, k150.time, k150.flags], ['VWESGA-80', 2.29, [HAND_ACT, 'Over 2 min']]) // no worm box gets 24 rpm in time
+  assert.deepEqual([k150.gb!.model, k150.time, k150.flags], ['VWESGA-80', 2.29, [HAND_ACT, OLD_WD, 'Over 2 min']]) // no worm box gets 24 rpm in time
   // a typed gearbox with MA and ratio: the actuator is picked for it; one without (old stock line) leaves the actuator to the user
   assert.equal(act(sel({ mapKey: 'SLUICE|350|PN16', gbCode: 'GB-VI-SGB1000' }).selection), 'AUMA SA 25 @180')
   const old = sel({ mapKey: 'BFV|100|PN10', gbCode: 'REC030023' }, FREE)
@@ -237,4 +248,25 @@ test('a typed actuator that cannot take the torque at any speed is kept, flagged
   assert.equal(s.time, null)
   assert.ok(!sel({ mapKey: 'SLUICE|350|PN16', actCode: 'ACT-AU-SA25' }).selection.flags.includes(TYPED_WEAK)) // a fitting one is not flagged
   assert.ok(!sel({ mapKey: 'SLUICE|350|PN16', actCode: 'RCB099999' }).selection.flags.includes(TYPED_WEAK)) // no curve: as before
+})
+
+test('old-stock actuator (old wiring diagram): a hand-typed one is flagged for approval, the price is not touched; never auto-picked', () => {
+  const typed = sel({ mapKey: 'BFV|500|PN16', actCode: 'RCB040004' }, FREE).selection // STOCK_ACT line, auto-pick OFF
+  assert.ok(typed.flags.includes(OLD_WD))
+  const on: Master = { ...MASTER, stockAutoPick: ['RCB040004'] }
+  const cleared = sel({ mapKey: 'BFV|500|PN16', actCode: 'RCB040004' }, FREE, new Map(), on).selection
+  assert.ok(!cleared.flags.includes(OLD_WD))
+  assert.deepEqual([typed.act!.rate, typed.gb!.rate, typed.adaptor, typed.assembly], [cleared.act!.rate, cleared.gb!.rate, cleared.adaptor, cleared.assembly]) // flag only
+  assert.ok(!sel({ mapKey: 'BFV|500|PN16', actCode: 'ACT-AU-SA25' }, FREE).selection.flags.includes(OLD_WD)) // a master model is not old stock
+  // an ERP-looking code that is not in STOCK_ACT is flagged too (its wiring diagram is unknown); the generic model code is not; no rate moves
+  const unknown = sel({ mapKey: 'BFV|500|PN16', actCode: 'RCB099999' }, FREE, new Map([['RCB099999', 40000]])).selection
+  assert.ok(unknown.flags.includes(OLD_WD))
+  assert.equal(unknown.act!.rate, 40000)
+  assert.ok(!sel({ mapKey: 'BFV|500|PN16', actCode: 'K150/RPM48' }, FREE).selection.flags.includes(OLD_WD)) // not a code at all
+  // no typed code: free stock lines that are auto-pick OFF are never the pick, on any fixture key
+  for (const mapKey of MASTER.mappings.map((r) => String(r.mapKey))) {
+    const s = sel({ mapKey }, FREE).selection
+    assert.notEqual(s.act?.source, 'stock', mapKey)
+    assert.ok(!s.flags.includes(OLD_WD), mapKey)
+  }
 })

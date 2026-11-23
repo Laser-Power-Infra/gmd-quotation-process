@@ -36,8 +36,8 @@ export interface ActuatorMappingPageProps {
 const count = new Intl.NumberFormat("en-IN");
 const quantity = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 const rupees = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
-const show = (v: number | undefined, format: KpiTile["format"]) =>
-  v === undefined ? "–" : format === "money" ? `Rs ${rupees.format(v)}` : (format === "qty" ? quantity : count).format(v);
+const show = (v: number | null | undefined, format: KpiTile["format"]) =>
+  v == null ? "–" : format === "money" ? `Rs ${rupees.format(v)}` : (format === "qty" ? quantity : count).format(v);
 
 /** Mapping, Suitability and Stock views of the actuator workbook, one tab each. */
 export function ActuatorMappingPage({ actions }: ActuatorMappingPageProps) {
@@ -48,8 +48,8 @@ export function ActuatorMappingPage({ actions }: ActuatorMappingPageProps) {
     <main className="flex h-[calc(100vh-64px)] flex-col overflow-hidden bg-background">
       <div className="flex shrink-0 flex-wrap items-center gap-3 px-6 pt-4 pb-2">
         <h1 className="text-lg font-semibold tracking-tight">Actuator &amp; Gearbox Mapping</h1>
-        {/* Make picks the make columns of the mapping and the matrix; the Stock view filters make from its header. */}
-        {view !== "stock" && (
+        {/* Make picks the matrix's actuator / gearbox columns; Mapping shows the one pick and Stock filters make from its header. */}
+        {view === "suitability" && (
           <Segmented label="Make" options={MAKES} value={make} onChange={(v) => dispatch(setMake(v))} className="ml-auto" />
         )}
       </div>
@@ -141,11 +141,11 @@ function ViewTable({ view, make, actions }: { view: ViewKey; make: MakeFilter; a
 
   return (
     <>
-      {data?.meta?.stockError && (
-        <p role="alert" className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-          {data.meta.stockError}
+      {[data?.meta?.refreshError, data?.meta?.stockError].map((line) => line && (
+        <p key={line} role="alert" className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+          {line}
         </p>
-      )}
+      ))}
       {def.kpis.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {def.kpis.map((t) => {

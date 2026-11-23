@@ -108,3 +108,13 @@ test('CREATE / Auto BOM draft gets the actuator and gearbox lines (same builder 
   assert.deepEqual(createDraftLines(copied, new Set(['RCB040002']), codes, live), [{ code: 'RM1', qty: 2 }, { code: 'RCD020022', qty: 1 }, { code: 'RL2010003', qty: 1 }])
   assert.deepEqual(createDraftLines([], new Set(), codes, live), actuatorBomLines(codes, live, []))
 })
+
+// Final review I5 (23 Nov 2026): a missing STOCK VALUE column reads as blank; the total is then blank, not 0.
+test('mismatchReport: stock value total is null when no line has a value, a sum (blank lines as 0) otherwise', () => {
+  const row = (stockValue: number | null) => ({ erpCode: 'RCB040002', make: 'Rotork', ratingCode: 'K150', torque: 150, available: 2, physicalSum: 2, stockPerErp: 2, stockValue })
+  assert.equal(mismatchReport([row(null), row(null)], []).totals.value, null)
+  assert.equal(mismatchReport([], []).totals.value, null)
+  assert.equal(mismatchReport([row(1000), row(null), row(0)], []).totals.value, 1000)
+  assert.equal(mismatchReport([row(0)], []).totals.value, 0) // a real 0 stays 0
+  assert.equal(mismatchReport([row(null)], []).totals.units, 2)
+})

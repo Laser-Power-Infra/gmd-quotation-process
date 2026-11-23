@@ -13,6 +13,10 @@ export const HAND_MAKE = "make set by hand";
 export const RM_NEW = "RM code to be created";
 export const TYPED_WEAK = "typed actuator below required torque – check";
 export const SINGLE_PHASE = "single phase – select manually (AUMA, 60 s limit)";
+export const OLD_WD = "old-stock actuator (old wiring diagram) – approval needed";
+export const NO_TFW = "no imported (TFW) data for this size";
+export const NO_TFW_FLANGE = "adaptor: the imported (TFW) data has no top flange for this size – type the adaptor amount in the Actuator dialog";
+export const IMPORTED_FLAG = "Imported (TFW) data";
 
 /** The assumptions of the 20-Nov logic, in one place. PN factor and safety factor stay in the sheet (MAPPING's required torque). */
 export const ACT_RULES = {
@@ -26,7 +30,7 @@ export const ACT_RULES = {
 
 type Row = Record<string, string | number | null>;
 export type Master = Pick<Parsed, "mappings" | "actuators" | "gearboxes" | "viralGearboxes" | "actuatorStock" | "gearboxStock"
-  | "stockAutoPick" | "aumaSpeeds" | "rotorkDerates" | "rmCodes">;
+  | "stockAutoPick" | "aumaSpeeds" | "rotorkDerates" | "rmCodes" | "imported">;
 
 interface Rate { rate: number | null; rateSource: "RM" | "SHEET" | null; rateFlag: string | null }
 export interface ActPick extends Rate {
@@ -48,11 +52,13 @@ export interface Selection {
 
 export interface SelectInput {
   mapKey: string | null;
-  actuatorItem: boolean; // Item type ACTUATOR: actuator + gearbox only, no adaptor / assembly
+  actuatorItem: boolean; // Item type ACTUATOR: no valve part; adaptor / assembly as on a valve line (23 Nov), so not read here
   qty: number; // docket qty: a stock line needs this much free
   text: string; // item text (BOQ line): the make it names, single phase, an operating time
   make?: string | null; actCode?: string | null; gbCode?: string | null; // typed by hand, see handPicks
   adaptor?: number | null; assembly?: number | null; // typed by hand: win over the estimates
+  // IMPORTED (Tianjin Tangfa "TFW" valve): torque with SF, turns and top flange come from m.imported, never from MAPPING.
+  origin?: "INDIAN" | "IMPORTED";
 }
 
 const num = (v: unknown) => (typeof v === "number" ? v : null);
@@ -91,23 +97,31 @@ interface Combo { gb: GbOpt; act: ActOpt; rpm: number; torque: number; tIn: numb
  * (live stock minus allocations), `rm` = Raw Material master rate per ERP code.
  */
 export function selectActuator(i: SelectInput, m: Master, free: Map<string, number>, rm: Map<string, number>): { selection: Selection; missing: string[] } {
-  const [valveType = null, dn = null, pn = null] = i.mapKey?.split("|") ?? [];
-  const row = m.mappings.find((r) => r.mapKey === i.mapKey);
+  const [type = null, dn = null, pn = null] = i.mapKey?.split("|") ?? [];
+  // Imported: SLUICE / SLUICE-RS read the TFW gate rows, BFV the TFW butterfly rows; any other type has no TFW data.
+  // `row` (MAPPING) stays undefined, so nothing below can take an Indian torque, flange or "refer OEM" for an imported valve.
+  const imported = i.origin === "IMPORTED";
+  const impType = !imported ? null : /^SLUICE/.test(type ?? "") ? "SLUICE-IMP" : /^BFV/.test(type ?? "") ? "BFV-IMP" : null;
+  const imp = impType ? m.imported.find((r) => r.mapKey === `${impType}|${dn}|${pn}`) : undefined;
+  const valveType = imported ? impType ?? type : type;
+  const row = imported ? undefined : m.mappings.find((r) => r.mapKey === i.mapKey);
   // No approved-make list is recorded: a BOQ text naming one make only gets that make; naming both or neither, the cheaper.
   const named = ["Rotork", "AUMA"].filter((mk) => new RegExp(`\\b${mk}\\b`, "i").test(i.text));
   const handMake = ["Rotork", "AUMA"].find((mk) => same(i.make, mk));
   const makes = handMake ? [handMake] : named.length === 1 ? named : ["Rotork", "AUMA"];
-  const requiredTorque = num(row?.requiredTorque);
+  const requiredTorque = imp ? imp.requiredTorque : num(row?.requiredTorque);
   const timeLimit = specTime(i.text) ?? ACT_RULES.timeLimit;
   const sel: Selection = {
     status: "PENDING", mapKey: i.mapKey, valveType, dn: dn ? Number(dn) : null, pn, qty: i.qty, requiredTorque, actNeed: null,
-    topFlange: str(row?.valveFlange), act: null, gb: null, adaptor: null, assembly: null, time: null, timeLimit,
-    aumaRequired: named.length === 1 && named[0] === "AUMA", flags: handMake ? [HAND_MAKE] : [],
+    topFlange: imp ? imp.valveFlange : str(row?.valveFlange), act: null, gb: null, adaptor: null, assembly: null, time: null, timeLimit,
+    aumaRequired: named.length === 1 && named[0] === "AUMA", flags: [...(imported ? [IMPORTED_FLAG] : []), ...(handMake ? [HAND_MAKE] : [])],
   };
   if (/special/i.test(str(row?.gearbox) ?? "")) return { selection: { ...sel, status: "OEM RFQ", flags: [SPECIAL_OEM] }, missing: [] };
 
   const missing: string[] = [];
-  const noRow = i.mapKey ? `no MAPPING row for ${i.mapKey}` : "MAP KEY not derivable (needs a valve type, size and PN)";
+  // Imported, row found: the only thing that can still lack a row's data is the adaptor (no TFW top flange, ruling D1).
+  const noRow = !i.mapKey ? "MAP KEY not derivable (needs a valve type, size and PN)"
+    : imported ? (imp ? NO_TFW_FLANGE : NO_TFW) : `no MAPPING row for ${i.mapKey}`;
   const freeOf = (code: unknown) => free.get(str(code) ?? "") ?? 0;
   // shortcut: each item checks free qty on its own, so two items of one docket can count the same free units; book them in Stock Allocation to hold them.
   const enough = (code: unknown) => freeOf(code) > 0 && freeOf(code) >= i.qty;
@@ -119,7 +133,7 @@ export function selectActuator(i: SelectInput, m: Master, free: Map<string, numb
   const erpOf = (code: string) => (isErpCode(code) ? code.trim().toUpperCase() : null);
 
   // Gearbox: BFV always a Viral worm box; sluice / RS / KGV direct up to DN300, a Viral spur box above. A typed GB CODE wins.
-  const worm = valveType === "BFV";
+  const worm = valveType === "BFV" || valveType === "BFV-IMP";
   const needGb = worm || Number(dn) > ACT_RULES.directMaxDn;
   const typeOk = (t: unknown) => (worm ? /worm/i.test(str(t) ?? "") : !!str(t) && !/worm/i.test(str(t)!));
   const viral = (v: Row): GbOpt => {
@@ -179,11 +193,14 @@ export function selectActuator(i: SelectInput, m: Master, free: Map<string, numb
       source: "stock", make: handMake ?? makes[0], model: i.actCode, erpCode: erp, actCode: i.actCode, torque: null, rpm: null, rmCode: erp, ...rate(erp, null),
     } };
     sel.flags.push(HAND_ACT);
+    // Stock actuators have old wiring diagrams, not interchangeable (23 Nov): a typed one is only flagged, its rate is untouched.
+    // A code that looks like an ERP code but is in neither STOCK_ACT nor the masters (nor a generic model code) is treated the same.
+    if (l ? !m.stockAutoPick.includes(str(l.erpCode) ?? "") : !a && erp && !m.rmCodes.some((c) => same(c.code, erp))) sel.flags.push(OLD_WD);
   }
 
   const combos = (acts: ActOpt[]): Combo[] => requiredTorque == null ? [] : gbs.flatMap((g) => {
     if (!g.ratio || !g.ma) return [];
-    const tIn = requiredTorque / g.ma, turns = (worm ? 0.25 : Math.round(Number(dn) / ACT_RULES.dnPerTurn)) * g.ratio;
+    const tIn = requiredTorque / g.ma, turns = (worm ? 0.25 : imp?.turns ?? Math.round(Number(dn) / ACT_RULES.dnPerTurn)) * g.ratio;
     const inTime = (rpm: number) => rpm * timeLimit >= turns - EPS;
     return acts.flatMap((a) => {
       const fit = a.curve.filter((p) => p.torque >= tIn - EPS).sort((x, y) => x.rpm - y.rpm);
@@ -227,14 +244,13 @@ export function selectActuator(i: SelectInput, m: Master, free: Map<string, numb
   if (sel.act && sel.act.source !== "stock" && sel.act.rateSource !== "RM") sel.flags.push(`${RM_NEW}: ${sel.act.make} ${sel.act.model}`);
   if (sel.gb?.source === "viral" && sel.gb.rateSource !== "RM") sel.flags.push(`${RM_NEW}: Viral ${sel.gb.model}`);
 
-  if (!i.actuatorItem) {
-    const extra = (hand: number | null | undefined, estimate: number | null): Extra =>
-      hand != null ? { amount: hand, estimated: false } : estimate != null ? { amount: estimate, estimated: true } : null;
-    sel.adaptor = extra(i.adaptor, adaptorEstimate(sel.topFlange));
-    sel.assembly = extra(i.assembly, assemblyEstimate(sel.dn));
-    if (!sel.adaptor) missing.push(row ? `adaptor (no valve top flange for ${i.mapKey})` : noRow);
-    if (!sel.assembly) missing.push(noRow);
-  }
+  // Item type ACTUATOR lines carry adaptor and assembly too, exactly like a valve line (Puja, 23 Nov).
+  const extra = (hand: number | null | undefined, estimate: number | null): Extra =>
+    hand != null ? { amount: hand, estimated: false } : estimate != null ? { amount: estimate, estimated: true } : null;
+  sel.adaptor = extra(i.adaptor, adaptorEstimate(sel.topFlange));
+  sel.assembly = extra(i.assembly, assemblyEstimate(sel.dn));
+  if (!sel.adaptor) missing.push(row ? `adaptor (no valve top flange for ${i.mapKey})` : noRow);
+  if (!sel.assembly) missing.push(noRow);
   for (const [label, p] of [["Actuator", sel.act], ["Gearbox", sel.gb]] as const) if (p?.rateFlag) sel.flags.push(`${label} ${p.model}: ${p.rateFlag}`);
   const why = [...new Set(missing)];
   sel.status = why.length ? "PENDING" : "OK";
@@ -272,4 +288,20 @@ export function handPicks(
       ? !last.flags.includes(HAND_GB) && c === last.gb?.gbCode
       : [...m.gearboxes, ...m.viralGearboxes].some((g) => g.gbCode === c))),
   };
+}
+
+/** The item's origin after a save: only "IMPORTED" is stored; anything else (also a bad value from the client) is blank = Indian. */
+export const originAfter = (stored: string | null | undefined, patch: { valveOrigin?: string | null }): "IMPORTED" | null =>
+  String((patch.valveOrigin !== undefined ? patch.valveOrigin : stored) ?? "").trim().toUpperCase() === "IMPORTED" ? "IMPORTED" : null;
+
+/**
+ * An origin change means another valve's torque and turns, like a MAP KEY change: codes typed for the old origin are dropped
+ * (the dialog re-sends them unchanged); a code typed in the same save is kept.
+ */
+export function patchForOrigin<P extends { valveOrigin?: string | null; actCode?: string | null; gbCode?: string | null }>(
+  it: { valveOrigin?: string | null; actCode?: string | null; gbCode?: string | null }, patch: P,
+): P {
+  if (originAfter(it.valveOrigin, patch) === originAfter(it.valveOrigin, {})) return patch;
+  const fresh = (typed: string | null | undefined, stored: string | null | undefined) => (typed !== undefined && typed !== (stored ?? null) ? typed : null);
+  return { ...patch, actCode: fresh(patch.actCode, it.actCode), gbCode: fresh(patch.gbCode, it.gbCode) };
 }

@@ -65,7 +65,7 @@ export interface ActuatorPick { selection: Selection; missing: string[] }
 
 const inr = (n: number) => Math.round(n).toLocaleString("en-IN");
 
-/** Valve + actuator + gearbox + adaptor + assembly, each part shown (ACTUATOR item: no valve). Anything missing = price pending, no total. */
+/** Valve + actuator + gearbox + adaptor + assembly, each part shown (ACTUATOR item: the same without the valve). Anything missing = price pending, no total. */
 export function buildActuatorCost(pick: ActuatorPick, bare: number | null, actuatorItem: boolean, manual?: number | null): CostResult {
   const s = pick.selection;
   const oem = s.status === "OEM RFQ";

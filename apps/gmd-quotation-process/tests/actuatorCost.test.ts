@@ -56,11 +56,11 @@ test('a BFV always gets its Viral worm gearbox, whatever the Op Type says (ACT o
   assert.equal(plan({ ...it, operationType: 'ACT+GB' }).cost.total, 100 + P500)
 })
 
-test('ACTUATOR item with a non-ACT Op Type: actuator only, no valve, no adaptor / assembly', () => {
+test('ACTUATOR item with a non-ACT Op Type: no valve; actuator + gearbox + adaptor + assembly as on a valve line', () => {
   const it: It = { itemType: 'ACTUATOR', itemName: 'Actuator for BFV', size: '700', pnRating: 'PN-16', operationType: 'STANDARD', productCost: 999, bareValveCost: null, lastTotal: null }
   const p = plan(it) // 14,287 Nm: the BFV rule gives VWESGA-150 whatever the Op Type
-  assert.equal(p.cost.total, 56500 + 32000) // SA 12 + VWESGA-150
-  assert.equal(plan({ ...it, operationType: 'ACT+GB' }).cost.total, 56500 + 32000)
+  assert.equal(p.cost.total, 56500 + 32000 + 6000 + 5000) // SA 12 + VWESGA-150 + adaptor F25 + assembly DN700
+  assert.equal(plan({ ...it, operationType: 'ACT+GB' }).cost.total, 56500 + 32000 + 6000 + 5000)
 })
 
 test('Update BOM Costs on a pending actuated item: the refilled valve cost never becomes the total', () => {

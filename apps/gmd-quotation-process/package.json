@@ -36,6 +36,8 @@
     "cr:backfill-enquiry:apply": "tsx scripts/backfill-contract-review-enquiry-fields.ts --apply",
     "cr:contract-dump": "tsx scripts/backfill-contract-review-contract-dump.ts",
     "cr:contract-dump:apply": "tsx scripts/backfill-contract-review-contract-dump.ts --apply",
+    "cr:sale-contract": "tsx scripts/backfill-contract-review-sale-contract.ts",
+    "cr:sale-contract:apply": "tsx scripts/backfill-contract-review-sale-contract.ts --apply",
     "cr:norm-dates": "tsx scripts/normalise-contract-review-dates.ts",
     "cr:norm-dates:apply": "tsx scripts/normalise-contract-review-dates.ts --apply",
     "bom:cleanup-no-use": "tsx scripts/remove-no-use-bom-ids.ts",

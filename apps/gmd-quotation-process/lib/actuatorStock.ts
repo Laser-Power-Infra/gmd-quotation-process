@@ -87,7 +87,8 @@ export function mismatchReport(act: ActStockRow[], gb: GbStockRow[]) {
       rotork: act.filter((a) => a.make === "Rotork").length,
       auma: act.filter((a) => a.make === "AUMA").length,
       units: sum(act, (r) => r.available),
-      value: sum(act, (r) => r.stockValue),
+      // null, not 0, when no line has a value (STOCK VALUE renamed or dropped in the sheet reads as blank).
+      value: act.some((r) => r.stockValue != null) ? sum(act, (r) => r.stockValue) : null,
     },
     // ERP stock differs from physical (blank counts as 0, as the workbook's status column does).
     erpMismatch: act.filter((a) => n(a.stockPerErp) !== n(a.physicalSum)),

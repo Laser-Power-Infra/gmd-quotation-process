@@ -265,6 +265,14 @@ export async function POST() {
       await tenderPrisma.$transaction(noUseUpdates, { timeout: 30_000 });
     }
 
+    // poNo / dateOfContract from the SALE CONTRACT tab (PARTYREFNO / PARTYREFDATE), gap-fill only.
+    try {
+      const { runSaleContractFill } = await import("@/lib/contractReviewSaleContract");
+      await runSaleContractFill();
+    } catch (e) {
+      console.warn("[contract-review sync] sale contract fill failed:", e);
+    }
+
     // Backfill State / Utility / Project Reference from Enquiry by matching
     // the contract number (Enquiry.contractNo is a list of contract numbers).
     const backfill = await computeContractReviewEnquiryBackfill(prisma);

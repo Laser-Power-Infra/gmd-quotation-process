@@ -4,7 +4,7 @@ import { matchItemType, matchMoc } from "./itemTypePatterns";
 import { roundUp } from "./rounding";
 import { isActuated, withoutProductCost } from "./actuatorCost";
 import { resolveCostChangeAnchor, isOfferRevision } from "./rateAnchor";
-import { ACT_VA, isActuatorOnly, loadedActCost, rateFor, splitLoadedCost, vaFrom } from "./vaRules";
+import { isActuatorOnly, loadedActCost, rateFor, splitLoadedCost, vaFrom } from "./vaRules";
 import { BASE_COST_FACTOR, FULL_LOAD_THRESHOLD, normalizeStateName } from "./costLoading";
 import { isRecalcBlocked } from "./oneClickAccess";
 
@@ -239,8 +239,8 @@ export async function recalculateItem(
   // 4. Recalculate dependent fields when user explicitly updates one, or when cost changes
   const userClearedVaPct = updates && updates.vaPercent !== undefined && updates.vaPercent === null;
   const userClearedQR = updates && updates.quotedRate !== undefined && updates.quotedRate === null;
-  // Item type ACTUATOR: a blank line defaults to VA% 5, its minimum (rate = cost x 1.05). A typed rate or VA% is kept.
-  if (vaPercent === null && quotedRate === null && !userClearedVaPct && !userClearedQR && isActuatorOnly(item)) vaPercent = ACT_VA;
+  // Item type ACTUATOR: a blank line defaults to its minimum VA%, 5 or 10 from DN800 (rate = cost x 1.05 / 1.10). A typed rate or VA% is kept.
+  if (vaPercent === null && quotedRate === null && !userClearedVaPct && !userClearedQR && isActuatorOnly(item)) vaPercent = split.actVa;
 
   // 4a. User explicitly updated quotedRate → recalculate vaPercent
   const userUpdatedQR = updates && updates.quotedRate !== undefined;

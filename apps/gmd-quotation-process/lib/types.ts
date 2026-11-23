@@ -25,6 +25,8 @@ export interface EnquiryItemData {
   actCode?: string | null;
   gbCode?: string | null;
   controlType?: string | null;
+  /** "IMPORTED" = Tianjin Tangfa (TFW) valve data for the actuator pick; blank = Indian. */
+  valveOrigin?: string | null;
   bareValveCost?: number | null;
   adaptorCost?: number | null;
   assemblyCost?: number | null;

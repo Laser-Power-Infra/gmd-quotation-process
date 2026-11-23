@@ -17,7 +17,7 @@ export function resolveCostChangeAnchor(input: {
 }): { quotedRate: number | null; vaPercent: number | null } {
   let quotedRate = input.quotedRate;
   let vaPercent = input.vaPercent;
-  const split = input.split ?? { valveCost: input.cost, actCost: 0 };
+  const split = input.split ?? { valveCost: input.cost, actCost: 0, actVa: 5 };
 
   if (input.cost <= 0) return { quotedRate, vaPercent };
 

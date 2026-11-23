@@ -14,7 +14,7 @@
 import { generateText, Output } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import { parseDocketItems, type ParsedDocketItem } from "./docket-item-parser";
+import { parseDocketItemsWithPatterns, type ParsedDocketItem } from "./docket-item-parser";
 import { collectAttachmentTexts } from "./docket-attachments";
 
 export interface DocketItemExtractionInput {
@@ -234,11 +234,16 @@ export async function extractDocketItems(
   let parserItems: ParsedDocketItem[] = [];
   try {
     attachments = await collectAttachmentTexts(input.attachNames, input.attachLinks);
-    parserItems = parseDocketItems({
+    const parsed = parseDocketItemsWithPatterns({
       bodies,
       ocrText: input.ocrText,
       attachmentTexts: attachments.texts,
     });
+    parserItems = parsed.items;
+    // Names the file pattern(s) that produced the items, so a wrong name traces to one reader.
+    if (parserItems.length > 0) {
+      console.log(`[docket-item-extraction] "${input.subject ?? ""}": ${parserItems.length} items via ${parsed.patterns.join(", ")}`);
+    }
   } catch (e) {
     console.warn("[docket-item-extraction] parse failed:", e instanceof Error ? e.message : e);
   }

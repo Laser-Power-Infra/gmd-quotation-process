@@ -30,8 +30,9 @@ function table(wb: XLSX.WorkBook, sheet: string, firstHeader: string, from = 0) 
   return { header: rows[at].map((h) => String(h ?? "").trim().toLowerCase()), body: rows.slice(at + 1, next < 0 ? undefined : next), rows, at };
 }
 
-// Read for display only, never used in a price or a pick: when the sheet renames or drops one it reads as blank
-// instead of stopping every actuator price. 20 Nov 2026: MAPPING "GB FACTOR" became "AUMA GB FACTOR (ref)" and
+// Never used in a price or a pick: when the sheet renames or drops one it reads as blank instead of stopping every
+// actuator price. Not all unused: stockValue feeds the "Actuator stock value" tile (and mismatchReport), which show
+// blank, not 0, when it is missing; status and moving3m are stored and read nowhere. 20 Nov 2026: MAPPING "GB FACTOR" became "AUMA GB FACTOR (ref)" and
 // STOCK_ACT lost "DISPATCHED 26-27".
 // 23 Nov 2026: STOCK_ACT lost "STATUS" ("WIRING DIAGRAM STATUS" is another column, read separately for auto-pick).
 const REFERENCE_ONLY = new Set(["gbFactor", "dispatched2627", "status", "moving3m", "stockValue"]);
@@ -70,6 +71,50 @@ export interface Parsed {
   rotorkDerates: { model: string; rpm: number; torque: number }[];
   /** AUMA_ROTORK_ALT: each AUMA / Rotork model's generic RM code; null = "NEW code" (to be created). */
   rmCodes: { make: "AUMA" | "Rotork"; model: string; code: string | null }[];
+  /** IMPORTED_VALVE_DATA (TFW): imported valves' torque with safety factor, actual turns (null = quarter turn) and top flange. */
+  imported: { mapKey: string; valveType: "SLUICE-IMP" | "BFV-IMP"; dn: number; pn: string; requiredTorque: number; turns: number | null; valveFlange: string | null }[];
+}
+
+export const IMPORTED_TAB = "IMPORTED_VALVE_DATA (TFW)";
+
+/**
+ * The TFW tab: three blocks, each under its own header row (first cell DN), told apart by a column only that block has.
+ * A: gate valve torque + turns per DN / PN ("PN16 (also used for PN10)" = both). B: only the bracket flange of A's DN600+ rows
+ * (its torque is not used). C: butterfly torque + ISO 5211 flange. Never throws: a tab it cannot read gives no rows, so imported
+ * items go "price pending" while Indian pricing carries on. A gate row without turns is dropped (no DN ÷ 6.35 on imported valves).
+ */
+export function parseImported(rows: readonly (readonly unknown[])[]): Parsed["imported"] {
+  const cell = (v: unknown) => text(v as Cell)?.toLowerCase() ?? "";
+  const pns = (v: unknown) => [...String(v ?? "").matchAll(/PN\s*(\d+)/gi)].map((x) => `PN${x[1]}`);
+  let col: ((h: string) => number) | null = null, block: "A" | "B" | "C" | null = null;
+  const gate: { dn: number; pns: string[]; requiredTorque: number; turns: number }[] = [];
+  const bracket = new Map<string, string>(); // "600|PN16" -> F16
+  const out = new Map<string, Parsed["imported"][number]>(); // first row of a key wins
+  const add = (valveType: "SLUICE-IMP" | "BFV-IMP", dn: number, pn: string, requiredTorque: number, turns: number | null, valveFlange: string | null) => {
+    const mapKey = `${valveType}|${dn}|${pn}`;
+    if (!out.has(mapKey)) out.set(mapKey, { mapKey, valveType, dn, pn, requiredTorque, turns, valveFlange });
+  };
+  for (const r of rows) {
+    if (cell(r[0]) === "dn") {
+      const header = r.map(cell);
+      col = (h) => header.findIndex((x) => x.startsWith(h));
+      block = col("turns to open") >= 0 ? "A" : col("bracket") >= 0 ? "B" : col("top flange (iso") >= 0 ? "C" : null;
+      continue;
+    }
+    // A title line ("B. GATE VALVE DN600+ …") ends the block above it: a renamed header never feeds its rows to that block.
+    if (num(r[0] as Cell) == null && text(r[0] as Cell)) { block = null; continue; }
+    if (!col || !block) continue;
+    const at =(h: string) => r[col!(h)] as Cell; // a column the block lacks reads as blank
+    const dn = num(r[0] as Cell), pn = pns(at("pn")), torque = num(at("torque with sf"));
+    const f = text(at(block === "B" ? "bracket" : "top flange (iso")), flange = f && /F\s*\d+/i.test(f) ? f : null; // "—" = none
+    if (dn == null || !pn.length) continue; // block titles, notes, blank rows
+    if (block === "A") { const turns = num(at("turns to open")); if (torque != null && turns != null) gate.push({ dn, pns: pn, requiredTorque: torque, turns }); }
+    else if (block === "B") { if (flange && !bracket.has(`${dn}|${pn[0]}`)) bracket.set(`${dn}|${pn[0]}`, flange); }
+    else if (torque != null) add("BFV-IMP", dn, pn[0], torque, null, flange);
+  }
+  // The PN10 row made from "PN16 (also used for PN10)" is the same valve: it takes the PN16 bracket.
+  for (const g of gate) for (const pn of g.pns) add("SLUICE-IMP", g.dn, pn, g.requiredTorque, g.turns, bracket.get(`${g.dn}|${g.pns[0]}`) ?? null);
+  return [...out.values()];
 }
 
 const ACT: Spec = {
@@ -236,6 +281,7 @@ export function parseActuatorWorkbook(wb: XLSX.WorkBook): Parsed {
   return {
     actuators, gearboxes, viralGearboxes, valveTorques, params, mappings, suitability, gearboxStock, actuatorStock, stockAutoPick,
     aumaSpeeds, rotorkDerates: derates, rmCodes,
+    imported: wb.Sheets[IMPORTED_TAB] ? parseImported(XLSX.utils.sheet_to_json<Cell[]>(wb.Sheets[IMPORTED_TAB], { header: 1, defval: null, raw: true })) : [],
   };
 }
 

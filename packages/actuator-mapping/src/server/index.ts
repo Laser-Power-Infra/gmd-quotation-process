@@ -1,4 +1,4 @@
 import "server-only";
 
-// Reads only: the actuator workbook import (the host's scripts/import-actuator-master) writes these tables.
+// Reads only: the host writes these tables (its lib/actuatorTablesSync: the refresh from the live sheet, and the workbook import script).
 export { listFacet, listPage } from "./query";

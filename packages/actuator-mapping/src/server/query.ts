@@ -2,7 +2,7 @@ import "server-only";
 import { Prisma, prisma } from "@gmd/db-quotation";
 import { stockPrisma } from "@gmd/db-stock";
 import { BLANK, type TableQuery, type TableSort } from "@gmd/ui/components/data-table/types";
-import { ERP_DIFFERS, NEEDS_CODE, VIEWS, isViewKey, type PageData, type PageMeta, type Row, type SuitCode, type ViewKey } from "../columns";
+import { ERP_DIFFERS, NEEDS_CODE, OVER_TIME, VIEWS, isViewKey, type PageData, type PageMeta, type Row, type SuitCode, type ViewKey } from "../columns";
 
 // The three views in SQL: paged, filtered, faceted and totalled on the server. Each view reads one
 // CTE `l` whose columns are named by its column keys, so filters, facets and sorts address them by
@@ -39,23 +39,30 @@ interface ViewSql {
 }
 
 const MAPPING: ViewSql = {
-  // K-series qty: every Rotork stock line of the in-stock rating. GMD gearbox qty: its own ERP code.
-  lines: sql`SELECT m."mapKey" AS id, m."valveType", m."dn", m."pn", m."requiredTorque", m."gearbox", m."actInputTorque",
-      m."aumaModel", m."rotorkModel", m."stockRotorkNm",
-      CASE WHEN m."stockRotorkNm" IS NOT NULL THEN coalesce((SELECT sum(v.qty) FROM "ActuatorStock" a JOIN live v ON v.code = a."erpCode"
-        WHERE a."make" = 'Rotork' AND a."torque" = m."stockRotorkNm"), 0) END AS "rotorkAvailable",
+  // A row stored before the first refresh from the live sheet has no origin: it is an Indian MAPPING row.
+  // GMD gearbox qty: its own ERP code.
+  lines: sql`SELECT m."mapKey" AS id, coalesce(m."origin", 'INDIAN') AS "origin", m."valveType", m."dn", m."pn", m."requiredTorque", m."valveTurns",
+      m."selGearbox", m."selGbRatio", m."selActuator", m."selActRpm", m."selTotal", m."selTime", m."selTimeCheck", m."selFlags",
       m."valveFlange", m."flangeCheck", m."gmdGbCode", m."gmdGbRating",
       CASE WHEN m."gmdGbCode" <> '' THEN coalesce((SELECT v.qty FROM live v WHERE v.code = m."gmdGbCode"), 0) END AS "gmdGbAvailable"
     FROM "ActuatorMapping" m`,
-  searched: ["valveType", "dn", "pn", "gearbox", "aumaModel", "rotorkModel", "valveFlange", "flangeCheck", "gmdGbCode"],
-  fallback: sql`f."valveType", f."dn", f."pn", f.id`,
-  live: ["rotorkAvailable", "gmdGbAvailable"],
+  searched: ["origin", "valveType", "dn", "pn", "selGearbox", "selActuator", "selFlags", "valveFlange", "flangeCheck", "gmdGbCode"],
+  // Indian rows first, then the imported (TFW) ones.
+  fallback: sql`f."origin" DESC, f."valveType", f."dn", f."pn", f.id`,
+  kpi: sql`(count(*) FILTER (WHERE "selTimeCheck" = ${OVER_TIME}))::int AS "overTime"`,
+  live: ["gmdGbAvailable"],
 };
 
 const SQL: Record<ViewKey, ViewSql> = {
   mapping: MAPPING,
-  // The matrix rows are the mapping rows; its marks are read for the page in listPage.
-  suitability: { ...MAPPING, searched: ["valveType", "dn", "pn"], live: [] },
+  // The matrix rows are the Indian mapping rows; its marks are read for the page in listPage. SUITABILITY has no marks
+  // for imported (TFW) keys: listed, they would read as "too small" for every actuator.
+  suitability: {
+    lines: sql`SELECT * FROM (${MAPPING.lines}) s WHERE s."origin" = 'INDIAN'`,
+    searched: ["valveType", "dn", "pn"],
+    fallback: sql`f."valveType", f."dn", f."pn", f.id`,
+    live: [],
+  },
   // The old mismatch report's checks: ERP vs physical stock (blank counts 0, as the workbook's status
   // column does) and gearbox lines without a real ERP code (isErpCode in the host's lib/actuatorStock).
   stock: {
@@ -75,7 +82,7 @@ const SQL: Record<ViewKey, ViewSql> = {
       (count(*) FILTER (WHERE "kind" = 'Actuator' AND "make" = 'Rotork'))::int AS "rotork",
       (count(*) FILTER (WHERE "kind" = 'Actuator' AND "make" = 'AUMA'))::int AS "auma",
       coalesce(sum("available") FILTER (WHERE "kind" = 'Actuator'), 0)::float8 AS "units",
-      coalesce(sum("stockValue") FILTER (WHERE "kind" = 'Actuator'), 0)::float8 AS "value",
+      (sum("stockValue") FILTER (WHERE "kind" = 'Actuator'))::float8 AS "value",
       (count(*) FILTER (WHERE "check" = ${ERP_DIFFERS}))::int AS "erpDiffers",
       (count(*) FILTER (WHERE "kind" = 'Gearbox' AND "check" = ''))::int AS "gbCoded",
       (count(*) FILTER (WHERE "check" = ${NEEDS_CODE}))::int AS "needsCode",
@@ -181,10 +188,11 @@ export async function listPage(view: ViewKey, query: TableQuery): Promise<PageDa
   const q = pageSql(view, query, live);
   const [rows, [head], codes] = await Promise.all([
     prisma.$queryRaw<Row[]>(q.rows),
-    prisma.$queryRaw<Record<string, number>[]>(q.kpi),
+    prisma.$queryRaw<Record<string, number | null>[]>(q.kpi),
     view === "suitability" ? prisma.$queryRaw<SuitCode[]>(codesSql(live)) : null,
   ]);
-  const { total, ...kpi } = head;
+  const { total: n, ...kpi } = head;
+  const total = n ?? 0; // count(*): never null
   const meta: PageMeta = { stockError: error, kpi };
   if (codes) {
     const marks = await prisma.$queryRaw<{ mapKey: string; code: string; mark: string }[]>`SELECT "mapKey", code, mark

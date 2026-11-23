@@ -196,8 +196,10 @@ export async function updateItemFieldAction(
 
     // Validation = Yes needs the VA% rules met (red row = not met): run "Apply VA% rules" on the docket first.
     if (field === "validation" && String(value ?? "").trim() === "Yes") {
-      const { isVaRuleViolation } = await import("@/lib/vaRules");
-      if (isVaRuleViolation({ ...prevFull, cost: prevFull.cost ? Number(prevFull.cost) : null, vaPercent: prevFull.vaPercent ? Number(prevFull.vaPercent) : null })) {
+      const { isVaRuleViolation, actuatorMarkupShort } = await import("@/lib/vaRules");
+      const va = { ...prevFull, cost: prevFull.cost ? Number(prevFull.cost) : null, vaPercent: prevFull.vaPercent ? Number(prevFull.vaPercent) : null };
+      if (isVaRuleViolation(va)) {
+        if (actuatorMarkupShort(va)) return { success: false, error: "Cannot set Validation = Yes: from DN800 the actuator portion needs a 10% mark-up and this line's rate has less (the old 5%). Re-rate the line or press Fetch Actuator first." };
         return { success: false, error: "Cannot set Validation = Yes: VA% is below the minimum or the rate is above the CR rate. Use 'Apply VA% rules' on the docket first." };
       }
     }

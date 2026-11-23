@@ -156,3 +156,39 @@ test("table folds a '(MM)' size and PN column so same-name rows stay separate", 
     { itemName: "AIR VALVE 80MM", quantity: 1 },
   ]);
 });
+
+test("sheet heading rows (note, lettered section, PN sub-heading) are folded into item names", () => {
+  const rows = [
+    "Item No\tItem Description\t\t\t\tUOM\tQty\t",
+    "\tValve Rating - PN-1.0 Table No-4 Valve Rating - PN-1.6 Table No-5\t\t\t\t\t\t",
+    "A\tKinetic Air Valves\t\t\t\t\t\t",
+    "\tPN-1.0\t\t\t\t\t\t",
+    "1\t50 mm dia\t\t\t\tNos\t15.00\t",
+    "\tPN-1.6\t\t\t\t\t\t",
+    "2\t80 mm dia\t\t\t\tNos\t28.00\t",
+    "B\tScour valves\t\t\t\t\t\t",
+    "\tPN-1.0\t\t\t\t\t\t",
+    "1\t50 mm dia\t\t\t\tNos\t16.00\t",
+    "2\t80 mm dia\t\t\t\tNos\t6.00\t",
+    "\tTotal\t\t\t\t\t65\t",
+  ];
+  const note = "Valve Rating - PN-1.0 Table No-4 Valve Rating - PN-1.6 Table No-5";
+  assert.deepEqual(parseDocketItems({ attachmentTexts: [rows.join("\n")] }), [
+    { itemName: `${note} Kinetic Air Valves PN-1.0 50 mm dia`, quantity: 15 },
+    { itemName: `${note} Kinetic Air Valves PN-1.6 80 mm dia`, quantity: 28 },
+    { itemName: `${note} Scour valves PN-1.0 50 mm dia`, quantity: 16 },
+    { itemName: `${note} Scour valves PN-1.0 80 mm dia`, quantity: 6 },
+  ]);
+});
+
+test("each item source is attributed to exactly one file pattern", async () => {
+  const { parseDocketItemsWithPatterns } = await import("../schedular_function/docket-item-parser.js");
+  const patterns = (input: Parameters<typeof parseDocketItemsWithPatterns>[0]) =>
+    parseDocketItemsWithPatterns(input).patterns;
+  assert.deepEqual(patterns({ bodies: ["1. Gate Valve DN150 - 2 Nos"] }), ["mail-lines"]);
+  assert.deepEqual(patterns({ attachmentTexts: ["Description\tSize\tQty\nGate Valve\tDN80\t4"] }), ["column-table"]);
+  assert.deepEqual(
+    patterns({ attachmentTexts: ["Item No\tItem Description\tUOM\tQty\nA\tAir Valves\t\t\n1\t50 mm dia\tNos\t15"] }),
+    ["sectioned-sheet"],
+  );
+});

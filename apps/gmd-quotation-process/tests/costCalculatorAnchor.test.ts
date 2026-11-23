@@ -39,14 +39,14 @@ test('offer revision: only a sent docket whose rate actually moved', () => {
 })
 
 test('actuated item: VA% held on the valve portion, a flat 5% on the actuator portion', () => {
-  const split = { valveCost: 100000, actCost: 50000 }
+  const split = { valveCost: 100000, actCost: 50000, actVa: 5 }
   assert.deepEqual(resolveCostChangeAnchor({ cost: 150000, quotedRate: null, vaPercent: 35, validation: null, split }), { quotedRate: 187500, vaPercent: 35 })
   // Validated: the rate stays frozen, VA% is the valve VA% behind it.
   assert.deepEqual(resolveCostChangeAnchor({ cost: 150000, quotedRate: 200000, vaPercent: 20, validation: 'Yes', split }), { quotedRate: 200000, vaPercent: 47.5 })
 })
 
 test('item type ACTUATOR: whole-cost VA%; the 5% default gives cost x 1.05', () => {
-  const split = { valveCost: 40000, actCost: 0 } // splitLoadedCost for an ACTUATOR line
+  const split = { valveCost: 40000, actCost: 0, actVa: 5 } // splitLoadedCost for an ACTUATOR line
   assert.deepEqual(resolveCostChangeAnchor({ cost: 40000, quotedRate: null, vaPercent: 5, validation: null, split }), { quotedRate: 42000, vaPercent: 5 })
   // Validated 36,000 on a 40,000 cost: the real VA% (-10), so the row stays red.
   assert.deepEqual(resolveCostChangeAnchor({ cost: 40000, quotedRate: 36000, vaPercent: null, validation: 'Yes', split }), { quotedRate: 36000, vaPercent: -10 })

@@ -1,5 +1,6 @@
 // Rows of the live actuator master sheet (20 Nov 2026), trimmed to the columns the actuator / gearbox pick reads.
 import type { Master } from '../lib/actuatorSelect.js'
+import { parseImported } from '../lib/actuatorMaster.js'
 
 const SA = 'SA (AUMA India)'
 const K = 'K-series (GMD stock)'
@@ -75,6 +76,39 @@ export const VIRAL = [
   ]),
 ]
 
+// Tab "IMPORTED_VALVE_DATA (TFW)" in the live sheet's shape (23 Nov 2026): title rows, a blank row, then three blocks, each with
+// its own header row. Only the cells the parser reads are filled (stem / shaft cells are blank here); numbers come as numbers or text.
+const tfwA = (pn: string, rows: [number, number, number][]) => rows.map(([dn, turns, torque]) => [dn, pn, turns, torque])
+const tfwC = (type: string, rows: [number, number, string][]) => rows.map(([dn, sf, flange]) => [dn, type, 'PN16', null, null, 'Square', null, flange, 1.2, sf])
+const TFW_BFV: [number, number, string][] = [
+  [50, 28.8, 'F05'], [65, 38.4, 'F05'], [80, 51.6, 'F05'], [100, 86.4, 'F07'], [125, 129.6, 'F07'], [150, 208.8, 'F07'], [200, 396, 'F10'],
+  [250, 658.8, 'F10'], [300, 958.8, 'F10'], [350, 1162.8, 'F10'], [400, 1568.4, 'F14'], [450, 2144.4, 'F14'], [500, 2745.6, 'F14'], [600, 4453.2, 'F16'],
+]
+export const TFW_ROWS: unknown[][] = [
+  ['IMPORTED VALVE DATA – Tianjin Tangfa (TFW)'],
+  ['Imported valves use this torque (with safety factor) and these turns; Indian valves stay on VALVE_TORQUE / MAPPING.'],
+  [],
+  ['DN', 'PN', 'TURNS TO OPEN', 'TORQUE WITH SF (Nm)', 'TORQUE W/O SF (Nm)', 'TOP FLANGE PCD / HOLES (≥DN600)', 'STEM DIA (mm, ≥DN600)', 'TFW GB OUTPUT TORQUE (Nm)', 'STEM TOP (square) – PN16', 'STEM TOP (square) – PN25', 'REMARK'],
+  ...tfwA('PN16 (also used for PN10)', [
+    [40, 10, 60], [50, 13, 60], [80, 20, 75], [100, 25, 100], [150, 37.5, 150], [200, 34, 200], [250, 42, 250], [300, 50, 300], [350, 30, 325],
+    [400, 34, 350], [450, 38, 425], [500, 42, 525], [600, 50, 800], [700, 59, 930], [800, 67, 1000], [900, 75, 1100], [1200, 75, 3400],
+  ]),
+  ...tfwA('PN25', [[40, 10, 90], [50, 13, 90], [80, 20, 110], [100, 25, 150], [150, 30, 225], [200, 40, 300], [250, 42, 375], [300, 50, 450]]),
+  ['350', 'PN25', '60', '490'], // text cells, as UNFORMATTED_VALUE gives a cell typed as text
+  [500, 'PN25', 42, 790],
+  [1000, 'PN16', 75, 1867, '—'],
+  [],
+  ['B. GATE VALVE DN600+ WITH TFW GEARBOX – shaft, bracket & gearbox'],
+  ['DN', 'PN', 'SHAFT DIA (mm)', 'SHAFT LENGTH (mm)', 'SHAFT SHAPE', 'KEY', 'VALVE TORQUE (Nm)', 'BRACKET / FLANGE', 'SAFETY FACTOR', 'GB TORQUE (Nm)', 'TFW GB RATIO'],
+  ...([[600, 'PN16', 'F16'], [700, 'PN16', 'F25'], [800, 'PN16', 'F25'], [900, 'PN16', 'F25'], [600, 'PN25', 'F16'], [700, 'PN25', 'F25'], [800, 'PN25', 'F25']] as const)
+    .map(([dn, pn, flange]) => [dn, pn, null, null, null, null, 9999, flange]), // 9999: this block's torque is never used
+  [],
+  ['C. BUTTERFLY VALVE (TFW) – shaft & top flange'],
+  ['DN', 'TYPE', 'PN', 'SHAFT (square, mm)', 'SHAFT LENGTH (mm)', 'SHAFT SHAPE', 'TORQUE (Nm)', 'TOP FLANGE (ISO 5211)', 'SAFETY FACTOR', 'TORQUE WITH SF (Nm)', 'REMARK'],
+  ...tfwC('DOUBLE FLANGED', TFW_BFV),
+  ...tfwC('WAFER', TFW_BFV.filter(([dn]) => dn <= 300)),
+]
+
 const map = (mapKey: string, requiredTorque: number, valveFlange: string, gearbox = '— (direct)') => ({ mapKey, requiredTorque, gearbox, valveFlange })
 export const MASTER: Master = {
   mappings: [
@@ -122,6 +156,7 @@ export const MASTER: Master = {
   aumaSpeeds: AUMA_SPEEDS,
   rotorkDerates: ROTORK_DERATES,
   rmCodes: RM_CODES,
+  imported: parseImported(TFW_ROWS),
 }
 
 /** Free qty (live Physical Stock minus allocations): gearbox lines as GMD_GB_STOCK showed them on 20 Nov, a few actuator lines. */

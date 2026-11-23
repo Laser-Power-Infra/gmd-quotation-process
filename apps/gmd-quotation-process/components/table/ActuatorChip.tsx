@@ -8,6 +8,7 @@ import { useAppDispatch } from "@/lib/hooks";
 import { saveActuatorFields } from "@/lib/enquiriesSlice";
 import { actuatorOp, CONTROL_TYPES, SPECIAL_OEM } from "@/lib/actuatorCost";
 import { buildRfq, gmailComposeUrl, isOemRfq } from "@/lib/actuatorRfq";
+import { OLD_WD } from "@/lib/actuatorSelect";
 import { stockLabel, stockText, type ItemStock } from "@/lib/actuatorStock";
 import { costSplitText } from "@/lib/vaRules";
 import type { EnquiryItemData } from "@/lib/types";
@@ -17,12 +18,13 @@ import { cn } from "@/lib/utils";
 export default function ActuatorChip({ item, frozen }: { item: EnquiryItemData; frozen: boolean }) {
   const dispatch = useAppDispatch();
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ make: "", control: "", act: "", gb: "", adaptor: "", assembly: "" });
+  const [f, setF] = useState({ make: "", control: "", origin: "", act: "", gb: "", adaptor: "", assembly: "" });
   const actuated = actuatorOp(item.operationType).act || (item.itemType ?? "").toUpperCase() === "ACTUATOR";
   if (!actuated) return null;
   const b = item.actuatorBreakdown as { pending?: string[]; text?: string; manualTotal?: number; selection?: { time?: number | null; flags?: string[] } } | null | undefined;
   const time = b?.selection?.time; // blank on selections stored before 20 Nov
   const over = b?.selection?.flags?.find((x) => x.startsWith("Over "));
+  const oldWd = b?.selection?.flags?.includes(OLD_WD); // typed old-stock actuator: shown on the chip, nothing is blocked
   const pending = !!b?.pending?.length;
   const split = costSplitText(item); // "Valve 1,20,000 @ 35% + Actuator 2,10,000 @ 5%"
   // Stock read by Sync Available Stock; ignored once the codes were changed since.
@@ -32,7 +34,7 @@ export default function ActuatorChip({ item, frozen }: { item: EnquiryItemData; 
   const special = isOemRfq(item);
   const rfq = special ? buildRfq(item) : null;
   const show = () => {
-    setF({ make: item.actuatorMake ?? "", control: item.controlType ?? "", act: item.actCode ?? "", gb: item.gbCode ?? "", adaptor: item.adaptorCost?.toString() ?? "", assembly: item.assemblyCost?.toString() ?? "" });
+    setF({ make: item.actuatorMake ?? "", control: item.controlType ?? "", origin: item.valveOrigin === "IMPORTED" ? "IMPORTED" : "", act: item.actCode ?? "", gb: item.gbCode ?? "", adaptor: item.adaptorCost?.toString() ?? "", assembly: item.assemblyCost?.toString() ?? "" });
     setOpen(true);
   };
   const save = async () => {
@@ -40,7 +42,7 @@ export default function ActuatorChip({ item, frozen }: { item: EnquiryItemData; 
     // Make changed but codes left alone: omit them so the server re-picks the codes for the new make.
     const repick = f.make !== (item.actuatorMake ?? "") && f.act === (item.actCode ?? "") && f.gb === (item.gbCode ?? "");
     const patch = {
-      actuatorMake: f.make || null, controlType: f.control || null,
+      actuatorMake: f.make || null, controlType: f.control || null, valveOrigin: f.origin || null,
       ...(repick ? {} : { actCode: f.act.trim() || null, gbCode: f.gb.trim() || null }),
       adaptorCost: amt(f.adaptor), assemblyCost: amt(f.assembly),
     };
@@ -59,10 +61,10 @@ export default function ActuatorChip({ item, frozen }: { item: EnquiryItemData; 
         className={cn("block w-full text-[9px] text-right px-1 font-bold hover:underline cursor-pointer",
           special && !byHand ? "text-red-700 dark:text-red-300" : pending || !b ? "text-amber-700 dark:text-amber-300" : "text-sky-700 dark:text-sky-300")}
       >
-        {byHand ? `${special ? SPECIAL_OEM + " · " : "Actuator · "}price typed by hand` : special ? SPECIAL_OEM + " · OEM recheck" : pending || !b ? "Actuator · price pending" : `Actuator · priced${time != null ? ` · ${time.toFixed(2)} min` : ""}${over ? ` · ${over}` : ""}`}
+        {byHand ? `${special ? SPECIAL_OEM + " · " : "Actuator · "}price typed by hand` : special ? SPECIAL_OEM + " · OEM recheck" : pending || !b ? "Actuator · price pending" : `Actuator · priced${time != null ? ` · ${time.toFixed(2)} min` : ""}${over ? ` · ${over}` : ""}${oldWd ? " · old stock: approval" : ""}`}
       </button>
       {split && (
-        <span title="Rate = valve x (1 + VA%) + actuator portion x 1.05 (cost loadings included)" className="block w-full text-[9px] text-right px-1 text-muted-foreground">
+        <span title="Rate = valve x (1 + VA%) + actuator portion x 1.05, or x 1.10 from DN800 (cost loadings included)" className="block w-full text-[9px] text-right px-1 text-muted-foreground">
           {split}
         </span>
       )}
@@ -90,7 +92,9 @@ export default function ActuatorChip({ item, frozen }: { item: EnquiryItemData; 
           <div className="grid grid-cols-2 gap-2">
             {row("Make (blank = auto: Rotork, AUMA if the BOQ asks)", <select className={input} value={f.make} onChange={(e) => setF({ ...f, make: e.target.value })}><option value="">-</option><option>AUMA</option><option>Rotork</option></select>)}
             {row("Control type", <select className={input} value={f.control} onChange={(e) => setF({ ...f, control: e.target.value })}><option value="">-</option>{CONTROL_TYPES.map((c) => <option key={c}>{c}</option>)}</select>)}
-            {row("ACT CODE", <input className={input} value={f.act} onChange={(e) => setF({ ...f, act: e.target.value })} />)}
+            {row("Valve origin (Imported = TFW torque and turns; changing it re-picks the codes)", <select className={input} value={f.origin} onChange={(e) => setF({ ...f, origin: e.target.value })}><option value="">Indian</option><option value="IMPORTED">Imported</option></select>)}
+            <span />
+            {row("ACT CODE",<input className={input} value={f.act} onChange={(e) => setF({ ...f, act: e.target.value })} />)}
             {row("GB CODE", <input className={input} value={f.gb} onChange={(e) => setF({ ...f, gb: e.target.value })} />)}
             {row("Adaptor / coupling (Rs, blank = estimate by flange)", <input className={input} inputMode="decimal" value={f.adaptor} onChange={(e) => setF({ ...f, adaptor: e.target.value })} />)}
             {row("Assembly & testing (Rs, blank = estimate by DN)", <input className={input} inputMode="decimal" value={f.assembly} onChange={(e) => setF({ ...f, assembly: e.target.value })} />)}

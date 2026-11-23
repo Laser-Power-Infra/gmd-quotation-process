@@ -3,12 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { recalculateItem, serializeItem } from "@/lib/costCalculator";
 import { isEnquiryFrozen } from "@/lib/oneClickAccess";
 import { bareValveOf, deriveMapKey, hasActuatorLink, isActuatorCandidate, planActuator } from "@/lib/actuatorCost";
-import { handPicks, rmLookupCodes, selectActuator } from "@/lib/actuatorSelect";
+import { handPicks, originAfter, patchForOrigin, rmLookupCodes, selectActuator } from "@/lib/actuatorSelect";
 import { loadActuatorMaster } from "@/lib/actuatorSheet";
 import { stockSummary } from "@/lib/actuatorStock";
 import { freeQty } from "@/lib/actuatorStockSync";
 import { buildRawMaterialsCostMap } from "@/lib/gmd2to1CostLookup";
-import { ACT_VA } from "@/lib/vaRules";
+import { actVaOfSize } from "@/lib/vaRules";
 
 /** DB side of the actuator link: picks actuator + gearbox from the live master sheet and stock, prices them, writes productCost. */
 
@@ -17,6 +17,7 @@ export interface ActuatorPatch {
   actCode?: string | null;
   gbCode?: string | null;
   controlType?: string | null;
+  valveOrigin?: string | null; // "IMPORTED" = TFW valve data; anything else is stored blank (Indian)
   adaptorCost?: number | null;
   assemblyCost?: number | null;
 }
@@ -37,7 +38,8 @@ export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch =
   const adaptorCost = patch.adaptorCost !== undefined ? patch.adaptorCost : num(it.adaptorCost);
   const assemblyCost = patch.assemblyCost !== undefined ? patch.assemblyCost : num(it.assemblyCost);
   const controlType = patch.controlType !== undefined ? patch.controlType : it.controlType;
-  const hand = handPicks(it, patch, master);
+  const valveOrigin = originAfter(it.valveOrigin, patch);
+  const hand = handPicks(it, patchForOrigin(it, patch), master);
 
   // Every stock / Viral ERP code, plus a code typed by hand (a Raw Material code, e.g. RCB040006, is priced from the RM master).
   const codes = rmLookupCodes(master, [hand.actCode, hand.gbCode]);
@@ -45,7 +47,7 @@ export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch =
   const qty = Number(it.quantity);
   const pick = selectActuator({
     mapKey: deriveMapKey(it), actuatorItem: (it.itemType ?? "").trim().toUpperCase() === "ACTUATOR",
-    qty, text: it.itemName, ...hand, adaptor: adaptorCost, assembly: assemblyCost,
+    qty, text: it.itemName, ...hand, adaptor: adaptorCost, assembly: assemblyCost, origin: valveOrigin ?? "INDIAN",
   }, master, free, rm);
   const plan = planActuator({
     itemType: it.itemType, productCost: num(it.productCost), bareValveCost: num(it.bareValveCost),
@@ -58,7 +60,7 @@ export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch =
   await prisma.enquiryItem.update({
     where: { id: itemId },
     data: {
-      actuatorMake: plan.make, actCode: plan.actCode, gbCode: plan.gbCode, controlType,
+      actuatorMake: plan.make, actCode: plan.actCode, gbCode: plan.gbCode, controlType, valveOrigin,
       adaptorCost, assemblyCost, bareValveCost: plan.bare,
       actuatorBreakdown: { ...res, selection: s, stock } as unknown as Prisma.InputJsonObject,
       // Pending / OEM RFQ: no total, so no lower number is ever shown as the cost.
@@ -66,7 +68,7 @@ export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch =
     },
   });
   // Item type ACTUATOR is priced at cost x 1.05 (Puja, 18 Nov): Fetch resets an old VA% unless the rate is validated.
-  const actuatorVa = (it.itemType ?? "").trim().toUpperCase() === "ACTUATOR" && it.validation !== "Yes" ? { vaPercent: ACT_VA } : {};
+  const actuatorVa = (it.itemType ?? "").trim().toUpperCase() === "ACTUATOR" && it.validation !== "Yes" ? { vaPercent: actVaOfSize(it.size) } : {};
   if (res.total != null) await recalculateItem(itemId, { productCost: res.total, ...actuatorVa }, { actuatorTotal: true });
   const fresh = await prisma.enquiryItem.findUnique({ where: { id: itemId } });
   return { item: serializeItem(fresh), pending: res.pending.length > 0, special: s.status === "OEM RFQ", reason: pick.missing.join("; ") || null };

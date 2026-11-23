@@ -24,7 +24,7 @@ export const MAKES: { value: MakeFilter; label: string }[] = [
 /** One line; its fields are the column keys of its view. Quantities and torques are numbers. */
 export type Row = { id: string } & Record<string, string | number | null>;
 
-/** A column; `make` columns hide while the page-wide Make picks another make. */
+/** A column; `make` columns hide while Make picks another make (no column carries one today: the matrix filters its codes). */
 export type Column = DataColumn<Row> & { make?: Make };
 
 export interface KpiTile {
@@ -58,7 +58,10 @@ export interface SuitCode {
 export interface PageMeta {
   /** Set when live Physical Stock could not be read: the live quantities are blank. */
   stockError: string | null;
-  kpi: Record<string, number>;
+  /** Set by the host when its refresh from the live sheet failed: the rows are the last stored ones. */
+  refreshError?: string | null;
+  /** null = nothing to add up (the stock value column is blank or missing in the sheet): the tile shows "–". */
+  kpi: Record<string, number | null>;
   /** Suitability only: the matrix columns, and the marks of the rows on the page by map key, then code. */
   codes?: SuitCode[];
   marks?: Record<string, Record<string, string>>;
@@ -82,25 +85,31 @@ const num = (key: string, label: string, width: number, extra: Partial<Column> =
 /** Live Physical Stock qty: sortable, never filtered (it is read from another database per request). */
 const live = (key: string, label: string, width: number, extra: Partial<Column> = {}): Column => num(key, label, width, { filter: false, ...extra });
 
+/** Time check of a pick that is not in time at the default 2-minute limit: the host's selectActuator flag, stored as is. */
+export const OVER_TIME = "Over 2 min";
+
+// The sel* columns are the app's own pick (the code docket pricing runs), stored per row when the host refreshes the
+// tables from the live sheet. The sheet's old AUMA GS gearbox / German AUMA / in-stock Rotork columns are not shown.
 const MAPPING_COLUMNS: Column[] = [
-  text("valveType", "Valve type", 170, { sticky: true }),
+  text("origin", "Origin", 120, { sticky: true }),
+  text("valveType", "Valve type", 150, { sticky: true }),
   num("dn", "DN", 80, { sticky: true }),
   text("pn", "PN", 90, { sticky: true }),
   num("requiredTorque", "Required torque (Nm)", 160),
-  text("gearbox", "AUMA gearbox", 180),
-  num("actInputTorque", "Actuator input torque (Nm)", 190),
-  text("aumaModel", "AUMA SA model", 140, { make: "AUMA" }),
-  text("rotorkModel", "Rotork model", 130, { make: "Rotork" }),
-  num("stockRotorkNm", "In-stock Rotork K-series (Nm)", 210, {
-    make: "Rotork",
-    render: (r) => (r.stockRotorkNm === null ? "none" : formatCell(r.stockRotorkNm, "number")),
-  }),
-  live("rotorkAvailable", "K-series available", 140, { make: "Rotork" }),
+  num("valveTurns", "Valve turns", 110),
+  text("selGearbox", "Gearbox (Viral)", 150),
+  text("selGbRatio", "GB ratio", 100),
+  text("selActuator", "Actuator", 150),
+  num("selActRpm", "RPM", 80),
+  num("selTotal", "Actuator + gearbox total (Rs)", 210),
+  num("selTime", "Operating time (min)", 160),
+  text("selTimeCheck", "Time check", 130),
+  text("selFlags", "Flags", 320),
   text("valveFlange", "Valve top flange", 140),
   text("flangeCheck", "Flange check", 170),
-  text("gmdGbCode", "GMD stock gearbox", 160, { make: "GMD" }),
-  num("gmdGbRating", "GMD gearbox rating (Nm)", 190, { make: "GMD" }),
-  live("gmdGbAvailable", "GMD gearbox available", 170, { make: "GMD" }),
+  text("gmdGbCode", "GMD stock gearbox", 160),
+  num("gmdGbRating", "GMD gearbox rating (Nm)", 190),
+  live("gmdGbAvailable", "GMD gearbox available", 170),
 ];
 
 const SUITABILITY_KEYS = ["valveType", "dn", "pn", "requiredTorque"];
@@ -108,9 +117,9 @@ const SUITABILITY_KEYS = ["valveType", "dn", "pn", "requiredTorque"];
 export const VIEWS: Record<ViewKey, ViewDef> = {
   mapping: {
     label: "Mapping",
-    note: "Valve type, size and pressure mapped to gearbox and actuator. Available quantities are live Physical Stock.",
-    searchPlaceholder: "Search valve type, PN, gearbox, model, flange",
-    kpis: [],
+    note: "Today's selection per valve type, size and pressure, by the same logic as docket pricing (qty 1, no BOQ text, stock not counted). View only: refreshed from the live master sheet when this page is opened, at most every 10 minutes. Available quantities are live Physical Stock.",
+    searchPlaceholder: "Search origin, valve type, PN, gearbox, actuator, flags, flange",
+    kpis: [{ key: "overTime", label: OVER_TIME, format: "count", filters: { selTimeCheck: [OVER_TIME] } }],
     columns: MAPPING_COLUMNS,
   },
   suitability: {

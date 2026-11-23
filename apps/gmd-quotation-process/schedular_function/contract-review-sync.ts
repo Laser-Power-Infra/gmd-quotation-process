@@ -49,6 +49,7 @@ import {
 } from "@/lib/gmd_lib/contract-review-columns";
 import { syncEnquiryContractNumbers } from "@/lib/syncEnquiryContractNumbers";
 import { recomputeNotCurrentReqtMarks } from "@/lib/contractReviewCurrentReqt";
+import { runSaleContractFill } from "@/lib/contractReviewSaleContract";
 
 /** Tab GIDs. Resolved by GID, not title, so renaming a tab is harmless. */
 const CONTRACTS_GID = 734728893; // header row 4, data from index 4
@@ -350,6 +351,16 @@ export async function runContractReviewSheetSync(): Promise<ContractReviewSyncRe
       if (chunk[idx].isChange) updated++;
       else unchanged++;
     });
+  }
+
+  // poNo / dateOfContract from the SALE CONTRACT tab (PARTYREFNO / PARTYREFDATE), gap-fill only.
+  try {
+    const sc = await runSaleContractFill();
+    console.log(`[contract-review-sync] sale contract fill: rows=${sc.matched} writes=${sc.updated}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    warnings.push(`runSaleContractFill failed: ${message}`);
+    console.warn(`[contract-review-sync] sale contract fill failed: ${message}`);
   }
 
   // Owned side-effect: keeps Enquiry.contractNo fresh for the quotation
