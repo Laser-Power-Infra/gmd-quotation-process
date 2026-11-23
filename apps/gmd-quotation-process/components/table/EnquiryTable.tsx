@@ -4670,14 +4670,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   );
 }
 
-function triggerDownload(base64: string, fileName: string) {
+function triggerDownload(base64: string, fileName: string, mimeType = "application/pdf") {
   const byteChars = atob(base64);
   const byteNums = new Array(byteChars.length);
   for (let i = 0; i < byteChars.length; i++) {
     byteNums[i] = byteChars.charCodeAt(i);
   }
   const byteArray = new Uint8Array(byteNums);
-  const blob = new Blob([byteArray], { type: "application/pdf" });
+  const blob = new Blob([byteArray], { type: mimeType });
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");
@@ -4692,6 +4692,7 @@ function triggerDownload(base64: string, fileName: string) {
 function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: EnquiryItemData[] }) {
   const [status, setStatus] = useState<"idle" | "generating" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [format, setFormat] = useState<"pdf" | "xlsx">("pdf");
   const apm = (enquiry as any).apm as string | null | undefined;
   const generatedAt = (enquiry as any).offerPdfGeneratedAt as string | Date | null | undefined;
   const access = oneClickAccess(apm ?? null, generatedAt ?? null);
@@ -4741,9 +4742,9 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
         }, 0),
       };
 
-      const res = await generateOfferPdfAction(rowData, enquiry.id);
+      const res = await generateOfferPdfAction(rowData, enquiry.id, format);
       if (res.success && res.pdfBase64) {
-        triggerDownload(res.pdfBase64, res.fileName);
+        triggerDownload(res.pdfBase64, res.fileName, res.mimeType);
         // After Yes one-time, reload to reflect frozen state (server updated offerPdfGeneratedAt)
         if (apm === "Yes") {
           // optimistic: page reload enquiries after short delay to show frozen badge
@@ -4810,8 +4811,18 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
           className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-[#0f62fe] border border-blue-200 bg-blue-50 hover:bg-blue-100 dark:text-blue-300 dark:border-blue-500/25 dark:bg-blue-500/10 dark:hover:bg-blue-500/20 rounded cursor-pointer transition-all whitespace-nowrap"
         >
           <FileText className="h-3.5 w-3.5 stroke-[2.5]" />
-          Generate PDF
+          Generate {format === "xlsx" ? "Excel" : "PDF"}
         </button>
+        <select
+          aria-label={`Offer file format for docket ${enquiry.docketNumber}`}
+          title="File format of the offer"
+          value={format}
+          onChange={(e) => setFormat(e.target.value === "xlsx" ? "xlsx" : "pdf")}
+          className="h-5 rounded border border-border bg-background px-1 text-[9px] font-medium text-foreground cursor-pointer"
+        >
+          <option value="pdf">PDF</option>
+          <option value="xlsx">Excel</option>
+        </select>
         {apm === "Yes" && !generatedAt && <span className="text-[8px] text-amber-600 dark:text-amber-300 font-medium">One-time only</span>}
         {(!apm || apm === "") && <span className="text-[8px] text-muted-foreground">Unlimited (APM empty)</span>}
         {exWorksToggle}

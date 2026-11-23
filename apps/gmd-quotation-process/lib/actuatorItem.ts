@@ -28,7 +28,7 @@ const num = (d: Prisma.Decimal | null | undefined) => (d == null ? null : Number
 // manualTotal (only the two hand-edit paths pass it; not part of the client-facing patch): a number sets the typed whole price,
 // null removes it, undefined keeps what the breakdown holds. It only takes effect on an ACTUATOR line or a refer-OEM line.
 export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch = {}, manualTotal?: number | null) {
-  const it = await prisma.enquiryItem.findUnique({ where: { id: itemId }, include: { enquiry: { select: { apm: true, offerPdfGeneratedAt: true } } } });
+  const it = await prisma.enquiryItem.findUnique({ where: { id: itemId }, include: { enquiry: { select: { apm: true, offerPdfGeneratedAt: true, partyName: true } } } });
   if (!it) return { skipped: "Item not found." };
   if (isEnquiryFrozen(it.enquiry.apm, it.enquiry.offerPdfGeneratedAt)) return { skipped: "Frozen after one-time PDF." };
   if (!isActuatorCandidate(it)) return { skipped: "Op Type is not ACT / ACT+GB / ELECTRIC." };
@@ -47,7 +47,7 @@ export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch =
   const qty = Number(it.quantity);
   const pick = selectActuator({
     mapKey: deriveMapKey(it), actuatorItem: (it.itemType ?? "").trim().toUpperCase() === "ACTUATOR",
-    qty, text: it.itemName, ...hand, adaptor: adaptorCost, assembly: assemblyCost, origin: valveOrigin ?? "INDIAN",
+    qty, text: it.itemName, party: it.enquiry.partyName, ...hand, adaptor: adaptorCost, assembly: assemblyCost, origin: valveOrigin ?? "INDIAN",
   }, master, free, rm);
   const plan = planActuator({
     itemType: it.itemType, productCost: num(it.productCost), bareValveCost: num(it.bareValveCost),

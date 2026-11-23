@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { offerActuatorLine } from '../lib/offerActuatorLine.js'
+// The actuator line alone; the functionalities printed after it are in offerActuatorFunctions.test.ts.
+import { actuatorLine as offerActuatorLine } from '../lib/offerActuatorLine.js'
 
 const VALVE = { operationType: 'ACT+GB', itemType: 'BUTTERFLY VALVE' }
 const withSelection = (selection: unknown) => ({ ...VALVE, actuatorBreakdown: { selection } })

@@ -3,6 +3,7 @@ import "server-only";
 import fs from "fs";
 import path from "path";
 import { generateOfferLetterPdf } from "./generatePdf";
+import { buildOfferXlsx, OFFER_XLSX_MIME } from "./offerXlsx";
 import { OfferLetterTemplateData } from "@/types/offer-lettter";
 import { uploadFileToDrive } from "./gdrive";
 import { prisma } from "@/lib/prisma";
@@ -27,44 +28,36 @@ function extractDriveFileId(url: string | null | undefined): string | null {
   return null;
 }
 
+export type OfferFormat = "pdf" | "xlsx";
+
+/** The docket with its items, by id or else by docket number. Read only. */
+export async function loadOfferEnquiry(rowData: OfferLetterTemplateData, enquiryId?: string) {
+  let dbEnquiry = null;
+  if (enquiryId) {
+    dbEnquiry = await prisma.enquiry.findUnique({
+      where: { id: enquiryId },
+      include: { items: { orderBy: { position: "asc" } } },
+    });
+  }
+  if (!dbEnquiry && rowData.docketNo) {
+    dbEnquiry = await prisma.enquiry.findUnique({
+      where: { docketNumber: rowData.docketNo },
+      include: { items: { orderBy: { position: "asc" } } },
+    });
+  }
+  return dbEnquiry;
+}
+
 /**
- * Server-only Offer PDF builder. The browser reaches it only through
- * `generateOfferPdfAction` (lib/generate-offer-pdf.ts), which never bypasses the freeze.
- * @param options.bypassFreeze When true the one-time Offer PDF freeze is
- *   ignored — no `oneClickAccess` refusal and no `offerPdfGeneratedAt` write.
- *   Used when the PDF is generated only to attach to a docket email, which is
- *   independent of the manual "Generate PDF" one-time access.
+ * The one place the offer's content is put together; the PDF and the Excel are both rendered
+ * from what it returns. Read only (database reads, plus image thumbnails unless withImages is false).
  */
-export async function buildOfferPdf(
+export async function assembleOfferData(
   rowData: OfferLetterTemplateData,
-  enquiryId?: string,
-  options?: { bypassFreeze?: boolean; raRound?: number },
-) {
-  const bypassFreeze = options?.bypassFreeze === true;
-  try {
+  dbEnquiry: Awaited<ReturnType<typeof loadOfferEnquiry>>,
+  options?: { raRound?: number; withImages?: boolean },
+): Promise<OfferLetterTemplateData> {
     let finalRowData: OfferLetterTemplateData = { ...rowData };
-
-    let dbEnquiry = null;
-    if (enquiryId) {
-      dbEnquiry = await prisma.enquiry.findUnique({
-        where: { id: enquiryId },
-        include: { items: { orderBy: { position: "asc" } } },
-      });
-    }
-    if (!dbEnquiry && rowData.docketNo) {
-      dbEnquiry = await prisma.enquiry.findUnique({
-        where: { docketNumber: rowData.docketNo },
-        include: { items: { orderBy: { position: "asc" } } },
-      });
-    }
-
-    // Apply oneClickAccess rules (skipped when generating solely for an email).
-    if (dbEnquiry && !bypassFreeze) {
-      const check = oneClickAccess((dbEnquiry as any).apm, (dbEnquiry as any).offerPdfGeneratedAt)
-      if (!check.allowed) {
-        return { success: false, error: check.reason }
-      }
-    }
 
     if (dbEnquiry) {
       const pbg = dbEnquiry.pbg;
@@ -114,7 +107,8 @@ export async function buildOfferPdf(
       // Fetch manually uploaded images for the distinct keys present in this enquiry
       const distinctKeys = [...new Set(baseItems.filter((b: any) => b.__hasKeyParts).map((b: any) => b.__imageKey as string))];
       const imageByKey = new Map<string, string | null>();
-      if (distinctKeys.length) {
+      // The Excel has no image column, so it skips the thumbnail downloads.
+      if (distinctKeys.length && options?.withImages !== false) {
         try {
           const genImages = await prisma.generatedImage.findMany({
             where: { imageKey: { in: distinctKeys } },
@@ -265,6 +259,38 @@ export async function buildOfferPdf(
       };
     }
 
+    return finalRowData;
+}
+
+/**
+ * Server-only Offer builder (PDF by default, Excel when options.format is "xlsx"). The browser
+ * reaches it only through `generateOfferPdfAction` (lib/generate-offer-pdf.ts), which never bypasses the freeze.
+ * Refusal, Drive upload and the one-time freeze are the same for both formats.
+ * @param options.bypassFreeze When true the one-time Offer PDF freeze is
+ *   ignored — no `oneClickAccess` refusal and no `offerPdfGeneratedAt` write.
+ *   Used when the PDF is generated only to attach to a docket email, which is
+ *   independent of the manual "Generate PDF" one-time access.
+ */
+export async function buildOfferPdf(
+  rowData: OfferLetterTemplateData,
+  enquiryId?: string,
+  options?: { bypassFreeze?: boolean; raRound?: number; format?: OfferFormat },
+) {
+  const bypassFreeze = options?.bypassFreeze === true;
+  try {
+    const dbEnquiry = await loadOfferEnquiry(rowData, enquiryId);
+
+    // Apply oneClickAccess rules (skipped when generating solely for an email).
+    if (dbEnquiry && !bypassFreeze) {
+      const check = oneClickAccess((dbEnquiry as any).apm, (dbEnquiry as any).offerPdfGeneratedAt)
+      if (!check.allowed) {
+        return { success: false, error: check.reason }
+      }
+    }
+
+    const format: OfferFormat = options?.format === "xlsx" ? "xlsx" : "pdf";
+    const finalRowData = await assembleOfferData(rowData, dbEnquiry, { raRound: options?.raRound, withImages: format === "pdf" });
+
     // Load Handlebars template dynamically
     const templatePath = path.join(process.cwd(), "lib", "offer_letter.hbs");
     const templateSource = fs.readFileSync(templatePath, "utf-8");
@@ -287,16 +313,17 @@ export async function buildOfferPdf(
     const cleanState = (finalRowData.state || "UNKNOWN").trim().toUpperCase().replace(/[^A-Z0-9]/g, "_");
     const cleanParty = (finalRowData.partyName || "PARTY").trim().toUpperCase().replace(/[^A-Z0-9]/g, "_");
     const cleanDocket = (finalRowData.docketNo || "DOCKET").trim().toUpperCase().replace(/[^A-Z0-9]/g, "_");
-    const fileName = `${cleanState}_${cleanParty}_${cleanDocket}.pdf`.replace(/__+/g, "_");
+    const fileName = `${cleanState}_${cleanParty}_${cleanDocket}.${format}`.replace(/__+/g, "_");
+    const mimeType = format === "xlsx" ? OFFER_XLSX_MIME : "application/pdf";
 
-    // Generate PDF in memory (no filesystem write)
-    const pdfBuffer = await generateOfferLetterPdf(templateSource, finalRowData, {});
+    // Generate the file in memory (no filesystem write)
+    const pdfBuffer = format === "xlsx" ? buildOfferXlsx(finalRowData) : await generateOfferLetterPdf(templateSource, finalRowData, {});
 
     // Upload generated PDF to Google Drive (uploadFileToDrive also grants
     // "anyone with the link" read access, so the returned URL is shareable).
     let driveUrl: string | null = null;
     try {
-      const uploaded = await uploadFileToDrive(fileName, "application/pdf", pdfBuffer.toString("base64"));
+      const uploaded = await uploadFileToDrive(fileName, mimeType, pdfBuffer.toString("base64"));
       driveUrl = uploaded.url;
     } catch (e) {
       console.error("Failed to upload generated PDF to Google Drive:", e);
@@ -328,7 +355,9 @@ export async function buildOfferPdf(
 
     return {
       success: true,
+      // Named pdfBase64 for the existing callers; it holds the Excel when format is "xlsx" (see mimeType).
       pdfBase64: pdfBuffer.toString("base64"),
+      mimeType,
       fileName,
       docketNo: finalRowData.docketNo,
       driveUrl,

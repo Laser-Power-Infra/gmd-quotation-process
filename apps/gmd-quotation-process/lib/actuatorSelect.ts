@@ -18,6 +18,14 @@ export const NO_TFW = "no imported (TFW) data for this size";
 export const NO_TFW_FLANGE = "adaptor: the imported (TFW) data has no top flange for this size – type the adaptor amount in the Actuator dialog";
 export const IMPORTED_FLAG = "Imported (TFW) data";
 
+/** Makes a customer accepts, by party name (Puja, 17 Nov: "only AUMA is acceptable to Kalpataru"). The automatic pick stays inside them. */
+// shortcut: typed here for one customer, move to a master (party -> accepted makes) when a second customer needs it.
+export const CUSTOMER_MAKES: { party: RegExp; makes: string[] }[] = [{ party: /kalpataru/i, makes: ["AUMA"] }];
+export const customerOnly = (makes: string[]) => `customer accepts ${makes.join(" / ")} only`;
+
+/** The item text asks for a single-phase actuator (and does not name three phase too). */
+export const isSinglePhase = (text: string) => /\b(?:single|1)[\s-]*ph(?:ase)?\b/i.test(text) && !/\b(?:three|3)[\s-]*ph(?:ase)?\b/i.test(text);
+
 /** The assumptions of the 20-Nov logic, in one place. PN factor and safety factor stay in the sheet (MAPPING's required torque). */
 export const ACT_RULES = {
   dnPerTurn: 6.35, // multi-turn valve turns = DN ÷ 6.35 (4 TPI), rounded as the sheet does, until GA stroke / pitch data exists
@@ -55,6 +63,7 @@ export interface SelectInput {
   actuatorItem: boolean; // Item type ACTUATOR: no valve part; adaptor / assembly as on a valve line (23 Nov), so not read here
   qty: number; // docket qty: a stock line needs this much free
   text: string; // item text (BOQ line): the make it names, single phase, an operating time
+  party?: string | null; // the docket's party name: CUSTOMER_MAKES limits the makes
   make?: string | null; actCode?: string | null; gbCode?: string | null; // typed by hand, see handPicks
   adaptor?: number | null; assembly?: number | null; // typed by hand: win over the estimates
   // IMPORTED (Tianjin Tangfa "TFW" valve): torque with SF, turns and top flange come from m.imported, never from MAPPING.
@@ -108,13 +117,18 @@ export function selectActuator(i: SelectInput, m: Master, free: Map<string, numb
   // No approved-make list is recorded: a BOQ text naming one make only gets that make; naming both or neither, the cheaper.
   const named = ["Rotork", "AUMA"].filter((mk) => new RegExp(`\\b${mk}\\b`, "i").test(i.text));
   const handMake = ["Rotork", "AUMA"].find((mk) => same(i.make, mk));
-  const makes = handMake ? [handMake] : named.length === 1 ? named : ["Rotork", "AUMA"];
+  // A customer's accepted makes win over the text (it may name Rotork or both); only a make / actuator typed by hand goes outside them.
+  const accepted = CUSTOMER_MAKES.find((c) => c.party.test(i.party ?? ""))?.makes;
+  const allowed = accepted ?? ["Rotork", "AUMA"];
+  const makes = handMake ? [handMake] : named.length === 1 && allowed.includes(named[0]) ? named : allowed;
+  const wanted = accepted ?? named; // also decides which OEM a refer-OEM enquiry goes to
+  const noMake = `no ${makes.join(" / ")} actuator for`, onlyNote = accepted && !handMake ? ` (${customerOnly(accepted)})` : "";
   const requiredTorque = imp ? imp.requiredTorque : num(row?.requiredTorque);
   const timeLimit = specTime(i.text) ?? ACT_RULES.timeLimit;
   const sel: Selection = {
     status: "PENDING", mapKey: i.mapKey, valveType, dn: dn ? Number(dn) : null, pn, qty: i.qty, requiredTorque, actNeed: null,
     topFlange: imp ? imp.valveFlange : str(row?.valveFlange), act: null, gb: null, adaptor: null, assembly: null, time: null, timeLimit,
-    aumaRequired: named.length === 1 && named[0] === "AUMA", flags: [...(imported ? [IMPORTED_FLAG] : []), ...(handMake ? [HAND_MAKE] : [])],
+    aumaRequired: wanted.length === 1 && wanted[0] === "AUMA", flags: [...(imported ? [IMPORTED_FLAG] : []), ...(handMake ? [HAND_MAKE] : [])],
   };
   if (/special/i.test(str(row?.gearbox) ?? "")) return { selection: { ...sel, status: "OEM RFQ", flags: [SPECIAL_OEM] }, missing: [] };
 
@@ -189,8 +203,9 @@ export function selectActuator(i: SelectInput, m: Master, free: Map<string, numb
     const l = m.actuatorStock.find((x) => same(x.erpCode, i.actCode!));
     const a = m.actuators.find((x) => same(x.actCode, i.actCode!));
     const erp = erpOf(i.actCode);
+    // An unknown code's make never comes from the customer's list: it would be labelled AUMA and escape the flag below.
     hand = l ? stockAct(l) : a ? masterAct(a) : { curve: [], pick: {
-      source: "stock", make: handMake ?? makes[0], model: i.actCode, erpCode: erp, actCode: i.actCode, torque: null, rpm: null, rmCode: erp, ...rate(erp, null),
+      source: "stock", make: handMake ?? (named.length === 1 ? named[0] : "Rotork"), model: i.actCode, erpCode: erp, actCode: i.actCode, torque: null, rpm: null, rmCode: erp, ...rate(erp, null),
     } };
     sel.flags.push(HAND_ACT);
     // Stock actuators have old wiring diagrams, not interchangeable (23 Nov): a typed one is only flagged, its rate is untouched.
@@ -220,7 +235,7 @@ export function selectActuator(i: SelectInput, m: Master, free: Map<string, numb
       : cs.sort((a, b) => a.time - b.time || a.total - b.total || rotorkFirst(a) - rotorkFirst(b))[0];
   };
   // Single phase (AUMA only, 60 s per stroke) is not in these tables: nothing is auto-picked.
-  const singlePhase = /\b(?:single|1)[\s-]*ph(?:ase)?\b/i.test(i.text) && !/\b(?:three|3)[\s-]*ph(?:ase)?\b/i.test(i.text);
+  const singlePhase = isSinglePhase(i.text);
   // A typed actuator gets the gearbox that suits it; one with no speed data, the gearbox the auto pick takes.
   const c = singlePhase ? undefined : best(combos(hand ? [hand] : autos)) ?? (hand ? best(combos(autos)) : undefined);
   const own = !!c && (!hand || c.act === hand);
@@ -233,11 +248,14 @@ export function selectActuator(i: SelectInput, m: Master, free: Map<string, numb
     sel.time = Math.round(c.time * 100) / 100;
     if (!c.ok) sel.flags.push(`Over ${timeLimit} min`);
   }
+  // Typed by hand outside what the customer accepts: kept, but never silently.
+  const got = sel.act?.make ?? handMake;
+  if (accepted && got && !accepted.some((mk) => same(got, mk))) sel.flags.push(customerOnly(accepted));
 
   if (requiredTorque == null) missing.push(row ? `required torque blank in MAPPING for ${i.mapKey}` : noRow);
   else if (singlePhase && (!sel.act || (needGb && !sel.gb))) missing.push(SINGLE_PHASE);
-  else if (needGb && !sel.gb) missing.push(gbs.length ? `no ${makes.join(" / ")} actuator for ${requiredTorque} Nm` : `no ${worm ? "worm" : "spur"} gearbox ≥ ${requiredTorque} Nm`);
-  else if (!sel.act) missing.push(sel.gb && !gbs[0].ratio ? `actuator: gearbox ${sel.gb.model} has no MA / ratio in GB_MASTER, set it by hand` : `no ${makes.join(" / ")} actuator for ${requiredTorque} Nm`);
+  else if (needGb && !sel.gb) missing.push(gbs.length ? `${noMake} ${requiredTorque} Nm${onlyNote}` :`no ${worm ? "worm" : "spur"} gearbox ≥ ${requiredTorque} Nm`);
+  else if (!sel.act) missing.push(sel.gb && !gbs[0].ratio ? `actuator: gearbox ${sel.gb.model} has no MA / ratio in GB_MASTER, set it by hand` : `${noMake} ${requiredTorque} Nm${onlyNote}`);
   if (sel.gb && sel.gb.rate == null) missing.push(`gearbox price (${sel.gb.model})`);
   if (sel.act && sel.act.rate == null) missing.push(`actuator price (${sel.act.model})`);
   // The sheet's price stands until the code exists (20-Nov mail: SA 50 / 60 / 100, K 1000, VWE-07, VWESGA-40, SGB-3000 / 5000).
