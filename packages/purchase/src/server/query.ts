@@ -29,7 +29,12 @@ const dmyDate = (field: string) =>
 const CONTRACT_NO = sql`'^[a-z]{1,4}[0-9]{2}y-[0-9]+$'`;
 
 /** `b`: one typed row per PO line. `l`: plus the fields that depend on today. */
-const LINES = sql`b AS (
+// Free = ordered - everything allocated to the line, floored at 0; NULL (not free) when the ordered qty is not a number.
+const FREE = sql`CASE WHEN b.ordered IS NULL THEN NULL ELSE greatest(0, b.ordered - coalesce(a.qty, 0)) END`;
+
+const LINES = sql`alloc AS (
+  SELECT "poNo" AS po_no, "poLineNo" AS line_no, sum(qty) AS qty FROM "PurchaseAllocation" GROUP BY 1, 2
+), b AS (
   SELECT p.id, p."poNo" AS po_no, p."poLineNo" AS line_no,
     ${dmyDate("poDate")} AS po_date,
     CASE WHEN ${text("poDate")} ~ ${DMY} THEN right(${text("poDate")}, 4) ELSE '' END AS po_year,
@@ -50,14 +55,16 @@ const LINES = sql`b AS (
   FROM "PurchaseOrderLine" p
 ), l AS (
   SELECT b.*, coalesce(b.open_value_raw, 0) AS open_value,
+    coalesce(a.qty, 0) AS allocated_qty, ${FREE} AS free_balance,
+    CASE WHEN ${FREE} > 0 THEN 'Yes' ELSE 'No' END AS has_free,
     CASE WHEN b.open_qty > 0 AND b.due < current_date THEN current_date - b.due END AS days_overdue,
     CASE WHEN b.open_qty <= 0 THEN 'Received' WHEN b.due IS NULL THEN 'No date' WHEN b.due < current_date THEN 'Overdue'
       WHEN b.due <= current_date + 30 THEN 'Due in 30 days' ELSE 'Later' END AS status
-  FROM b
+  FROM b LEFT JOIN alloc a ON a.po_no = b.po_no AND a.line_no = b.line_no
 )`;
 
 /** Filter key -> line column. `supplierCode` has no column of its own: the host filters on it for the payable columns. */
-const FIELDS: Record<string, string> = { poNo: "po_no", supplier: "supplier", supplierCode: "supplier_code", origin: "origin", poYear: "po_year", status: "status", contract: "contract" };
+const FIELDS: Record<string, string> = { poNo: "po_no", supplier: "supplier", supplierCode: "supplier_code", origin: "origin", poYear: "po_year", status: "status", contract: "contract", hasFree: "has_free" };
 /** Filter keys that are per-PO figures (CTE `pa`), matched as the text the facet lists. `balance` is text, the rest numbers. */
 const PO_FIELDS = ["daysOverdue", "lines", "balance", "receivedPct", "orderedValue", "openValue"];
 const DATES: Record<string, string> = { poDate: "po_date", due: "due" };
@@ -225,12 +232,18 @@ export async function listPurchaseFacet(key: string, query: PurchaseQuery, limit
 }
 
 /** The lines of one PO that the current filters keep, in line order. */
-export async function listPurchaseLines(poNo: string, query: PurchaseQuery): Promise<PoLine[]> {
-  return stockPrisma.$queryRaw<PoLine[]>`${filtered(query)}
+export const listPurchaseLinesSql = (poNo: string, query: PurchaseQuery) => sql`${filtered(query)}
     SELECT id, line_no AS "lineNo", item_code AS "itemCode", item_name AS "itemName", uom,
       ordered::float AS ordered, received::float AS received, open_qty::float AS balance,
       rate::float AS rate, last_rate::float AS "lastRate", min_rate::float AS "minRate",
-      open_value_raw::float AS "openValue", ${day("due")} AS due, days_overdue::int AS "daysOverdue", status, contract
+      open_value_raw::float AS "openValue", ${day("due")} AS due, days_overdue::int AS "daysOverdue", status, contract,
+      allocated_qty::float AS "allocatedQty", free_balance::float AS "freeBalance",
+      (SELECT coalesce(json_agg(json_build_object('contractNo', x."contractNo", 'itemCode', x."itemCode", 'qty', x.qty, 'lot', x.lot,
+          'tinaInvoiceNo', x."tinaInvoiceNo", 'blNo', x."blNo", 'eta', x.eta, 'needsConfirmation', x."needsConfirmation") ORDER BY x."contractNo", x."itemCode"), '[]'::json)
+        FROM "PurchaseAllocation" x WHERE x."poNo" = f.po_no AND x."poLineNo" = f.line_no) AS allocations
     FROM f WHERE po_no = ${poNo}
     ORDER BY CASE WHEN line_no ~ '^[0-9]+$' THEN line_no::int END NULLS LAST, line_no`;
+
+export async function listPurchaseLines(poNo: string, query: PurchaseQuery): Promise<PoLine[]> {
+  return stockPrisma.$queryRaw<PoLine[]>(listPurchaseLinesSql(poNo, query));
 }

@@ -36,8 +36,8 @@ export default async function Page() {
       </div>
       <div className="flex-1 min-h-0 px-6 pb-6">
         {result ? (
-          // lines[] is for Contract Review / Ready to Bill; the table does not read it, so it stays off the page payload
-          <StockAllocationTable initial={{ ...result, lines: [] }} actions={{ ...actions }} />
+          // lines[] is for Contract Review / Ready to Bill; the table does not read it (nor purchaseLines: its purchase tables are paged on the server), so both stay off the page payload
+          <StockAllocationTable initial={{ ...result, lines: [], purchaseLines: [] }} actions={{ ...actions }} />
         ) : (
           <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">Could not load stock allocation: {error}</div>
         )}

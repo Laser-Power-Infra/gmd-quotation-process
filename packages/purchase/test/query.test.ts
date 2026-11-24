@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { BLANK } from "@gmd/ui/components/data-table/types";
-import { buildOrderBy, buildPoWhere, buildWhere, facetSql, listPurchaseFacet, listPurchaseLines, listPurchasePoPage, pageSql } from "../src/server/query";
+import { buildOrderBy, buildPoWhere, buildWhere, facetSql, listPurchaseFacet, listPurchaseLines, listPurchaseLinesSql, listPurchasePoPage, pageSql } from "../src/server/query";
 
 const base = { page: 1, pageSize: 50, sort: null, search: "", filters: {} };
 const flat = (q: ReturnType<typeof buildWhere>) => q.sql.replace(/\s+/g, " ");
@@ -41,6 +41,21 @@ test("per-PO figure filters: own WHERE over pa, applied to f, skipped for their 
   assert.ok(!pageSql(base).kpi.sql.includes("g.po_no IN"));
   assert.match(flat(facetSql("openValue", q)!), /ORDER BY nullif\(pa\."openValue", ''\)::numeric NULLS FIRST/);
   assert.equal(facetSql("payableNet", q), null);
+});
+
+test("allocated / free balance: one grouped aggregate in the shared CTE, 'Has free balance' filtered and faceted on the server", () => {
+  const lines = flat(pageSql(base).kpi);
+  assert.match(lines, /alloc AS \( SELECT "poNo" AS po_no, "poLineNo" AS line_no, sum\(qty\) AS qty FROM "PurchaseAllocation" GROUP BY 1, 2 \)/);
+  assert.match(lines, /LEFT JOIN alloc a ON a\.po_no = b\.po_no AND a\.line_no = b\.line_no/);
+  assert.match(lines, /CASE WHEN b\.ordered IS NULL THEN NULL ELSE greatest\(0, b\.ordered - coalesce\(a\.qty, 0\)\) END AS free_balance/);
+  assert.match(lines, /CASE WHEN CASE WHEN b.ordered IS NULL .* > 0 THEN 'Yes' ELSE 'No' END AS has_free/);
+  const w = buildWhere({ ...base, filters: { hasFree: ["Yes"] } });
+  assert.match(flat(w), /l\."has_free" = \?/);
+  assert.deepEqual(w.values, ["Yes"]);
+  assert.match(flat(facetSql("hasFree", base)!), /SELECT DISTINCT f\."has_free" AS v FROM f/);
+  const drill = flat(listPurchaseLinesSql("PO-1", base));
+  assert.match(drill, /allocated_qty::float AS "allocatedQty", free_balance::float AS "freeBalance"/);
+  assert.match(drill, /FROM "PurchaseAllocation" x WHERE x\."poNo" = f\.po_no AND x\."poLineNo" = f\.line_no/);
 });
 
 // Live DB smoke: PURCHASE_SMOKE=1 STOCK_DATABASE_URL=... pnpm test

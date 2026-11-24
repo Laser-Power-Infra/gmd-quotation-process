@@ -1,7 +1,7 @@
 import { parseGmdDate } from "@gmd/ui/lib/dateParse";
 import { ACTUATOR, parseLine, parseStock, type ParsedLine, type ParsedStock } from "./parse";
 import type {
-  Allocation, AllocationInputs, AllocationResult, Basis, ContractLine, LedgerEntry, LineAllocation, OfferLine, Stage, StockItem,
+  Allocation, AllocationInputs, AllocationResult, Basis, ContractLine, LedgerEntry, LineAllocation, OfferLine, PurchaseSource, Stage, StockItem,
 } from "./types";
 
 export { parseLine, parseStock };
@@ -114,6 +114,20 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
     });
   };
 
+  /** Hold up to `qty` of `rows` for a line, as a booking does; returns what was held. */
+  const reserve = (l: ContractLine, rows: StockItem[], qty: number, a: { source: Allocation["source"]; ledgerId: string | null; allocatedAt: string | null; basis?: Basis }) => {
+    let left = qty;
+    for (const s of rows) {
+      const n = Math.min(left, free.get(s.id)!);
+      if (n <= 0) continue;
+      // a booking or lock keeps what matching would say (wiring change, PN-25, CS for DI)
+      const sp = ps.get(s.id)!, m = sp.kind ? match(sp.vt, pl.get(l.id)!, sp) : null;
+      add(l, s, n, { ...a, flags: m?.flags ?? [] });
+      left -= n;
+    }
+    return qty - left;
+  };
+
   // 1. ledger, oldest first
   const ledger = [...input.ledger].sort((a, b) => a.allocatedAt.localeCompare(b.allocatedAt));
   for (const e of ledger) {
@@ -129,15 +143,23 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
       });
       continue;
     }
-    let left = e.qty;
-    for (const s of rows) {
-      const n = Math.min(left, free.get(s.id)!);
-      if (n <= 0) continue;
-      // a booking or lock keeps what matching would say (wiring change, PN-25, CS for DI)
-      const sp = ps.get(s.id)!, m = sp.kind ? match(sp.vt, pl.get(l.id)!, sp) : null;
-      add(l, s, n, { source: e.source, ledgerId: e.id, allocatedAt: e.allocatedAt, flags: m?.flags ?? [], ...(e.basis ? { basis: e.basis } : {}) });
-      left -= n;
+    reserve(l, rows, e.qty, { source: e.source, ledgerId: e.id, allocatedAt: e.allocatedAt, ...(e.basis ? { basis: e.basis } : {}) });
+  }
+  // Purchase allocations: the received part is held like a manual booking, on the purchase line's own item code.
+  const extraFlags = new Map<string, string[]>(); // per line id; kept off offerNow, which feeds Ready to Bill
+  const purchase = [...(input.purchaseAllocations ?? [])]
+    .sort((a, b) => (a.allocatedAt ?? "").localeCompare(b.allocatedAt ?? "") || (a.id ?? "").localeCompare(b.id ?? ""))
+    .flatMap((p) => {
+    const l = live.find((x) => x.contractNo === p.contractNo && x.itemCode === p.itemCode);
+    return l ? [{ p, l }] : [];
+  });
+  for (const { p, l } of purchase) {
+    const flags = extraFlags.get(l.id) ?? [];
+    if (p.physicalQty > 0 && reserve(l, rowsOf(code(p.erpCode)), p.physicalQty, { source: "manual", ledgerId: null, allocatedAt: null }) < p.physicalQty) {
+      flags.push("Received - not yet in stock");
     }
+    if (p.shortQty > 0) flags.push(`Short receipt ${p.shortQty}`);
+    extraFlags.set(l.id, flags);
   }
 
   /** Complete valves held (finished stock), whatever they were held for. */
@@ -248,6 +270,9 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
   const inc = new Map<string, { qty: number; eta: string | null }>();
   for (const l of order) {
     let short = q(l).bto - fgOf(l) - rm(l);
+    // incoming already allocated to this line from its purchase lines (capped at what is short; its ETA stays on `sources`)
+    const own = clamp(purchase.filter((x) => x.l === l).reduce((a, x) => a + x.p.incomingQty, 0), 0, Math.max(0, short));
+    if (own > 0) { inc.set(l.id, { qty: own, eta: null }); short -= own; }
     for (const r of ships) {
       // shortcut: a shipment serves only the line's own item code; match by spec once the CHINA SHIPMENTS reader brings L-fields.
       if (short <= 0) break;
@@ -322,6 +347,13 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
     const p = pl.get(l.id)!, { bto } = q(l), fgQty = fgOf(l), rmRouteQty = rm(l), i = inc.get(l.id);
     const incomingQty = i?.qty ?? 0, gap = bto - fgQty - rmRouteQty;
     const flags = [...new Set(mine(l).flatMap((a) => a.flags))];
+    const lineFlags = [...flags, ...(extraFlags.get(l.id) ?? [])];
+    const sources = purchase.filter((x) => x.l === l).flatMap(({ p }) => ([["received", p.physicalQty], ["incoming", p.incomingQty], ["short", p.shortQty]] as const)
+      .filter(([, n]) => n > 0)
+      .map(([state, n]): PurchaseSource => ({
+        poNo: p.poNo, poLineNo: p.poLineNo, lot: p.lot, tinaInvoiceNo: p.tinaInvoiceNo, blNo: p.blNo, eta: p.eta, qty: n, state,
+        needsConfirmation: p.needsConfirmation,
+      })));
     const gb = (l.rmCodeForGb ?? "").split(",").map(code).filter(Boolean);
     // stock of the other drilling standard is never allocated; shown as possible after machining
     // shortcut: the same free stock can be suggested to several short lines; hold it per line if suggestions become bookings.
@@ -343,7 +375,7 @@ export function allocateStock(input: { stock: StockItem[]; lines: ContractLine[]
         : fgQty + rmRouteQty > 0 ? "Partial" : "Not available",
       actuatorFree: p.act ? freeOf(pool(ACTUATOR, p).filter((s) => ps.get(s.id)!.act === p.act)) : null,
       gbFree: gb.length ? freeOf([...new Set(gb)].flatMap(rowsOf)) : null,
-      flags,
+      flags: lineFlags, sources,
       suggestions: [...machinable].map(([erpCode, n]) => ({ erpCode, qty: Math.min(n, gap), note: "possible after machining" })),
     };
   });

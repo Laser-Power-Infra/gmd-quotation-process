@@ -657,6 +657,13 @@ function buildView(
   };
 }
 
+/** ALLOC SOURCE text: "Incoming PO 4500/10", "Received -> physical stock", "Short 3"; several sources joined by "; ". Internal. */
+export function sourceCell(sources: StockAllocationLine["sources"]): string {
+  return (sources ?? []).map((s) =>
+    s.state === "incoming" ? `Incoming PO ${s.poNo}/${s.poLineNo}` : s.state === "received" ? "Received -> physical stock" : s.state === "short" ? `Short ${fmt(s.qty)}` : "",
+  ).filter(Boolean).join("; ");
+}
+
 /** One line's allocation cells in ALLOCATION_HEADERS order, as plain text (also for the Excel export); all blank when the engine does not cover the line. */
 export function allocationCells(line: StockAllocationLine | undefined): string[] {
   if (!line) return ALLOCATION_HEADERS.map(() => "");
@@ -676,6 +683,7 @@ export function allocationCells(line: StockAllocationLine | undefined): string[]
     line.incomingQty > 0 && line.eta ? `${fmt(line.incomingQty)} (ETA ${line.eta})` : fmt(line.incomingQty),
     fmt(line.shortfall),
     free.filter(Boolean).join(" / "),
+    sourceCell(line.sources),
     line.status,
     notes.join(" · "),
   ];

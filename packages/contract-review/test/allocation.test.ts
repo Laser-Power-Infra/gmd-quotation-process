@@ -33,7 +33,7 @@ test("allocation cells: blank for a line the engine does not cover, quantities a
   assert.deepEqual(allocationCells(undefined), blank);
   assert.deepEqual(
     allocationCells(line({ status: "Ready for inspection call", balanceToOffer: 1200, fgQty: 1200, rmRouteQty: 0, shortfall: 0 })),
-    ["1,200", "1,200", "0", "0", "0", "", "Ready for inspection call", ""],
+    ["1,200", "1,200", "0", "0", "0", "", "", "Ready for inspection call", ""],
   );
 });
 
@@ -65,11 +65,29 @@ test("allocation cells: wiring change, actuator / gearbox free and the notes und
   assert.equal(at(partial, "ALLOC NOTES"), "PN-25 offered against PN-16 · V-1538: 2 possible after machining");
 });
 
+test("allocation cells: ALLOC SOURCE says incoming PO / received -> physical / short, and never lot, invoice, B/L or ETA", async () => {
+  const { allocationCells, sourceCell } = await server();
+  assert.equal(sourceCell(undefined), "");
+  assert.equal(sourceCell([]), "");
+  assert.equal(sourceCell([{ poNo: "4500", poLineNo: "10", qty: 20, state: "incoming" }]), "Incoming PO 4500/10");
+  assert.equal(sourceCell([{ poNo: "4500", poLineNo: "10", qty: 30, state: "received" }]), "Received -> physical stock");
+  assert.equal(sourceCell([{ poNo: "4500", poLineNo: "10", qty: 1200, state: "short" }]), "Short 1,200");
+  assert.equal(
+    sourceCell([{ poNo: "4500", poLineNo: "10", qty: 30, state: "received" }, { poNo: "4500", poLineNo: "10", qty: 20, state: "incoming" }]),
+    "Received -> physical stock; Incoming PO 4500/10",
+  );
+  // the host passes the engine line whole: extra fields (lot, invoice, B/L, ETA) must not reach the cell
+  const rich = { poNo: "4500", poLineNo: "10", qty: 20, state: "incoming", lot: "LOT-7", tinaInvoiceNo: "TI-9", blNo: "BL-3", eta: "12-Dec-2026" };
+  const cells = allocationCells(line({ sources: [rich] }));
+  assert.equal(at(cells, "ALLOC SOURCE"), "Incoming PO 4500/10");
+  assert.equal(cells.filter((c) => /LOT-7|TI-9|BL-3|12-Dec-2026/.test(c)).length, 0);
+});
+
 test("allocation cells: a skipped (Blue Star) line shows the engine's reason as its status", async () => {
   const { allocationCells } = await server();
   assert.deepEqual(
     allocationCells(line({ status: "Blue Star - left out for now", fgQty: 0, rmRouteQty: 0, shortfall: 5 })),
-    ["5", "0", "0", "0", "5", "", "Blue Star - left out for now", ""],
+    ["5", "0", "0", "0", "5", "", "", "Blue Star - left out for now", ""],
   );
 });
 

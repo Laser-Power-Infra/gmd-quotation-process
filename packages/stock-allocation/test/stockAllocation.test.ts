@@ -2,7 +2,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { allocateStock } from '../src/engine'
 import { actKey } from '../src/parse'
-import type { AllocationInputs, AllocationResult, ContractLine, LedgerEntry, StockItem } from '../src/types'
+import { buildPurchaseInputs } from '../src/purchaseAllocation'
+import { readyToBillExport } from '../src/readyToBill'
+import type { PurchaseAllocationInput, AllocationInputs, AllocationResult, ContractLine, LedgerEntry, StockItem } from '../src/types'
 
 let n = 0
 const SLV_NAME = 'SLUICE VALVE-RESILIENT-NON-RISING_DUCTILE IRON/CAST IRON_STANDARD_65_PN-10/16_'
@@ -412,7 +414,7 @@ test('one output line per live order line, keyed by its Contract Review id', () 
   ])
   assert.deepEqual(out(r, 'l4'), {
     id: 'l4', balanceToOffer: 1, fgQty: 1, rmRouteQty: 0, incomingQty: 0, eta: null, shortfall: 0, status: 'Ready for inspection call',
-    actuatorFree: 1, gbFree: null, flags: ['actuator held from stock'], suggestions: [],
+    actuatorFree: 1, gbFree: null, flags: ['actuator held from stock'], sources: [], suggestions: [],
   })
 })
 
@@ -655,4 +657,130 @@ test('incoming China shipments cover only what physical stock leaves short, earl
   assert.deepEqual([out(r, 'B').fgQty, out(r, 'B').incomingQty, out(r, 'B').eta, out(r, 'B').shortfall, out(r, 'B').status], [0, 3, '15-Jan-2027', 1, 'Not available'])
   assert.equal(r.allocations.reduce((s, x) => s + x.qty, 0), 2)
   assert.deepEqual(r.offerNow.map((o) => o.offerableQty), [2])
+})
+
+const pa = (o: Partial<PurchaseAllocationInput> = {}): PurchaseAllocationInput => ({
+  contractNo: 'C1', itemCode: 'FSD040050', erpCode: 'FSD040050', physicalQty: 0, incomingQty: 0, shortQty: 0, poNo: 'P1', poLineNo: '1',
+  lot: 'L1', tinaInvoiceNo: 'T1', blNo: 'B1', eta: '15-Jan-2027', shipStatus: null, needsConfirmation: false, ...o,
+})
+const allocRow = (qty: number, o: Record<string, unknown> = {}) => ({
+  id: 'a', poNo: 'P1', poLineNo: '1', contractNo: 'C1', itemCode: 'FSD040050', qty, lot: null, tinaInvoiceNo: null, blNo: null,
+  eta: null, shipStatus: null, needsConfirmation: false, allocatedAt: '2026-11-01', ...o,
+})
+
+test('purchase: received qty is reserved on stock before auto-allocation, so an earlier line cannot take it', () => {
+  const early = line({ id: 'E', contractNo: 'C0', balanceQty: 30, dateOfContract: '1-Jan-2024' })
+  const mine = line({ id: 'M', balanceQty: 30 })
+  const r = runIn([stock({ availableQty: 30 })], [early, mine], { purchaseAllocations: [pa({ physicalQty: 30 })] })
+  assert.deepEqual([out(r, 'M').fgQty, out(r, 'E').fgQty], [30, 0])
+  assert.deepEqual(out(r, 'M').sources.map((s) => [s.state, s.qty, s.poNo, s.lot]), [['received', 30, 'P1', 'L1']])
+})
+
+test('purchase: received qty missing from physical stock reserves what exists and flags the line', () => {
+  const r = runIn([stock({ availableQty: 20 })], [line({ id: 'M', balanceQty: 30 })], { purchaseAllocations: [pa({ physicalQty: 30 })] })
+  assert.equal(out(r, 'M').fgQty, 20)
+  assert.ok(out(r, 'M').flags.includes('Received - not yet in stock'))
+})
+
+test('purchase: incoming qty shows on the line as incoming, ahead of the auto-incoming step', () => {
+  const r = runIn([], [line({ id: 'M', balanceQty: 50 })], {
+    purchaseAllocations: [pa({ incomingQty: 20 })], incoming: [{ erpCode: 'FSD040050', qty: 100, eta: '1-Mar-2027' }],
+  })
+  assert.deepEqual([out(r, 'M').incomingQty, out(r, 'M').shortfall], [50, 0])
+  assert.deepEqual(out(r, 'M').sources.map((s) => [s.state, s.qty, s.eta]), [['incoming', 20, '15-Jan-2027']])
+})
+
+test('purchase: short receipt is flagged and stays in the shortfall', () => {
+  const r = runIn([stock({ availableQty: 30 })], [line({ id: 'M', balanceQty: 40 })], { purchaseAllocations: [pa({ physicalQty: 30, shortQty: 10 })] })
+  assert.deepEqual([out(r, 'M').fgQty, out(r, 'M').shortfall], [30, 10])
+  assert.ok(out(r, 'M').flags.includes('Short receipt 10'))
+  assert.deepEqual(out(r, 'M').sources.map((s) => s.state), ['received', 'short'])
+})
+
+test('purchase: needsConfirmation is carried onto the sources', () => {
+  const r = runIn([], [line({ id: 'M', balanceQty: 5 })], { purchaseAllocations: [pa({ incomingQty: 5, needsConfirmation: true })] })
+  assert.equal(out(r, 'M').sources[0].needsConfirmation, true)
+})
+
+test('purchase: Ready to Bill rows never carry purchase sources', () => {
+  const r = runIn([stock({ availableQty: 3 })], [line({ id: 'M', balanceQty: 3 })], { purchaseAllocations: [pa({ physicalQty: 3 })] })
+  const rows = readyToBillExport(r.offerNow, { page: 1, pageSize: 50, sort: null, search: '', filters: {} }, r.lines)
+  assert.equal(rows.length, 1)
+  assert.ok(!/L1|T1|B1|P1|15-Jan/.test(JSON.stringify(rows)))
+})
+
+test('buildPurchaseInputs: free incoming excludes what allocations claim (ordered 100, allocated 60 -> 40), never negative', () => {
+  const b = buildPurchaseInputs(
+    [{ poNo: 'P1', poLineNo: '1', itemCode: 'FSD040050', ordered: 100, received: 0, closed: false, eta: '1-Mar-2027' }], [allocRow(60)],
+  )
+  assert.deepEqual(b.incoming, [{ erpCode: 'FSD040050', qty: 40, eta: null }])
+  assert.deepEqual([b.purchaseAllocations[0].incomingQty, b.views[0].freeBalance, b.views[0].pending], [60, 40, 100])
+  const over = buildPurchaseInputs([{ poNo: 'P1', poLineNo: '1', itemCode: 'X', ordered: 10, received: 0, closed: false, eta: null }], [allocRow(30)])
+  assert.deepEqual([over.incoming, over.views[0].freeBalance], [[], 0])
+})
+
+const pl = (o: Record<string, unknown> = {}) => ({ poNo: 'P1', poLineNo: '1', itemCode: 'FSD040050', ordered: 100, received: 0, closed: false, eta: '1-Mar-2027', ...o })
+
+test('purchase end to end: ordered 100, allocated 60 -> the auto step sees only 40', () => {
+  const b = buildPurchaseInputs([pl()], [allocRow(60)])
+  const other = line({ id: 'O', contractNo: 'C9', balanceQty: 100, dateOfContract: '1-Jan-2027' })
+  const r = runIn([], [line({ id: 'M', balanceQty: 60 }), other], { ...b })
+  assert.equal(out(r, 'M').incomingQty, 60)
+  assert.equal(out(r, 'O').incomingQty, 40)
+})
+
+test('purchase: incoming fed by a purchase line keeps the delivery date off line.eta, only on sources', () => {
+  const b = buildPurchaseInputs([pl()], [allocRow(20, { eta: '15-Jan-2027' })])
+  const other = line({ id: 'O', contractNo: 'C9', balanceQty: 30 })
+  const r = runIn([], [line({ id: 'M', balanceQty: 20 }), other], { ...b })
+  assert.equal(out(r, 'O').incomingQty, 30)
+  assert.equal(out(r, 'O').eta, null)
+  assert.equal(out(r, 'M').eta, null)
+  assert.deepEqual(out(r, 'M').sources.map((s) => [s.state, s.eta]), [['incoming', '15-Jan-2027']])
+  assert.ok(!JSON.stringify(b.incoming).includes('Mar-2027'))
+})
+
+test('purchase: over-receipt reserves the allocated qty, the extra is not auto-assigned as incoming', () => {
+  const b = buildPurchaseInputs([pl({ received: 120, closed: true })], [allocRow(60)])
+  assert.deepEqual([b.purchaseAllocations[0].physicalQty, b.purchaseAllocations[0].incomingQty, b.incoming], [60, 0, []])
+  const r = runIn([stock({ availableQty: 120 })], [line({ id: 'M', balanceQty: 60 })], { ...b })
+  assert.deepEqual([out(r, 'M').fgQty, out(r, 'M').incomingQty, out(r, 'M').shortfall], [60, 0, 0])
+})
+
+test('purchase: closed line with short receipt flags the shortage through the engine', () => {
+  const b = buildPurchaseInputs([pl({ received: 40, closed: true })], [allocRow(60)])
+  assert.deepEqual([b.purchaseAllocations[0].physicalQty, b.purchaseAllocations[0].shortQty, b.incoming], [40, 20, []])
+  const r = runIn([stock({ availableQty: 40 })], [line({ id: 'M', balanceQty: 60 })], { ...b })
+  assert.deepEqual([out(r, 'M').fgQty, out(r, 'M').shortfall], [40, 20])
+  assert.ok(out(r, 'M').flags.includes('Short receipt 20'))
+})
+
+test('purchase: an allocation whose contract line is not live is released, the auto step sees the full pending', () => {
+  const live = (a: { contractNo: string; itemCode: string }) => a.contractNo === 'C1'
+  const b = buildPurchaseInputs([pl()], [allocRow(60, { contractNo: 'GONE' })], live)
+  assert.deepEqual(b.incoming, [{ erpCode: 'FSD040050', qty: 100, eta: null }])
+  assert.equal(b.purchaseAllocations.length, 0)
+  const r = runIn([], [line({ id: 'M', balanceQty: 100 })], { ...b })
+  assert.equal(out(r, 'M').incomingQty, 100)
+  assert.deepEqual(out(r, 'M').flags, [])
+})
+
+test('purchase: null ordered qty shows pending as the allocated incoming, not 0', () => {
+  const b = buildPurchaseInputs([pl({ ordered: 0 })], [allocRow(5)])
+  assert.deepEqual([b.purchaseAllocations[0].incomingQty, b.views[0].pending, b.incoming], [5, 5, []])
+})
+
+test('purchase: two lines claiming the same received stock, the older allocation wins whatever the input order', () => {
+  const mk = (id: string, cno: string, at: string) => pa({ id, allocatedAt: at, contractNo: cno, physicalQty: 30 })
+  const a = mk('a1', 'C1', '2026-11-01T00:00:00Z'), b = mk('a2', 'C2', '2026-11-01T00:00:00Z'), c = mk('a0', 'C3', '2026-10-01T00:00:00Z')
+  const ls = () => [line({ id: 'L1', contractNo: 'C1', balanceQty: 30 }), line({ id: 'L2', contractNo: 'C2', balanceQty: 30 }), line({ id: 'L3', contractNo: 'C3', balanceQty: 30 })]
+  for (const order of [[a, b, c], [c, b, a], [b, a, c], [b, c, a]]) {
+    const r = runIn([stock({ availableQty: 30 })], ls(), { purchaseAllocations: order })
+    assert.deepEqual([out(r, 'L3').fgQty, out(r, 'L1').fgQty, out(r, 'L2').fgQty], [30, 0, 0])
+  }
+  // same timestamp: id breaks the tie
+  for (const order of [[a, b], [b, a]]) {
+    const r = runIn([stock({ availableQty: 30 })], ls().slice(0, 2), { purchaseAllocations: order })
+    assert.deepEqual([out(r, 'L1').fgQty, out(r, 'L2').fgQty], [30, 0])
+  }
 })

@@ -2,8 +2,10 @@
 import { revalidatePath } from "next/cache";
 import { loginRequired, requireAccess } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { addBooking, computeStockAllocation, deleteBooking, listAllocationLogPage, lockOffer, unlockOffer, updateBooking } from "@gmd/stock-allocation/server";
-import type { Basis } from "@gmd/stock-allocation/types";
+import { addBooking, addPurchaseAllocation, computeStockAllocation, deletePurchaseAllocation, updatePurchaseAllocation, deleteBooking, listAllocationLogPage, lockOffer, unlockOffer, updateBooking } from "@gmd/stock-allocation/server";
+import type { Basis, NewPurchaseAllocation } from "@gmd/stock-allocation/types";
+import type { PurchaseViewKey } from "@gmd/stock-allocation/purchase-view";
+import { listPurchaseViewFacet, listPurchaseViewPage } from "@gmd/stock-allocation/server/purchase-view";
 import type { TableQuery } from "@gmd/ui/components/data-table/types";
 import { invalidateContractReviewAllocation } from "@/lib/contractReviewView";
 import { stockAllocationInputs } from "@/lib/stockAllocationInputs";
@@ -58,8 +60,28 @@ export async function setOfferSentAction(input: {
 }
 export async function reloadAction() {
   // lines[] is for Contract Review / Ready to Bill; the Stock Allocation table does not read it (as on the page)
-  return run(async () => { await requireAccess(); return computeStockAllocation(stockAllocationInputs).then((r) => ({ ...r, lines: [] })); }, false);
+  return run(async () => { await requireAccess(); return computeStockAllocation(stockAllocationInputs).then((r) => ({ ...r, lines: [], purchaseLines: [] })); }, false);
 }
 export async function loadLogPageAction(query: TableQuery) {
   return run(async () => { await requireAccess(); return listAllocationLogPage(query); }, false);
+}
+
+export async function addPurchaseAllocationAction(input: NewPurchaseAllocation) {
+  const denied = await loginRequired(); if (denied) return denied;
+  return run(async () => { await requireAccess(); return addPurchaseAllocation({ ...input, source: "manual" }, await who()).then(() => null); });
+}
+export async function updatePurchaseAllocationAction(id: string, input: { qty: number; remarks?: string | null }) {
+  const denied = await loginRequired(); if (denied) return denied;
+  return run(async () => { await requireAccess(); return updatePurchaseAllocation(id, input, await who()).then(() => null); });
+}
+export async function deletePurchaseAllocationAction(id: string) {
+  const denied = await loginRequired(); if (denied) return denied;
+  return run(async () => { await requireAccess(); return deletePurchaseAllocation(id, await who()); });
+}
+// The two purchase tables hold lot / invoice / B-L / ETA: internal screen only, read behind requireAccess like Ready to Bill.
+export async function loadPurchaseViewPage(view: PurchaseViewKey, query: TableQuery) {
+  return run(async () => { await requireAccess(); return listPurchaseViewPage(view, query, stockAllocationInputs); }, false);
+}
+export async function loadPurchaseViewFacet(view: PurchaseViewKey, key: string, query: TableQuery) {
+  return run(async () => { await requireAccess(); return listPurchaseViewFacet(view, key, query, stockAllocationInputs); }, false);
 }

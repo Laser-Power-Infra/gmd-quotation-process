@@ -18,7 +18,7 @@ g.tenderPrisma = {
     },
   },
 };
-g.stockPrisma = { physicalStock: { findMany: async () => [] }, stockAllocation: { findMany: async () => [] } };
+g.stockPrisma = { physicalStock: { findMany: async () => [] }, stockAllocation: { findMany: async () => [] }, purchaseAllocation: { findMany: async () => [] }, purchaseOrderLine: { findMany: async () => [] } };
 g.quotationPrisma = { mcRegisterLine: { findMany: async () => [] }, bomItem: { findMany: async () => [] } };
 mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-20T06:00:00Z") });
 

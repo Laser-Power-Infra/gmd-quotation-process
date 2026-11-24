@@ -1170,6 +1170,9 @@ importers:
       '@gmd/db-tender':
         specifier: workspace:*
         version: link:../db-tender
+      '@gmd/purchase':
+        specifier: workspace:*
+        version: link:../purchase
       '@gmd/ui':
         specifier: workspace:*
         version: link:../ui

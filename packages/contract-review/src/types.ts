@@ -77,6 +77,8 @@ export interface StockAllocationLine {
   gbFree: number | null;
   flags: string[];
   suggestions: { erpCode: string; qty: number; note: string }[];
+  /** Purchase allocations behind the line. Only PO no / line, qty and state are read; lot, invoice, B/L and ETA stay out of this package. */
+  sources?: { poNo: string; poLineNo: string; qty: number; state: string }[];
 }
 
 export interface DiagramFileMeta {

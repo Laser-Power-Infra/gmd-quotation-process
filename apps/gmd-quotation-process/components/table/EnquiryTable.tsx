@@ -4746,8 +4746,8 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
       if (res.success && res.pdfBase64) {
         triggerDownload(res.pdfBase64, res.fileName, res.mimeType);
         // After Yes one-time, reload to reflect frozen state (server updated offerPdfGeneratedAt)
-        if (apm === "Yes") {
-          // optimistic: page reload enquiries after short delay to show frozen badge
+        if (apm === "Yes" && format === "pdf") {
+          // optimistic: page reload enquiries after short delay to show frozen badge (the internal Excel does not freeze)
           setTimeout(() => window.location.reload(), 800);
         }
         setStatus("idle");
@@ -4821,7 +4821,7 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
           className="h-5 rounded border border-border bg-background px-1 text-[9px] font-medium text-foreground cursor-pointer"
         >
           <option value="pdf">PDF</option>
-          <option value="xlsx">Excel</option>
+          <option value="xlsx" title="Internal copy only: offers go to the party as PDF">Excel (internal)</option>
         </select>
         {apm === "Yes" && !generatedAt && <span className="text-[8px] text-amber-600 dark:text-amber-300 font-medium">One-time only</span>}
         {(!apm || apm === "") && <span className="text-[8px] text-muted-foreground">Unlimited (APM empty)</span>}

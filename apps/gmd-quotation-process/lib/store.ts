@@ -10,6 +10,7 @@ import bisStatusFiltersReducer from "./bisStatusFiltersSlice";
 import physicalStockTableReducer from "@gmd/physical-stock/state";
 import purchaseTableReducer from "@gmd/purchase/state";
 import readyToBillReducer from "@gmd/stock-allocation/state";
+import purchaseViewReducer from "@gmd/stock-allocation/purchase-state";
 import valveSerialTableReducer from "@gmd/valve-serial/state";
 import executionRegistersReducer from "@gmd/execution-registers/state";
 import debtorsTableReducer from "@gmd/debtors/state";
@@ -35,6 +36,7 @@ export const makeStore = () => {
       physicalStockTable: physicalStockTableReducer,
       purchaseTable: purchaseTableReducer,
       readyToBill: readyToBillReducer,
+      purchaseView: purchaseViewReducer,
       valveSerialTable: valveSerialTableReducer,
       executionRegisters: executionRegistersReducer,
       debtorsTable: debtorsTableReducer,

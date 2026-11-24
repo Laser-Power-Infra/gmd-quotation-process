@@ -101,6 +101,7 @@ export const ALLOCATION_HEADERS = [
   "ALLOC INCOMING",
   "SHORTFALL",
   "ACT / GB FREE",
+  "ALLOC SOURCE",
   ALLOC_STATUS_HEADER,
   ALLOC_NOTES_HEADER,
 ] as const;
@@ -173,6 +174,7 @@ export const CONTRACT_REVIEW_HEADER_HINTS: Record<string, string> = {
   "ALLOC INCOMING": "Stock allocation: qty covered by China shipments, with the ETA of the last one used. Not physical stock.",
   SHORTFALL: "Stock allocation: balance to offer not covered by physical, assembled or incoming stock.",
   "ACT / GB FREE": "Stock allocation: free qty of the approved actuator (ACT) and of the RM CODE FOR GB gearbox (GB).",
+  "ALLOC SOURCE": "Stock allocation: where this line's stock comes from on the purchase side (incoming PO line, received into physical stock, or short). Internal: not for offers or anything sent outside.",
   [ALLOC_STATUS_HEADER]: "Stock allocation status. Hover a cell for its flags and machining suggestions.",
 };
 
@@ -366,6 +368,7 @@ export const CONTRACT_REVIEW_COLUMN_WIDTHS: Partial<
   "ALLOC INCOMING": 150,
   SHORTFALL: 100,
   "ACT / GB FREE": 120,
+  "ALLOC SOURCE": 200,
   "ALLOC STATUS": 220,
 };
 

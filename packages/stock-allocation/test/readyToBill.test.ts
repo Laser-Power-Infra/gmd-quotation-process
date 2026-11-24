@@ -117,7 +117,7 @@ const READY = 'Ready for inspection call', WIRING = 'Allocated - wiring change r
 /** The engine's per-line result for an Offer Now line: what a test sets, the rest a fully held ready line. */
 const alloc = (o: OfferLine, a: Partial<LineAllocation> = {}): LineAllocation => ({
   id: o.line.id, balanceToOffer: o.offerableQty, fgQty: o.offerableQty, rmRouteQty: 0, incomingQty: 0, eta: null, shortfall: 0,
-  status: READY, actuatorFree: null, gbFree: null, flags: [], suggestions: [], ...a,
+  status: READY, actuatorFree: null, gbFree: null, flags: [], sources: [], suggestions: [], ...a,
 })
 
 test('a row carries its line allocation: MC no, balance to offer, incoming with ETA, shortfall, status as the engine words it', () => {
@@ -255,4 +255,21 @@ test('the internal download: every line under the filters and sort, not one page
   const col = (key: string) => READY_COLUMNS.findIndex((c) => c.key === key)
   assert.deepEqual([rows[0][col('mcNo')], rows[0][col('allocStatus')], rows[0][col('readyQty')], rows[204][col('readyQty')]], ['MC-1', 'Partial', 3, 1])
   assert.equal(readyToBillExport(many, q({ filters: { contractNo: ['K1', 'K2'] } }), lines).length, 2)
+})
+
+test('a line with purchase sources: the inspection call list carries none of lot, Tina invoice, B/L, ETA, ship status, PO no', () => {
+  const o = offer({ party: 'Alpha', contractNo: 'C1', mcNo: 'OD26Y-00001', itemName: 'Butterfly Valve DN100' }, 2)
+  const a = alloc(o, {
+    incomingQty: 3, eta: '27-11',
+    sources: [{ poNo: 'PO-9001', poLineNo: '10', lot: '132 LOT', tinaInvoiceNo: 'WS26-340', blNo: 'MEDUACL25001', eta: '27-11', qty: 5, state: 'incoming', needsConfirmation: false }],
+  })
+  const secrets = ['PO-9001', '132 LOT', 'WS26-340', 'MEDUACL25001', '27-11']
+  const rows = inspectionCallList([o], q(), [a])
+  assert.equal(rows.length, 1)
+  const json = JSON.stringify(rows) + toCsv(SHARE_HEADER, rows)
+  for (const s of secrets) assert.ok(!json.includes(s), `"${s}" reached the list for sharing`)
+  // The Ready to Bill export is the internal download (it carries ETA and incoming by design), but it must not carry the purchase-side identifiers.
+  const exp = JSON.stringify(readyToBillExport([o], q(), [a]))
+  for (const s of ['PO-9001', '132 LOT', 'WS26-340', 'MEDUACL25001']) assert.ok(!exp.includes(s), `"${s}" reached the Ready to Bill export`)
+  assert.ok(!JSON.stringify(readyToBillPage([o], q(), [a])).includes('MEDUACL25001'))
 })

@@ -103,6 +103,9 @@ export function PoLines({ po, query, filterKey, loadLines, onItemClick, onContra
               <th className={th}>Delivery date</th>
               <th className={cn(th, "text-right")}>Days overdue</th>
               <th className={th}>Sales contract</th>
+              <th className={cn(th, "text-right")}>Allocated</th>
+              <th className={cn(th, "text-right")}>Free balance</th>
+              <th className={th}>Allocated to</th>
             </tr>
           </thead>
           <tbody>
@@ -143,6 +146,44 @@ export function PoLines({ po, query, filterKey, loadLines, onItemClick, onContra
                     </button>
                   ) : (
                     l.contract
+                  )}
+                </td>
+                <td className={cn(td, right)}>{n(l.allocatedQty)}</td>
+                <td className={cn(td, right, "font-medium")}>{l.freeBalance === null ? "-" : n(l.freeBalance)}</td>
+                <td className={cn(td, "whitespace-normal")}>
+                  {l.allocations.length === 0 ? (
+                    <span className="text-muted-foreground">-</span>
+                  ) : (
+                    <details>
+                      <summary className="cursor-pointer">
+                        {l.allocations.length} contract line{l.allocations.length > 1 ? "s" : ""}
+                      </summary>
+                      <table className="mt-1">
+                        <thead className="text-muted-foreground">
+                          <tr>
+                            {["Contract", "Item code", "Qty", "Lot", "Tina invoice", "B/L", "ETA", ""].map((h, i) => (
+                              <th key={i} className="pr-3 text-left font-medium">
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {l.allocations.map((a) => (
+                            <tr key={`${a.contractNo}|${a.itemCode}`}>
+                              <td className="pr-3">{a.contractNo}</td>
+                              <td className="pr-3">{a.itemCode}</td>
+                              <td className="pr-3 text-right tabular-nums">{n(a.qty)}</td>
+                              <td className="pr-3">{a.lot}</td>
+                              <td className="pr-3">{a.tinaInvoiceNo}</td>
+                              <td className="pr-3">{a.blNo}</td>
+                              <td className="pr-3">{a.eta}</td>
+                              <td>{a.needsConfirmation && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-700 dark:text-amber-400">Needs confirmation</span>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </details>
                   )}
                 </td>
               </tr>

@@ -1,8 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { addBooking, computeStockAllocation, deleteBooking, listAllocationLogPage, lockOffer, unlockOffer, updateBooking } from "@gmd/stock-allocation/server";
+import { addBooking, addPurchaseAllocation, computeStockAllocation, deletePurchaseAllocation, updatePurchaseAllocation, deleteBooking, listAllocationLogPage, lockOffer, unlockOffer, updateBooking } from "@gmd/stock-allocation/server";
 import type { StockAllocationActions } from "@gmd/stock-allocation/types";
+import type { PurchaseViewKey } from "@gmd/stock-allocation/purchase-view";
+import { listPurchaseViewFacet, listPurchaseViewPage } from "@gmd/stock-allocation/server/purchase-view";
 import type { TableQuery } from "@gmd/ui/components/data-table/types";
 import { getCurrentUser } from "@/lib/auth-helpers";
 
@@ -38,8 +40,26 @@ export async function setOfferSentAction(input: Parameters<A["setOfferSentAction
   });
 }
 export async function reloadAction() {
-  return run(() => computeStockAllocation(), false);
+  // lines[] (each line's purchase sources) and purchaseLines hold lot / invoice / B-L / ETA / PO no: the table reads neither, so they stay on the server
+  return run(() => computeStockAllocation().then((r) => ({ ...r, lines: [], purchaseLines: [] })), false);
 }
 export async function loadLogPageAction(query: TableQuery) {
   return run(() => listAllocationLogPage(query), false);
+}
+
+export async function addPurchaseAllocationAction(input: Parameters<A["addPurchaseAllocationAction"]>[0]) {
+  return run((by) => addPurchaseAllocation({ ...input, source: "manual" }, by).then(() => null));
+}
+export async function updatePurchaseAllocationAction(id: string, input: { qty: number; remarks?: string | null }) {
+  return run((by) => updatePurchaseAllocation(id, input, by).then(() => null));
+}
+export async function deletePurchaseAllocationAction(id: string) {
+  return run((by) => deletePurchaseAllocation(id, by));
+}
+// The two purchase tables are paged on the server; only their rows reach the browser.
+export async function loadPurchaseViewPage(view: PurchaseViewKey, query: TableQuery) {
+  return run(() => listPurchaseViewPage(view, query), false);
+}
+export async function loadPurchaseViewFacet(view: PurchaseViewKey, key: string, query: TableQuery) {
+  return run(() => listPurchaseViewFacet(view, key, query), false);
 }

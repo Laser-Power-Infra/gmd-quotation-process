@@ -47,6 +47,27 @@ export interface AllocationResult {
              finishedLines: number; assembleLines: number; actuatorLines: number };
   /** One per live order line (MC received and MC pending). */
   lines: LineAllocation[];
+  /** Purchase lines with allocations (set by computeStockAllocation; internal). */
+  purchaseLines?: PurchaseLineView[];
+}
+
+/** Where a contract line's stock comes from on the purchase side. Internal: never goes into Ready to Bill or any outside list. */
+export interface PurchaseSource {
+  poNo: string; poLineNo: string; lot: string | null; tinaInvoiceNo: string | null; blNo: string | null; eta: string | null;
+  qty: number; state: "incoming" | "received" | "short"; needsConfirmation: boolean;
+}
+/** One purchase line with who holds it; freeBalance = ordered - all allocations. */
+export interface PurchaseLineView {
+  poNo: string; poLineNo: string; itemCode: string; ordered: number; received: number; pending: number;
+  allocatedTo: { contractNo: string; itemCode: string; qty: number; state: "incoming" | "received" | "short" }[]; freeBalance: number;
+}
+/** One purchase allocation, split by the host into received / incoming / short qty. */
+export interface PurchaseAllocationInput {
+  contractNo: string; itemCode: string; erpCode: string; physicalQty: number; incomingQty: number; shortQty: number;
+  poNo: string; poLineNo: string; lot: string | null; tinaInvoiceNo: string | null; blNo: string | null; eta: string | null;
+  shipStatus: string | null; needsConfirmation: boolean;
+  /** Tie-break when several lines claim the same received stock: oldest allocatedAt, then id. */
+  id?: string; allocatedAt?: string;
 }
 
 /** What the host app reads for the live lines; the package never touches the quotation DB or Google. All optional. */
@@ -58,6 +79,8 @@ export interface AllocationInputs {
   boms?: Record<string, { erpCode: string; qty: number }[]>;
   /** China shipments (GMD CLIENTS WISE > CHINA SHIPMENTS). */
   incoming?: { erpCode: string; qty: number; eta: string | null }[];
+  /** Purchase allocations: received qty is reserved on stock first, incoming qty counts as incoming, short qty is flagged. */
+  purchaseAllocations?: PurchaseAllocationInput[];
 }
 /** Reads AllocationInputs for the lines computeStockAllocation loaded, so only their contracts and BOMs are read. */
 export type InputsLoader = (lines: ContractLine[]) => Promise<AllocationInputs>;
@@ -82,6 +105,7 @@ export interface LineAllocation {
   actuatorFree: number | null;   // free qty of the approved actuator; null = no actuator on the line
   gbFree: number | null;         // free qty of the rmCodeForGb code(s); null = none
   flags: string[];
+  sources: PurchaseSource[];     // purchase allocations behind this line; internal only
   suggestions: { erpCode: string; qty: number; note: "possible after machining" }[];
 }
 
@@ -96,4 +120,13 @@ export interface StockAllocationActions {
     rmCodes: { erpCode: string; location: string | null; qty: number }[];
   }): Promise<ActionResult<unknown>>;
   reloadAction(): Promise<ActionResult<AllocationResult>>;
+  /** Allocate part of a purchase line to a contract line. The host sets who and `source: "manual"`; capacity and duplicate errors come back as text. */
+  addPurchaseAllocationAction(input: NewPurchaseAllocation): Promise<ActionResult<unknown>>;
+  updatePurchaseAllocationAction(id: string, input: { qty: number; remarks?: string | null }): Promise<ActionResult<unknown>>;
+  deletePurchaseAllocationAction(id: string): Promise<ActionResult<unknown>>;
+}
+/** What the Stock Allocation page sends to add a purchase allocation (blank text = none). */
+export interface NewPurchaseAllocation {
+  poNo: string; poLineNo: string; contractNo: string; itemCode: string; qty: number;
+  lot: string | null; tinaInvoiceNo: string | null; blNo: string | null; eta: string | null; needsConfirmation: boolean; remarks: string | null;
 }

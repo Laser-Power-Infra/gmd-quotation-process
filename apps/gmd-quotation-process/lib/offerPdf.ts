@@ -265,7 +265,8 @@ export async function assembleOfferData(
 /**
  * Server-only Offer builder (PDF by default, Excel when options.format is "xlsx"). The browser
  * reaches it only through `generateOfferPdfAction` (lib/generate-offer-pdf.ts), which never bypasses the freeze.
- * Refusal, Drive upload and the one-time freeze are the same for both formats.
+ * Offers go to parties as PDF only. The Excel is an internal copy: refused once frozen like the PDF,
+ * but it neither uses up the one-time access nor is uploaded to Drive.
  * @param options.bypassFreeze When true the one-time Offer PDF freeze is
  *   ignored — no `oneClickAccess` refusal and no `offerPdfGeneratedAt` write.
  *   Used when the PDF is generated only to attach to a docket email, which is
@@ -321,17 +322,21 @@ export async function buildOfferPdf(
 
     // Upload generated PDF to Google Drive (uploadFileToDrive also grants
     // "anyone with the link" read access, so the returned URL is shareable).
+    // The Excel is an internal copy only (offers go to parties as PDF), so it never gets a link.
     let driveUrl: string | null = null;
-    try {
-      const uploaded = await uploadFileToDrive(fileName, mimeType, pdfBuffer.toString("base64"));
-      driveUrl = uploaded.url;
-    } catch (e) {
-      console.error("Failed to upload generated PDF to Google Drive:", e);
+    if (format === "pdf") {
+      try {
+        const uploaded = await uploadFileToDrive(fileName, mimeType, pdfBuffer.toString("base64"));
+        driveUrl = uploaded.url;
+      } catch (e) {
+        console.error("Failed to upload generated PDF to Google Drive:", e);
+      }
     }
 
     // If apm === "Yes", freeze after first successful generation (one-time).
-    // Skipped when generating only to attach to an email.
-    if (!bypassFreeze && dbEnquiry && (dbEnquiry as any).apm === "Yes" && !(dbEnquiry as any).offerPdfGeneratedAt) {
+    // Skipped when generating only to attach to an email, and for the internal Excel copy,
+    // so the PDF for the party can always still be generated after an Excel.
+    if (!bypassFreeze && format === "pdf" && dbEnquiry && (dbEnquiry as any).apm === "Yes" && !(dbEnquiry as any).offerPdfGeneratedAt) {
       try {
         const { auth } = await import("@/auth")
         const session = await auth()

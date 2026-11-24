@@ -4,6 +4,7 @@ import { stockPrisma } from "@gmd/db-stock";
 import type { TableQuery } from "@gmd/ui/components/data-table/types";
 import { allocateStock } from "../engine";
 import { inspectionCallList, readyToBillExport, readyToBillFacet, readyToBillPage, type ExportRows, type ReadyToBillPageData } from "../readyToBill";
+import { loadPurchase } from "./purchaseLoad";
 import { listLedger } from "./ledger";
 import type { AllocationResult, ContractLine, InputsLoader, LedgerEntry, StockItem } from "../types";
 
@@ -69,7 +70,12 @@ export async function computeStockAllocation(loadInputs?: InputsLoader): Promise
     component: s.l4_component, material: s.l5_material, std: s.l6_std, pn: s.l7_dimension,
     category: s.l8_item_category, itemType: s.item_type, availableQty: num(s.available_qty),
   }));
-  return allocateStock({ stock, lines: contractLines, ledger, ...inputs });
+  const liveKeys = new Set(contractLines.filter((l) => l.balanceQty > 0).map((l) => `${l.contractNo}|${l.itemCode}`));
+  const purchase = await loadPurchase((a) => liveKeys.has(`${a.contractNo}|${a.itemCode}`));
+  // free pending from purchase lines replaces the host's incoming (CHINA SHIPMENTS); a non-empty host list still wins
+  const incoming = inputs?.incoming?.length ? inputs.incoming : purchase.incoming;
+  const result = allocateStock({ stock, lines: contractLines, ledger, ...inputs, incoming, purchaseAllocations: purchase.purchaseAllocations });
+  return { ...result, purchaseLines: purchase.views };
 }
 
 // shortcut: the engine runs on every call (each page, facet and download); cache its result per request if it gets slow.
@@ -97,3 +103,4 @@ export async function listInspectionCallList(query: TableQuery, loadInputs?: Inp
 }
 
 export * from "./ledger";
+export * from "./purchaseLedger";

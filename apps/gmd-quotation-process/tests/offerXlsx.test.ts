@@ -103,7 +103,7 @@ test('fixed wording of the Excel is the wording of the PDF template', () => {
   for (const t of fixed) assert.ok(template.includes(t), t)
 })
 
-test('Excel goes through the same refusal and the same one-time freeze as the PDF', () => {
+test('Excel is an internal copy: same refusal, but no freeze and no Drive link', () => {
   // The refusal itself knows nothing about a format.
   assert.equal(oneClickAccess('No', null).allowed, false)
   assert.equal(oneClickAccess('Yes', new Date()).allowed, false)
@@ -114,12 +114,16 @@ test('Excel goes through the same refusal and the same one-time freeze as the PD
   const refusal = build.indexOf('oneClickAccess(')
   const firstFormatBranch = build.indexOf('format ===')
   assert.ok(refusal > 0 && firstFormatBranch > refusal, 'refusal runs before any PDF/Excel branch')
-  // Neither the refusal nor the freeze write depends on the format.
+  // The refusal does not depend on the format: a frozen docket refuses the Excel too.
   const refusalIf = build.slice(build.lastIndexOf('if (', refusal), refusal)
   assert.doesNotMatch(refusalIf, /format/)
+  // Only the PDF (the file sent to the party) uses up the one-time access, so the PDF can always follow an Excel.
   const freezeIf = build.match(/if \(([^\n]*)offerPdfGeneratedAt\) \{/)![0]
   assert.match(freezeIf, /!bypassFreeze/)
-  assert.doesNotMatch(freezeIf, /format/)
+  assert.match(freezeIf, /format === "pdf"/)
+  // Only the PDF is uploaded to Drive (a public "anyone with the link" share); the Excel never gets a link.
+  const upload = build.indexOf('uploadFileToDrive(')
+  assert.match(build.slice(build.lastIndexOf('if (', upload), upload), /format === "pdf"/)
   // The Excel renderer is called from this one builder only, and the email path asks for no format (PDF).
   const callers = fs.readdirSync(LIB).filter((f) => /\.tsx?$/.test(f) && /buildOfferXlsx\(/.test(fs.readFileSync(path.join(LIB, f), 'utf8')))
   assert.deepEqual(callers.sort(), ['offerPdf.ts', 'offerXlsx.ts'])

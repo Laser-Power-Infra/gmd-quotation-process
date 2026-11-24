@@ -15,13 +15,17 @@ import type { DataColumn, TableQuery, TableSort } from "@gmd/ui/components/data-
 import { applyTable, facetValues } from "./localTable";
 import { LOG_COLUMNS, type AllocationLogActions, type AllocationLogPage } from "../allocationLog";
 import { basisText, rmText as rm } from "../readyToBill";
+import type { PurchaseViewActions, PurchaseViewKey } from "../purchaseView";
+import PurchaseViews, { type PurchaseWrites } from "./PurchaseViews";
 import type { AllocationResult, OfferLine, StockAllocationActions } from "../types";
 
-type View = "offer" | "ledger" | "short" | "log";
+type View = "offer" | "ledger" | "short" | "log" | PurchaseViewKey;
 const VIEWS = [
   { value: "offer", label: "Offer Now" },
   { value: "ledger", label: "Stock Allocation Ledger" },
   { value: "short", label: "Not in Stock" },
+  { value: "allocations", label: "Purchase allocations" },
+  { value: "lots", label: "Purchase lots" },
   { value: "log", label: "Log" },
 ] as const;
 const key = (o: OfferLine) => `${o.line.contractNo}|${o.line.itemCode}`;
@@ -124,8 +128,9 @@ function AllocationLog({ load, search, onClearSearch }: { load: AllocationLogAct
   );
 }
 
-export default function StockAllocationTable({ initial, actions, hideRates }: { initial: AllocationResult; actions: StockAllocationActions & AllocationLogActions; hideRates?: boolean }) {
+export default function StockAllocationTable({ initial, actions, hideRates }: { initial: AllocationResult; actions: StockAllocationActions & AllocationLogActions & PurchaseViewActions; hideRates?: boolean }) {
   const { addBookingAction, deleteBookingAction, loadLogPageAction, reloadAction, setOfferSentAction, updateBookingAction } = actions;
+  const [version, setVersion] = useState(0); // bumps after each write: the purchase tables reload with the engine figures
   const [data, setData] = useState(initial);
   const [view, setView] = useState<View>("offer");
   const [search, setSearch] = useState("");
@@ -144,6 +149,7 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
     if (!res.success) setError(res.error ?? "Failed");
     else {
       const fresh = await reloadAction();
+      setVersion((v) => v + 1);
       if (fresh.success) setData(fresh.data);
       else setError(fresh.error);
     }
@@ -176,6 +182,13 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
       itemCode: l.line.itemCode, itemName: l.line.itemName, balanceQty: l.line.balanceQty,
       offerable: l.line.balanceQty - l.shortQty, shortQty: l.shortQty, rate: l.line.rate, shortValue: l.shortValue,
     }))), [data, needle]);
+  const writes: PurchaseWrites = {
+    write,
+    add: actions.addPurchaseAllocationAction,
+    update: (id, qty) => actions.updatePurchaseAllocationAction(id, { qty }),
+    remove: actions.deletePurchaseAllocationAction,
+  };
+  const purchaseView = view === "allocations" || view === "lots";
   const manual = data.allocations.filter((a) => a.source === "manual" && a.ledgerId);
 
   const offerCols = useMemo(() => visible<OfferRow>([
@@ -252,9 +265,9 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
 
       <div className="flex shrink-0 flex-wrap items-center gap-2">
         <Segmented options={VIEWS} value={view} onChange={setView} label="Stock allocation view" />
-        {view !== "log" && <Button variant="outline" size="sm" onClick={exportCsv}>Download Excel (CSV)</Button>}
+        {view !== "log" && !purchaseView && <Button variant="outline" size="sm" onClick={exportCsv}>Download Excel (CSV)</Button>}
         {error && <span role="alert" className="text-xs text-red-600">{error}</span>}
-        <div className="ml-auto w-72"><DebouncedSearchInput value={search} onCommit={setSearch} placeholder={view === "log" ? "Search contract, item, ERP code, who or note" : "Search contract, party, item or ERP code"} /></div>
+        {!purchaseView && <div className="ml-auto w-72"><DebouncedSearchInput value={search} onCommit={setSearch} placeholder={view === "log" ? "Search contract, item, ERP code, who or note" : "Search contract, party, item or ERP code"} /></div>}
       </div>
 
       {view === "offer" && (
@@ -307,6 +320,8 @@ export default function StockAllocationTable({ initial, actions, hideRates }: { 
       )}
 
       {view === "short" && <DataTable {...shortTable.props} />}
+
+      {purchaseView && <PurchaseViews key={view} view={view} actions={actions} writes={writes} busy={busy} version={version} />}
 
       {view === "log" && <AllocationLog key={search} load={loadLogPageAction} search={search} onClearSearch={clearSearch} />}
     </div>

@@ -291,3 +291,28 @@ model StockAllocationLog {
   @@index([at])
   @@index([contractNo, itemCode])
 }
+
+// Purchase qty allocated to a contract line, keyed on the purchase line (poNo + poLineNo).
+// Lot, invoice, B/L, ETA are reference text only and internal: never in client-facing output.
+model PurchaseAllocation {
+  id                String   @id @default(cuid())
+  poNo              String
+  poLineNo          String
+  contractNo        String
+  itemCode          String // contract line item code
+  qty               Float
+  lot               String?
+  tinaInvoiceNo     String?
+  blNo              String?
+  eta               String?
+  shipStatus        String?
+  needsConfirmation Boolean  @default(false)
+  remarks           String?
+  source            String // "sheet" | "manual"
+  allocatedAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([poNo, poLineNo, contractNo, itemCode])
+  @@index([contractNo, itemCode])
+}

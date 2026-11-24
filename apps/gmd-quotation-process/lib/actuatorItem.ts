@@ -27,7 +27,7 @@ const num = (d: Prisma.Decimal | null | undefined) => (d == null ? null : Number
 /** Returns the refreshed item, or a reason it was skipped. */
 // manualTotal (only the two hand-edit paths pass it; not part of the client-facing patch): a number sets the typed whole price,
 // null removes it, undefined keeps what the breakdown holds. It only takes effect on an ACTUATOR line or a refer-OEM line.
-export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch = {}, manualTotal?: number | null) {
+export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch = {}, manualTotal?: number | null, dryRun = false) {
   const it = await prisma.enquiryItem.findUnique({ where: { id: itemId }, include: { enquiry: { select: { apm: true, offerPdfGeneratedAt: true, partyName: true } } } });
   if (!it) return { skipped: "Item not found." };
   if (isEnquiryFrozen(it.enquiry.apm, it.enquiry.offerPdfGeneratedAt)) return { skipped: "Frozen after one-time PDF." };
@@ -56,6 +56,8 @@ export async function applyActuatorToItem(itemId: string, patch: ActuatorPatch =
   const res = plan.cost;
   const s = pick.selection;
   const stock = stockSummary(plan, { act: s.act?.erpCode ? [s.act.erpCode] : [], gb: s.gb?.erpCode ?? null }, free, qty);
+  // Backfill preview: what the pick would write, nothing saved.
+  if (dryRun) return { dry: { actCode: plan.actCode, gbCode: plan.gbCode, total: res.total, pending: res.pending, reason: pick.missing.join("; ") || null } };
 
   await prisma.enquiryItem.update({
     where: { id: itemId },
@@ -91,6 +93,33 @@ export async function repriceLinkedActuatorItems() {
     } catch (e) {
       out.failed++;
       console.warn(`[repriceLinkedActuatorItems] ${row.id}:`, e);
+    }
+  }
+  return out;
+}
+
+/**
+ * One-off backfill for old actuated lines that were never linked (no codes, no breakdown). Dry run by default: lists what
+ * each would get. With apply, links only lines that price in full: a pending or OEM line is left alone so no old cost is lost.
+ */
+export async function backfillUnlinkedActuatorItems(apply = false) {
+  const rows = await prisma.enquiryItem.findMany({
+    where: { actCode: null, gbCode: null, actuatorBreakdown: { equals: Prisma.DbNull } },
+    select: { id: true, itemName: true, operationType: true, itemType: true, productCost: true, enquiry: { select: { apm: true, offerPdfGeneratedAt: true } } },
+  });
+  const out: { id: string; docket: string | null; itemName: string; oldCost: unknown; actCode?: string | null; gbCode?: string | null; total?: number | null; status: string }[] = [];
+  for (const row of rows.filter(isActuatorCandidate)) {
+    const base = { id: row.id, docket: row.enquiry.apm, itemName: row.itemName, oldCost: row.productCost };
+    if (isEnquiryFrozen(row.enquiry.apm, row.enquiry.offerPdfGeneratedAt)) { out.push({ ...base, status: "skipped: frozen" }); continue; }
+    try {
+      const r = await applyActuatorToItem(row.id, {}, undefined, true);
+      if (!r.dry) { out.push({ ...base, status: `skipped: ${r.skipped}` }); continue; }
+      const { actCode, gbCode, total, pending, reason } = r.dry;
+      if (total == null || pending.length > 0) { out.push({ ...base, status: `left alone: pending (${reason ?? pending.join(", ")})` }); continue; }
+      if (apply) await applyActuatorToItem(row.id);
+      out.push({ ...base, actCode, gbCode, total, status: apply ? "linked" : "would link" });
+    } catch (e) {
+      out.push({ ...base, status: `failed: ${e instanceof Error ? e.message : e}` });
     }
   }
   return out;
