@@ -12,7 +12,7 @@ class PendingApproval extends CredentialsSignin {
 
 
 // Google sign-in is an allowlist: the account must already exist in User and be active.
-const googleEnabled = !!process.env.AUTH_GOOGLE_ID
+const googleEnabled = !!process.env.AUTH_GOOGLE_ID_STOCK
 const RECHECK_MS = 5 * 60 * 1000
 
 async function findAllowedUser(email: string) {
@@ -56,7 +56,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         } as any
       },
     }),
-    ...(googleEnabled ? [Google] : []),
+    ...(googleEnabled ? [Google({ clientId: process.env.AUTH_GOOGLE_ID_STOCK, clientSecret: process.env.AUTH_GOOGLE_SECRET_STOCK })] : []),
   ],
   cookies: {
     sessionToken: { name: "gmd-stock.session-token", options: { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production" } },

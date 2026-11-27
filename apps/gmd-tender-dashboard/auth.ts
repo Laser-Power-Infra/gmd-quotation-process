@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs"
 import Google from "next-auth/providers/google"
 
 // Google sign-in is an allowlist: the account must already exist in users and be active.
-const googleEnabled = !!process.env.AUTH_GOOGLE_ID
+const googleEnabled = !!process.env.AUTH_GOOGLE_ID_TENDER
 const RECHECK_MS = 5 * 60 * 1000
 
 async function findAllowedUser(email: string) {
@@ -46,7 +46,7 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         }
       },
     }),
-    ...(googleEnabled ? [Google] : []),
+    ...(googleEnabled ? [Google({ clientId: process.env.AUTH_GOOGLE_ID_TENDER, clientSecret: process.env.AUTH_GOOGLE_SECRET_TENDER })] : []),
   ],
   cookies: {
     sessionToken: { name: "gmd-tender.session-token", options: { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production" } },

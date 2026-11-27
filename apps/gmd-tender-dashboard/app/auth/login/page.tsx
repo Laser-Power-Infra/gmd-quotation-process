@@ -6,7 +6,7 @@ export default function LoginPage() {
   return (
     <div className="flex flex-1 items-center justify-center overflow-auto bg-muted/40 p-4">
       <div className="w-full max-w-sm">
-        <LoginForm googleEnabled={!!process.env.AUTH_GOOGLE_ID} />
+        <LoginForm googleEnabled={!!process.env.AUTH_GOOGLE_ID_TENDER} />
       </div>
     </div>
   )
