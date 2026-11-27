@@ -33,7 +33,8 @@ test('summary totals are one aggregate with the numeric guard and the same exclu
   // Quantity 0 adds no cost to the card (18 Nov): cost x quantity only when both are > 0.
   assert.match(s.sql, /i\."cost" > 0 AND i\."quantity" > 0 THEN i\."cost" \* i\."quantity"/)
   assert.doesNotMatch(s.sql, /ELSE 1/)
-  assert.match(s.sql, /"cBatch"/)
+  // "Deleted as Closed" rows are quoted in the offer PDF, so the cards count them too (27 Nov, docket 340).
+  assert.doesNotMatch(s.sql, /"cBatch"/)
   // "Deleted as Current Reqt = No" rows are still quoted lines: they count (Puja, 17 Nov, docket 365).
   assert.doesNotMatch(s.sql, /"nBatch"/)
   assert.match(s.sql, /"duplicate"/)
