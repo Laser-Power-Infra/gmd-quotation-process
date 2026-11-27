@@ -13,6 +13,7 @@ model User {
   email         String        @unique
   password      String // bcrypt hash
   role          String        @default("user") // "user" | "admin" | "developer"
+  active        Boolean       @default(true)
   emailVerified DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt

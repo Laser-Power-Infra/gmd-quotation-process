@@ -4,9 +4,10 @@ import { useActionState, useEffect } from "react"
 import { useSearchParams } from "next/navigation"
 import { authenticate } from "@/actions/auth"
 import Link from "next/link"
+import { signIn } from "next-auth/react"
 import { LogIn } from "lucide-react"
 
-export default function LoginForm() {
+export default function LoginForm({ googleEnabled }: { googleEnabled: boolean }) {
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get("callbackUrl") || "/"
 
@@ -18,6 +19,7 @@ export default function LoginForm() {
     }
   }, [state])
 
+  const accessDenied = searchParams.get("error") === "AccessDenied"
   const signupSuccess = searchParams.get("signup") === "success"
 
   return (
@@ -30,6 +32,12 @@ export default function LoginForm() {
       {signupSuccess && (
         <div className="mb-4 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-700">
           Account created successfully. Please sign in.
+        </div>
+      )}
+
+      {accessDenied && (
+        <div className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+          This Google account has no access. Ask an admin to add your email, then try again.
         </div>
       )}
 
@@ -84,6 +92,21 @@ export default function LoginForm() {
           )}
         </button>
       </form>
+
+      {googleEnabled && (
+        <>
+          <div className="my-4 flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="h-px flex-1 bg-border" />or<span className="h-px flex-1 bg-border" />
+          </div>
+          <button
+            type="button"
+            onClick={() => signIn("google", { callbackUrl })}
+            className="flex w-full items-center justify-center rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground hover:bg-muted"
+          >
+            Continue with Google
+          </button>
+        </>
+      )}
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
         Don&apos;t have an account?{" "}
