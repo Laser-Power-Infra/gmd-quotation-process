@@ -1,8 +1,9 @@
 import type { Prisma } from "@gmd/db-quotation";
 import { prisma } from "@/lib/prisma";
 import { deriveMapKey, isActuated } from "@/lib/actuatorCost";
+import { loadActuatorMaster } from "@/lib/actuatorSheet";
 import { actuatorBomLines, resolveStockCodes, type BomLine, type StockCodes } from "@/lib/actuatorStock";
-import { livePhysicalQty } from "@/lib/actuatorStockSync";
+import { freeQty } from "@/lib/actuatorStockSync";
 
 export type DocketActuated = Awaited<ReturnType<typeof loadActuatedDocketItems>>[number];
 
@@ -17,11 +18,9 @@ export async function actuatorStockCodesFor(
   docketItems: DocketActuated[],
   fullItems: { itemCode: string | null; itemType: string | null; size: string | null; pnGmd: string | null }[],
 ): Promise<{ byCode: Map<string, StockCodes>; live: Map<string, number> }> {
-  const [mappings, actStock] = await Promise.all([
-    prisma.actuatorMapping.findMany({ select: { mapKey: true, gmdGbCode: true } }),
-    prisma.actuatorStock.findMany({ select: { erpCode: true, actCode: true } }),
-  ]);
-  const gmdGb = new Map(mappings.map((m) => [m.mapKey, m.gmdGbCode]));
+  const master = await loadActuatorMaster();
+  const gmdGb = new Map(master.mappings.map((m) => [m.mapKey, m.gmdGbCode as string | null]));
+  const actStock = master.actuatorStock as { erpCode: string; actCode: string | null }[];
   const byCode = new Map<string, StockCodes>();
   for (const fi of fullItems) {
     const docket = docketItems.find((d) => d.erpItemCode?.trim() === fi.itemCode?.trim());
@@ -29,7 +28,7 @@ export async function actuatorStockCodesFor(
     const key = deriveMapKey({ itemType: fi.itemType, size: fi.size, pnRating: fi.pnGmd });
     byCode.set(fi.itemCode.trim(), resolveStockCodes(docket, key ? gmdGb.get(key) : null, actStock));
   }
-  const live = await livePhysicalQty([...new Set([...byCode.values()].flatMap((c) => [...c.act, c.gb ?? ""]))].filter(Boolean)).catch(() => new Map<string, number>());
+  const live = await freeQty([...new Set([...byCode.values()].flatMap((c) => [...c.act, c.gb ?? ""]))].filter(Boolean)).catch(() => new Map<string, number>());
   return { byCode, live };
 }
 

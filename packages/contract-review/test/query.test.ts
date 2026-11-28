@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Prisma } from "@gmd/db-tender";
-import { CONTRACT_REVIEW_HEADERS, dbContractReviewToRow } from "../src/lib/columns";
-import { CR_COLUMNS } from "../src/lib/crColumns";
+import { ALLOCATION_HEADERS, CONTRACT_REVIEW_HEADERS, dbContractReviewToRow } from "../src/lib/columns";
+import { CR_COLUMNS, crColumn } from "../src/lib/crColumns";
 import { DEFAULT_CONTRACT_REVIEW_FLAGS } from "../src/flags";
 import { enabledTrees } from "../src/ui/graph_flow/tree";
 import { computeView, type ViewContext } from "../src/lib/view";
@@ -154,6 +154,18 @@ test("flow nodes carry their whole path; the graph base ignores graph columns an
   const graphWhere = flat(s.graph!).split(" WHERE ").at(-1)!;
   assert.doesNotMatch(graphWhere, /c\."status"/);
   assert.match(graphWhere, /c\."item"/);
+});
+
+test("stock allocation columns never reach WHERE / ORDER BY / facets and are not DATA INCOMPLETE", async () => {
+  const fallback = 'c."syncedAt" DESC, c.id ASC';
+  for (const h of ALLOCATION_HEADERS) {
+    // No column rule, so no cell SQL: the DATA INCOMPLETE fallthrough in cellSql never sees them.
+    assert.equal(crColumn(h), undefined, h);
+    const w = where({ columnFilters: { [h]: "5" }, multiFilters: { [h]: ["Partial"] }, dateRanges: { [h]: { from: "2026-01-01", to: "" } } });
+    assert.equal(flat(w), "TRUE", h);
+    assert.equal(flat(buildOrderBy({ header: h, direction: "asc" }, all)), fallback, h);
+    assert.deepEqual(await listContractReviewFacet(query({}), h, { flags: DEFAULT_CONTRACT_REVIEW_FLAGS }), [], h);
+  }
 });
 
 test("disabled columns read as NULL in the totals", () => {

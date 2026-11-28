@@ -28,6 +28,7 @@ function toDraft(e: EnquiryData): Draft {
     closureStatus: closureShown(e.closureStatus),
     duplicate: e.duplicate || "",
     duplicateOfDocket: e.duplicateOfDocket || "",
+    contactPerson: e.contactPerson || "",
     senderEmail: e.senderEmail || "",
     contactNo: e.contactNo || "",
     selectedContractNo: (e.selectedContractNo ?? []).join(", "),
@@ -179,6 +180,7 @@ function Form({
             <Trash2 className="h-3.5 w-3.5" /> Delete duplicate
           </Button>
         )}
+        {text("Contact person", "contactPerson")}
         {text("Email", "senderEmail")}
         {text("Phone", "contactNo")}
       </div>

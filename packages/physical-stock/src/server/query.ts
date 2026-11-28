@@ -73,7 +73,7 @@ export function buildWhere(query: StockTableQuery, skip?: string): Prisma.Sql {
   }
   for (const [field, value] of Object.entries(query.columnSearch ?? {})) {
     if (field === skip || !value.trim() || !inDb(field)) continue;
-    parts.push(sql`regexp_replace(${text(exprOf(field).text)}, '\s', '', 'g') ILIKE ${`%${escapeLike(squish(value))}%`}`);
+    parts.push(sql`regexp_replace(${text(exprOf(field).text)}, '\\s', '', 'g') ILIKE ${`%${escapeLike(squish(value))}%`}`);
   }
   for (const [field, range] of Object.entries(query.dateRanges ?? {})) {
     const column = STOCK_COLUMNS.find((c) => c.field === field);

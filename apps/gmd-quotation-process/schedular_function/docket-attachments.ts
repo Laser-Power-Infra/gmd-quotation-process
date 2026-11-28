@@ -129,7 +129,7 @@ async function bufferToText(kind: AttachmentKind, buffer: Buffer): Promise<strin
         blankrows: false,
       });
       const lines = rows
-        .map((row) => (Array.isArray(row) ? row.map((c) => String(c ?? "").trim()).join("\t") : ""))
+        .map((row) => (Array.isArray(row) ? row.map((c) => String(c ?? "").replace(/\s+/g, " ").trim()).join("\t") : ""))
         .filter((line) => line.replace(/\t/g, "").trim().length > 0);
       if (lines.length) blocks.push(lines.join("\n"));
     }

@@ -34,23 +34,30 @@ function keysMatch(provided: string, expected: string): boolean {
 }
 
 /**
- * Validates the `x-api-key` header against `GMD_SYNC_API_KEY`.
+ * Validates the `x-api-key` header against the env var `envName`: `GMD_SYNC_API_KEY` by default,
+ * or a route's own key (e.g. `GMD_DRAWINGS_API_KEY`), which then never accepts the sync key.
  *
- * - 503 when the env var is unset (misconfiguration, not a client error).
+ * - 503 when the env var is unset, or a route's own key equals the sync key (misconfiguration, not a client error).
  * - 401 when the header is missing or does not match.
  */
-export function requireSyncApiKey(request: Request): SyncAuthResult {
-  const expected = process.env[SYNC_API_KEY_ENV];
+export function requireSyncApiKey(request: Request, envName: typeof SYNC_API_KEY_ENV | "GMD_DRAWINGS_API_KEY" = SYNC_API_KEY_ENV): SyncAuthResult {
+  const expected = process.env[envName];
 
   if (!expected || expected.trim() === "") {
     console.error(
-      `[scheduler-auth] ${SYNC_API_KEY_ENV} is not configured — refusing the request.`,
+      `[scheduler-auth] ${envName} is not configured — refusing the request.`,
     );
     return {
       ok: false,
       status: 503,
-      error: `${SYNC_API_KEY_ENV} is not configured on the server.`,
+      error: `${envName} is not configured on the server.`,
     };
+  }
+
+  // Whoever holds the sync key can start every scheduler job (client reminder mails included).
+  if (envName !== SYNC_API_KEY_ENV && expected === process.env[SYNC_API_KEY_ENV]) {
+    console.error(`[scheduler-auth] ${envName} equals ${SYNC_API_KEY_ENV} — refusing the request.`);
+    return { ok: false, status: 503, error: `${envName} is not configured correctly on the server.` };
   }
 
   const provided = request.headers.get(SYNC_API_KEY_HEADER);

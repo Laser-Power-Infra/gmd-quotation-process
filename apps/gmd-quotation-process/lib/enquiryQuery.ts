@@ -1,5 +1,6 @@
 import type { EnquiryData, FiltersState } from "./types";
 import { initialFiltersState } from "./filtersSlice";
+import { PENDING_CLOSURE_STATUS } from "./closureStatus";
 
 /** Sort requested by the table header. `null` = newest first, like today. */
 export type EnquirySort = { field: string; direction: "asc" | "desc" } | null;
@@ -13,6 +14,8 @@ export interface EnquiryQuery {
   globalSearch: string;
   projectReference: string;
   pendingOnly: boolean;
+  /** Only dockets with a blank Contact person, Email, Phone or Utility. */
+  contactMissingOnly: boolean;
   closedBomOnly: boolean;
   incompleteOnly: boolean;
   /** Only items with a cost sanity warning (lib/costSanity.ts). */
@@ -89,6 +92,7 @@ export function emptyEnquiryQuery(): EnquiryQuery {
     globalSearch: "",
     projectReference: "",
     pendingOnly: false,
+    contactMissingOnly: false,
     closedBomOnly: false,
     incompleteOnly: false,
     costWarningOnly: false,
@@ -108,6 +112,7 @@ export function emptyEnquiryQuery(): EnquiryQuery {
     globalSearch: q.globalSearch,
     projectReference: q.projectReference,
     pendingOnly: q.pendingOnly,
+    contactMissingOnly: q.contactMissingOnly,
     closedBomOnly: q.closedBomOnly,
     incompleteOnly: q.incompleteOnly,
     costWarningOnly: q.costWarningOnly,
@@ -117,6 +122,25 @@ export function emptyEnquiryQuery(): EnquiryQuery {
     page: q.page,
     pageSize: q.pageSize,
   });
+}
+
+/**
+ * The blank contact fields of a docket whose offer has not gone out yet (closure
+ * blank or Pending); [] once it is Sent, Not Sent ("-" is its legacy form), Rejected or anything else.
+ * The row badge for `contactMissingOnly`; the SQL twin is in lib/enquiry-query.ts.
+ */
+export function missingContactFields(
+  e: Pick<EnquiryData, "closureStatus" | "contactPerson" | "senderEmail" | "contactNo" | "utility">,
+): string[] {
+  const closure = (e.closureStatus ?? "").trim().toLowerCase();
+  if (closure && closure !== PENDING_CLOSURE_STATUS.toLowerCase()) return [];
+  const fields = [
+    ["Contact person", e.contactPerson],
+    ["Email", e.senderEmail],
+    ["Phone", e.contactNo],
+    ["Utility", e.utility],
+  ] as const;
+  return fields.filter(([, value]) => !value?.trim() || value.trim() === "-").map(([label]) => label);
 }
 
 /** Facet options only depend on the filters, never on the page or the sort. */

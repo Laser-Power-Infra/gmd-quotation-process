@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
-import { isRestricted } from "@/lib/access"
+import { hostedPageAllowed, isRestricted } from "@/lib/access"
 
-// Open on the local server. When restricted (Vercel) only admin/developer get past /login.
+// Open on the local server. When restricted (Vercel) only admin/developer get past /login, plus any signed-in user on /drawings.
 export const proxy = auth((req) => {
   if (!isRestricted()) return
   const { pathname } = req.nextUrl
   if (pathname === "/login" || pathname === "/register") return
-  const role = (req.auth?.user as { role?: string } | undefined)?.role
-  if (role === "admin" || role === "developer") return
+  if (hostedPageAllowed(pathname, req.auth?.user as { role?: string } | undefined)) return
   const url = new URL("/login", req.nextUrl.origin)
   url.searchParams.set("callbackUrl", pathname)
   return NextResponse.redirect(url)

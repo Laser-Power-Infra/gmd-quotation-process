@@ -82,3 +82,22 @@ test("PO NO: an admin can change a saved one", async () => {
   assert.equal((await savePoNo("admin", "r", "PO-2")).success, true);
   assert.equal(rows.r.poNo, "PO-2");
 });
+
+// APPROVAL DATE on a line a current drawing covers belongs to Drawings & QAP (guards both apps).
+test("APPROVAL DATE: covered line refused, uncovered saved, lookup error fails closed without saving", async () => {
+  const allowed = new Set(["approvalDate", "mcDate"]);
+  const save = (field: string, covered: (ids: string[]) => Promise<Set<string>>) =>
+    updateContractReviewField("a1", field, "01-Nov-2026", allowed, new Set(), covered);
+  rows.a1 = { approvalDate: null, mcDate: null };
+  const refused = await save("approvalDate", async (ids) => new Set(ids));
+  assert.equal(refused.success, false);
+  assert.match(refused.error ?? "", /Drawings & QAP/);
+  assert.equal(rows.a1.approvalDate, null);
+  const failed = await save("approvalDate", async () => { throw new Error("no table"); });
+  assert.equal(failed.success, false);
+  assert.match(failed.error ?? "", /Could not check Drawings & QAP/);
+  assert.equal(rows.a1.approvalDate, null);
+  assert.equal((await save("mcDate", async () => { throw new Error("unused"); })).success, true);
+  assert.equal((await save("approvalDate", async () => new Set())).success, true);
+  assert.equal(rows.a1.approvalDate, "01-Nov-2026");
+});

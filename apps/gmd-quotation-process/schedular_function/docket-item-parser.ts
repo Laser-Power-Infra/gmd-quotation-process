@@ -200,27 +200,72 @@ function dedupeKey(item: ParsedDocketItem): string {
   return `${item.itemName.toLowerCase().replace(/\s+/g, " ").trim()}|${item.quantity}`;
 }
 
+// -----------------------------------------------------------------------------
+// File patterns
+//
+// Every known way an enquiry lists its items has ONE reader below, and every
+// item records which reader produced it:
+//
+//   mail-lines       item lines typed in the mail body ("1. Gate Valve - 2 Nos")
+//   column-table     a table with a description and a quantity column; optional
+//                    size / PN columns are folded into the name
+//   sectioned-sheet  a sheet whose items sit under heading rows (general note,
+//                    lettered section, "PN-1.0" sub-heading) that belong in the name
+//
+// A description merged over several rows is not a reader: `fillMergedDown` in
+// docket-attachments.ts un-merges it before the text reaches this file, after
+// which it is an ordinary column-table.
+//
+// To support a new file type: write a `TableLayout`, put it in `TABLE_LAYOUTS`
+// above the layouts it is more specific than (first match wins), and add a test
+// with a sample of the file. Existing readers stay untouched.
+// -----------------------------------------------------------------------------
+
+export type DocketItemPattern = "mail-lines" | "column-table" | "sectioned-sheet";
+
+type Candidate = ParsedDocketItem & { pattern: DocketItemPattern };
+
+interface TableHeader {
+  desc: number;
+  qty: number;
+  size: number;
+  /** A "(MM)" size header means bare numbers are millimetres, not inches. */
+  sizeMm: boolean;
+  rating: number;
+  fields: number;
+}
+
+/** One table: its header and the rows under it that have the header's width. */
+interface TableBlock {
+  header: TableHeader;
+  rows: string[][];
+}
+
+interface TableLayout {
+  name: DocketItemPattern;
+  matches(table: TableBlock): boolean;
+  read(table: TableBlock): ParsedDocketItem[];
+}
+
 /**
- * Parses tab- or pipe-delimited table blocks (email tables and spreadsheets
- * flattened to text). Finds a header row with a description column and a
- * quantity column, then reads each following row.
+ * Shared by every table layout: splits tab- or pipe-delimited text (email tables
+ * and spreadsheets flattened to text) into tables. A table starts at a header row
+ * with a description column and a quantity column and ends at the next header or
+ * the first non-table line.
  */
-function parseDelimitedTables(lines: string[], out: ParsedDocketItem[]): void {
-  let header: { desc: number; qty: number; size: number; sizeMm: boolean; rating: number; fields: number } | null = null;
+function splitTables(lines: string[]): TableBlock[] {
+  const tables: TableBlock[] = [];
+  let current: TableBlock | null = null;
 
   for (const raw of lines) {
-    const line = stripQuoteMarkers(raw).trim();
+    // Edge tabs are empty cells: trimming them would shift "\tPN-1.0" out of its column.
+    const line = stripQuoteMarkers(raw).replace(/^[ \r]+|[ \r]+$/g, "");
     const delimiter = line.includes("\t") ? "\t" : line.includes("|") ? "|" : null;
     if (!delimiter) {
-      header = null;
+      current = null;
       continue;
     }
-
     const cells = line.split(delimiter).map((c) => c.trim());
-    if (cells.length < 2) {
-      header = null;
-      continue;
-    }
 
     const totalQtyIdx = cells.findIndex((c) => /^total\s*qty$/i.test(c));
     const qtyIdx = totalQtyIdx !== -1
@@ -229,111 +274,193 @@ function parseDelimitedTables(lines: string[], out: ParsedDocketItem[]): void {
     const descIdx = cells.findIndex((c) =>
       /^(?:item|item\s*name|item\s*desc(?:ription)?|description|particulars|material|name|specification)$/i.test(c),
     );
-    const sizeIdx = cells.findIndex((c) =>
-      /^(?:nominal\s*)?(?:size|size\s*\/\s*dn|dn|nb|dia|diameter)(?:\s*\((?:mm|inch|in)\))?$/i.test(c),
-    );
-    const ratingIdx = cells.findIndex((c) =>
-      /^(?:pn|pressure\s*rating|rating|class|pn\s*\/\s*(?:ansi\s*)?(?:rating|class))$/i.test(c),
-    );
 
     if (qtyIdx !== -1 && descIdx !== -1) {
-      header = {
-        desc: descIdx,
-        qty: qtyIdx,
-        size: sizeIdx,
-        // A "(MM)" header means bare numbers are millimetres, not inches.
-        sizeMm: sizeIdx >= 0 && /\(mm\)/i.test(cells[sizeIdx]),
-        rating: ratingIdx,
-        fields: cells.length,
+      const sizeIdx = cells.findIndex((c) =>
+        /^(?:nominal\s*)?(?:size|size\s*\/\s*dn|dn|nb|dia|diameter)(?:\s*\((?:mm|inch|in)\))?$/i.test(c),
+      );
+      const ratingIdx = cells.findIndex((c) =>
+        /^(?:pn|pressure\s*rating|rating|class|pn\s*\/\s*(?:ansi\s*)?(?:rating|class))$/i.test(c),
+      );
+      current = {
+        header: {
+          desc: descIdx,
+          qty: qtyIdx,
+          size: sizeIdx,
+          sizeMm: sizeIdx >= 0 && /\(mm\)/i.test(cells[sizeIdx]),
+          rating: ratingIdx,
+          fields: cells.length,
+        },
+        rows: [],
       };
+      tables.push(current);
       continue;
     }
 
-    if (header && cells.length === header.fields) {
-      const quantity = parsePositiveNumber((cells[header.qty] ?? "").match(/\d[\d,]*(?:\.\d+)?/)?.[0]);
-      if (quantity === null) continue;
-      let itemName = toItemName(cells[header.desc] ?? "");
-      if (!itemName) continue;
-      // Fold the size and rating columns into the name when the description lacks them,
-      // so rows that differ only by size / PN stay separate items.
-      for (const [idx, isSize] of [[header.size, true], [header.rating, false]] as const) {
-        if (idx < 0) continue;
-        let cell = (cells[idx] ?? "").trim();
-        if (!cell || cell === "-") continue;
-        if (isSize && header.sizeMm && /^\d+$/.test(cell)) cell = `${cell}MM`;
-        if (!itemName.toLowerCase().includes(cell.toLowerCase())) {
-          itemName = `${itemName} ${cell}`.replace(/\s+/g, " ").trim();
-        }
-      }
-      out.push({ itemName, quantity });
+    if (current && cells.length === current.header.fields) current.rows.push(cells);
+  }
+
+  return tables;
+}
+
+function rowQuantity(h: TableHeader, cells: string[]): number | null {
+  return parsePositiveNumber((cells[h.qty] ?? "").match(/\d[\d,]*(?:\.\d+)?/)?.[0]);
+}
+
+/**
+ * Folds the size and rating columns into the name when the description lacks
+ * them, so rows that differ only by size / PN stay separate items.
+ */
+function foldSizeAndRating(h: TableHeader, cells: string[], name: string): string {
+  let itemName = name;
+  for (const [idx, isSize] of [[h.size, true], [h.rating, false]] as const) {
+    if (idx < 0) continue;
+    let cell = (cells[idx] ?? "").trim();
+    if (!cell || cell === "-") continue;
+    if (isSize && h.sizeMm && /^\d+$/.test(cell)) cell = `${cell}MM`;
+    if (!itemName.toLowerCase().includes(cell.toLowerCase())) {
+      itemName = `${itemName} ${cell}`.replace(/\s+/g, " ").trim();
     }
+  }
+  return itemName;
+}
+
+/**
+ * A heading row has no quantity and text only in the description column, plus at
+ * most a short enumerator ("A"). Anything else filled in (a unit, a rate) makes
+ * it a quantity-less item, not a heading. Returns the heading text and whether it
+ * is enumerated, or `null` for a non-heading row.
+ */
+function readHeading(h: TableHeader, cells: string[]): { text: string; enumerated: boolean } | null {
+  if (rowQuantity(h, cells) !== null) return null;
+  const text = toItemName(cells[h.desc] ?? "");
+  if (!text) return null;
+  const others = cells.filter((c, i) => i !== h.desc && c);
+  if (others.length > 1 || (others[0]?.length ?? 0) > 6) return null;
+  return { text, enumerated: others.length === 1 };
+}
+
+/** Pattern: sectioned-sheet. Item name = general note + section + sub-heading + row text. */
+const sectionedSheet: TableLayout = {
+  name: "sectioned-sheet",
+  matches: ({ header, rows }) => rows.some((cells) => readHeading(header, cells) !== null),
+  read({ header, rows }) {
+    const out: ParsedDocketItem[] = [];
+    let note = "";
+    let section = "";
+    let sub = "";
+    for (const cells of rows) {
+      const heading = readHeading(header, cells);
+      if (heading) {
+        if (heading.enumerated) {
+          section = heading.text;
+          sub = "";
+        } else if (section) sub = heading.text;
+        // Before any section: notes stack up until the first item, then replace.
+        else note = out.length ? heading.text : `${note} ${heading.text}`.trim();
+        continue;
+      }
+      const quantity = rowQuantity(header, cells);
+      const name = toItemName(cells[header.desc] ?? "");
+      if (quantity === null || !name) continue;
+      const itemName = [note, section, sub, name].filter(Boolean).join(" ");
+      out.push({ itemName: foldSizeAndRating(header, cells, itemName), quantity });
+    }
+    return out;
+  },
+};
+
+/** Pattern: column-table. One item per row that has a description and a quantity. */
+const columnTable: TableLayout = {
+  name: "column-table",
+  matches: () => true,
+  read({ header, rows }) {
+    const out: ParsedDocketItem[] = [];
+    for (const cells of rows) {
+      const quantity = rowQuantity(header, cells);
+      const name = toItemName(cells[header.desc] ?? "");
+      if (quantity === null || !name) continue;
+      out.push({ itemName: foldSizeAndRating(header, cells, name), quantity });
+    }
+    return out;
+  },
+};
+
+/** First match wins: most specific layout first, `column-table` is the catch-all. */
+const TABLE_LAYOUTS: TableLayout[] = [sectionedSheet, columnTable];
+
+function readTables(lines: string[], out: Candidate[]): void {
+  for (const table of splitTables(lines)) {
+    const layout = TABLE_LAYOUTS.find((l) => l.matches(table))!;
+    for (const item of layout.read(table)) out.push({ ...item, pattern: layout.name });
+  }
+}
+
+/** Pattern: mail-lines. One item per body line that carries an explicit quantity. */
+function readMailLines(lines: string[], out: Candidate[]): void {
+  for (const rawLine of lines) {
+    const line = stripQuoteMarkers(rawLine).trim();
+    if (!line || line.length > 400) continue;
+    if (shouldSkipLine(line)) continue;
+    const qty = extractQuantity(line);
+    if (!qty) continue;
+    const itemName = toItemName(qty.cleaned);
+    if (!itemName) continue;
+    out.push({ itemName, quantity: qty.quantity, pattern: "mail-lines" });
   }
 }
 
 /**
  * Parses every provided source into de-duplicated `{ itemName, quantity }`
- * candidates, in first-seen order. Never throws.
+ * candidates, in first-seen order, plus the file patterns that produced them.
+ * Never throws.
  *
- * The email body is parsed line-by-line **and** as tables. OCR text and
- * attachment text are parsed as **tables only**: free-form OCR fragments
- * (specs, inspection reports) otherwise masquerade as line items, while genuine
+ * The email body is read as tables **and** as mail lines. OCR text and
+ * attachment text are read as **tables only**: free-form OCR fragments (specs,
+ * inspection reports) otherwise masquerade as line items, while genuine
  * BOQ/spreadsheet tables are still captured.
  */
-export function parseDocketItems(input: DocketParserInput): ParsedDocketItem[] {
+export function parseDocketItemsWithPatterns(
+  input: DocketParserInput,
+): { items: ParsedDocketItem[]; patterns: DocketItemPattern[] } {
   const maxItems = input.maxItems && input.maxItems > 0 ? input.maxItems : MAX_ITEMS_DEFAULT;
+  const candidates: Candidate[] = [];
 
-  const fullTexts: string[] = [];
-  for (const body of input.bodies ?? []) if (body) fullTexts.push(body);
-  const tableOnlyTexts: string[] = [];
-  if (input.ocrText) tableOnlyTexts.push(input.ocrText);
-  for (const text of input.attachmentTexts ?? []) if (text) tableOnlyTexts.push(text);
-
-  const candidates: ParsedDocketItem[] = [];
-
-  const safeHtml = (raw: string): string | null => {
+  const toLines = (raw: string): string[] | null => {
     try {
-      return htmlToText(String(raw));
+      return htmlToText(String(raw)).split(/\r?\n/);
     } catch {
       return null;
     }
   };
 
-  // 1. Full sources: tables first, then line-by-line list detection.
-  for (const raw of fullTexts) {
-    const text = safeHtml(raw);
-    if (text === null) continue;
-    const lines = text.split(/\r?\n/);
-
-    parseDelimitedTables(lines, candidates);
-
-    for (const rawLine of lines) {
-      const line = stripQuoteMarkers(rawLine).trim();
-      if (!line || line.length > 400) continue;
-      if (shouldSkipLine(line)) continue;
-      const qty = extractQuantity(line);
-      if (!qty) continue;
-      const itemName = toItemName(qty.cleaned);
-      if (!itemName) continue;
-      candidates.push({ itemName, quantity: qty.quantity });
-    }
+  for (const body of input.bodies ?? []) {
+    const lines = body ? toLines(body) : null;
+    if (!lines) continue;
+    readTables(lines, candidates);
+    readMailLines(lines, candidates);
   }
 
-  // 2. OCR + attachment text: tables only.
-  for (const raw of tableOnlyTexts) {
-    const text = safeHtml(raw);
-    if (text === null) continue;
-    parseDelimitedTables(text.split(/\r?\n/), candidates);
+  for (const raw of [input.ocrText, ...(input.attachmentTexts ?? [])]) {
+    const lines = raw ? toLines(raw) : null;
+    if (lines) readTables(lines, candidates);
   }
 
   const seen = new Set<string>();
   const items: ParsedDocketItem[] = [];
-  for (const item of candidates) {
+  const patterns = new Set<DocketItemPattern>();
+  for (const { pattern, ...item } of candidates) {
     const key = dedupeKey(item);
     if (seen.has(key)) continue;
     seen.add(key);
     items.push(item);
+    patterns.add(pattern);
     if (items.length >= maxItems) break;
   }
 
-  return items;
+  return { items, patterns: [...patterns] };
+}
+
+export function parseDocketItems(input: DocketParserInput): ParsedDocketItem[] {
+  return parseDocketItemsWithPatterns(input).items;
 }

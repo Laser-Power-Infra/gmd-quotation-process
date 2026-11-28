@@ -7,13 +7,14 @@ import { shallowEqual } from "react-redux";
 import { toast } from "sonner";
 import ActionsDropdown from "./ActionsDropdown";
 import ActuatorChip from "./ActuatorChip";
+import SeatTypeChip from "./SeatTypeChip";
 import { pendingValveCost } from "@/lib/actuatorCost";
 import Pagination from "./Pagination";
 import MultiSelectFilter, { BLANK } from "@gmd/ui/components/multi-select-filter";
 import CellSelect, { optionsWithCurrent } from "./CellSelect";
 import { useAppDispatch, useAppSelector } from "@/lib/hooks";
 import DebouncedSearchInput from "./DebouncedSearchInput";
-import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, fetchActuator, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, loadEnquiryItems, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
+import { selectAllEnquiries, selectAllItems, updateEnquiryField, updateItemField, addAttachments, fetchItemCodes, fetchActuator, updateProductCost, update2to1Cost, updateAllBomCosts, fetchContractReviewRates, populatePdCostValidation, deleteEnquiry, bulkUpdateValidation, bulkUpdateApm, clearQuotedRates, selectBomId, syncAvailableStock, sendDocketEmail, loadFilteredEnquiryIds, loadEnquiryFacet, loadEnquiryItems, selectEnquiryQuery, setEnquirySort, setEnquiryProjectReference, setEnquiryPendingOnly, setEnquiryContactMissingOnly, setEnquiryClosedBomOnly, setEnquiryIncompleteOnly, setEnquiryCostWarningOnly, setEnquiryStage } from "@/lib/enquiriesSlice";
 import { enquiryFilterKey } from "@/lib/enquiryQuery";
 import { fetchDocketNumbers, fetchFilteredEnquiryExport, fetchGeneratedImageMap } from "@/app/actions/enquiryQuery";
 import { setFilter, resetFilters } from "@/lib/filtersSlice";
@@ -235,17 +236,20 @@ function ItemDetailFields({
   dropdownOptions,
   onChange,
   isFrozen,
+  seatSpec,
 }: {
   item: EnquiryItemData;
   dropdownOptions: DropdownOptions;
   onChange: (itemId: string, field: string, value: string) => void;
   isFrozen: boolean;
+  seatSpec?: string | null;
 }) {
   const others = Array.isArray(item.others) ? item.others : [];
   const nameSize = sizeFromName(item.itemName);
   return (
     <div className="flex flex-wrap gap-x-1 gap-y-0.5">
       <CellSelect variant="chip" chipLabel="type" placeholder="-" value={item.itemType || ""} options={dropdownOptions.itemTypes} onChange={(v) => onChange(item.id, "itemType", v)} />
+      <SeatTypeChip item={{ ...item, seatSpec }} />
       <CellSelect variant="chip" chipLabel="moc" placeholder="-" value={item.moc || ""} options={dropdownOptions.mocs} onChange={(v) => onChange(item.id, "moc", v)} />
       <CellSelect variant="chip" chipLabel="size" placeholder="-" value={item.size || ""} options={dropdownOptions.sizes} onChange={(v) => onChange(item.id, "size", v)} />
       {nameSize && item.size && nameSize !== item.size.trim() && (
@@ -591,6 +595,9 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
       ),
     );
   };
+  // Filter bar toggle: dockets with a blank Contact person, Email, Phone or Utility.
+  const contactMissingOnly = pageState.contactMissingOnly;
+  const setContactMissingOnly = (value: boolean) => dispatch(setEnquiryContactMissingOnly(value));
   // BOM ID header filter: show only items whose selected BOM is closed (VerifyBom.cBatch = "C").
   const closedBomOnly = pageState.closedBomOnly;
   const setClosedBomOnly = (value: boolean) => dispatch(setEnquiryClosedBomOnly(value));
@@ -812,8 +819,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const invalidVaItemIds = useMemo(() => {
     const ids = new Set<string>();
     for (const item of allItems) {
-      const violates = isVaRuleViolation(item);
-      if (violates) ids.add(item.id);
+      if (isVaRuleViolation(item)) ids.add(item.id);
     }
     return ids;
   }, [allItems]);
@@ -851,6 +857,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   const handleResetAllFilters = () => {
     dispatch(resetFilters());
     setPendingOnly(false);
+    setContactMissingOnly(false);
     setClosedBomOnly(false);
     setIncompleteOnly(false);
     setCostWarningOnly(false);
@@ -1599,6 +1606,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
             "Enquiry Date": new Date(enquiry.enquiryDate).toLocaleDateString("en-GB"),
             "Docket No": enquiry.docketNumber,
             "Party Name": enquiry.partyName,
+            "Contact Person": enquiry.contactPerson || "",
             "Enquiry Type": enquiry.enquiryType || "",
             "State": enquiry.state || "",
             "Payment Terms": enquiry.paymentTerms || "",
@@ -1650,6 +1658,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
               "Enquiry Date": new Date(enquiry.enquiryDate).toLocaleDateString("en-GB"),
               "Docket No": enquiry.docketNumber,
               "Party Name": enquiry.partyName,
+              "Contact Person": enquiry.contactPerson || "",
               "Enquiry Type": enquiry.enquiryType || "",
               "State": enquiry.state || "",
               "Payment Terms": enquiry.paymentTerms || "",
@@ -2371,6 +2380,8 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
         contractOptions={allSelectedContractOptions}
         pendingOnly={pendingOnly}
         onTogglePending={() => setPendingOnly((v) => !v)}
+        contactMissingOnly={contactMissingOnly}
+        onToggleContactMissing={() => setContactMissingOnly(!contactMissingOnly)}
         hasActiveFilters={hasActiveFilters}
         onClearAll={handleResetAllFilters}
         visibleColumns={visibleColumns}
@@ -3727,6 +3738,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                           dropdownOptions={dropdownOptions}
                           onChange={handleItemFieldChange}
                           isFrozen={isFrozen}
+                          seatSpec={enquiry.seatSpec}
                         />
                       ) : "-"}
                     </td>
@@ -3933,7 +3945,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
 
                     {/* First Item VA% */}
                     <td className={`py-1 px-2 border-r border-b border-border last:border-r-0 font-semibold ${isFrozen ? "bg-muted" : ""}`}>
-                      {firstItem ? (
+                      {firstItem ? (<>
                         <div className="flex items-center gap-1">
                         <EditableText
                           value={firstItem.vaPercent !== null ? `${firstItem.vaPercent}%` : ""}
@@ -3951,6 +3963,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                         />
                         {unlockButton(firstItem)}
                         </div>
+                        </>
                       ) : "-"}
                     </td>
 
@@ -4205,6 +4218,7 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
                             dropdownOptions={dropdownOptions}
                             onChange={handleItemFieldChange}
                             isFrozen={isFrozen}
+                            seatSpec={enquiry.seatSpec}
                           />
                         </td>
 
@@ -4656,14 +4670,14 @@ export default function EnquiryTable({ dropdownOptions, autoSentDockets, autoPen
   );
 }
 
-function triggerDownload(base64: string, fileName: string) {
+function triggerDownload(base64: string, fileName: string, mimeType = "application/pdf") {
   const byteChars = atob(base64);
   const byteNums = new Array(byteChars.length);
   for (let i = 0; i < byteChars.length; i++) {
     byteNums[i] = byteChars.charCodeAt(i);
   }
   const byteArray = new Uint8Array(byteNums);
-  const blob = new Blob([byteArray], { type: "application/pdf" });
+  const blob = new Blob([byteArray], { type: mimeType });
   const url = URL.createObjectURL(blob);
 
   const a = document.createElement("a");
@@ -4678,6 +4692,7 @@ function triggerDownload(base64: string, fileName: string) {
 function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: EnquiryItemData[] }) {
   const [status, setStatus] = useState<"idle" | "generating" | "error">("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [format, setFormat] = useState<"pdf" | "xlsx">("pdf");
   const apm = (enquiry as any).apm as string | null | undefined;
   const generatedAt = (enquiry as any).offerPdfGeneratedAt as string | Date | null | undefined;
   const access = oneClickAccess(apm ?? null, generatedAt ?? null);
@@ -4727,12 +4742,12 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
         }, 0),
       };
 
-      const res = await generateOfferPdfAction(rowData, enquiry.id);
+      const res = await generateOfferPdfAction(rowData, enquiry.id, format);
       if (res.success && res.pdfBase64) {
-        triggerDownload(res.pdfBase64, res.fileName);
+        triggerDownload(res.pdfBase64, res.fileName, res.mimeType);
         // After Yes one-time, reload to reflect frozen state (server updated offerPdfGeneratedAt)
-        if (apm === "Yes") {
-          // optimistic: page reload enquiries after short delay to show frozen badge
+        if (apm === "Yes" && format === "pdf") {
+          // optimistic: page reload enquiries after short delay to show frozen badge (the internal Excel does not freeze)
           setTimeout(() => window.location.reload(), 800);
         }
         setStatus("idle");
@@ -4796,8 +4811,18 @@ function OfferPdfCell({ enquiry, items }: { enquiry: EnquiryData; items: Enquiry
           className="flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold text-[#0f62fe] border border-blue-200 bg-blue-50 hover:bg-blue-100 dark:text-blue-300 dark:border-blue-500/25 dark:bg-blue-500/10 dark:hover:bg-blue-500/20 rounded cursor-pointer transition-all whitespace-nowrap"
         >
           <FileText className="h-3.5 w-3.5 stroke-[2.5]" />
-          Generate PDF
+          Generate {format === "xlsx" ? "Excel" : "PDF"}
         </button>
+        <select
+          aria-label={`Offer file format for docket ${enquiry.docketNumber}`}
+          title="File format of the offer"
+          value={format}
+          onChange={(e) => setFormat(e.target.value === "xlsx" ? "xlsx" : "pdf")}
+          className="h-5 rounded border border-border bg-background px-1 text-[9px] font-medium text-foreground cursor-pointer"
+        >
+          <option value="pdf">PDF</option>
+          <option value="xlsx" title="Internal copy only: offers go to the party as PDF">Excel (internal)</option>
+        </select>
         {apm === "Yes" && !generatedAt && <span className="text-[8px] text-amber-600 dark:text-amber-300 font-medium">One-time only</span>}
         {(!apm || apm === "") && <span className="text-[8px] text-muted-foreground">Unlimited (APM empty)</span>}
         {exWorksToggle}

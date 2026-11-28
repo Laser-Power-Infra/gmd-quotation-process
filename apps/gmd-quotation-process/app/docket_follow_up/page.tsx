@@ -8,16 +8,14 @@ import {
   Inbox,
   Clock,
   Send,
-  Layers,
   FileWarning,
-  Paperclip,
-  CheckCircle2,
   Zap,
 } from "lucide-react";
 import { Button } from "@gmd/ui/components/button";
 import { Card, CardContent } from "@gmd/ui/components/card";
+import { PendingDocketsPanel } from "@gmd/pending-dockets/ui";
 import DocketFollowUpTable from "@/components/docket_follow_up/DocketFollowUpTable";
-import PendingDocketsTable, { PendingDocketRow } from "@/components/docket_follow_up/PendingDocketsTable";
+import * as pendingActions from "./actions";
 
 interface SummaryData {
   totalEnquiries: number;
@@ -31,19 +29,6 @@ interface SummaryData {
   repliedCount: number;
 }
 
-interface PendingSummaryData {
-  totalPending: number;
-  unrepliedRequestsCount: number;
-  noDocketAssignedCount: number;
-  docketAssignedLaterCount: number;
-  aiValidationEnabled?: boolean;
-  aiVerifiedCount?: number;
-  aiUnverifiedCount?: number;
-  aiPendingCount?: number;
-  aiRejectedCount?: number;
-  aiMaxAttempts?: number;
-}
-
 export default function DocketFollowUpPage() {
   const [activeTab, setActiveTab] = useState<"PORTAL_DOCKETS" | "PENDING_DOCKETS">("PENDING_DOCKETS");
 
@@ -53,14 +38,11 @@ export default function DocketFollowUpPage() {
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [rows, setRows] = useState<any[]>([]);
 
-  // Pending Dockets State
-  const [pendingLoading, setPendingLoading] = useState(false);
-  const [pendingError, setPendingError] = useState<string | null>(null);
-  const [pendingSummary, setPendingSummary] = useState<PendingSummaryData | null>(null);
-  const [pendingRows, setPendingRows] = useState<PendingDocketRow[]>([]);
+  // Pending Dockets: the panel loads its own pages; the page only shows its count and asks it to reload.
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
+  const [pendingRefresh, setPendingRefresh] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
-  const pendingPollCount = useRef(0);
   const activeTabRef = useRef(activeTab);
 
   const fetchPortalData = useCallback(async () => {
@@ -90,36 +72,6 @@ export default function DocketFollowUpPage() {
     } finally {
       clearTimeout(timeout);
       setLoading(false);
-    }
-  }, []);
-
-  const fetchPendingData = useCallback(async () => {
-    setPendingLoading(true);
-    setPendingError(null);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15_000);
-    try {
-      const res = await fetch("/api/docket-follow-up/pending-dockets", {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `HTTP error ${res.status}`);
-      }
-      const data = await res.json();
-      setPendingSummary(data.summary);
-      setPendingRows(data.rows || []);
-    } catch (err: any) {
-      if (err?.name === "AbortError") {
-        setPendingError("Pending dockets request timed out. Please retry.");
-      } else {
-        console.error("Failed to load pending dockets data:", err);
-        setPendingError(err?.message || "Failed to load pending dockets data");
-      }
-    } finally {
-      clearTimeout(timeout);
-      setPendingLoading(false);
     }
   }, []);
 
@@ -153,21 +105,19 @@ export default function DocketFollowUpPage() {
       clearTimeout(timeout);
       if (!isSilent) setIsSyncing(false);
       if (activeTabRef.current === "PORTAL_DOCKETS") fetchPortalData();
-      fetchPendingData();
+      setPendingRefresh((k) => k + 1);
       setTimeout(() => setSyncStatus(null), 4000);
     }
-  }, [fetchPortalData, fetchPendingData]);
+  }, [fetchPortalData]);
 
   useEffect(() => {
     activeTabRef.current = activeTab;
   }, [activeTab]);
 
   useEffect(() => {
-    // Fast first paint: the Pending tab is the default and uses the narrow
-    // cached query. The heavy Portal query is loaded lazily when its tab opens.
+    // Fast first paint: the Pending tab is the default and loads itself from
+    // the narrow cached query. The heavy Portal query is loaded lazily when its tab opens.
     const kick = setTimeout(() => {
-      fetchPendingData();
-
       // Automatic detection for new mail: at most once per 10 minutes per tab.
       // Fire-and-forget so the page never waits on it.
       const lastDetect = Number(sessionStorage.getItem("docket-followup-sync-at") || 0);
@@ -188,7 +138,7 @@ export default function DocketFollowUpPage() {
       clearTimeout(kick);
       clearInterval(intervalId);
     };
-  }, [fetchPendingData, handleSyncAndDetect]);
+  }, [handleSyncAndDetect]);
 
   // Load the Portal Dockets data only when that tab is opened (it is a much
   // heavier query over all enquiries/threads).
@@ -198,47 +148,16 @@ export default function DocketFollowUpPage() {
     return () => clearTimeout(id);
   }, [activeTab, fetchPortalData]);
 
-  // While the Pending Dockets tab is open and the background queue still has
-  // eligible threads, refresh quietly (never blanks the table) so verdicts
-  // appear without a manual refresh. Stops once all are decided/exhausted.
-  useEffect(() => {
-    if (activeTab !== "PENDING_DOCKETS") {
-      pendingPollCount.current = 0;
-      return;
-    }
-    if (pendingLoading) return;
-    if (!pendingSummary?.aiValidationEnabled) return;
-
-    const remaining = pendingSummary.aiPendingCount ?? 0;
-    if (remaining <= 0) {
-      pendingPollCount.current = 0;
-      return;
-    }
-    if (pendingPollCount.current >= 30) return;
-
-    const id = setTimeout(() => {
-      pendingPollCount.current += 1;
-      fetchPendingData();
-    }, 10000);
-
-    return () => clearTimeout(id);
-  }, [
-    activeTab,
-    pendingLoading,
-    pendingSummary?.aiValidationEnabled,
-    pendingSummary?.aiPendingCount,
-    fetchPendingData,
-  ]);
-
   const handleRefresh = () => {
     if (activeTab === "PORTAL_DOCKETS") {
       fetchPortalData();
     } else {
-      fetchPendingData();
+      setPendingRefresh((k) => k + 1);
     }
   };
 
-  const isCurrentLoading = activeTab === "PORTAL_DOCKETS" ? loading : pendingLoading;
+  // The Pending panel shows its own reload bar.
+  const isCurrentLoading = activeTab === "PORTAL_DOCKETS" && loading;
 
   return (
     <div className="flex-1 min-h-0 flex flex-col h-[calc(100vh-65px)] overflow-hidden bg-background">
@@ -261,7 +180,7 @@ export default function DocketFollowUpPage() {
                   }`}
                 >
                   <Inbox className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Portal Dockets ({summary?.totalEnquiries ?? 0})</span>
+                  <span>Portal Dockets{summary ? ` (${summary.totalEnquiries})` : ""}</span>
                 </button>
 
                 <button
@@ -275,7 +194,7 @@ export default function DocketFollowUpPage() {
                   <FileWarning className="w-3.5 h-3.5 text-rose-600" />
                   <span>Pending Dockets</span>
                   <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 font-bold border border-rose-300/60">
-                    {pendingSummary?.totalPending ?? pendingRows.length}
+                    {pendingCount ?? 0}
                   </span>
                 </button>
               </div>
@@ -438,87 +357,7 @@ export default function DocketFollowUpPage() {
 
         {/* ===================== TAB 2: PENDING DOCKETS ===================== */}
         {activeTab === "PENDING_DOCKETS" && (
-          <>
-            {/* Pending Metrics KPI Summary Cards - Compact & Clean */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 shrink-0">
-              {/* Card 1: Total Pending */}
-              <Card className="border border-border/80 shadow-2xs bg-card">
-                <CardContent className="p-2 px-3 flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 shrink-0">
-                    <Layers className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider">
-                      Total Requests
-                    </div>
-                    <div className="text-base font-bold text-foreground leading-tight">
-                      {pendingLoading ? "..." : pendingSummary?.totalPending ?? pendingRows.length}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Card 2: No Docket in DB */}
-              <Card className="border border-rose-200 dark:border-rose-900/40 shadow-2xs bg-rose-50/40 dark:bg-rose-950/20">
-                <CardContent className="p-2 px-3 flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-md bg-rose-500/15 text-rose-600 dark:text-rose-400 shrink-0">
-                    <AlertCircle className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[9px] font-bold text-rose-700 dark:text-rose-400 uppercase tracking-wider">
-                      No Docket Assigned
-                    </div>
-                    <div className="text-base font-bold text-rose-700 dark:text-rose-400 leading-tight">
-                      {pendingLoading ? "..." : pendingSummary?.noDocketAssignedCount ?? 0}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Card 3: Stamped in DB */}
-              <Card className="border border-blue-200 dark:border-blue-900/40 shadow-2xs bg-blue-50/40 dark:bg-blue-950/20">
-                <CardContent className="p-2 px-3 flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-md bg-blue-500/15 text-blue-600 dark:text-blue-400 shrink-0">
-                    <CheckCircle2 className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-[9px] font-bold text-blue-700 dark:text-blue-400 uppercase tracking-wider">
-                      Docket Stamped in DB
-                    </div>
-                    <div className="text-base font-bold text-blue-700 dark:text-blue-400 leading-tight">
-                      {pendingLoading ? "..." : pendingSummary?.docketAssignedLaterCount ?? 0}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Error Alert */}
-            {pendingError && (
-              <div className="p-2.5 rounded-md bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-400 text-xs flex items-center gap-2 shrink-0">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{pendingError}</span>
-              </div>
-            )}
-
-            {/* Main Pending Dockets Table */}
-            {pendingLoading && pendingRows.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center p-12 text-center text-muted-foreground space-y-2 bg-card rounded-md border border-border">
-                <RefreshCw className="w-7 h-7 animate-spin text-rose-600" />
-                <p className="text-xs font-medium">Fetching unreplied docket requests & conversation attachments...</p>
-              </div>
-            ) : (
-              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                {pendingLoading && pendingRows.length > 0 && (
-                  <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-medium text-muted-foreground border-b border-border bg-muted/20 shrink-0">
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                    Refreshing…
-                  </div>
-                )}
-                <PendingDocketsTable rows={pendingRows} />
-              </div>
-            )}
-          </>
+          <PendingDocketsPanel actions={pendingActions} refreshKey={pendingRefresh} onCount={setPendingCount} />
         )}
       </div>
     </div>

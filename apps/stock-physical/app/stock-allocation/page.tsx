@@ -23,7 +23,7 @@ export default async function Page() {
     <main className="flex h-[calc(100vh-64px)] flex-col overflow-hidden bg-background">
       <div className="min-h-0 flex-1 px-6 py-4">
         {result ? (
-          <StockAllocationTable initial={result} actions={{ ...actions }} hideRates />
+          <StockAllocationTable initial={{ ...result, lines: [], purchaseLines: [] }} actions={{ ...actions }} hideRates />
         ) : (
           <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">Could not load stock allocation: {error}</div>
         )}

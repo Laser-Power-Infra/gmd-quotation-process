@@ -29,6 +29,7 @@ import {
   BOM_ISSUES_HEADER,
   BOM_MISMATCH_HEADER,
   BOM_TYPE_HEADER,
+  DRAWING_HEADER,
   FLAG_YES,
   MULTI_OPEN_BOM_HEADER,
   OPEN_BOMS_HEADER,
@@ -118,6 +119,7 @@ const GROUPED_BOM_HEADERS = ["BOM ID", BOM_TYPE_HEADER, OPEN_BOMS_HEADER, "BOM C
 const GROUPED_DETAIL_HEADERS = [
   "RM ITEM CODE",
   "RM ITEM NAME",
+  DRAWING_HEADER,
   BOM_ISSUES_HEADER,
   "USE/NO USE",
   "AVAILABLE STOCK",
@@ -338,6 +340,7 @@ function VerifyBomView() {
     });
   }, []);
 
+  const [tableResetKey, setTableResetKey] = useState(0);
   const resetFilters = useCallback(() => {
     setSearch({
       itemCode: "",
@@ -352,6 +355,8 @@ function VerifyBomView() {
       bomItemNature: [],
       rmItemNature: [],
     });
+    // The table keeps its own column filters; remount it so Reset clears those too.
+    setTableResetKey((k) => k + 1);
   }, []);
 
   const fetchData = useCallback(async () => {
@@ -1081,6 +1086,7 @@ function VerifyBomView() {
             </Button>
           </div>
           <GMDUpdateTable
+            key={tableResetKey}
             headers={groupedData.headers}
             rows={groupedData.rows}
             ids={groupedData.ids}

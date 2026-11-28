@@ -2,6 +2,7 @@ import { Prisma } from "@gmd/db-quotation";
 import { squish } from "./squish";
 import { hasActiveItemFilters } from "./enquiryFilterScope";
 import { hasCostWarningSql } from "./costSanity";
+import { PENDING_CLOSURE_STATUS } from "./closureStatus";
 import type { EnquiryQuery } from "./enquiryQuery";
 
 /**
@@ -357,6 +358,9 @@ const AUTO_CREATED_SQL = sql`(
   )
 )`;
 
+/** Closure blank or Pending: no quotation has gone out for the docket yet. */
+const CLOSURE_BLANK_OR_PENDING_SQL = sql`(e."closureStatus" IS NULL OR btrim(e."closureStatus") = '' OR lower(btrim(e."closureStatus")) = ${PENDING_CLOSURE_STATUS.toLowerCase()})`;
+
 /** Predicates on the `e` alias (Enquiry), including the item-match rule. */
 export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): Prisma.Sql {
   const f = q.filters;
@@ -406,6 +410,13 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
     parts.push(sql`e.id = ANY(${[...q.selectedEnquiryIds]}::text[])`);
   }
   if (q.stage && skip !== "stage") parts.push(sql`${STAGE_SQL} = ${q.stage}`);
+  // Offer not gone out yet (closure blank or Pending; "-" is legacy Not Sent) and a contact detail it needs is blank;
+  // same rule as missingContactFields (the DocketRow badge) in lib/enquiryQuery.ts.
+  if (q.contactMissingOnly) {
+    const blanks = ["contactPerson", "senderEmail", "contactNo", "utility"].map((f) => blankSql(sql`e.${Prisma.raw(`"${f}"`)}`));
+    parts.push(CLOSURE_BLANK_OR_PENDING_SQL);
+    parts.push(sql`(${Prisma.join(blanks, " OR ")})`);
+  }
 
   // Pending = auto-created, still no items, closure status blank/Pending. Once
   // items exist or closure moves (Sent, Rejected, …) the docket leaves the list.
@@ -414,9 +425,7 @@ export function buildEnquiryWhereSql(q: EnquiryQuery, opts: WhereOptions = {}): 
   if (q.pendingOnly) {
     parts.push(AUTO_CREATED_SQL);
     parts.push(sql`NOT EXISTS (SELECT 1 FROM "EnquiryItem" i0 WHERE i0."enquiryId" = e.id)`);
-    parts.push(
-      sql`(e."closureStatus" IS NULL OR btrim(e."closureStatus") = '' OR lower(btrim(e."closureStatus")) = 'pending')`,
-    );
+    parts.push(CLOSURE_BLANK_OR_PENDING_SQL);
     if (hasActiveItemFilters(f, q.closedBomOnly || q.incompleteOnly || q.costWarningOnly)) {
       parts.push(
         sql`EXISTS (SELECT 1 FROM "EnquiryItem" i WHERE i."enquiryId" = e.id AND ${buildItemWhereSql(q, opts)})`,
@@ -466,17 +475,28 @@ const ITEM_TEXT_SORT = new Set([
   "bomId",
   "costRefCode",
   "stockStatus",
-  "stockQuantity",
-  "availableStock",
   "stockAgainstContract",
   "itemNameMerge",
+  "validation",
+  "deliverySchedule",
+]);
+
+// String columns holding numbers (Indian-grouped like "1,01,970", or with a trailing %). They
+// sort by value, not collation, so 9 comes before 899.
+const ITEM_NUMERIC_TEXT_SORT = new Set([
+  "stockQuantity",
+  "availableStock",
   "totalValue",
   "itemWiseTotalValue",
   "quotedRate",
   "quotedRateGst",
-  "validation",
-  "deliverySchedule",
 ]);
+
+/** Text (or numeric) column as a number for ORDER BY: commas and % stripped, NULL when not numeric-looking. */
+function numericSortKey(expr: Prisma.Sql): Prisma.Sql {
+  const t = sql`btrim(replace(replace((${expr})::text, ',', ''), '%', ''))`;
+  return sql`(CASE WHEN ${t} ~ '^-?[0-9]+([.][0-9]+)?$' THEN ${t}::numeric END)`;
+}
 
 export interface OrderResult {
   orderBy: Prisma.Sql;
@@ -526,8 +546,17 @@ export function buildEnquiryOrderBySql(q: EnquiryQuery): OrderResult {
   }
 
   if (field === "pdcostValidation") {
+    // "9.45%" as text sorts above "848.83%"; order by the number inside it.
     return {
-      orderBy: sql`NULLIF(btrim(${pdCostValidationSql(sql`f`)}), '') ${dir} NULLS LAST, e.id ASC`,
+      orderBy: sql`${numericSortKey(pdCostValidationSql(sql`f`))} ${dir} NULLS LAST, e.id ASC`,
+      needsFirstItem: true,
+    };
+  }
+
+  if (ITEM_NUMERIC_TEXT_SORT.has(field)) {
+    const column = Prisma.raw(`f."${field}"`);
+    return {
+      orderBy: sql`${numericSortKey(column)} ${dir} NULLS LAST, e.id ASC`,
       needsFirstItem: true,
     };
   }
@@ -543,10 +572,8 @@ export function buildEnquiryOrderBySql(q: EnquiryQuery): OrderResult {
   // Remaining accessors are numeric item columns (Decimal or numeric strings).
   if (/^[A-Za-z][A-Za-z0-9]*$/.test(field)) {
     const column = Prisma.raw(`f."${field}"`);
-    const text = sql`btrim((${column})::text)`;
-    const numeric = sql`CASE WHEN ${text} ~ '^-?[0-9]+([.][0-9]+)?$' THEN ${text}::numeric END`;
     return {
-      orderBy: sql`${numeric} ${dir} NULLS LAST, e.id ASC`,
+      orderBy: sql`${numericSortKey(column)} ${dir} NULLS LAST, e.id ASC`,
       needsFirstItem: true,
     };
   }
@@ -570,20 +597,19 @@ const numericValue = (expr: Prisma.Sql) => {
 
 /**
  * The dashboard cards in one aggregate over the filtered, non-duplicate items.
- * Zero values add nothing; cost counts only when > 0 and multiplies by quantity (1 when quantity <= 0).
+ * Zero values add nothing; cost counts only when cost and quantity are both > 0 (a quantity-0 line adds no cost).
  */
 export function summaryTotalsSql(q: EnquiryQuery, scopedWhere: Prisma.Sql): Prisma.Sql {
+  // "Deleted as Closed" (cBatch C) and "Deleted as Current Reqt = No" (nBatch N) rows are still quoted lines, so they count.
   return sql`SELECT count(*)::int AS items,
       coalesce(sum(${numericValue(sql`i."totalValue"`)}), 0)::float8 AS gst,
       coalesce(sum(${numericValue(sql`i."itemWiseTotalValue"`)}), 0)::float8 AS excl,
-      coalesce(sum(CASE WHEN i."cost" > 0 THEN i."cost" * (CASE WHEN i."quantity" > 0 THEN i."quantity" ELSE 1 END) END), 0)::float8 AS cost,
+      coalesce(sum(CASE WHEN i."cost" > 0 AND i."quantity" > 0 THEN i."cost" * i."quantity" END), 0)::float8 AS cost,
       coalesce(sum(CASE WHEN i."quantity" > 0 THEN i."quantity" END), 0)::float8 AS qty
     FROM "EnquiryItem" i
     JOIN "Enquiry" e ON e.id = i."enquiryId"
     WHERE ${scopedWhere} AND ${buildItemWhereSql(q)}
-      AND coalesce(btrim(e."duplicate"), '') <> 'Yes'
-      AND coalesce(btrim(i."cBatch"), '') <> 'C'
-      AND coalesce(btrim(i."nBatch"), '') <> 'N'`;
+      AND coalesce(btrim(e."duplicate"), '') <> 'Yes'`;
 }
 
 /** Id of each given docket's first item that matches the item filters. */

@@ -25,6 +25,8 @@ export interface EnquiryItemData {
   actCode?: string | null;
   gbCode?: string | null;
   controlType?: string | null;
+  /** "IMPORTED" = Tianjin Tangfa (TFW) valve data for the actuator pick; blank = Indian. */
+  valveOrigin?: string | null;
   bareValveCost?: number | null;
   adaptorCost?: number | null;
   assemblyCost?: number | null;
@@ -100,6 +102,7 @@ export interface EnquiryData {
   senderEmail?: string | null;
   emailAddress?: string | null;
   contactNo?: string | null;
+  contactPerson?: string | null;
   duplicate?: string | null;
   duplicateOfDocket?: string | null;
   emailApproved?: boolean | null;
@@ -113,6 +116,8 @@ export interface EnquiryData {
   sendAssigneeId?: string | null;
   attachments: AttachmentData[];
   items: EnquiryItemData[];
+  /** First seat keyword in the docket spec (lib/seatType-server.ts), set on page rows. */
+  seatSpec?: string | null;
   /** Page rows carry only the first matching item until the rest load (itemsLoaded). */
   itemsLoaded?: boolean;
   /** Items matching the filters / all items with incomplete details, counted by SQL. */

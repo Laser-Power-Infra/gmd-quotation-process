@@ -23,6 +23,7 @@
     "@gmd/dashboard": "workspace:*",
     "@gmd/db-quotation": "workspace:*",
     "@gmd/db-tender": "workspace:*",
+    "@gmd/drawings": "workspace:*",
     "@gmd/ui": "workspace:*",
     "lucide-react": "^1.23.0",
     "react-resizable-panels": "^4.12.4",

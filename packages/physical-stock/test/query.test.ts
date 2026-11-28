@@ -35,6 +35,7 @@ test("buildWhere: facets, blank, search, extras; unknown fields ignored", () => 
   assert.match(flat(extras), /EXISTS \(SELECT 1 FROM "PhysicalStock" d/);
   const contains = buildWhere({ ...base, columnSearch: { remarks: "ok go", bogus: "x" } });
   assert.match(flat(contains), /p\."remarks".*ILIKE \?/);
+  assert.ok(contains.sql.includes(String.raw`'\s'`), "header contains-search strips whitespace, not the letter s");
   assert.deepEqual(contains.values, ["%okgo%"]);
   assert.equal(buildWhere({ ...base, columnSearch: { remarks: "x" } }, "remarks").sql, "TRUE");
   const dated = buildWhere({ ...base, dateRanges: { form_date: { from: "2026-01-01", to: "2026-01-31" }, location: { from: "2026-01-01", to: "" } } });

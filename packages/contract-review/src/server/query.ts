@@ -10,7 +10,7 @@ import {
 import { squish } from "@gmd/dashboard/lib/squish";
 import type { ContractReviewImage } from "@gmd/dashboard/lib/types";
 import { cBatchFilter } from "@gmd/dashboard/lib/verify-bom-columns";
-import { incompleteFilter, nBatchFilter } from "../lib/columns";
+import { ALLOCATION_HEADERS, incompleteFilter, nBatchFilter } from "../lib/columns";
 import { CR_COLUMNS, crColumn, type CrColumn } from "../lib/crColumns";
 import {
   EXTRA_ITEM_OPTION,
@@ -33,7 +33,12 @@ import {
 } from "../lib/view";
 import { enabledTrees, type FlowFilter, type FlowNode } from "../ui/graph_flow/tree";
 import { columnAccess, type ContractReviewFlags } from "../flags";
-import type { ContractReviewViewQuery, ContractReviewViewResult } from "../types";
+import type {
+  ContractReviewData,
+  ContractReviewViewQuery,
+  ContractReviewViewResult,
+  StockAllocationLine,
+} from "../types";
 import { applyColumnFlags, toContractReviewData } from "./index";
 
 // Contract Review in SQL: one filtered, sorted page plus the sidebar and
@@ -144,6 +149,8 @@ export interface ContractReviewLookups {
   bomIds(itemCodes: string[]): Promise<Map<string, string[]>>;
   /** Images per item code, only for codes that have any. */
   images(itemCodes: string[]): Promise<Record<string, ContractReviewImage[]>>;
+  /** Stock allocation per line id, only for lines the engine covers. Omit to leave the allocation columns out. */
+  allocation?(ids: string[]): Promise<Map<string, StockAllocationLine>>;
 }
 
 export interface ContractReviewQueryOptions {
@@ -650,6 +657,49 @@ function buildView(
   };
 }
 
+/** ALLOC SOURCE text: "Incoming PO 4500/10", "Received -> physical stock", "Short 3"; several sources joined by "; ". Internal. */
+export function sourceCell(sources: StockAllocationLine["sources"]): string {
+  return (sources ?? []).map((s) =>
+    s.state === "incoming" ? `Incoming PO ${s.poNo}/${s.poLineNo}` : s.state === "received" ? "Received -> physical stock" : s.state === "short" ? `Short ${fmt(s.qty)}` : "",
+  ).filter(Boolean).join("; ");
+}
+
+/** One line's allocation cells in ALLOCATION_HEADERS order, as plain text (also for the Excel export); all blank when the engine does not cover the line. */
+export function allocationCells(line: StockAllocationLine | undefined): string[] {
+  if (!line) return ALLOCATION_HEADERS.map(() => "");
+  // Actuated lines only: the engine also sets gbFree on manual-gearbox lines.
+  const free = line.actuatorFree !== null
+    ? [`ACT ${fmt(line.actuatorFree)}`, line.gbFree !== null ? `GB ${fmt(line.gbFree)}` : ""]
+    : [];
+  const notes = [
+    // The wiring-change status already says what its flag says.
+    ...line.flags.filter((f) => f.toLowerCase() !== line.status.toLowerCase()),
+    ...line.suggestions.map((s) => `${s.erpCode}: ${fmt(s.qty)} ${s.note}`),
+  ];
+  return [
+    fmt(line.balanceToOffer),
+    fmt(line.fgQty),
+    fmt(line.rmRouteQty),
+    line.incomingQty > 0 && line.eta ? `${fmt(line.incomingQty)} (ETA ${line.eta})` : fmt(line.incomingQty),
+    fmt(line.shortfall),
+    free.filter(Boolean).join(" / "),
+    sourceCell(line.sources),
+    line.status,
+    notes.join(" · "),
+  ];
+}
+
+/** Appends the allocation columns when the host supplies the lookup: one lookup call for all these rows. */
+async function withAllocation(data: ContractReviewData, lookups?: ContractReviewLookups): Promise<ContractReviewData> {
+  if (!lookups?.allocation) return data;
+  const byId = data.ids.length ? await lookups.allocation(data.ids) : new Map<string, StockAllocationLine>();
+  return {
+    ...data,
+    headers: [...data.headers, ...ALLOCATION_HEADERS],
+    rows: data.rows.map((row, i) => [...row, ...allocationCells(byId.get(data.ids[i]))]),
+  };
+}
+
 /** One filtered, sorted page plus the sidebar / flow-diagram aggregates for the same filters. */
 export async function listContractReviewPage(
   rawQuery: ContractReviewViewQuery,
@@ -670,7 +720,7 @@ export async function listContractReviewPage(
   // A page past the end (filters narrowed since) is served as the last page.
   const page = Math.min(requested, Math.max(1, Math.ceil(totals.total / s.pageSize)));
   const items = page === requested ? firstRows : await tenderPrisma.$queryRaw<ContractReview[]>(s.rows(page));
-  const data = applyColumnFlags(toContractReviewData(items), opts.flags);
+  const data = applyColumnFlags(await withAllocation(toContractReviewData(items), opts.lookups), opts.flags);
 
   // Quotation-DB extras, for the rows on this page only.
   const bomIdOptions: Record<string, string[]> = {};
@@ -728,5 +778,5 @@ export async function listContractReviewAllRows(
   const items = await tenderPrisma.$queryRaw<ContractReview[]>(
     sql`SELECT c.* FROM ${TABLE} WHERE ${buildWhere(q, ctx)} AND ${buildPresence(q, ctx)} ORDER BY ${buildOrderBy(q.sort, ctx.isEnabled)}`,
   );
-  return applyColumnFlags(toContractReviewData(items), opts.flags).rows;
+  return applyColumnFlags(await withAllocation(toContractReviewData(items), opts.lookups), opts.flags).rows;
 }

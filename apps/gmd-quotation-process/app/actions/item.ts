@@ -145,6 +145,7 @@ export async function updateItemFieldAction(
         enquiryId: true,
         itemName: true,
         itemType: true,
+        itemNameMerge: true,
         moc: true,
         size: true,
         pnRating: true,
@@ -157,6 +158,9 @@ export async function updateItemFieldAction(
         quotedRate: true,
         cost: true,
         contractReviewRate: true,
+        actCode: true, // actuated items: the red-row check splits valve / actuator (lib/vaRules.ts)
+        gbCode: true,
+        actuatorBreakdown: true,
         ...({ [field]: true } as {}),
       },
     });
@@ -192,8 +196,10 @@ export async function updateItemFieldAction(
 
     // Validation = Yes needs the VA% rules met (red row = not met): run "Apply VA% rules" on the docket first.
     if (field === "validation" && String(value ?? "").trim() === "Yes") {
-      const { isVaRuleViolation } = await import("@/lib/vaRules");
-      if (isVaRuleViolation({ ...prevFull, cost: prevFull.cost ? Number(prevFull.cost) : null, vaPercent: prevFull.vaPercent ? Number(prevFull.vaPercent) : null })) {
+      const { isVaRuleViolation, actuatorMarkupShort } = await import("@/lib/vaRules");
+      const va = { ...prevFull, cost: prevFull.cost ? Number(prevFull.cost) : null, vaPercent: prevFull.vaPercent ? Number(prevFull.vaPercent) : null };
+      if (isVaRuleViolation(va)) {
+        if (actuatorMarkupShort(va)) return { success: false, error: "Cannot set Validation = Yes: from DN800 the actuator portion needs a 10% mark-up and this line's rate has less (the old 5%). Re-rate the line or press Fetch Actuator first." };
         return { success: false, error: "Cannot set Validation = Yes: VA% is below the minimum or the rate is above the CR rate. Use 'Apply VA% rules' on the docket first." };
       }
     }
@@ -238,7 +244,8 @@ export async function updateItemFieldAction(
     if (clearActuatedValve) {
       const { applyActuatorToItem } = await import("@/lib/actuatorItem");
       await prisma.enquiryItem.update({ where: { id: itemId }, data: { bareValveCost: null, productCost: null } });
-      const r = await applyActuatorToItem(itemId);
+      // null also drops a typed whole price (ACTUATOR / refer-OEM line): back to the automatic price, or pending.
+      const r = await applyActuatorToItem(itemId, {}, null);
       if (!r.item) return { success: false, error: r.skipped ?? "Not saved" };
       updatedItem = r.item;
     } else if (["productCost", "extension", "bypass", "quantity", "vaPercent", "quotedRate", "cost"].includes(field)) {
@@ -250,7 +257,7 @@ export async function updateItemFieldAction(
       } else {
         updates[field] = parsedVal;
       }
-      updatedItem = await recalculateItem(itemId, updates);
+      updatedItem = await recalculateItem(itemId, updates, field === "productCost" ? { manualProductCost: true } : undefined);
     } else {
       const updateData: any = { [field]: parsedVal };
       if (field === "deliverySchedule") {

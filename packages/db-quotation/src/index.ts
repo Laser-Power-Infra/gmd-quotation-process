@@ -22,7 +22,7 @@ function target(url: string | undefined) {
 function create() {
   const url = process.env.QUOTATION_DATABASE_URL;
   // Postgres' own reason for dropping a connection (restart, idle/admin termination, network reset) only surfaces in these hooks.
-  const adapter = new PrismaPg({ connectionString: url }, {
+  const adapter = new PrismaPg({ connectionString: url, connectionTimeoutMillis: 10_000 }, {
     onPoolError: (err) => log("idle pool connection dropped", err),
     onConnectionError: (err) => log("connection dropped during a transaction", err),
   });

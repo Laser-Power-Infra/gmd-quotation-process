@@ -53,3 +53,52 @@ export function latestProdEntryDates(params: {
   }
   return { latest, skipped };
 }
+
+/** Blank-cell fills from the first `category` mail tag, as { id, day } per line; lines in `skip` are left alone. */
+export function mailTagFills(p: {
+  ids: string[];
+  rows: unknown[][];
+  idx: number;
+  mailDocsIdx: number;
+  tag: MailDocCategory;
+  skip?: ReadonlySet<string>;
+}): { id: string; day: string }[] {
+  return p.ids.flatMap((id, i) => {
+    const day = p.skip?.has(id) ? null : mailTagDay(p.rows[i][p.idx], p.rows[i][p.mailDocsIdx], p.tag);
+    return day ? [{ id, day }] : [];
+  });
+}
+
+/** Runs `sync` for each contract in turn; one failing contract is logged and does not stop the others. */
+export async function resyncEach(contracts: string[], sync: (contractNo: string) => Promise<unknown>) {
+  let failed = 0;
+  for (const c of contracts) {
+    try {
+      await sync(c);
+    } catch (err) {
+      failed++;
+      console.error(`drawings approval-date re-sync failed for ${c}`, err);
+    }
+  }
+  return { done: contracts.length - failed, failed };
+}
+
+/** Covered line ids, or null when the drawings lookup fails (tables missing, DB down): the caller then skips the APPROVAL DATE fill, never fills every blank line. */
+export async function coveredOrNull(ids: string[], lookup: (ids: string[]) => Promise<Set<string>>): Promise<Set<string> | null> {
+  try {
+    return await lookup(ids);
+  } catch (err) {
+    console.error("drawings coverage lookup failed; APPROVAL DATE mail-tag fill skipped for this run", err);
+    return null;
+  }
+}
+
+/** resyncEach over the contracts `list` returns; a failing list counts as one failure and skips the re-sync. */
+export async function resyncAll(list: () => Promise<string[]>, sync: (contractNo: string) => Promise<unknown>) {
+  try {
+    return await resyncEach(await list(), sync);
+  } catch (err) {
+    console.error("drawings contract list failed; approval-date re-sync skipped for this run", err);
+    return { done: 0, failed: 1 };
+  }
+}

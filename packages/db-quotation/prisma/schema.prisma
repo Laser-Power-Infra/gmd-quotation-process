@@ -13,6 +13,7 @@ model User {
   email         String        @unique
   password      String // bcrypt hash
   role          String        @default("user") // "user" | "admin" | "developer"
+  active        Boolean       @default(true)
   emailVerified DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -67,6 +68,8 @@ model Enquiry {
   senderEmail String?
   emailAddress        String?
   contactNo           String?
+  // Contact person's name; auto-filled from the enquiry mail's signature at docket creation.
+  contactPerson       String?
   duplicate String?
   duplicateOfDocket String?
   sourceThreadId String? @unique
@@ -178,6 +181,7 @@ model EnquiryItem {
   actCode              String?
   gbCode               String?
   controlType          String? // On-off | Modulating | Integral intelligent
+  valveOrigin          String? // IMPORTED = TFW valve data; blank = Indian (VALVE_TORQUE / MAPPING)
   bareValveCost        Decimal? // valve cost before actuator/gearbox; productCost = this + the parts
   adaptorCost          Decimal? // blank = not applicable (0)
   assemblyCost         Decimal? // assembly & testing, blank = not applicable (0)
@@ -462,6 +466,8 @@ model RawMaterial {
   attachmentUrl     String?
   orderDelivery     String?
   cBatch            String?
+  // Google Drive drawing link(s) from Puja's "RM drawing map" sheet; comma-joined when one code has several drawings.
+  drawingUrl        String?
 
   // BOMs where this RawMaterial is used as a component
   bomComponents BomItem[]
@@ -1649,6 +1655,17 @@ model ActuatorMapping {
   gmdGbRating    Float?
   gmdGbAvailable Float?
   note           String?
+  // The app's own pick for this key (lib/actuatorTablesSync), shown on the Mapping page. origin: INDIAN | IMPORTED (TFW rows).
+  origin         String?
+  valveTurns     Float?
+  selGearbox     String?
+  selGbRatio     String?
+  selActuator    String?
+  selActRpm      Float?
+  selTotal       Float?
+  selTime        Float?
+  selTimeCheck   String?
+  selFlags       String?
   updatedAt      DateTime @updatedAt
 
   @@index([valveType, dn])

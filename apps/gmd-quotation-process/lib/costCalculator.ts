@@ -1,8 +1,10 @@
+import type { Prisma } from "@gmd/db-quotation";
 import { prisma } from "@/lib/prisma";
 import { matchItemType, matchMoc } from "./itemTypePatterns";
 import { roundUp } from "./rounding";
 import { isActuated, withoutProductCost } from "./actuatorCost";
 import { resolveCostChangeAnchor, isOfferRevision } from "./rateAnchor";
+import { isActuatorOnly, loadedActCost, rateFor, splitLoadedCost, vaFrom } from "./vaRules";
 import { BASE_COST_FACTOR, FULL_LOAD_THRESHOLD, normalizeStateName } from "./costLoading";
 import { isRecalcBlocked } from "./oneClickAccess";
 
@@ -87,7 +89,9 @@ export async function recalculateItem(
   // Contract-match: store the quoted rate as given (no round-up) and skip the offer-revised flag.
   // actuatorTotal: the write comes from lib/actuatorItem.ts and already includes the actuator parts.
   // allowFrozen: re-price even a frozen docket (contract-match, maintenance scripts).
-  opts?: { exactQuotedRate?: boolean; actuatorTotal?: boolean; allowFrozen?: boolean }
+  // manualProductCost: a person typed the Product Cost (cell edit / Edit Item dialog). On an ACTUATOR line or a refer-OEM line it
+  // is kept as the whole price; every other writer (BOM fill, 2:1 fill) leaves it off and so never creates a manual price.
+  opts?: { exactQuotedRate?: boolean; actuatorTotal?: boolean; allowFrozen?: boolean; manualProductCost?: boolean }
 ) {
   // Fetch item and its parent enquiry
   const item = await prisma.enquiryItem.findUnique({
@@ -107,7 +111,7 @@ export async function recalculateItem(
     await prisma.enquiryItem.update({ where: { id: itemId }, data: { productCost: updates.productCost } });
     let r: Awaited<ReturnType<typeof applyActuatorToItem>>;
     try {
-      r = await applyActuatorToItem(itemId);
+      r = await applyActuatorToItem(itemId, {}, opts?.manualProductCost ? updates.productCost : undefined);
     } catch (e) {
       // Never leave the valve-only number behind as the cost.
       await prisma.enquiryItem.update({ where: { id: itemId }, data: restore });
@@ -137,6 +141,8 @@ export async function recalculateItem(
 
   // 2. Calculate Cost (only if inputs changed, or cost was null)
   let cost: number | null = existingCost;
+  const breakdown = item.actuatorBreakdown as { actCost?: number } | null;
+  let actCost: number | undefined; // actuated valve: its loaded actuator portion, rebuilt with the cost
   const shouldRecalcCost = (updates && (updates.productCost !== undefined || updates.extension !== undefined || updates.bypass !== undefined || updates.cost !== undefined))
     || existingCost === null || existingCost <= 0
     || updates === undefined;
@@ -203,12 +209,17 @@ export async function recalculateItem(
     const baseProductCost = productCost * BASE_COST_FACTOR;
     cost = baseProductCost + extCost + bpCost + baseProductCost * pctMultiplier;
     cost = parseFloat(cost.toFixed(2));
+    if (breakdown && item.bareValveCost != null && isActuated(item)) actCost = loadedActCost(productCost, Number(item.bareValveCost), pctMultiplier);
   }
 
   // 2.7. If user explicitly provided cost, use it directly
   if (updates && updates.cost !== undefined) {
     cost = updates.cost;
   }
+
+  // Valve / actuator split of the cost (lib/vaRules.ts): VA% applies to the valve, a flat 5% to the actuator.
+  const breakdownOut = actCost === undefined ? breakdown : { ...breakdown, actCost };
+  const split = splitLoadedCost({ ...item, actuatorBreakdown: breakdownOut }, cost ?? 0);
 
   // 3. Apply updates for vaPercent and quotedRate (if explicitly provided)
   let vaPercent: number | null;
@@ -228,16 +239,18 @@ export async function recalculateItem(
   // 4. Recalculate dependent fields when user explicitly updates one, or when cost changes
   const userClearedVaPct = updates && updates.vaPercent !== undefined && updates.vaPercent === null;
   const userClearedQR = updates && updates.quotedRate !== undefined && updates.quotedRate === null;
+  // Item type ACTUATOR: a blank line defaults to its minimum VA%, 5 or 10 from DN800 (rate = cost x 1.05 / 1.10). A typed rate or VA% is kept.
+  if (vaPercent === null && quotedRate === null && !userClearedVaPct && !userClearedQR && isActuatorOnly(item)) vaPercent = split.actVa;
 
   // 4a. User explicitly updated quotedRate → recalculate vaPercent
   const userUpdatedQR = updates && updates.quotedRate !== undefined;
   if (userUpdatedQR && !userClearedVaPct && cost !== null && cost > 0 && quotedRate !== null && quotedRate > 0) {
-    vaPercent = parseFloat((((quotedRate / cost) - 1) * 100).toFixed(2));
+    vaPercent = vaFrom(quotedRate, split);
   }
 
   // 4b. User explicitly updated vaPercent → recalculate quotedRate
   if (updates && updates.vaPercent !== undefined && !userClearedQR && cost !== null && cost > 0 && vaPercent !== null) {
-    quotedRate = roundUp(cost * (1 + vaPercent / 100));
+    quotedRate = rateFor(split, vaPercent);
   }
 
   // 4c. Cost was recalculated and neither was explicitly updated:
@@ -250,6 +263,7 @@ export async function recalculateItem(
       quotedRate,
       vaPercent,
       validation: item.validation,
+      split,
     });
     quotedRate = resolved.quotedRate;
     vaPercent = resolved.vaPercent;
@@ -257,10 +271,10 @@ export async function recalculateItem(
 
   // 4d. Fill nulls where possible (only if user didn't explicitly clear the field)
   if (!userClearedVaPct && vaPercent === null && cost !== null && cost > 0 && quotedRate !== null && quotedRate > 0) {
-    vaPercent = parseFloat((((quotedRate / cost) - 1) * 100).toFixed(2));
+    vaPercent = vaFrom(quotedRate, split);
   }
   if (!userClearedQR && quotedRate === null && cost !== null && cost > 0 && vaPercent !== null) {
-    quotedRate = roundUp(cost * (1 + vaPercent / 100));
+    quotedRate = rateFor(split, vaPercent);
   }
 
   // 5. Calculate QR incl. GST
@@ -305,6 +319,7 @@ export async function recalculateItem(
       itemWiseTotalValue: itemWiseTotal,
       totalValue: totalVal,
       itemNameMerge: mergedNameVal === "" ? null : mergedNameVal,
+      ...(actCost === undefined ? {} : { actuatorBreakdown: breakdownOut as unknown as Prisma.InputJsonObject }),
     },
   });
 

@@ -32,6 +32,7 @@ export const SYNC_JOBS = [
   "service-orders",
   "supply-history",
   "sync-health",
+  "website-prices",
 ] as const;
 
 export type SyncJob = (typeof SYNC_JOBS)[number];

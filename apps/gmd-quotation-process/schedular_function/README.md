@@ -32,6 +32,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | PBG sheet sync *(every 1.2h)* | `POST /api/scheduler/pbg` | `pbg-sync` | PBG sheet tab → `PbgData` |
 | PBG reminder emails *(daily, 09:00 IST)* | `POST /api/scheduler/pbg-reminders` | `pbg-reminders` | `PbgData`, `PbgReminderLog` -> direct SMTP |
 | C Batch marks | `POST /api/scheduler/c-batch` | `c-batch-sync` | `ITEM MASTER ERP` |
+| Website price push *(hourly, :55)* | `POST /api/scheduler/website-prices` | `website-prices-sync` | `RawMaterial.erpItemCode` + `cost` -> website `POST /api/purchase-prices/sync` (read-only here) |
 | ERP Contract No sync | `POST /api/scheduler/erp-contract-no` | `erp-contract-no-sync` | `SALE_BILL`, `MC` |
 | Closure Status sync *(every 10m)* | `POST /api/scheduler/closure-status` | `closure-status-sync` | `docket_quotation_threads`, `enquiries` |
 | Docket auto-link *(daily, 01:40)* | `POST /api/scheduler/docket-auto-link` | `docket-auto-link-sync` | `ContractReview`, `enquiries` -> `Enquiry.selectedContractNo` (link only) |
@@ -95,7 +96,7 @@ cached Server Action result.
 
 ## `raw-material`
 
-Four sequential steps in `run-gmd-update.ts`:
+Five sequential steps in `run-gmd-update.ts`:
 
 1. **`runGmdCatalogueSync()`** (`gmd-update-catalogue.ts`) — `GMD UPDATION`
    tab → `RawMaterial`. Creates rows for ERP codes not yet in the DB; on
@@ -115,6 +116,12 @@ Four sequential steps in `run-gmd-update.ts`:
    Auto BOM rule (`/bom/auto`) and creates `NEW-BOM-…` BOMs for full items
    that have no BOM. Inactive rules are skipped. Never throws: a failing rule
    is logged and counted in `steps.autoBom.failed`.
+5. **`syncRmDrawings()`** (`lib/gmd_lib/rmDrawings.ts`) — Puja's `RM drawing
+   map (Asmita)` tab (gid 588349458) `DRAWING LINK` → `RawMaterial.drawingUrl`,
+   matched on `erpItemCode`; a code's distinct links are joined `", "`. Set-only:
+   codes absent from the sheet or listed without a link keep their value. A
+   failure lands in the result's `warnings` and does not fail the job. Manual
+   run: `pnpm rm:drawings` (dry run) / `pnpm rm:drawings:apply`.
 
 Steps are strictly sequential: a fatal failure in step 1 aborts before step 2,
 because refreshing stock against a half-synced table is not useful.
@@ -214,13 +221,16 @@ Step 3's `noUse` transaction is chunked at 200 with a 20 s timeout. The manual
 version wraps every differing row in one unbounded `$transaction`
 (`app/actions/*.ts:5260`) — a `P2028` waiting to happen.
 
-### Cost of RM AVAIL's physical-stock sub-step
+### RM AVAIL's physical-stock sub-step
 
-`rmPhysicalStock` needs `ContractReview.costCodeRef`, which step 1 **cannot**
-populate: it is absent from `CONTRACTS_SHEET_COLUMNS`, so
-`mapContractReviewRow` never emits it. It is published separately from the
-Indent Listing by `recomputeIndentListingVersionsAction`. Until that has run,
-that sub-step resolves nothing and writes `null`.
+`rmPhysicalStock` (PHYSICAL STOCK) is the row's own `itemCode` (its FG code)
+total in the stock DB `PhysicalStock` table (the Physical Stock page;
+`available_qty` summed over locations), read in one query. Only when the table
+has no usable row for that code does the `stock-phys` figure of the same code
+apply; otherwise it is blank. An unreachable stock DB fails this step. The log
+line and result report `fromTable` / `fromSheet` counts. It never reads `costCodeRef`: that is one RM code shared
+by a whole item family / size / PN, so every line of the family showed one
+RM's stock (the "653" bug, 18 Nov 2026).
 
 ### Step 4 — IC dump (offer / inspection / DI)
 
@@ -380,6 +390,20 @@ change metric, because `touched` is every unchanged row. Use `changed`
 `GMD_CLIENTWISE_SPREADSHEET_ID` was unset and silently falling back to a
 hard-coded id inside `lib/gmd_lib/contract-order-links.ts`. It is now set
 explicitly in `.env`.
+
+## `website-prices`
+
+Single step: `runScheduledWebsitePrices()` in `website-prices.ts`. Reads every
+`RawMaterial` row with an `erpItemCode` and sends a **full snapshot**
+`{ costs: [{ erpItemCode, cost }] }` (cost in rupees, null when empty) to the GM Dalui
+website, which prices its `/purchase` ready-stock catalogue by matching its item
+codes. Null/0 costs and codes missing from the snapshot become "Price on request"
+there. Nothing is written in this database, so a bad run cannot damage data here;
+an empty snapshot is refused on both sides.
+
+The website is on Neon and cannot reach this office-network database, which is why
+this job pushes. Env on this app: `WEBSITE_PRICE_SYNC_URL` (the website endpoint) and
+`WEBSITE_PRICE_SYNC_API_KEY` (must equal `PRICE_SYNC_API_KEY` on the website).
 
 ## `c-batch`
 
@@ -811,8 +835,8 @@ also call (dry-run default, `--apply`, `--dump-headers` unchanged).
 
 Daily at **02:10** (`0 10 2 * * *`), after `ledger`. Entry:
 `runScheduledServiceOrders()` -> `runServiceOrdersSync()` in
-`service-orders-sync.ts`; mapping and joins in `lib/serviceOrders.ts`. Feeds
-`/service_orders`.
+`service-orders-sync.ts`; code mapping in `lib/serviceOrders.ts`, joins in SQL in
+`@gmd/service-orders`. Feeds `/service_orders`.
 
 - `ServiceItem`: `ITEM MASTER ERP` (gid 253020709) codes whose `LEVEL_1_NAME` is
   `SERVICES` or `ITEM_NATURE` is `SR`. The only table this job writes.
@@ -1252,7 +1276,7 @@ Stock-step edge cases:
 | `RawMaterial.availableStock` | step 3 | overwritten when the sheet differs; blank skipped; `"0"` written |
 | `VerifyBom.*` | step 3 | only where a value actually differs |
 | `ContractReview.noUse` | step 3 | overwritten |
-| `ContractReview.rmPhysicalStock` | step 3 | overwritten, including to `null` when `costCodeRef` resolves to nothing |
+| `ContractReview.rmPhysicalStock` | step 3 | overwritten, including to `null` when `itemCode` has no PhysicalStock-table or stock-phys figure |
 | `offerNumber` / `inspectionNumber` / `diDate` | step 4 | **union, never shrink** — values are appended, never removed or overwritten. A blank sheet cell adds nothing, so it can never clear a value |
 | `prodEntryDate` | step 6 | the latest `PROD ENTRY DUMP` `VRDATE` (`dd-MMM-yyyy`), overwritten when it differs; a blank or unreadable date never clears it |
 | deletions | — | none, in any step |
@@ -1303,6 +1327,8 @@ Stock-step edge cases:
 
 - Header: `x-api-key`
 - Env var: `GMD_SYNC_API_KEY` (configured in the infra container; never committed)
+- `/api/drawings` uses the same function with its own key, `GMD_DRAWINGS_API_KEY`, and refuses the sync key
+  (`documentation/drawings-api.md`).
 - Comparison: `sha256` both sides, then `crypto.timingSafeEqual` — constant
   length, no timing or length leak.
 - **Fails closed.** Unset env var → `503`. Missing or wrong key → `401`.

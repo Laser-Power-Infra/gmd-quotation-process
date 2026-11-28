@@ -1,6 +1,6 @@
 /**
  * Scheduled job: ITEM MASTER ERP tab -> `ServiceItem` (quotation DB). The
- * Service / Work Orders page joins it on read (`lib/serviceOrders.ts`) with the
+ * Service / Work Orders page joins it on read (`@gmd/service-orders`) with the
  * stock DB's `PurchaseOrderLine` and `GrnLine`, which the purchase-orders job
  * already mirrors — so PO and GRN lines are not copied twice.
  *

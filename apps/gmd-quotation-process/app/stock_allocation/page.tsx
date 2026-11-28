@@ -3,6 +3,7 @@ import GMDUpdateHeader from "@gmd/dashboard/components/GMDUpdateHeader";
 import StockAllocationTable from "@gmd/stock-allocation/ui";
 import { computeStockAllocation } from "@gmd/stock-allocation/server";
 import { prisma } from "@/lib/prisma";
+import { stockAllocationInputs } from "@/lib/stockAllocationInputs";
 import * as actions from "./actions";
 
 export const metadata: Metadata = { title: "Stock Allocation | GMD Quotation Process" };
@@ -22,7 +23,7 @@ export default async function Page() {
     );
   let result, error: string | null = null;
   try {
-    result = await computeStockAllocation();
+    result = await computeStockAllocation(stockAllocationInputs);
   } catch (err) {
     console.error("[stock-allocation] load failed", err);
     error = err instanceof Error ? err.message : String(err);
@@ -35,7 +36,8 @@ export default async function Page() {
       </div>
       <div className="flex-1 min-h-0 px-6 pb-6">
         {result ? (
-          <StockAllocationTable initial={result} actions={{ ...actions }} />
+          // lines[] is for Contract Review / Ready to Bill; the table does not read it (nor purchaseLines: its purchase tables are paged on the server), so both stay off the page payload
+          <StockAllocationTable initial={{ ...result, lines: [], purchaseLines: [] }} actions={{ ...actions }} />
         ) : (
           <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">Could not load stock allocation: {error}</div>
         )}

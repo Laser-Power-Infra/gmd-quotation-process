@@ -1,5 +1,6 @@
 import { configureStore } from "@reduxjs/toolkit";
 import physicalStockTableReducer from "@gmd/physical-stock/state";
+import purchaseViewReducer from "@gmd/stock-allocation/purchase-state";
 import entryHistoryReducer from "@gmd/physical-stock/state/history";
 
 export const makeStore = () =>
@@ -7,6 +8,7 @@ export const makeStore = () =>
     reducer: {
       physicalStockTable: physicalStockTableReducer,
       entryHistory: entryHistoryReducer,
+      purchaseView: purchaseViewReducer,
     },
   });
 

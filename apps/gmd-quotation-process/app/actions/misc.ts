@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { mirrorLookup } from "@/lib/lookupMirror";
 import { getUtilityDefaultStates } from "@/lib/lookup";
 import { uploadFileToDrive } from "@/lib/gdrive";
+import { MAX_UPLOAD_BYTES, UPLOAD_MAGIC, fileHead } from "@/lib/uploadChecks";
 import { serializeItem, serializeEnquiry } from "@/lib/costCalculator";
 import { loadRates } from "@/lib/rateLookup";
 import { recomputeCfSets } from "@/lib/cfSetItem";
@@ -252,17 +253,7 @@ export async function getBisStaleIdsAction() {
   }
 }
 
-const MAX_BIS_DOC_SIZE = 25 * 1024 * 1024;
 const MAX_BIS_DOCS_PER_CALL = 10;
-// The dashboard previews these inline from our own origin, so only PDFs and plain images,
-// matched on their first bytes so a renamed HTML or script file can't pass as one.
-const BIS_DOC_MAGIC = new Map([
-  ["application/pdf", /^%PDF-/],
-  ["image/png", /^\x89PNG/],
-  ["image/jpeg", /^\xff\xd8\xff/],
-  ["image/gif", /^GIF8/],
-  ["image/webp", /^RIFF[\s\S]{4}WEBP/],
-]);
 
 /**
  * Uploads BIS licence copies to Google Drive (anyone with the link can view them)
@@ -279,11 +270,10 @@ export async function uploadBisDocsAction(id: string, files: File[]) {
   }
   try {
     for (const file of files) {
-      if (file.size > MAX_BIS_DOC_SIZE) {
+      if (file.size > MAX_UPLOAD_BYTES) {
         return { success: false as const, error: `"${file.name}" is larger than 25 MB.` };
       }
-      const head = Buffer.from(await file.slice(0, 12).arrayBuffer()).toString("latin1");
-      if (!BIS_DOC_MAGIC.get(file.type)?.test(head)) {
+      if (!UPLOAD_MAGIC.get(file.type)?.test(await fileHead(file))) {
         return { success: false as const, error: `"${file.name}" is not a PDF, PNG, JPEG, WEBP or GIF file.` };
       }
     }
@@ -1285,7 +1275,7 @@ export async function applyVaRulesAction(enquiryId: string) {
     for (const it of fresh) {
       if (it.validation === "Yes") { locked++; continue; }
       const rate = vaRuleRate(
-        { itemType: it.itemType, itemName: it.itemName, size: it.size, cost: it.cost ? Number(it.cost) : null, quotedRate: it.quotedRate, contractReviewRate: it.contractReviewRate },
+        { ...it, cost: it.cost ? Number(it.cost) : null, vaPercent: it.vaPercent ? Number(it.vaPercent) : null },
         it.erpItemCode ? prevByCode.get(it.erpItemCode) : null,
       );
       if (rate === null || Math.abs(rate - parseFloat(it.quotedRate ?? "0")) < 0.005) continue;

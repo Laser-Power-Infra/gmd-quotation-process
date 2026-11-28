@@ -22,7 +22,7 @@ export async function fetchActuatorAction(itemIds: string[]) {
   return { success: true as const, data: { items, pending, notes } };
 }
 
-/** Edit dialog save: make / control type / codes / adaptor / assembly, then re-price. */
+/** Edit dialog save: make / control type / valve origin / codes / adaptor / assembly, then re-price. */
 export async function saveActuatorFieldsAction(itemId: string, patch: ActuatorPatch) {
   await requireAccess();
   const denied = await loginRequired(); if (denied) return denied;

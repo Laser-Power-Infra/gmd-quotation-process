@@ -58,6 +58,22 @@ export interface PoLine {
   daysOverdue: number | null;
   status: DeliveryStatus;
   contract: string;
+  /** Sum of every allocation on this line. */
+  allocatedQty: number;
+  /** max(0, ordered - allocated); null when the ordered qty is not a number. */
+  freeBalance: number | null;
+  allocations: LineAllocationRow[];
+}
+
+export interface LineAllocationRow {
+  contractNo: string;
+  itemCode: string;
+  qty: number;
+  lot: string | null;
+  tinaInvoiceNo: string | null;
+  blNo: string | null;
+  eta: string | null;
+  needsConfirmation: boolean;
 }
 
 export interface ChartBar {
@@ -111,6 +127,7 @@ export const SLICERS: readonly { key: string; label: string }[] = [
   { key: "poYear", label: "PO year" },
   { key: "status", label: "Delivery status" },
   { key: "contract", label: "Sales contract" },
+  { key: "hasFree", label: "Has free balance" },
   // Not a purchase column: the host resolves party <-> contract from Contract Review.
   { key: "party", label: "Party" },
 ];

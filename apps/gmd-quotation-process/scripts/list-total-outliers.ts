@@ -17,7 +17,7 @@ async function main() {
     where: {
       totalValue: { not: null },
       enquiry: { NOT: { duplicate: { equals: "Yes" } } },
-      NOT: [{ cBatch: "C" }, { nBatch: "N" }],
+      NOT: [{ cBatch: "C" }],
     },
     select: { id: true, itemName: true, quantity: true, quotedRate: true, totalValue: true, enquiry: { select: { docketNumber: true } } },
   });

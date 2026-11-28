@@ -138,6 +138,7 @@ model User {
   email         String        @unique
   password      String // bcrypt hash
   role          String        @default("user") // "user" | "admin" | "developer"
+  active        Boolean       @default(true)
   emailVerified DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -270,5 +271,49 @@ model StockAllocation {
   updatedAt   DateTime @updatedAt
 
   @@index([erpCode])
+  @@index([contractNo, itemCode])
+}
+
+// Append-only log of StockAllocation writes: who, when, old and new qty. Written in the same
+// transaction as the write. No relation, so removing a booking keeps its history.
+model StockAllocationLog {
+  id         String   @id @default(cuid())
+  at         DateTime @default(now())
+  by         String // signed-in user's email (name if none); "unknown" when the host passes none
+  action     String // "book" | "change" | "remove" | "lock" | "unlock"
+  contractNo String
+  itemCode   String // contract line item code
+  erpCode    String
+  location   String?
+  oldQty     Float? // null on book / lock
+  newQty     Float? // null on remove / unlock
+  note       String? // the booking's remarks
+
+  @@index([at])
+  @@index([contractNo, itemCode])
+}
+
+// Purchase qty allocated to a contract line, keyed on the purchase line (poNo + poLineNo).
+// Lot, invoice, B/L, ETA are reference text only and internal: never in client-facing output.
+model PurchaseAllocation {
+  id                String   @id @default(cuid())
+  poNo              String
+  poLineNo          String
+  contractNo        String
+  itemCode          String // contract line item code
+  qty               Float
+  lot               String?
+  tinaInvoiceNo     String?
+  blNo              String?
+  eta               String?
+  shipStatus        String?
+  needsConfirmation Boolean  @default(false)
+  remarks           String?
+  source            String // "sheet" | "manual"
+  allocatedAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([poNo, poLineNo, contractNo, itemCode])
   @@index([contractNo, itemCode])
 }

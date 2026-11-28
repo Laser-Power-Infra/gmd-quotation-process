@@ -1,8 +1,10 @@
-import { ContractReviewPage } from "@gmd/contract-review/ui";
+import { getDrawingRights } from "@/app/drawings/actions";
+import { ContractReviewView } from "./contract-review-view";
 import { autoAssignContractReviewBomIdFromActuator, backfillContractReviewCostFromQuotationAction, backfillContractReviewNoUseBatchAction, selectContractReviewBomIdAction, syncContractReviewEnquiryFieldsAllAction, syncContractReviewEnquiryFieldsBatchAction, syncContractReviewRmAvailAction } from "@/app/actions/contractReview";
 import { getActuatorOptionsAction, saveActuatorWithRmCodeAction } from "@/app/actions/gmdUpdate";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
 import * as core from "./actions";
+import { loadCoveredLineIdsAction } from "./actions";
 import {
   loadAllRows,
   loadFacet,
@@ -10,8 +12,12 @@ import {
 } from "./viewActions";
 
 export default async function Page() {
+  // Only hides controls; every drawings action checks the caller's role again.
+  const rights = await getDrawingRights();
   return (
-    <ContractReviewPage
+    <ContractReviewView
+      rights={rights.success ? rights.data : { role: "viewer" }}
+      loadCoveredLineIds={loadCoveredLineIdsAction}
       flags={await getContractReviewFlags()}
       actions={{
         ...core,

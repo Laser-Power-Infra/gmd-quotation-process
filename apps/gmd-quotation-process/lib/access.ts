@@ -10,6 +10,22 @@ export async function requireAccess() {
 }
 
 /**
+ * The Drawings surface only (app/drawings/actions.ts): on the hosted site any signed-in user gets in,
+ * and the drawings rights model (verifier / editor / viewer) decides what they may change. Open on the LAN server.
+ */
+export async function requireDrawingsAccess() {
+  if (!isRestricted()) return;
+  const { auth } = await import("@/auth");
+  if (!(await auth())?.user) throw new Error("Unauthorized: sign in");
+}
+
+/** Hosted-site page gate (proxy.ts): admin/developer anywhere; any signed-in user on /drawings only. */
+export function hostedPageAllowed(pathname: string, user: { role?: string } | null | undefined) {
+  if (user?.role === "admin" || user?.role === "developer") return true;
+  return !!user && pathname === "/drawings";
+}
+
+/**
  * Dashboard edits need a signed-in user on every server (any role).
  * Returns the error result to send back, or null. Returned, not thrown: Next hides thrown messages in production.
  */

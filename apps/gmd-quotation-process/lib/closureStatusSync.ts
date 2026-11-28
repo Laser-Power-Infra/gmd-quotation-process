@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { NOT_SENT_CLOSURE_STATUS, PENDING_CLOSURE_STATUS, SENT_CLOSURE_STATUS } from "./closureStatus";
 
 // Closure status is derived from the DocketQuotationThread table:
 //  - Sent    : a docket number sits inside an attachment filename, or inside the
@@ -177,11 +178,7 @@ function threadSearchText(t: ThreadFields): string {
   );
 }
 
-/** The value written to Enquiry.closureStatus; matches the CLOSURE_STATUS lookup. */
-export const SENT_CLOSURE_STATUS = "Sent";
-export const PENDING_CLOSURE_STATUS = "Pending";
-/** Manual "quotation not going out" marker; automation only ever upgrades it to Sent. */
-export const NOT_SENT_CLOSURE_STATUS = "Not Sent";
+export { SENT_CLOSURE_STATUS, PENDING_CLOSURE_STATUS, NOT_SENT_CLOSURE_STATUS };
 
 /**
  * The status the sync should write, or null to leave the row alone.
