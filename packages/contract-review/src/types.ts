@@ -119,10 +119,6 @@ export interface ContractReviewActions {
     query: ContractReviewViewQuery,
   ) => Promise<ActionResult<unknown[][]>>;
 
-  sync?: () => Promise<ActionResult>;
-  /** True while a sync (scheduled or another click) is running; the SYNC button then shows as running. */
-  syncRunning?: () => Promise<boolean>;
-  recomputeIndentListingVersionsAction?: () => Promise<ActionResult>;
   syncContractReviewEnquiryFieldsAllAction?: () => Promise<ActionResult>;
   syncContractReviewEnquiryFieldsBatchAction?: BatchAction;
   syncContractReviewRmAvailAction?: () => Promise<ActionResult>;

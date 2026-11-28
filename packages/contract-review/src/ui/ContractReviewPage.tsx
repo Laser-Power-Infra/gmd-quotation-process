@@ -257,12 +257,9 @@ export function ContractReviewPage({
     backfillContractReviewCostFromQuotationAction,
     getActuatorOptionsAction,
     saveActuatorWithRmCodeAction,
-    recomputeIndentListingVersionsAction,
   } = actions;
   const {
     load,
-    sync,
-    syncRunning,
     createDiagramUploadAction,
     confirmDiagramUploadAction,
     loadView,
@@ -293,12 +290,6 @@ export function ContractReviewPage({
 
   const [data, setData] = useState<ContractReviewData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  // Another sync (the hourly job or another user) holds the latch; checked on load, no polling.
-  const [syncBusy, setSyncBusy] = useState(false);
-  useEffect(() => {
-    syncRunning?.().then(setSyncBusy, () => {});
-  }, [syncRunning]);
   const [enquirySyncing, setEnquirySyncing] = useState(false);
   const [rmAvailSyncing, setRmAvailSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -588,55 +579,6 @@ export function ContractReviewPage({
     () => (serverMode ? loadServerView(true) : legacyFetchData()),
     [serverMode, loadServerView, legacyFetchData],
   );
-
-  const handleSync = useCallback(async () => {
-    if (!sync) return;
-    if (
-      !confirm(
-        "Sync CONTRACTS + DUMP from the sheet into Contract Review? This writes to ContractReview and runs the RM AVAIL / Enquiry side effects.",
-      )
-    )
-      return;
-    setSyncing(true);
-    setError(null);
-    const toastId = toast.loading("Syncing Contract Review from CONTRACTS + DUMP...");
-    try {
-      const res = await sync();
-      if (!res.success) {
-        if (res.busy) setSyncBusy(true);
-        throw new Error(res.error ?? "Sync failed");
-      }
-      const summary = res.data ?? {};
-      const syncSummary = `Synced: ${summary.created ?? 0} created, ${summary.updated ?? 0} updated, ${summary.unchanged ?? 0} unchanged`;
-
-      // Refresh the Indent Listing V1..V4 split, the RM codes and the Contract
-      // Review COST CODE REF so an NRV / SLV code affected by this sync is
-      // published without a separate trip to the Indent Listing page.
-      const recompute = await recomputeIndentListingVersionsAction?.();
-      const rm = recompute?.data?.rmCode;
-      const costRef = recompute?.data?.costCodeRef;
-      const recomputeDetail = !recompute
-        ? ""
-        : recompute.success
-        ? ` | RM codes: ${rm?.resolved ?? 0} linked, ${rm?.ambiguous ?? 0} multi, ${rm?.unmatched ?? 0} unmatched | cost code ref: ${costRef?.resolved ?? 0} filled`
-        : ` | recompute failed: ${recompute?.error ?? "unknown error"}`;
-
-      // The sync itself succeeded; surface a recompute failure without
-      // discarding the sync result.
-      if (!recompute || recompute.success) {
-        toast.success(`${syncSummary}${recomputeDetail}`, { id: toastId });
-      } else {
-        toast.warning(`${syncSummary}${recomputeDetail}`, { id: toastId });
-      }
-      await fetchData();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Sync failed";
-      setError(message);
-      toast.error(message, { id: toastId });
-    } finally {
-      setSyncing(false);
-    }
-  }, [fetchData, sync, recomputeIndentListingVersionsAction]);
 
   const handleEnquirySync = useCallback(async () => {
     if (!syncContractReviewEnquiryFieldsAllAction) return;
@@ -1654,22 +1596,6 @@ export function ContractReviewPage({
     <main className="flex-1 min-h-0 flex flex-col bg-background overflow-hidden">
       <div className="flex-1 flex p-6 min-h-0 gap-4">
         <aside className="w-64 shrink-0 self-stretch min-h-0 max-h-full overflow-y-auto overscroll-contain bg-[#0a2540] dark:bg-card border border-[#1e3d59] dark:border-border rounded-lg shadow-sm p-4 flex flex-col gap-4 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent hover:scrollbar-thumb-white/30 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:bg-transparent pr-3">
-          {sync && (
-          <button
-            type="button"
-            onClick={handleSync}
-            disabled={syncing || syncBusy}
-            className="flex items-center justify-center gap-1.5 bg-[#38ef7d]/10 dark:bg-emerald-500/10 hover:bg-[#38ef7d]/20 dark:hover:bg-emerald-500/20 border border-[#38ef7d]/40 dark:border-emerald-500/30 rounded px-3 py-2 text-[11px] font-semibold text-[#38ef7d] dark:text-emerald-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Sync CONTRACTS + DUMP from the sheet into Contract Review"
-          >
-            {syncing ? (
-              <Loader2 size={12} className="animate-spin" />
-            ) : (
-              <RefreshCw size={12} />
-            )}
-            {syncing ? "Syncing..." : syncBusy ? "Sync running..." : "Sync Contract Review"}
-          </button>
-          )}
           {syncContractReviewRmAvailAction && (
           <button
             type="button"

@@ -21,8 +21,6 @@ import { columnAccess } from "@gmd/contract-review/flags";
 import { getContractReviewFlags } from "@/lib/contract-review-flags";
 import { findContractMails } from "@/lib/contractMails";
 import { GET } from "@/app/api/contract-review/route";
-import { POST } from "@/app/api/contract-review/sync/route";
-import { runningJobs } from "@/schedular_function/job-latch";
 
 // Contract review in this app is public (no auth), as before the move to
 // @gmd/contract-review. Add an auth() check here to restrict it.
@@ -53,19 +51,6 @@ export async function load() {
     success: true,
     data: applyColumnFlags(res.data as ContractReviewData, await getContractReviewFlags()),
   };
-}
-
-/** Google Sheets CONTRACTS + DUMP sync and its quotation-side effects. */
-export async function sync() {
-  await requireAccess();
-  const res = await fromRoute(await POST());
-  return res;
-}
-
-/** True while a CONTRACTS + DUMP sync (the hourly job or a SYNC click) is running. */
-export async function syncRunning() {
-  await requireAccess();
-  return runningJobs.has("contract-review");
 }
 
 export async function updateContractReviewFieldAction(

@@ -1,10 +1,10 @@
 /**
- * Scheduled job 1 of 3 — CONTRACTS + DUMP sheet -> ContractReview.
+ * Scheduled job 1 of 3 — GMD EXECUTION TRACKING ERP tabs -> ContractReview
+ * (rows built by `lib/gmd_lib/contract-review-erp-rows.ts`).
  *
- * Port of the manual "SYNC" button at
- * `app/api/contract-review/sync/route.ts:66-289`, which is left untouched. The
- * sheet-read and write-policy logic is preserved exactly; two changes make it
- * safe to run hourly:
+ * The only Contract Review sync: the manual "SYNC" button and its route
+ * (`app/api/contract-review/sync`) are removed. The write policy is the one that
+ * route had; two changes make it safe to run hourly:
  *
  * 1. **The per-row lookup is replaced with a Map diff.** The manual version
  *    calls `tenderPrisma.contractReview.findFirst({ itemCode, contractNo })` once per
@@ -39,20 +39,13 @@
  */
 
 import { prisma as tenderPrisma } from "@gmd/db-tender";
-import { sheets as googleSheets } from "@googleapis/sheets";
 import { prisma } from "@/lib/prisma";
-import { getOAuthClient } from "@/lib/googleAuth";
 import {
-  buildContractsColumnMap,
-  buildDumpColumnMap,
-  mapContractReviewRow,
-} from "@/lib/gmd_lib/contract-review-columns";
+  ERP_ROW_FIELDS,
+  loadContractReviewErpRows,
+} from "@/lib/gmd_lib/contract-review-erp-rows";
 import { syncEnquiryContractNumbers } from "@/lib/syncEnquiryContractNumbers";
 import { recomputeNotCurrentReqtMarks } from "@/lib/contractReviewCurrentReqt";
-
-/** Tab GIDs. Resolved by GID, not title, so renaming a tab is harmless. */
-const CONTRACTS_GID = 734728893; // header row 4, data from index 4
-const DUMP_GID = 1604813523; // header row 1, data from index 1
 
 /** Rows per write fan-out. */
 const WRITE_CHUNK = 200;
@@ -98,16 +91,8 @@ function isNullOrEmpty(value: unknown): boolean {
   return value === null || value === undefined || String(value).trim() === "";
 }
 
-type MappedRow = ReturnType<typeof mapContractReviewRow>;
-
-/**
- * Every field `mapContractReviewRow` can emit, derived from the function itself
- * rather than hand-copied, so adding a column to the mapper cannot silently
- * desync the preload select below.
- */
-const MAPPED_FIELDS = Object.keys(
-  mapContractReviewRow([], null, [], []),
-) as (keyof MappedRow & string)[];
+/** Every field the ERP row builder emits; drives the preload select below. */
+const MAPPED_FIELDS = ERP_ROW_FIELDS;
 
 const EXISTING_SELECT = {
   id: true,
@@ -150,7 +135,7 @@ export type ContractReviewSyncResult = {
 };
 
 /**
- * Reads CONTRACTS + DUMP and diffs them into ContractReview.
+ * Builds the rows from the ERP tabs and diffs them into ContractReview.
  *
  * Throws on a fatal error (sheet unreachable, OAuth failure, missing tab).
  * Per-row write failures are counted in `failedWrites`, not thrown.
@@ -159,79 +144,11 @@ export async function runContractReviewSheetSync(): Promise<ContractReviewSyncRe
   const startedAt = Date.now();
   const warnings: string[] = [];
 
-  const spreadsheetId = process.env.CONTRACT_REVIEW_SPREADSHEET_ID;
-  if (!spreadsheetId) {
-    throw new Error(
-      "CONTRACT_REVIEW_SPREADSHEET_ID is not configured on the server.",
-    );
-  }
-
-  const sheets = googleSheets({ version: "v4", auth: getOAuthClient() });
-
-  const meta = await sheets.spreadsheets.get({ spreadsheetId });
-  const tabs = (meta.data.sheets ?? []).map((s) => ({
-    title: s.properties?.title ?? "",
-    gid: s.properties?.sheetId,
-  }));
-
-  const contractsTab = tabs.find((t) => t.gid === CONTRACTS_GID);
-  const dumpTab = tabs.find((t) => t.gid === DUMP_GID);
-  if (!contractsTab || !dumpTab) {
-    throw new Error("Required CONTRACTS / DUMP tabs not found in the spreadsheet.");
-  }
-
-  const [contractsRes, dumpRes] = await Promise.all([
-    sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `'${contractsTab.title}'!A:ZZZ`,
-      valueRenderOption: "FORMATTED_VALUE",
-    }),
-    sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `'${dumpTab.title}'!A:ZZZ`,
-      valueRenderOption: "FORMATTED_VALUE",
-    }),
-  ]);
-
-  const contractsAll = contractsRes.data.values ?? [];
-  const contractsColumnMap = buildContractsColumnMap(
-    (contractsAll[3] ?? []).map(String),
-  );
-  const contractsRows = contractsAll.slice(4);
-
-  const dumpAll = dumpRes.data.values ?? [];
-  const dumpColumnMap = buildDumpColumnMap((dumpAll[0] ?? []).map(String));
-  const dumpRows = dumpAll.slice(1);
-
-  const contractsByKey = new Map<string, unknown[]>();
-  let blankKeyRows = 0;
-  let duplicateInSheet = 0;
-  for (const row of contractsRows) {
-    const itemCode = String(row[contractsColumnMap[1]] ?? "").trim();
-    const contractNo = String(row[contractsColumnMap[0]] ?? "").trim();
-    if (!itemCode || !contractNo) {
-      blankKeyRows++;
-      continue;
-    }
-    const key = normalizeKey(itemCode) + "||" + normalizeKey(contractNo);
-    // First occurrence wins, as in the manual route.
-    if (contractsByKey.has(key)) {
-      duplicateInSheet++;
-      continue;
-    }
-    contractsByKey.set(key, row);
-  }
-
-  // DUMP is keyed positionally (col 4 = itemCode, col 2 = contractNo) in the
-  // manual route, so it is kept identical here rather than "fixed".
-  const dumpByKey = new Map<string, unknown[]>();
-  for (const row of dumpRows) {
-    const itemCode = String(row[4] ?? "").trim();
-    const contractNo = String(row[2] ?? "").trim();
-    if (!itemCode || !contractNo) continue;
-    const key = normalizeKey(itemCode) + "||" + normalizeKey(contractNo);
-    if (!dumpByKey.has(key)) dumpByKey.set(key, row);
-  }
+  // Built from the GMD EXECUTION TRACKING ERP tabs, not the old CONTRACTS + dump
+  // tabs. Repeated item lines are already merged, blank keys already dropped.
+  const erpRows = await loadContractReviewErpRows();
+  const blankKeyRows = 0;
+  const duplicateInSheet = 0;
 
   // The Map-diff replacement for the per-row findFirst.
   const existingRows = (await tenderPrisma.contractReview.findMany({
@@ -258,23 +175,12 @@ export async function runContractReviewSheetSync(): Promise<ContractReviewSyncRe
   }[] = [];
   const changedColumns: Record<string, number> = {};
 
-  for (const [key, contractRow] of contractsByKey) {
-    const dumpRow = dumpByKey.get(key) ?? null;
-    const mapped = mapContractReviewRow(
-      contractRow,
-      dumpRow,
-      contractsColumnMap,
-      dumpColumnMap,
-    );
+  for (const [key, mapped] of erpRows) {
 
     const existing = existingByKey.get(key);
 
     if (!existing) {
-      // Same two fields the manual route omits on create (route.ts:151).
-      const createData = { ...mapped, syncedAt } as Record<string, unknown>;
-      delete createData.itemType;
-      delete createData.rmCodeForActuator;
-      toCreate.push({ data: createData });
+      toCreate.push({ data: { ...mapped, syncedAt } });
       continue;
     }
 
@@ -381,7 +287,7 @@ export async function runContractReviewSheetSync(): Promise<ContractReviewSyncRe
 
   console.log("\n===== [SCHEDULER] CONTRACT REVIEW SHEET SYNC =====");
   console.log(`[scheduler] synced at          : ${syncedAt.toISOString()}`);
-  console.log(`[scheduler] contracts in sheet : ${contractsByKey.size}`);
+  console.log(`[scheduler] contracts in sheet : ${erpRows.size}`);
   console.log(
     `[scheduler] created=${created} updated=${updated} unchanged=${unchanged} total=${created + updated + unchanged}`,
   );
@@ -401,7 +307,7 @@ export async function runContractReviewSheetSync(): Promise<ContractReviewSyncRe
 
   return {
     syncedAt: syncedAt.toISOString(),
-    totalInContracts: contractsByKey.size,
+    totalInContracts: erpRows.size,
     created,
     updated,
     unchanged,

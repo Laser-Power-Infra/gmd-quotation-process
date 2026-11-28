@@ -26,7 +26,7 @@ every 2 hours. All are staggered so no two heavy ones collide.
 | Physical Stock cost / BOM ID | `POST /api/scheduler/physical-stock-cost-bom` | `physical-stock-cost-bom-sync` | local `FullItem` / `Bom` / `BomItem` → stock DB `PhysicalStock`; `ITEM MASTER ERP` `STOCK` → `stock_as_per_erp` |
 | Supply History MASTER sync | `POST /api/scheduler/supply-history` | `supply-history-sync` | `MASTER`, GMD Clientwise ORDER LIST, `SALE_BILL` (rate gap-fill) |
 | Pending docket creation + duplicate cleanup | `POST /api/scheduler/docket-creation` | `docket-creation-sync` | `docket_quotation_threads`, `enquiries` |
-| Contract Review sync | `POST /api/scheduler/contract-review` | `contract-review-sync` | `CONTRACTS`, `DUMP`, `stock-phys`, `INSPECTION OFFER DUMP` |
+| Contract Review sync | `POST /api/scheduler/contract-review` | `contract-review-sync` | `SALE CONTRACT`, `MC`, `PROD ORDER DUMP`, `PROD ENTRY DUMP`, `SALE BILL`, `stock-phys`, `INSPECTION OFFER DUMP` |
 | ACC Master refresh | `POST /api/scheduler/acc-master` | `acc-master-sync` | `ACC_MASTER` |
 | Execution Tracking sync | `POST /api/scheduler/execution-tracking` | `execution-tracking-sync` | `SALE_BILL` (+ the local `acc_master`); step 2: `MC`, `PROD ORDER DUMP`, `PROD ENTRY DUMP` -> `McRegisterLine`, `ProductionRegisterLine` |
 | PBG sheet sync *(every 1.2h)* | `POST /api/scheduler/pbg` | `pbg-sync` | PBG sheet tab → `PbgData` |
@@ -144,8 +144,12 @@ Eight sequential steps in `run-contract-review.ts`:
 | 6 | `runProdEntrySync()` | `contract-review-prod-entry.ts` | `ContractReview.prodEntryDate` |
 | 7 | `runContractReviewBackfills()` | `lib/contractReviewBackfill.ts` | derived columns: BOM ID defaults, RM AVAIL, VA % from cost, State / Utility / Project Ref, MC / approval dates, Offer / Inspection / PN rating / Clearance flags. Formerly ran on every page open; a failed task is a `warnings` entry |
 
-Step 1 reads `CONTRACTS` (GID 734728893, header row 4) and `DUMP` (GID
-1604813523, header row 1) from `CONTRACT_REVIEW_SPREADSHEET_ID`. Step 1b reads
+Step 1 builds its rows from the GMD EXECUTION TRACKING workbook
+(`GMD_EXECUTION_TRACKING_SPREADSHEET_ID`): `SALE CONTRACT` is the base, joined to
+`MC`, `PROD ORDER DUMP`, `PROD ENTRY DUMP`, `INSPECTION OFFER DUMP` and
+`SALE BILL`, per the "ERP MAPPING (dump)" tab of GMD CLIENTS WISE
+(`lib/gmd_lib/contract-review-erp-rows.ts`). The old `CONTRACTS` + `DUMP` tabs
+are no longer read, and `CONTRACT_REVIEW_SPREADSHEET_ID` is unused by the sync. Step 1b reads
 `ITEM MASTER ERP` (gid 253020709) from the BOM MAST ERP workbook. Step 3 reads
 `stock-phys` from `GOOGLE_SPREADSHEET_ID`. Step 4 reads `INSPECTION OFFER DUMP`
 (GID 148043829) from the BOM MAST ERP workbook. Step 6 reads `PROD ENTRY DUMP`
