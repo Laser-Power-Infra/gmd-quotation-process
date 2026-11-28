@@ -58,8 +58,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
     ...(googleEnabled ? [Google({ clientId: process.env.AUTH_GOOGLE_ID_STOCK, clientSecret: process.env.AUTH_GOOGLE_SECRET_STOCK })] : []),
   ],
+  // No "secure" here: Auth.js sets it from the protocol, so the cookie survives on the plain-HTTP LAN server.
   cookies: {
-    sessionToken: { name: "gmd-stock.session-token", options: { httpOnly: true, sameSite: "lax", path: "/", secure: process.env.NODE_ENV === "production" } },
+    sessionToken: { name: "gmd-stock.session-token", options: { httpOnly: true, sameSite: "lax", path: "/" } },
   },
   callbacks: {
     async signIn({ account, profile }) {
