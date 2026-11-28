@@ -34,6 +34,8 @@ export const ERP_ROW_FIELDS = [
   "jobCode",
   "partyNameDump",
   "partyItemName",
+  "poNo",
+  "dateOfContract",
   "rate",
   "orderQty",
   "mcQty",
@@ -80,6 +82,9 @@ function num(v: string): number {
 }
 
 const fmt = (n: number) => String(Math.round(n * 100) / 100);
+
+/** "06-nov-2026" -> "06-Nov-2026", the form DATE OF CONTRACT is already stored in. */
+const fmtDate = (v: string) => v.trim().replace(/[a-z]/i, (c) => c.toUpperCase());
 
 const add = (m: Map<string, number>, k: string, v: number) =>
   m.set(k, (m.get(k) ?? 0) + v);
@@ -148,9 +153,9 @@ export function buildContractReviewErpRows(
   }
 
   // SALE CONTRACT lines, merged per contract no + item code.
-  const [sVr, sAcc, sItem, sName, sRate, sQty, sCan, sSl, sMc] = col(tabs.saleContract, [
+  const [sVr, sAcc, sItem, sName, sRate, sQty, sCan, sSl, sMc, sPo, sPoDate] = col(tabs.saleContract, [
     "VRNO", "ACC_CODE", "ITEM_CODE", "PARTY_ITEM_NAME", "RATE",
-    "QTYORDER", "QTYCANCELLED", "SLNO", "MC NO",
+    "QTYORDER", "QTYCANCELLED", "SLNO", "MC NO", "PARTYREFNO", "PARTYREFDATE",
   ]);
   type Group = {
     contractNo: string;
@@ -159,6 +164,8 @@ export function buildContractReviewErpRows(
     partyItemName: string;
     rate: string;
     mcNo: string;
+    poNo: string;
+    poDate: string;
     orderQty: number;
     lines: string[];
   };
@@ -174,6 +181,7 @@ export function buildContractReviewErpRows(
       g = {
         contractNo, itemCode,
         accCode: cell(r, sAcc), partyItemName: "", rate: cell(r, sRate), mcNo: "",
+        poNo: cell(r, sPo), poDate: fmtDate(cell(r, sPoDate)),
         orderQty: 0, lines: [],
       };
       groups.set(key, g);
@@ -218,6 +226,8 @@ export function buildContractReviewErpRows(
       jobCode: g.mcNo || null,
       partyNameDump: accNames.get(norm(g.accCode)) ?? null,
       partyItemName: g.partyItemName || null,
+      poNo: g.poNo || null,
+      dateOfContract: g.poDate || null,
       rate: g.rate || null,
       orderQty: fmt(g.orderQty),
       mcQty: fmt(mc),

@@ -6,7 +6,7 @@ const tab = (tabTitle: string, headers: string[], ...rows: string[][]): ErpTab =
 
 const SC = ['VRNO', 'VRDATE', 'ACC_CODE', 'ITEM_CODE', 'PARTY_ITEM_NAME', 'RATE', 'PARTYREFNO', 'PARTYREFDATE', 'QTYORDER', 'QTYCANCELLED', 'NET_ORDER_VALUE', 'SLNO', 'MC NO']
 const line = (vr: string, item: string, rate: string, qty: string, cancelled: string, sl: string, mc: string) =>
-  [vr, '01-01-2026', 'ACC1', item, 'party item', rate, '', '', qty, cancelled, '', sl, mc]
+  [vr, '01-01-2026', 'ACC1', item, 'party item', rate, 'PO/1', '06-nov-2026', qty, cancelled, '', sl, mc]
 
 const tabs = {
   saleContract: tab('SALE CONTRACT', SC,
@@ -51,7 +51,8 @@ test('one row per contract + item, header repeat skipped', () => {
 test('line with two MCs: quantities summed across both, cancelled qty removed', () => {
   assert.deepEqual(rows.get('ITEMA||SD1'), {
     contractNo: 'SD1', itemCode: 'ITEMA', mcNo: 'OD1', jobCode: 'OD1',
-    partyNameDump: 'Party One', partyItemName: 'party item', rate: '1,000.50',
+    partyNameDump: 'Party One', partyItemName: 'party item',
+    poNo: 'PO/1', dateOfContract: '06-Nov-2026', rate: '1,000.50',
     orderQty: '8', mcQty: '8', balanceMc: '0',
     prodOrdQty: '7', balanceToProdOrd: '1', balanceToProdEnt: '3',
     diQty: '2', billedQty: '2', balBillAgMc: '6', balBillAgCont: '6', balDiQty: '6',

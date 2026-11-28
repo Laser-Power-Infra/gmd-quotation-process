@@ -31,7 +31,7 @@
  *
  * Write policy (unchanged from the manual route):
  *   - create: every mapped sheet field except `itemType` / `rmCodeForActuator`.
- *   - update: 11 `PRESERVE_UI_FIELDS` are gap-fill only; 6 `SKIP_FIELDS` are
+ *   - update: 12 `PRESERVE_UI_FIELDS` are gap-fill only; 6 `SKIP_FIELDS` are
  *     never written; everything else is overwritten when the sheet value is
  *     non-blank and differs. A blank sheet value never clears the DB.
  *   - `contractNo` / `itemCode` are immutable keys.
@@ -52,6 +52,7 @@ const WRITE_CHUNK = 200;
 
 /** Gap-fill only — an existing DB value is never overwritten. */
 const PRESERVE_UI_FIELDS = new Set([
+  "poNo",
   "bomFormulaTrial",
   "item",
   "clearanceStatus",
